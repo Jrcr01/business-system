@@ -1,0 +1,9 @@
+streamlit
+pandas
+pdfplumber
+pytesseract
+pypdf
+reportlab
+pillow
+openpyxl
+pytest

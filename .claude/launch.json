@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ap-disbursement",
+      "runtimeExecutable": "C:\\Users\\Rhodora\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+      "runtimeArgs": ["-m", "streamlit", "run", "H:\\My Drive\\Claude9OS\\Project_Checke\\app.py", "--server.headless", "true"],
+      "port": 8501
+    },
+    {
+      "name": "ap-disbursement-test",
+      "runtimeExecutable": "H:\\My Drive\\Claude9OS\\Project_Checke\\run_test_streamlit.bat",
+      "runtimeArgs": [],
+      "port": 8502
+    }
+  ]
+}

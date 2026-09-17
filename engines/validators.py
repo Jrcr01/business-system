@@ -1,0 +1,43 @@
+import difflib
+import sqlite3
+import pandas as pd
+
+import os
+DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
+
+def calculate_trade_discount(gross_amount: float, discount_rates: list[float]) -> tuple[float, float]:
+    """Calculates net invoice amount using compound trade discounts."""
+    current_amount = gross_amount
+    for rate in discount_rates:
+        if 0 < rate < 100:
+            current_amount *= (1.0 - (rate / 100.0))
+            
+    net_payable = round(current_amount, 2)
+    total_discount = round(gross_amount - net_payable, 2)
+    return total_discount, net_payable
+
+def detect_invoice_anomalies(creditor_id: int, doc_ref: str, amount: float, invoice_date: str, conn) -> list[str]:
+    """Scans for duplicate invoice amounts within 7 days or transposed reference numbers."""
+    warnings = []
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT doc_ref, invoice_date, amount 
+        FROM invoices 
+        WHERE creditor_id = ? 
+          AND ABS(JULIANDAY(invoice_date) - JULIANDAY(?)) <= 7
+          AND amount = ?
+    """, (creditor_id, invoice_date, amount))
+    
+    for match in cursor.fetchall():
+        warnings.append(f"ANOMALY: Identical amount (PHP {amount:,.2f}) billed on {match[1]} under Ref '{match[0]}'.")
+
+    cursor.execute("SELECT doc_ref FROM invoices WHERE creditor_id = ?", (creditor_id,))
+    existing_refs = [row[0] for row in cursor.fetchall()]
+    
+    for ref in existing_refs:
+        similarity = difflib.SequenceMatcher(None, doc_ref.upper(), ref.upper()).ratio()
+        if 0.85 <= similarity < 1.0:
+            warnings.append(f"POSSIBLE TYPO: Reference '{doc_ref}' is highly similar to existing invoice '{ref}'.")
+
+    return warnings

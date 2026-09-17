@@ -1,0 +1,33 @@
+# Databases -- real business data (supplier/lender records, full credit card numbers, real
+# checks) and disposable sandbox/test data alike. Never commit either; the sandbox/live split
+# this project relies on assumes these files are always local-only.
+data/*.db
+data/*.db.bak_*
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# Legacy Access export files (real supplier/cardholder names, real amounts) pulled in for the
+# one-time Phase 8a-8d migration.
+data/source/
+
+# Real financial figures from the migration's own analysis -- not source code, and not safe to
+# publish even privately without thinking about it first.
+opening_balances_review.csv
+
+# Generated migration reports (report_8a.txt etc.) -- reproducible output, not source, and can
+# carry real supplier names/amounts depending on what ran.
+report_8*.txt
+
+# Python runtime artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Streamlit runtime artifacts
+streamlit.pid.txt
+streamlit*.log
+
+# Claude Code local/personal settings -- launch.json (sandbox+live launch config) stays tracked,
+# settings.local.json is machine-specific.
+.claude/settings.local.json

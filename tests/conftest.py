@@ -1,0 +1,139 @@
+"""Shared fixtures for the regression suite.
+
+The one thing every test needs is a real database that isn't the live
+data/ap_disbursement.db — every business-rule function in this app talks to
+SQLite directly (get_conn() in app.py, or a same-named DB_PATH constant in
+each engines/*.py module — there's no shared config, each file hardcodes its
+own copy of "data/ap_disbursement.db"), so an isolated DB means patching
+DB_PATH on app.py *and* every engines module that has one, not just one place.
+"""
+import os
+import sqlite3
+import sys
+
+import pytest
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCHEMA_PATH = os.path.join(PROJECT_ROOT, "schema.sql")
+sys.path.insert(0, PROJECT_ROOT)
+
+# app.py's top-level script body (every `with tab_X:` block, Streamlit tabs are plain sequential
+# code, not lazily rendered) runs immediately on import, against whatever AP_DB_PATH resolves to
+# at that moment -- which, unpatched, is the real data/ap_disbursement.db file (2026-09-17: this
+# broke test collection the moment schema.sql gained a table that file doesn't have yet, since
+# live only gets new schema via the Phase 8b promotion script, not automatically). Tests should
+# never touch live data even implicitly at import time, so this points bare import at a private
+# scratch db instead -- each test's own `db` fixture (below) still overrides this per-test with
+# its own fully isolated tmp_path database; this only covers the brief window before that fixture
+# runs.
+_IMPORT_TIME_DB_PATH = os.path.join(PROJECT_ROOT, "data", "_pytest_import_scratch.db")
+if not os.path.exists(_IMPORT_TIME_DB_PATH):
+    _scratch_conn = sqlite3.connect(_IMPORT_TIME_DB_PATH)
+    with open(SCHEMA_PATH, encoding="utf-8") as _f:
+        _scratch_conn.executescript(_f.read())
+    _scratch_conn.commit()
+    _scratch_conn.close()
+os.environ["AP_DB_PATH"] = _IMPORT_TIME_DB_PATH
+
+import streamlit as st  # noqa: E402
+
+import app  # noqa: E402
+import engines.analytics_service as analytics_service  # noqa: E402
+import engines.db_engine as db_engine  # noqa: E402
+import engines.backup_service as backup_service  # noqa: E402
+import engines.bank_loan_report_service as bank_loan_report_service  # noqa: E402
+import engines.bank_loan_service as bank_loan_service  # noqa: E402
+import engines.batch_statement_service as batch_statement_service  # noqa: E402
+import engines.cc_service as cc_service  # noqa: E402
+import engines.check_engine as check_engine  # noqa: E402
+import engines.check_run_service as check_run_service  # noqa: E402
+import engines.checkbook_service as checkbook_service  # noqa: E402
+import engines.dashboard_kpi_service as dashboard_kpi_service  # noqa: E402
+import engines.interest_service as interest_service  # noqa: E402
+import engines.loan_note_service as loan_note_service  # noqa: E402
+import engines.loan_schedule_service as loan_schedule_service  # noqa: E402
+import engines.reports_service as reports_service  # noqa: E402
+import engines.search_service as search_service  # noqa: E402
+import engines.soa_matcher as soa_matcher  # noqa: E402
+import engines.validators as validators  # noqa: E402
+
+# Every module with its own DB_PATH global that a test might exercise (directly
+# or transitively, e.g. app.py calling into engines.cc_service). Missing one
+# here means that module silently keeps pointing at the real production DB.
+_DB_PATH_MODULES = [
+    app, analytics_service, db_engine, backup_service, bank_loan_report_service, bank_loan_service,
+    batch_statement_service, cc_service, check_engine, check_run_service,
+    checkbook_service, dashboard_kpi_service, interest_service, loan_note_service, loan_schedule_service,
+    reports_service, search_service, soa_matcher, validators,
+]
+
+
+@pytest.fixture
+def db(tmp_path):
+    """A fresh SQLite database built from the real schema.sql, isolated to this
+    one test. Yields the file path (tests needing a raw connection for setup
+    can use it directly); every app/engines function called during the test
+    transparently uses it too, via the DB_PATH patch below.
+
+    Also clears st.cache_data (q() is @st.cache_data-decorated with a 15s TTL —
+    without clearing, a later test could read a stale result cached by an
+    earlier one under an identical query+params) and st.session_state
+    (guard_duplicate_submit() and the sidebar's _jump() helper both stash
+    state there, keyed by name, not by DB — so it persists across tests in the
+    same pytest process unless cleared)."""
+    db_path = str(tmp_path / "test.db")
+    with open(SCHEMA_PATH, encoding="utf-8") as f:
+        schema_sql = f.read()
+    conn = sqlite3.connect(db_path)
+    conn.executescript(schema_sql)  # schema.sql itself seeds bank_account_id=1 (app.PRIMARY_BANK_ACCOUNT_ID)
+    conn.commit()
+    conn.close()
+
+    originals = [(m, m.DB_PATH) for m in _DB_PATH_MODULES]
+    for m in _DB_PATH_MODULES:
+        m.DB_PATH = db_path
+
+    st.cache_data.clear()
+    st.session_state.clear()
+
+    yield db_path
+
+    for m, orig in originals:
+        m.DB_PATH = orig
+    st.cache_data.clear()
+    st.session_state.clear()
+
+
+def make_creditor(db_path: str, name: str = "Test Supplier", creditor_type: str = "SUPPLIER", terms: str = "30") -> int:
+    """Inserts a minimal creditor directly (bypassing add_creditor()'s own
+    logic, which several tests exercise separately) and returns its id --
+    almost every test needs at least one creditor to hang invoices/checks off."""
+    conn = sqlite3.connect(db_path)
+    cur = conn.execute(
+        "INSERT INTO creditors (creditor_name, creditor_type, terms) VALUES (?, ?, ?)",
+        (name, creditor_type, terms),
+    )
+    conn.commit()
+    creditor_id = cur.lastrowid
+    conn.close()
+    return creditor_id
+
+
+def make_statement(db_path: str, creditor_id: int) -> int:
+    """Inserts a minimal Draft order_statement directly and returns its id."""
+    conn = sqlite3.connect(db_path)
+    cur = conn.execute(
+        "INSERT INTO order_statements (creditor_id, statement_ref, total_amount, status) VALUES (?, 'TEST-REF', 0, 'Draft')",
+        (creditor_id,),
+    )
+    conn.commit()
+    statement_id = cur.lastrowid
+    conn.close()
+    return statement_id
+
+
+def fetchone(db_path: str, sql: str, params: tuple = ()):
+    conn = sqlite3.connect(db_path)
+    row = conn.execute(sql, params).fetchone()
+    conn.close()
+    return row

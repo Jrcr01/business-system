@@ -1,0 +1,551 @@
+-- Metrobank AP & Disbursement System DDL Schema
+
+CREATE TABLE IF NOT EXISTS creditors (
+    creditor_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    creditor_name TEXT NOT NULL,
+    creditor_type TEXT NOT NULL CHECK(creditor_type IN ('SUPPLIER', 'LENDER', 'BANK_LOAN', 'CREDIT_CARD')),
+    tin TEXT,
+    contact_person TEXT,
+    contact_number TEXT,
+    email TEXT,
+    terms TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    -- legacy_payee_id (migration 031, Phase 8a): traceable link back to the old Access
+    -- TblPayee.PayeeId for any creditor migrated from the legacy system; NULL for one created
+    -- directly in the new system.
+    legacy_payee_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Bank cash is not tracked in this system (abolished 2026-09-06, migration 016) -- this table
+-- only identifies which physical account a check is drawn against, nothing more.
+-- check_width_mm/check_height_mm/check_offset_x_mm/check_offset_y_mm (migration 019): the check
+-- engine's print calibration for this account -- tunable after a real test print, since no
+-- physical leaf has been measured. Mirrors Chrysanth Check Writer's own per-account Alignment tab.
+CREATE TABLE IF NOT EXISTS bank_accounts (
+    bank_account_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_name TEXT NOT NULL,
+    account_name TEXT NOT NULL,
+    account_number TEXT UNIQUE NOT NULL,
+    branch_code TEXT NOT NULL DEFAULT '399',
+    check_width_mm REAL NOT NULL DEFAULT 203.2,
+    check_height_mm REAL NOT NULL DEFAULT 76.2,
+    check_offset_x_mm REAL NOT NULL DEFAULT 0,
+    check_offset_y_mm REAL NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Seed Metrobank Account 1 (Branch Code 399)
+INSERT INTO bank_accounts (bank_account_id, bank_name, account_name, account_number, branch_code)
+VALUES (1, 'Metrobank', 'Metrobank Account 1', 'MBTC-399-PRIMARY', '399')
+ON CONFLICT(bank_account_id) DO UPDATE SET
+    bank_name = 'Metrobank',
+    account_name = 'Metrobank Account 1',
+    branch_code = '399';
+
+CREATE TABLE IF NOT EXISTS order_statements (
+    statement_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    creditor_id INTEGER NOT NULL,
+    statement_ref TEXT UNIQUE NOT NULL,
+    total_amount REAL NOT NULL CHECK(total_amount >= 0),
+    status TEXT NOT NULL DEFAULT 'Draft' CHECK(status IN ('Draft', 'Issued', 'Cancelled')),
+    is_locked INTEGER NOT NULL DEFAULT 0,
+    -- Credit Memo Deduction Guard (migration 026): must be explicitly confirmed (or the memo(s)
+    -- removed) before checks can be issued, whenever this batch has at least one credit memo --
+    -- a memo silently reduces the net total (v_batch_net_totals), and this stops that reduction
+    -- from going unnoticed. Defaults to 1 (nothing to confirm) on a fresh build since a brand
+    -- new statement has no memos yet; add_credit_memo()/edit_credit_memo() reset it to 0.
+    credit_memos_confirmed INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id)
+);
+
+-- Cardholder registry: who inside the company holds/uses a card, separate from which bank
+-- issued it (creditors, type CREDIT_CARD). "there is a need of credit card holder registry."
+-- legacy_cardholder_id (migration 035, Phase 8a): traceable link back to the old Access
+-- TblCreditCardHolder id for a cardholder migrated from the legacy system.
+CREATE TABLE IF NOT EXISTS cardholders (
+    cardholder_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    department TEXT,
+    contact_number TEXT,
+    legacy_cardholder_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- annual_fee_due_month is month-only, not a full date: the real anniversary is the card's
+-- original issuance date, which the user doesn't have on file for existing cards, so this
+-- tracks only what's actually knowable ("annual fee due sometime in March").
+-- statement_day (the nth day of the month a statement generates) is a permanent property of
+-- the card, not re-entered per statement -- "make this a permanent information of the card."
+-- credit_limit nullable, network/is_active/card_number_full/legacy_card_id added (migration
+-- 034, Phase 8a): cards migrated from Access have no credit limit on file, plus a payment
+-- network, an active/closed flag, and -- separate from the last4 used everywhere in the UI --
+-- the complete card number, needed as a real reference when paying a bill through a banking
+-- app. add_credit_card()/edit_credit_card() (app.py) still require a positive credit limit for
+-- anything entered through the UI; only a direct import can leave it NULL.
+CREATE TABLE IF NOT EXISTS credit_cards (
+    card_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    creditor_id INTEGER NOT NULL,
+    cardholder_id INTEGER,
+    card_name TEXT NOT NULL,
+    card_number_last4 TEXT NOT NULL,
+    card_number_full TEXT,
+    network TEXT,
+    credit_limit REAL CHECK(credit_limit IS NULL OR credit_limit > 0),
+    annual_fee_due_month INTEGER CHECK(annual_fee_due_month BETWEEN 1 AND 12),
+    statement_day INTEGER CHECK(statement_day BETWEEN 1 AND 31),
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+    legacy_card_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
+    FOREIGN KEY (cardholder_id) REFERENCES cardholders(cardholder_id)
+);
+
+CREATE TABLE IF NOT EXISTS invoices (
+    invoice_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    creditor_id INTEGER NOT NULL,
+    doc_ref TEXT NOT NULL,
+    invoice_date DATE NOT NULL,
+    due_date DATE NOT NULL,
+    gross_amount REAL NOT NULL CHECK(gross_amount >= 0),
+    trade_discounts TEXT,
+    amount REAL NOT NULL CHECK(amount >= 0),
+    status TEXT NOT NULL DEFAULT 'Unpaid' CHECK(status IN ('Unpaid', 'Partially Paid', 'Paid', 'Cancelled')),
+    statement_id INTEGER,
+    paid_via_card_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
+    FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id),
+    FOREIGN KEY (paid_via_card_id) REFERENCES credit_cards(card_id),
+    UNIQUE(creditor_id, doc_ref)
+);
+
+-- principal_amount/monthly_interest_rate/total_payable nullable, status CHECK includes
+-- 'Pending Setup' (migration 032, Phase 8a): a lender migrated from Access with no real
+-- principal/rate/schedule on file yet must be representable without inventing numbers.
+CREATE TABLE IF NOT EXISTS loan_notes (
+    loan_note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    creditor_id INTEGER NOT NULL,
+    note_ref TEXT UNIQUE NOT NULL,
+    issue_date DATE NOT NULL,
+    principal_amount REAL CHECK(principal_amount IS NULL OR principal_amount > 0),
+    monthly_interest_rate REAL,
+    total_interest REAL DEFAULT 0.0,
+    total_payable REAL,
+    status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Settled', 'Defaulted', 'Cancelled', 'Pending Setup')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id)
+);
+
+-- Repayment schedule for a loan note. Entered progressively as real payment dates are
+-- committed to (not fully planned upfront at signing). interest is a suggested value
+-- (rate x outstanding balance x days-since-previous-row/30) but stays freely editable per
+-- row for lender-specific conventions (e.g. flat monthly division instead of day-proration).
+CREATE TABLE IF NOT EXISTS loan_installments (
+    installment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    loan_note_id INTEGER NOT NULL,
+    installment_no INTEGER NOT NULL,
+    due_date DATE NOT NULL,
+    principal REAL NOT NULL DEFAULT 0 CHECK(principal >= 0),
+    interest REAL NOT NULL DEFAULT 0 CHECK(interest >= 0),
+    outstanding_balance REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Pending' CHECK(status IN ('Pending', 'Active')),
+    check_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (loan_note_id) REFERENCES loan_notes(loan_note_id),
+    FOREIGN KEY (check_id) REFERENCES checks_issued(check_id)
+);
+
+-- Loan beneficiary registry: who actually uses/benefits from a bank loan the company pays for
+-- -- a person or an affiliate company, distinct from the bank (creditors) and reusable across
+-- multiple loans, same idea as the credit card cardholder registry but broader (not always a
+-- person).
+CREATE TABLE IF NOT EXISTS loan_beneficiaries (
+    beneficiary_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    beneficiary_type TEXT NOT NULL CHECK(beneficiary_type IN ('Person', 'Affiliate')),
+    contact_number TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- start_date/maturity_date nullable, has_amortization added (migration 033, Phase 8a): a bank
+-- loan migrated from Access with no amortization schedule uploaded yet has neither real dates
+-- nor a schedule; has_amortization flags which loans still need one (0 = placeholder).
+CREATE TABLE IF NOT EXISTS bank_loans (
+    bank_loan_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    creditor_id INTEGER NOT NULL,
+    beneficiary_id INTEGER,
+    loan_ref TEXT UNIQUE NOT NULL,
+    account_number TEXT,
+    start_date DATE,
+    maturity_date DATE,
+    repricing_date DATE,
+    principal_amount REAL,
+    mode_of_payment TEXT DEFAULT 'ADA',
+    has_amortization INTEGER NOT NULL DEFAULT 0 CHECK(has_amortization IN (0, 1)),
+    status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Closed')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
+    FOREIGN KEY (beneficiary_id) REFERENCES loan_beneficiaries(beneficiary_id)
+);
+
+-- Phase 3 (Bank Loan): just Due Date + Amount per installment, per explicit user simplification
+-- ("i need only the Due date and amount") -- no principal/interest/insurance breakdown, no
+-- computation of any kind. "Paid" is not a stored field, same standing convention as a check's
+-- "cleared" status elsewhere in this app (CLAUDE.md): implied automatically once due_date is in
+-- the past relative to today, computed at query time. Deliberately no check_id/checks_issued
+-- link, unlike loan_installments (Loan Notes) -- settlement here is untracked cash.
+-- interest_portion (migration 028, 2026-09-15, Unified Debt Interest Tracking): optional, typed
+-- straight off the bank's document like Amount already is -- still "no computation of any kind"
+-- per the original Phase 3 simplification, just one more fact recorded when it's known, so
+-- interest paid on bank loans can feed the interest-tracking dashboard/KPI.
+CREATE TABLE IF NOT EXISTS bank_loan_installments (
+    installment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_loan_id INTEGER NOT NULL,
+    installment_no INTEGER NOT NULL,
+    due_date DATE NOT NULL,
+    amount REAL NOT NULL DEFAULT 0 CHECK(amount >= 0),
+    interest_portion REAL NOT NULL DEFAULT 0 CHECK(interest_portion >= 0),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (bank_loan_id) REFERENCES bank_loans(bank_loan_id)
+);
+
+-- check_booklets (migration 022, Phase 6 Redux): a stateful multi-booklet registry, e.g.
+-- "Booklet A: 1000-1050". next_available_number is the cursor the print-time auto-sequencer
+-- reads and advances (skipping any number already logged in spoiled_checks). Replaces the old
+-- passive "checkbooks" range-registry that only supported an after-the-fact manual gap audit --
+-- same real-world entity, extended in place rather than duplicated, since check numbers are now
+-- assigned by the system, not typed in freehand.
+CREATE TABLE IF NOT EXISTS check_booklets (
+    booklet_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_account_id INTEGER NOT NULL,
+    booklet_code TEXT,
+    start_number INTEGER NOT NULL,
+    end_number INTEGER NOT NULL,
+    next_available_number INTEGER NOT NULL,
+    date_received DATE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Exhausted', 'Archived')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
+    CHECK(end_number >= start_number),
+    CHECK(next_available_number >= start_number)
+);
+
+-- check_print_batches (migration 036, 2026-09-17): checks are now printed outside this system
+-- (Chrysanth's own batch-print feature, fed by an Excel export), so there's no in-app PDF
+-- generation event left to hang a "what got printed when" log on -- this records that moment
+-- instead, at the point the Excel export happens. checks_issued.print_batch_id (below) links
+-- each check back to whichever export it went out in; NULL means never exported yet (still
+-- parked).
+CREATE TABLE IF NOT EXISTS check_print_batches (
+    print_batch_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    check_count INTEGER NOT NULL,
+    total_amount REAL NOT NULL
+);
+
+-- Every check must belong to a batch (statement_id for Supplier, loan_note_id for Lender) --
+-- no standalone check path anywhere in the system, including Encashment (migration 018).
+-- printed_at (migration 020): NULL means committed/recorded but not yet physically printed --
+-- a check "belongs to the current check run" simply by having status='Active' AND printed_at
+-- IS NULL, no separate run-tracking table. Stamped automatically the moment its PDF is generated.
+-- check_number is nullable (migration 021, Phase 6 Redux): a check number is assigned at PRINT
+-- time, not issue/park time -- a parked check genuinely has no number yet until the print-time
+-- auto-sequencer (or a manual backfill) assigns one from a booklet (booklet_id, migration 022).
+CREATE TABLE IF NOT EXISTS checks_issued (
+    check_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    creditor_id INTEGER NOT NULL,
+    bank_account_id INTEGER NOT NULL,
+    statement_id INTEGER,
+    loan_note_id INTEGER,
+    booklet_id INTEGER,
+    print_batch_id INTEGER,
+    check_number TEXT,
+    check_date DATE NOT NULL,
+    amount REAL NOT NULL CHECK(amount >= 0),
+    status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Cleared', 'Cancelled', 'Replaced', 'Spoiled')),
+    replacement_check_id INTEGER,
+    replacement_reason TEXT,
+    replaced_at DATETIME,
+    printed_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
+    FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
+    FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id),
+    FOREIGN KEY (loan_note_id) REFERENCES loan_notes(loan_note_id),
+    FOREIGN KEY (booklet_id) REFERENCES check_booklets(booklet_id),
+    FOREIGN KEY (print_batch_id) REFERENCES check_print_batches(print_batch_id),
+    CHECK (statement_id IS NOT NULL OR loan_note_id IS NOT NULL)
+);
+
+CREATE TABLE IF NOT EXISTS credit_memos (
+    credit_memo_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    statement_id INTEGER NOT NULL,
+    memo_ref TEXT NOT NULL,
+    memo_date DATE NOT NULL,
+    amount REAL NOT NULL CHECK(amount > 0),
+    reason TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id)
+);
+
+CREATE TABLE IF NOT EXISTS check_corrections (
+    correction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    check_id INTEGER NOT NULL,
+    statement_id INTEGER,
+    correction_type TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    reason TEXT,
+    corrected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (check_id) REFERENCES checks_issued(check_id),
+    FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id)
+);
+
+CREATE TABLE IF NOT EXISTS invoice_corrections (
+    correction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL,
+    statement_id INTEGER,
+    field_name TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    corrected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_id),
+    FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id)
+);
+
+CREATE TABLE IF NOT EXISTS spoiled_checks (
+    spoiled_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_account_id INTEGER NOT NULL,
+    check_number TEXT NOT NULL,
+    reason TEXT,
+    logged_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id)
+);
+
+-- No statement_ref (never used beyond being typed in) and no statement_date (the day a
+-- statement generates is a permanent property of the card -- credit_cards.statement_day --
+-- not something that varies per cycle) -- just what actually varies: due_date and the amount.
+-- Rolling balance columns (migration 027, 2026-09-15, Unified Debt Interest Tracking):
+-- previous_balance + new_charges + interest_charged = total_amount_due (computed, not typed in
+-- directly, once entered through the rolling-balance form); amount_paid can be less than that;
+-- unpaid_balance_next is what's left, and auto-fills next month's previous_balance. Defaults to
+-- 0 so a statement entered the old way (just a lump total_amount_due) behaves identically to
+-- before -- going-forward only, no backfill.
+CREATE TABLE IF NOT EXISTS cc_statements (
+    cc_statement_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_id INTEGER NOT NULL,
+    due_date DATE NOT NULL,
+    total_amount_due REAL NOT NULL CHECK(total_amount_due >= 0),
+    previous_balance REAL NOT NULL DEFAULT 0,
+    new_charges REAL NOT NULL DEFAULT 0,
+    interest_charged REAL NOT NULL DEFAULT 0,
+    amount_paid REAL NOT NULL DEFAULT 0,
+    unpaid_balance_next REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'Unpaid' CHECK(status IN ('Unpaid', 'Partially Paid', 'Paid', 'Cancelled')),
+    payment_method TEXT DEFAULT 'Cash / Online' CHECK(payment_method IN ('Cash / Online', 'Direct Debit', 'Check')),
+    payment_date DATE,
+    payment_check_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (card_id) REFERENCES credit_cards(card_id),
+    FOREIGN KEY (payment_check_id) REFERENCES checks_issued(check_id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_action TEXT NOT NULL,
+    entity_name TEXT NOT NULL,
+    entity_id INTEGER,
+    old_values TEXT,
+    new_values TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Views
+CREATE VIEW IF NOT EXISTS v_batch_net_totals AS
+SELECT
+    os.statement_id,
+    os.creditor_id,
+    os.statement_ref,
+    os.total_amount AS gross_total,
+    COALESCE(cm.memo_total, 0.0) AS credit_memo_total,
+    os.total_amount - COALESCE(cm.memo_total, 0.0) AS net_total,
+    os.status,
+    os.is_locked
+FROM order_statements os
+LEFT JOIN (
+    SELECT statement_id, SUM(amount) AS memo_total
+    FROM credit_memos
+    GROUP BY statement_id
+) cm ON cm.statement_id = os.statement_id;
+
+CREATE VIEW IF NOT EXISTS v_effective_checks AS
+SELECT 
+    c.check_id,
+    c.creditor_id,
+    cr.creditor_name,
+    c.bank_account_id,
+    b.bank_name,
+    c.check_number,
+    c.check_date,
+    c.amount,
+    c.status AS recorded_status,
+    CASE 
+        WHEN c.status = 'Active' AND c.check_date < DATE('now', '-180 days') THEN 'Stale'
+        WHEN c.status = 'Active' AND c.check_date <= DATE('now', 'localtime') THEN 'Cleared'
+        ELSE c.status
+    END AS effective_status,
+    c.replacement_check_id,
+    c.statement_id,
+    c.loan_note_id
+FROM checks_issued c
+JOIN creditors cr ON c.creditor_id = cr.creditor_id
+JOIN bank_accounts b ON c.bank_account_id = b.bank_account_id;
+
+-- A statement past its due date is treated as paid automatically -- "for now, let it be once
+-- the due date is pass considered it paid" -- so it drops out of the alert list rather than
+-- sitting as a permanent OVERDUE flag; the manual "Direct cash settlement" path is kept (not
+-- removed) for actually recording an early/explicit payment.
+-- unpaid_balance_next-aware (migration 027): a statement carrying a real rolling balance still
+-- alerts even once its due date has passed, since the old amount is genuinely still owed -- a
+-- legacy statement (unpaid_balance_next always 0) keeps the original due-date-only behavior.
+CREATE VIEW IF NOT EXISTS v_cc_due_alerts AS
+SELECT
+    c.creditor_name AS bank_issuer,
+    cc.card_name,
+    cc.card_number_last4,
+    cs.cc_statement_id,
+    cs.due_date,
+    CASE WHEN cs.unpaid_balance_next > 0 THEN cs.unpaid_balance_next ELSE cs.total_amount_due END AS total_amount_due,
+    CAST(JULIANDAY(cs.due_date) - JULIANDAY('now', 'localtime') AS INTEGER) AS days_until_due,
+    CASE
+        WHEN JULIANDAY(cs.due_date) - JULIANDAY('now', 'localtime') <= 3 THEN 'CRITICAL (0-3 Days)'
+        WHEN JULIANDAY(cs.due_date) - JULIANDAY('now', 'localtime') <= 7 THEN 'WARNING (4-7 Days)'
+        ELSE 'UPCOMING'
+    END AS urgency_status
+FROM cc_statements cs
+JOIN credit_cards cc ON cs.card_id = cc.card_id
+JOIN creditors c ON cc.creditor_id = c.creditor_id
+WHERE cs.status NOT IN ('Paid', 'Cancelled')
+  AND (cs.unpaid_balance_next > 0 OR cs.due_date >= DATE('now', 'localtime'))
+ORDER BY cs.due_date ASC;
+
+-- Triggers
+-- Structural safety net for order_statements.total_amount (migration 017): keeps it in sync with
+-- SUM(invoices.amount) for that statement_id automatically, so correctness no longer depends on
+-- every invoice-mutating code path remembering to call recompute_statement_total(). Mirrors that
+-- function's exact logic (no status filter -- a Cancelled invoice still counts).
+CREATE TRIGGER IF NOT EXISTS trg_invoices_ai_recompute_total
+AFTER INSERT ON invoices
+WHEN NEW.statement_id IS NOT NULL
+BEGIN
+    UPDATE order_statements
+    SET total_amount = (SELECT COALESCE(SUM(amount), 0.0) FROM invoices WHERE statement_id = NEW.statement_id)
+    WHERE statement_id = NEW.statement_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_invoices_au_recompute_total
+AFTER UPDATE ON invoices
+WHEN NEW.statement_id IS NOT NULL OR OLD.statement_id IS NOT NULL
+BEGIN
+    UPDATE order_statements
+    SET total_amount = (SELECT COALESCE(SUM(amount), 0.0) FROM invoices WHERE statement_id = NEW.statement_id)
+    WHERE NEW.statement_id IS NOT NULL AND statement_id = NEW.statement_id;
+
+    UPDATE order_statements
+    SET total_amount = (SELECT COALESCE(SUM(amount), 0.0) FROM invoices WHERE statement_id = OLD.statement_id)
+    WHERE OLD.statement_id IS NOT NULL AND OLD.statement_id IS NOT NEW.statement_id AND statement_id = OLD.statement_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_invoices_ad_recompute_total
+AFTER DELETE ON invoices
+WHEN OLD.statement_id IS NOT NULL
+BEGIN
+    UPDATE order_statements
+    SET total_amount = (SELECT COALESCE(SUM(amount), 0.0) FROM invoices WHERE statement_id = OLD.statement_id)
+    WHERE statement_id = OLD.statement_id;
+END;-- Payment calendar "greyed out" dates (2026-09-14): both Philippine holidays and any
+-- custom date the user marks as a no-issue day render the same way on the calendar,
+-- distinguished only by `kind` for the label shown.
+--
+-- Holiday dates below are computed, not guessed: fixed civil dates as-is; Maundy
+-- Thursday/Good Friday via the standard Meeus/Jones/Butcher Easter algorithm; National
+-- Heroes Day as the actual last Monday of August for each year. Deliberately excluded:
+-- Eid'l Fitr and Eid'l Adha, which are set by lunar sighting and annual presidential
+-- proclamation with no reliable formula -- add those by hand once announced, same as
+-- any other custom date.
+CREATE TABLE IF NOT EXISTS calendar_blocked_dates (
+    blocked_date DATE PRIMARY KEY,
+    label TEXT,
+    kind TEXT NOT NULL DEFAULT 'custom' CHECK(kind IN ('holiday', 'custom')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO calendar_blocked_dates (blocked_date, label, kind) VALUES
+    ('2026-01-01', 'New Year''s Day', 'holiday'),
+    ('2026-04-02', 'Maundy Thursday', 'holiday'),
+    ('2026-04-03', 'Good Friday', 'holiday'),
+    ('2026-04-09', 'Araw ng Kagitingan', 'holiday'),
+    ('2026-05-01', 'Labor Day', 'holiday'),
+    ('2026-06-12', 'Independence Day', 'holiday'),
+    ('2026-08-21', 'Ninoy Aquino Day', 'holiday'),
+    ('2026-08-31', 'National Heroes Day', 'holiday'),
+    ('2026-11-30', 'Bonifacio Day', 'holiday'),
+    ('2026-12-25', 'Christmas Day', 'holiday'),
+    ('2026-12-30', 'Rizal Day', 'holiday'),
+    ('2027-01-01', 'New Year''s Day', 'holiday'),
+    ('2027-03-25', 'Maundy Thursday', 'holiday'),
+    ('2027-03-26', 'Good Friday', 'holiday'),
+    ('2027-04-09', 'Araw ng Kagitingan', 'holiday'),
+    ('2027-05-01', 'Labor Day', 'holiday'),
+    ('2027-06-12', 'Independence Day', 'holiday'),
+    ('2027-08-21', 'Ninoy Aquino Day', 'holiday'),
+    ('2027-08-30', 'National Heroes Day', 'holiday'),
+    ('2027-11-30', 'Bonifacio Day', 'holiday'),
+    ('2027-12-25', 'Christmas Day', 'holiday'),
+    ('2027-12-30', 'Rizal Day', 'holiday');
+
+-- Per-invoice check allocation (2026-09-14, migration 025): which specific invoice(s) a check
+-- pays, and how much of each -- many-to-many (one check can pay several invoices; one invoice
+-- can be paid across several checks), mandatory for every check issued going forward. Going-
+-- forward only -- no backfill for checks issued before this table existed.
+CREATE TABLE IF NOT EXISTS invoice_check_allocations (
+    allocation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL,
+    check_id INTEGER NOT NULL,
+    amount REAL NOT NULL CHECK(amount > 0),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_id),
+    FOREIGN KEY (check_id) REFERENCES checks_issued(check_id)
+);
+
+-- Plain key/value store for system-wide configuration (migration 029, Phase 8a: Master Data
+-- Setup) -- e.g. the primary bank's display name, the standard terms picklist offered when
+-- adding a creditor. Small number of seeded rows, user-overridable from Admin & Audit >
+-- Settings.
+CREATE TABLE IF NOT EXISTS settings (
+    setting_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT UNIQUE NOT NULL,
+    value TEXT,
+    category TEXT,
+    description TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Internal bookkeeping control accounts from the old Access payee list (migration 030, Phase 8a:
+-- Master Data Setup) -- Error Checks, Cash, Encashment, Adjustment, Cancelled. Not real payees
+-- (creditors.creditor_type's CHECK only recognizes SUPPLIER/LENDER/BANK_LOAN/CREDIT_CARD), so
+-- kept in their own table rather than polluting the creditors picker; legacy_payee_id keeps the
+-- link to the old Access PayeeId.
+CREATE TABLE IF NOT EXISTS creditor_master_internal (
+    internal_payee_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    type TEXT,
+    legacy_payee_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+

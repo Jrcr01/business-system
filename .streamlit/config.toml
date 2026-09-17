@@ -1,0 +1,12 @@
+[theme]
+# Slick's Tire Supply brand colors, sampled directly from assets/slicks_logo.jpg:
+# background blue #015088, accent yellow #EDEB02, wordmark white #FFFFFF.
+# backgroundColor/textColor kept light/dark-neutral (not brand blue) since this
+# app is dense financial tables — readability wins over a fully "branded" dark
+# background; the blue and yellow show up in the sidebar logo, primary accents,
+# and widget backgrounds instead.
+primaryColor = "#015088"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#EAF2F8"
+textColor = "#0B2545"
+font = "sans serif"
