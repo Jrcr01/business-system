@@ -27,6 +27,9 @@ sys.path.insert(0, PROJECT_ROOT)
 # its own fully isolated tmp_path database; this only covers the brief window before that fixture
 # runs.
 _IMPORT_TIME_DB_PATH = os.path.join(PROJECT_ROOT, "data", "_pytest_import_scratch.db")
+# Rebuilt whenever schema.sql is newer than the scratch file, so a newly added table never breaks bare import (2026-09-27).
+if os.path.exists(_IMPORT_TIME_DB_PATH) and os.path.getmtime(SCHEMA_PATH) > os.path.getmtime(_IMPORT_TIME_DB_PATH):
+    os.remove(_IMPORT_TIME_DB_PATH)
 if not os.path.exists(_IMPORT_TIME_DB_PATH):
     _scratch_conn = sqlite3.connect(_IMPORT_TIME_DB_PATH)
     with open(SCHEMA_PATH, encoding="utf-8") as _f:
@@ -47,6 +50,7 @@ import engines.batch_statement_service as batch_statement_service  # noqa: E402
 import engines.cc_service as cc_service  # noqa: E402
 import engines.check_engine as check_engine  # noqa: E402
 import engines.check_run_service as check_run_service  # noqa: E402
+import engines.park_draft_service as park_draft_service  # noqa: E402
 import engines.checkbook_service as checkbook_service  # noqa: E402
 import engines.dashboard_kpi_service as dashboard_kpi_service  # noqa: E402
 import engines.duplicate_service as duplicate_service  # noqa: E402
@@ -67,7 +71,7 @@ import engines.validators as validators  # noqa: E402
 # here means that module silently keeps pointing at the real production DB.
 _DB_PATH_MODULES = [
     app, analytics_service, db_engine, backup_service, bank_loan_report_service, bank_loan_service,
-    batch_statement_service, cc_service, check_engine, check_run_service,
+    batch_statement_service, cc_service, check_engine, check_run_service, park_draft_service,
     checkbook_service, dashboard_kpi_service, duplicate_service, cc_payment_service, duplicate_scan_service, invoice_template_service, overview_report_service, interest_service, loan_note_service, loan_schedule_service,
     reports_service, search_service, soa_matcher, validators,
 ]

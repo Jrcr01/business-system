@@ -26,7 +26,9 @@ def promote_draft_statement(statement_id: int, target_status: str) -> str:
         current_ref, current_status = row
         permanent_ref = current_ref
 
-        if current_ref.startswith("DRAFT-") or current_status == "Draft":
+        # Only a batch still carrying its DRAFT- placeholder gets a new number. A batch that went back to Draft after an
+        # un-park keeps the permanent OS number it already has -- promoting it again must not burn a new one.
+        if current_ref.startswith("DRAFT-"):
             current_year = datetime.now().year
             prefix = f"{current_year} - OS "
 
@@ -48,5 +50,9 @@ def promote_draft_statement(statement_id: int, target_status: str) -> str:
             WHERE statement_id = ?
         """, (permanent_ref, target_status, statement_id))
         
+        cursor.execute(
+            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('STATEMENT_PROMOTED', 'order_statements', ?, ?)",
+            (statement_id, f"{current_ref} -> {permanent_ref} ({target_status})"),
+        )
         conn.commit()
         return permanent_ref

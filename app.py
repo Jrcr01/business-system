@@ -66,6 +66,8 @@ from engines.check_engine import (
 )
 from engines.cc_service import settle_cc_statement_via_cash, get_statement_gap_alerts, get_annual_fee_alerts, get_statement_coverage
 from engines.checkbook_service import audit_booklet_gaps, get_checkbook_alerts
+from engines.last_modified_sql import statement_modified_sql, loan_note_modified_sql, bank_loan_modified_sql
+from engines.park_draft_service import save_park_draft, load_park_draft, clear_park_draft, list_park_drafts
 from engines.check_run_service import (
     get_pending_check_run,
     get_unnumbered_checks,
@@ -74,6 +76,16 @@ from engines.check_run_service import (
     generate_check_run_summary_pdf,
     generate_batch_csv,
     generate_pending_check_run_csv,
+    generate_batch_txt,
+    generate_pending_check_run_txt,
+    print_batch_tag,
+    file_name_for_checks,
+    file_name_for_batch,
+    mark_batch_printed,
+    get_unprinted_batches,
+    get_chrysanth_settings,
+    save_chrysanth_settings,
+    CHRYSANTH_CROSSING_OPTIONS,
     create_check_print_batch,
     get_check_print_batches,
     get_check_print_batch_detail,
@@ -254,6 +266,32 @@ def php(amount) -> str:
         return f"₱{float(amount):,.2f}"
     except (TypeError, ValueError):
         return "₱0.00"
+
+
+def date_preset_filter(container, df: pd.DataFrame, column: str, label: str, key: str) -> pd.DataFrame:
+    """Today / Last 7 days / Last 30 days / All time / Custom picker on a datetime-text column of `df`; returns the matching rows.
+    Used for the 'Last modified' filter of the order statement, loan note and bank loan browsers."""
+    days = pd.to_datetime(df[column], errors="coerce").dt.date if not df.empty else pd.Series([], dtype=object)
+    valid = days.dropna()
+    full_range = (min(valid.min(), date.today()), max(valid.max(), date.today())) if not valid.empty else (date.today(), date.today())
+    preset = container.segmented_control(label, options=["Today", "Last 7 days", "Last 30 days", "All time", "Custom"],
+                                         default="All time", required=True, key=key)
+    if preset == "Today":
+        start, end = date.today(), date.today()
+    elif preset == "Last 7 days":
+        start, end = date.today() - timedelta(days=6), date.today()
+    elif preset == "Last 30 days":
+        start, end = date.today() - timedelta(days=29), date.today()
+    elif preset == "Custom":
+        picked = container.date_input("Custom range", value=full_range, key=key + "_range")
+        if not (isinstance(picked, (tuple, list)) and len(picked) == 2):
+            return df
+        start, end = picked
+    else:
+        return df
+    if preset != "Custom":
+        container.caption(f"{start:%Y-%m-%d} to {end:%Y-%m-%d}")
+    return df[(days >= start) & (days <= end)]
 
 
 def has_value(v) -> bool:
@@ -1358,6 +1396,78 @@ def _batch_lock_status(cur: sqlite3.Cursor, statement_id: int | None) -> bool:
     return bool(row and row[0] == 1)
 
 
+def unpark_checks(statement_id: int, check_ids: list[int]) -> tuple[bool, str]:
+    """Undoes "Park checks" for the chosen checks: deletes them outright, along with their invoice links, as if never made
+    (2026-09-26, per user). Only a check that is Active and has no check number yet can go (2026-09-27: even if it was already
+    exported to Chrysanth, which only holds a placeholder number for it) -- a numbered check is final, and is cancelled or replaced instead. All-or-nothing. If that leaves the batch with no
+    active check and it was Issued, it goes back to Draft (keeping its OS number). Logged in the audit trail."""
+    ids = [int(c) for c in check_ids]
+    if not ids:
+        return False, "Pick at least one parked check."
+    with get_conn() as conn:
+        cur = conn.cursor()
+        if _batch_lock_status(cur, statement_id):
+            return False, "This batch is locked — unlock it first."
+        details, exported, print_batches = [], 0, set()
+        for cid in ids:
+            cur.execute("SELECT print_batch_id FROM checks_issued WHERE check_id = ?", (cid,))
+            pb = cur.fetchone()
+            if pb and pb[0] is not None:
+                print_batches.add(pb[0])
+            cur.execute("SELECT statement_id, status, check_number, printed_at, amount, check_date FROM checks_issued WHERE check_id = ?", (cid,))
+            row = cur.fetchone()
+            if not row or row[0] != statement_id:
+                return False, f"Check {cid} isn't part of this batch."
+            _, status, number, printed_at, amount, check_date = row
+            if status != "Active":
+                return False, f"Check {cid} is {status}, so it can't be un-parked."
+            if number is not None:
+                return False, f"Check {cid} already has the number {number} — un-park only removes unnumbered checks; cancel or replace it instead."
+            if printed_at is not None:
+                exported += 1
+            for table, column in (("loan_installments", "check_id"), ("cc_payments", "payment_check_id")):
+                try:
+                    used = cur.execute(f"SELECT 1 FROM {table} WHERE {column} = ? LIMIT 1", (cid,)).fetchone()
+                except sqlite3.OperationalError:
+                    used = None
+                if used:
+                    return False, f"Check {cid} has other records attached ({table.replace('_', ' ')}) — cancel it instead."
+            details.append((cid, amount, str(check_date)[:10]))
+        for cid, amount, check_date in details:
+            cur.execute("DELETE FROM invoice_check_allocations WHERE check_id = ?", (cid,))
+            cur.execute("DELETE FROM check_corrections WHERE check_id = ?", (cid,))      # only the edit log of a check that never became final
+            cur.execute("DELETE FROM checks_issued WHERE check_id = ?", (cid,))
+            cur.execute(
+                "INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('CHECK_UNPARKED', 'checks_issued', ?, ?)",
+                (cid, f"parked check {php(amount)} dated {check_date} removed from batch {statement_id}"),
+            )
+        cur.execute(
+            "INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('CHECKS_UNPARKED', 'order_statements', ?, ?)",
+            (statement_id, f"{len(details)} parked check(s) totaling {php(sum(d[1] for d in details))} removed"),
+        )
+        for pbid in print_batches:      # keep the export history's counts honest after removing some of its checks
+            cur.execute(
+                "UPDATE check_print_batches SET check_count = (SELECT COUNT(*) FROM checks_issued WHERE print_batch_id = ?), "
+                "total_amount = (SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE print_batch_id = ?) WHERE print_batch_id = ?",
+                (pbid, pbid, pbid),
+            )
+        cur.execute("SELECT status, statement_ref FROM order_statements WHERE statement_id = ?", (statement_id,))
+        batch_status, batch_ref = cur.fetchone()
+        cur.execute("SELECT COUNT(*) FROM checks_issued WHERE statement_id = ? AND status = 'Active'", (statement_id,))
+        back_to_draft = ""
+        if cur.fetchone()[0] == 0 and batch_status == "Issued":
+            cur.execute("UPDATE order_statements SET status = 'Draft' WHERE statement_id = ?", (statement_id,))
+            cur.execute(
+                "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('STATEMENT_BACK_TO_DRAFT', 'order_statements', ?, ?)",
+                (statement_id, f"no active checks left after un-park; {batch_ref} is a Draft again (number kept)"),
+            )
+            back_to_draft = f" The batch has no active checks left, so it is a Draft again (it keeps {batch_ref})."
+        conn.commit()
+    sync_invoice_payment_status(statement_id)
+    chrysanth_note = f" {exported} of them had already been exported to Chrysanth — remove them there too." if exported else ""
+    return True, f"Un-parked {len(details)} check(s) totaling {php(sum(d[1] for d in details))}; the balance is available again." + chrysanth_note + back_to_draft
+
+
 def apply_check_correction(check_id: int, correction_type: str, new_value: str, reason: str) -> tuple[bool, str]:
     with get_conn() as conn:
         cur = conn.cursor()
@@ -1494,25 +1604,26 @@ def replace_check(check_id: int, new_check_date: date, reason: str) -> tuple[boo
 
 
 def edit_parked_check(check_id: int, new_amount: float, new_check_date: date) -> tuple[bool, str]:
-    """Parked checks (not yet printed) stay freely editable regardless of the batch's lock state
-    — nothing physical exists yet, so the usual unlock gate (built around a real, printed check)
+    """Checks with no check number yet stay freely editable regardless of the batch's lock state
+    (2026-09-27, per user: no number assigned = not final -- so a check already exported to Chrysanth, which only carries a
+    placeholder number, is still editable) — nothing final exists yet, so the usual unlock gate (built around a real, numbered check)
     doesn't apply. Auto-logs old -> new + timestamp, same no-friction pattern as editing an
     invoice while unlocked. Once a check is printed, further changes go through
     apply_check_correction() instead (requires unlocking the batch first)."""
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT statement_id, loan_note_id, status, amount, check_date, printed_at FROM checks_issued WHERE check_id = ?",
+            "SELECT statement_id, loan_note_id, status, amount, check_date, check_number FROM checks_issued WHERE check_id = ?",
             (check_id,),
         )
         row = cur.fetchone()
         if not row:
             return False, "Check not found."
-        statement_id, loan_note_id, status, old_amount, old_check_date, printed_at = row
+        statement_id, loan_note_id, status, old_amount, old_check_date, check_number = row
         if status != "Active":
             return False, f"Only Active checks can be edited (current status: {status})."
-        if printed_at is not None:
-            return False, "This check has already been printed — use 'Correct an active check' instead (requires unlocking the batch)."
+        if check_number is not None:
+            return False, "This check already has a check number — use 'Correct an active check' instead (requires unlocking the batch)."
         if new_amount <= 0:
             return False, "Amount must be greater than zero."
 
@@ -1929,6 +2040,14 @@ def parse_terms_days(terms) -> int:
         return 0
 
 
+def prospective_year(month: int, today: date | None = None) -> int:
+    """The year a picked month is assumed to belong to, looking forward from today (2026-09-26, per user): from September,
+    picking January means January of NEXT year, picking November means this year. A month that is still ahead (or the
+    current one) stays in this year; one already behind us rolls to the next. The year picker can still override it."""
+    today = today or date.today()
+    return today.year if month >= today.month else today.year + 1
+
+
 def _as_date(v):
     if isinstance(v, str):
         return datetime.strptime(v, "%Y-%m-%d").date()
@@ -1944,7 +2063,21 @@ def resolve_due_date(invoice_date, terms) -> date:
     for negotiated leeway" rule — but the user confirmed (2026-09-14) they never edit Due Date
     directly and just want it to always reflect the current Date Received + Terms with no
     exceptions, so the override-preservation logic was dropped rather than debugged further."""
-    return _as_date(invoice_date) + timedelta(days=parse_terms_days(terms))
+    return add_terms_bank_rule(invoice_date, terms)
+
+
+def add_terms_bank_rule(invoice_date, terms) -> date:
+    """Due date by the bank's rule (2026-09-26, per user): terms that are whole months (30/60/90/120/150 days = 1/2/3/4/5
+    months) land on the SAME DAY of the month as the invoice, not on an exact day count -- an invoice dated Sep 8 on 120-day
+    terms is due Jan 8, not Jan 6. A month with no such day (Jan 31 + 1 month) uses its last day. Terms that are not whole
+    months (e.g. 140) and COD keep the plain day count."""
+    d = _as_date(invoice_date)
+    days = parse_terms_days(terms)
+    if days > 0 and days % 30 == 0:
+        year_offset, month_index = divmod(d.month - 1 + days // 30, 12)
+        year, month = d.year + year_offset, month_index + 1
+        return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
+    return d + timedelta(days=days)
 
 
 def cell_text(v) -> str:
@@ -2686,6 +2819,7 @@ def _jump(tab_label: str, **state) -> None:
 
 
 with st.sidebar:
+    park_draft_slot = st.empty()      # "checks typed but not parked" reminder, filled at the end of the script
     if IS_SANDBOX:
         st.markdown(
             "<div style='background-color:#FFA500;color:#000;text-align:center;"
@@ -2771,28 +2905,36 @@ with st.sidebar:
     # that stays on screen regardless of which tab is active -- a modal/dialog popup would close
     # the moment you switched tabs, so this is the only surface that actually works for that.
     st.caption("Mini calendar — for reference while issuing checks")
-    side_cal_year = st.session_state.get("side_cal_year", date.today().year)
-    side_cal_month = st.session_state.get("side_cal_month", date.today().month)
-    side_cal_prev_col, side_cal_label_col, side_cal_next_col = st.columns([1, 3, 1])
-    with side_cal_prev_col:
-        if st.button("◀", key="side_cal_prev"):
-            side_cal_month -= 1
-            if side_cal_month < 1:
-                side_cal_month, side_cal_year = 12, side_cal_year - 1
-            st.session_state["side_cal_year"], st.session_state["side_cal_month"] = side_cal_year, side_cal_month
-            st.rerun()
-    with side_cal_label_col:
-        st.markdown(
-            f"<div style='text-align:center;font-size:0.8rem'><b>{date(side_cal_year, side_cal_month, 1).strftime('%b %Y')}</b></div>",
-            unsafe_allow_html=True,
-        )
-    with side_cal_next_col:
-        if st.button("▶", key="side_cal_next"):
-            side_cal_month += 1
-            if side_cal_month > 12:
-                side_cal_month, side_cal_year = 1, side_cal_year + 1
-            st.session_state["side_cal_year"], st.session_state["side_cal_month"] = side_cal_year, side_cal_month
-            st.rerun()
+    # Month/year pickers + prev/next arrows. The arrows change the pickers through on_click callbacks, NOT by calling
+    # st.rerun() from here: this sidebar is drawn before the main tabs, so an early st.rerun() made Streamlit forget
+    # which tab was open and dropped you back on the Dashboard every time (2026-09-26). A callback runs before the page
+    # is redrawn, so the tabs keep their state.
+    side_cal_years = list(range(date.today().year - 5, date.today().year + 11))
+    side_cal_month_names = [date(2000, m, 1).strftime("%b") for m in range(1, 13)]
+    if st.session_state.get("side_cal_year_pick") not in side_cal_years:
+        st.session_state["side_cal_year_pick"] = date.today().year
+    if st.session_state.get("side_cal_month_pick") not in range(1, 13):
+        st.session_state["side_cal_month_pick"] = date.today().month
+
+    def _side_cal_step(delta: int) -> None:
+        m, y = st.session_state["side_cal_month_pick"] + delta, st.session_state["side_cal_year_pick"]
+        if m < 1:
+            m, y = 12, y - 1
+        elif m > 12:
+            m, y = 1, y + 1
+        if y in side_cal_years:
+            st.session_state["side_cal_month_pick"], st.session_state["side_cal_year_pick"] = m, y
+
+    side_cal_prev_col, side_cal_month_col, side_cal_year_col, side_cal_next_col = st.columns([1, 2.4, 2.2, 1], vertical_alignment="center")
+    side_cal_prev_col.button("◀", key="side_cal_prev", on_click=_side_cal_step, args=(-1,))
+    def _side_cal_month_picked() -> None:
+        st.session_state["side_cal_year_pick"] = prospective_year(st.session_state["side_cal_month_pick"])
+
+    side_cal_month_col.selectbox("Month", options=list(range(1, 13)), format_func=lambda m: side_cal_month_names[m - 1],
+                                 key="side_cal_month_pick", label_visibility="collapsed", on_change=_side_cal_month_picked)
+    side_cal_year_col.selectbox("Year", options=side_cal_years, key="side_cal_year_pick", label_visibility="collapsed")
+    side_cal_next_col.button("▶", key="side_cal_next", on_click=_side_cal_step, args=(1,))
+    side_cal_year, side_cal_month = st.session_state["side_cal_year_pick"], st.session_state["side_cal_month_pick"]
 
     # Single letters ("M","T","W","T","F","S","S") collided -- Tue/Thu both became "T" and
     # Sat/Sun both became "S", merging those column pairs into one on the x-axis instead of
@@ -2827,20 +2969,39 @@ with st.sidebar:
     # rather than keeping either version. The main Dashboard calendar avoids this by giving every
     # layer the identical axis object -- matched here.
     side_cal_weekday_axis = alt.Axis(orient="top", labelFontSize=9, labelAngle=0)
-    side_cal_heat = alt.Chart(side_cal_merged_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3).encode(
+    # Marked days (2026-09-26, per user): the same grey days the Dashboard's payment calendar shows -- Philippine holidays
+    # and any date marked as blocked (calendar_blocked_dates) -- drawn as a flat grey layer over the heat colour.
+    side_cal_blocked = get_blocked_dates_for_month(side_cal_year, side_cal_month)
+    side_cal_merged_df["is_blocked"] = side_cal_merged_df["date"].isin(side_cal_blocked.keys())
+    side_cal_merged_df["blocked_label"] = side_cal_merged_df["date"].apply(
+        lambda d: side_cal_blocked.get(d, {}).get("label") or side_cal_blocked.get(d, {}).get("kind", "").title())
+    side_cal_normal_df = side_cal_merged_df[~side_cal_merged_df["is_blocked"]]
+    side_cal_blocked_df = side_cal_merged_df[side_cal_merged_df["is_blocked"]]
+    side_cal_tooltip = [alt.Tooltip("date:T", title="Date"), alt.Tooltip("total_amount:Q", title="Total", format=",.2f"), alt.Tooltip("num_items:Q", title="Items")]
+    side_cal_heat = alt.Chart(side_cal_normal_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3).encode(
         x=alt.X("weekday:N", title=None, sort=side_cal_weekday_names, axis=side_cal_weekday_axis),
         y=alt.Y("week:O", title=None, axis=None),
         color=alt.Color("total_amount:Q", scale=alt.Scale(scheme="blues", type="sqrt"), legend=None),
-        tooltip=[alt.Tooltip("date:T", title="Date"), alt.Tooltip("total_amount:Q", title="Total", format=",.2f"), alt.Tooltip("num_items:Q", title="Items")],
+        tooltip=side_cal_tooltip,
+    )
+    side_cal_grey = alt.Chart(side_cal_blocked_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3, color="#C4C4C4").encode(
+        x=alt.X("weekday:N", title=None, sort=side_cal_weekday_names, axis=side_cal_weekday_axis),
+        y=alt.Y("week:O", title=None, axis=None),
+        tooltip=side_cal_tooltip + [alt.Tooltip("blocked_label:N", title="Marked")],
     )
     side_cal_dark_threshold = side_cal_merged_df["total_amount"].max() * 0.5
     side_cal_text = alt.Chart(side_cal_merged_df).mark_text(baseline="middle", fontSize=9).encode(
         x=alt.X("weekday:N", sort=side_cal_weekday_names, axis=side_cal_weekday_axis), y=alt.Y("week:O", axis=None),
         text="day:N",
-        color=alt.when(alt.datum.total_amount > side_cal_dark_threshold).then(alt.value("white")).otherwise(alt.value("#333333")),
+        color=(
+            alt.when(alt.datum.is_blocked).then(alt.value("#404040"))
+            .when(alt.datum.total_amount > side_cal_dark_threshold).then(alt.value("white"))
+            .otherwise(alt.value("#333333"))
+        ),
+        tooltip=side_cal_tooltip,
     )
-    st.altair_chart((side_cal_heat + side_cal_text).properties(height=150), width="stretch")
-    st.caption("Hover a day for its total. Full calendar: Dashboard tab.")
+    st.altair_chart((side_cal_heat + side_cal_grey + side_cal_text).properties(height=150), width="stretch")
+    st.caption("Hover a day for its total. Grey = holiday or marked date. Full calendar: Dashboard tab.")
 
     st.divider()
     st.button("Refresh data", icon=":material/refresh:", on_click=lambda: st.cache_data.clear(), width="stretch")
@@ -3028,9 +3189,12 @@ with tab_dashboard:
                 st.session_state["cal_month_pick"] = cal_month_names[cal_month - 1]
                 st.session_state["cal_year_pick"] = cal_year
                 st.rerun()
+        def _cal_month_picked() -> None:
+            st.session_state["cal_year_pick"] = prospective_year(cal_month_names.index(st.session_state["cal_month_pick"]) + 1)
+
         with cal_col_month_pick:
             cal_picked_month_name = st.selectbox(
-                "Month", cal_month_names, index=cal_month - 1, key="cal_month_pick", label_visibility="collapsed",
+                "Month", cal_month_names, index=cal_month - 1, key="cal_month_pick", label_visibility="collapsed", on_change=_cal_month_picked,
             )
             cal_month = cal_month_names.index(cal_picked_month_name) + 1
         with cal_col_year_pick:
@@ -3654,7 +3818,8 @@ with tab_suppliers:
                       (SELECT SUM(amount) FROM checks_issued
                        WHERE statement_id = os.statement_id AND status = 'Active' AND check_date <= DATE('now', 'localtime')), 0
                   ) AS outstanding,
-                  os.status, os.is_locked, datetime(os.created_at, 'localtime') AS created_at
+                  os.status, os.is_locked, datetime(os.created_at, 'localtime') AS created_at,
+                  """ + statement_modified_sql("os") + """ AS last_modified
            FROM order_statements os
            JOIN creditors c ON os.creditor_id = c.creditor_id
            JOIN v_batch_net_totals v ON v.statement_id = os.statement_id
@@ -3814,6 +3979,7 @@ with tab_suppliers:
                 date_range = full_range
             if date_preset != "Custom":
                 fc3.caption(f"{date_range[0]:%Y-%m-%d} to {date_range[1]:%Y-%m-%d}")
+            mod_col, _mod_spacer = st.columns([1, 2])
 
             filtered_statements_df = statements_df.copy()
             if ref_search.strip():
@@ -3828,6 +3994,7 @@ with tab_suppliers:
                 start_d, end_d = date_range
                 row_dates = pd.to_datetime(filtered_statements_df["created_at"]).dt.date
                 filtered_statements_df = filtered_statements_df[(row_dates >= start_d) & (row_dates <= end_d)]
+            filtered_statements_df = date_preset_filter(mod_col, filtered_statements_df, "last_modified", "Filter: last modified", "batch_filter_modified_preset")
             filtered_statements_df = filtered_statements_df.reset_index(drop=True)
 
             st.caption("Click a row to open that batch — every action below (invoices, credit memo, lock/unlock, issue check, export) defaults to it.")
@@ -4048,7 +4215,7 @@ with tab_suppliers:
                                                 "source_file": f.name,
                                                 "doc_ref": fields.doc_ref,
                                                 "invoice_date": fields.invoice_date,
-                                                "due_date": fields.invoice_date + timedelta(days=parse_terms_days(supplier_terms)),
+                                                "due_date": resolve_due_date(fields.invoice_date, supplier_terms),
                                                 "gross_amount": fields.amount,
                                                 "less_pct": 0.0,
                                             })
@@ -4087,7 +4254,7 @@ with tab_suppliers:
                                     "source_file": import_file.name,
                                     "doc_ref": r.doc_ref,
                                     "invoice_date": r.invoice_date,
-                                    "due_date": r.invoice_date + timedelta(days=parse_terms_days(supplier_terms)),
+                                    "due_date": resolve_due_date(r.invoice_date, supplier_terms),
                                     "gross_amount": r.amount,
                                     "less_pct": r.less_pct,
                                 } for r in imported_rows]
@@ -4189,7 +4356,7 @@ with tab_suppliers:
                         "doc_ref": st.column_config.TextColumn("Doc Ref", default=""),
                         "invoice_date": st.column_config.DateColumn("Date Received", default=date.today()),
                         "due_date": st.column_config.DateColumn(
-                            "Due Date (computed, recalculated on save)", default=date.today() + timedelta(days=parse_terms_days(supplier_terms))
+                            "Due Date (computed, recalculated on save)", default=resolve_due_date(date.today(), supplier_terms)
                         ),
                         "gross_amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.0, step=0.01, default=0.0),
                         "less_pct": st.column_config.NumberColumn("Less %", format="%.2f%%", min_value=0.0, max_value=100.0, step=1.0, default=0.0),
@@ -4367,6 +4534,9 @@ with tab_suppliers:
 
         with tab_checks_sub:
             st.markdown("##### Issue a check")
+            _park_flash = st.session_state.pop("_park_flash", None)
+            if _park_flash:
+                st.success(_park_flash)
             net_total, active_checks_sum, remaining_balance = get_batch_balance(int(batch_scope_pick))
             is_balanced = abs(remaining_balance) <= 0.005
             is_overpaid = remaining_balance < -0.005
@@ -4402,11 +4572,40 @@ with tab_suppliers:
                 grid_key = batch_scoped_key("issue_checks_editor")
                 last_signature_key = batch_scoped_key("issue_checks_last_signature")
 
-                num_checks = st.number_input(
-                    "Number of checks", min_value=1, max_value=50, step=1,
-                    value=int(st.session_state.get(num_checks_key, 1)), key=num_checks_key,
+                open_invoices_df = get_invoices_with_remaining(int(batch_scope_pick))
+                # Guardrail (2026-09-27): checks typed into this grid but never parked used to vanish when you opened another
+                # order statement. The grid is now remembered per batch for the session and put back when you return.
+                park_bases = st.session_state.setdefault("_park_bases", {})
+                _sid = int(batch_scope_pick)
+                _draft = load_park_draft(_sid)
+                _split_key = batch_scoped_key("issue_split_mode")
+                _restoring = False
+                if _draft and _split_key not in st.session_state:          # widgets were dropped while another batch was open
+                    if abs(_draft["balance"] - round(remaining_balance, 2)) <= 0.005 and _draft["invoice_ids"] == tuple(open_invoices_df["invoice_id"]):
+                        st.session_state[_split_key] = _draft["mode"]
+                        st.session_state[num_checks_key] = _draft["count"]
+                        _restoring = True
+                    else:
+                        clear_park_draft(_sid)
+                        park_bases.pop(_sid, None)
+                        _draft = None
+                        st.info("The checks you had typed for this batch were cleared because its invoices or balance changed in the meantime.")
+                split_mode = st.radio(
+                    "How to split", ["By number of checks", "One check per invoice"], horizontal=True, key=batch_scoped_key("issue_split_mode"),
+                    help="Some suppliers want one check for each invoice. 'One check per invoice' makes a row for every invoice still to be paid, dated on that invoice's due date.",
                 )
-                st.caption("Two ways to issue: use the count above to pre-split evenly (whole pesos, editable), or just add/remove rows in the table below and type amounts yourself.")
+                per_invoice = split_mode == "One check per invoice" and not open_invoices_df.empty
+                if per_invoice:
+                    num_checks = len(open_invoices_df)
+                    st.caption(f"{num_checks} invoice(s) still to pay — one check each, dated on the invoice's due date and for its remaining amount. Every date and amount stays editable below.")
+                else:
+                    if split_mode == "One check per invoice":
+                        st.caption("No open invoices to make checks for.")
+                    num_checks = st.number_input(
+                        "Number of checks", min_value=1, max_value=50, step=1,
+                        value=int(st.session_state.get(num_checks_key, 1)), key=num_checks_key,
+                    )
+                    st.caption("Two ways to issue: use the count above to pre-split evenly (whole pesos, editable), or just add/remove rows in the table below and type amounts yourself.")
 
                 # Re-seed the grid whenever the count OR the remaining balance changes (e.g. a check
                 # in this batch got cancelled/corrected) — otherwise a stale pre-split from before
@@ -4417,15 +4616,30 @@ with tab_suppliers:
                 if not has_value(due_val):
                     due_val = q_live("SELECT MIN(due_date) AS d FROM invoices WHERE statement_id = ? AND status != 'Cancelled'", (int(batch_scope_pick),))["d"][0]
                 default_check_date = date.fromisoformat(str(due_val)[:10]) if has_value(due_val) else date.today()
-                signature = (int(num_checks), round(remaining_balance, 2), default_check_date)
+                signature = (int(num_checks), round(remaining_balance, 2), default_check_date, per_invoice,
+                             tuple(open_invoices_df["invoice_id"]) if per_invoice else ())
                 if st.session_state.get(last_signature_key) != signature:
                     st.session_state[last_signature_key] = signature
                     st.session_state.pop(grid_key, None)
+                    if not _restoring:
+                        park_bases.pop(_sid, None)
 
-                default_checks_df = pd.DataFrame({
-                    "check_date": [default_check_date] * int(num_checks),
-                    "amount": split_remaining_evenly(remaining_balance, int(num_checks)),
-                })
+                if per_invoice:
+                    default_checks_df = pd.DataFrame({
+                        "check_date": [date.fromisoformat(str(d)[:10]) for d in open_invoices_df["due_date"]],
+                        "amount": [round(float(x), 2) for x in open_invoices_df["remaining"]],
+                    })
+                else:
+                    default_checks_df = pd.DataFrame({
+                        "check_date": [default_check_date] * int(num_checks),
+                        "amount": split_remaining_evenly(remaining_balance, int(num_checks)),
+                    })
+                computed_default_df = default_checks_df
+                if st.session_state.get(last_signature_key) is not None and _restoring:
+                    park_bases[_sid] = pd.DataFrame({"check_date": [date.fromisoformat(d) for d, _ in _draft["rows"]], "amount": [x for _, x in _draft["rows"]]})
+                elif grid_key not in st.session_state:
+                    park_bases.pop(_sid, None)
+                default_checks_df = park_bases.get(_sid, computed_default_df)
                 edited_checks_df = st.data_editor(
                     default_checks_df,
                     hide_index=True,
@@ -4437,6 +4651,18 @@ with tab_suppliers:
                     },
                 )
 
+                _typed = [(str(r["check_date"])[:10], round(float(r["amount"]), 2)) for _, r in edited_checks_df.iterrows() if pd.notna(r["amount"]) and float(r["amount"]) > 0]
+                _computed = [(str(r["check_date"])[:10], round(float(r["amount"]), 2)) for _, r in computed_default_df.iterrows()]
+                grid_is_edited = bool(_typed) and _typed != _computed
+                if grid_is_edited:
+                    _now_draft = {"mode": split_mode, "count": int(num_checks), "balance": round(remaining_balance, 2),
+                                  "invoice_ids": tuple(int(i) for i in open_invoices_df["invoice_id"]), "rows": _typed}
+                    if not _draft or any(_draft.get(k) != v for k, v in _now_draft.items()):
+                        save_park_draft(_sid, split_mode, int(num_checks), remaining_balance, list(open_invoices_df["invoice_id"]), _typed)
+                    st.warning(":material/edit_note: These checks are typed in but **not parked yet** — click **Park Metrobank checks** below to save them. "
+                               "They are remembered — even if you open another order statement or refresh the page — until you park them.")
+                elif _draft:
+                    clear_park_draft(_sid)
                 grid_total = float(edited_checks_df["amount"].sum())
                 grid_diff = remaining_balance - grid_total
                 grid_matches = abs(grid_diff) <= 0.005
@@ -4467,8 +4693,6 @@ with tab_suppliers:
                         f":material/warning: This supplier already has (or would have) more than one check dated {conflict_list} — "
                         "double-check before parking. Still allowed if that's genuinely intended."
                     )
-
-                open_invoices_df = get_invoices_with_remaining(int(batch_scope_pick))
 
                 alloc_ready = False
                 alloc_grid_key = batch_scoped_key("issue_checks_alloc_editor")
@@ -4564,25 +4788,56 @@ with tab_suppliers:
                 ) or dup_resume("issue_checks_grid"):
                     if dup_needs_confirm("issue_checks_grid", check_warnings(scoped_creditor_id, [(r["amount"], r["check_date"]) for r in rows])):
                         pass
-                    elif guard_duplicate_submit("issue_checks_grid", int(batch_scope_pick), repr(rows)):
-                        ok, msg, check_ids = issue_checks_grid(scoped_creditor_id, int(batch_scope_pick), rows)
-                        if ok:
-                            alloc_by_row: dict[int, list[tuple[int, float]]] = {i + 1: [] for i in range(len(rows))}
-                            for _, arow in edited_alloc_df.iterrows():
+                    else:
+                        # Confirmation first: shows which invoice each check pays and for how much, then parks the checks, ties them to
+                        # their invoices and -- if the batch is still a Draft -- promotes it to Issued (2026-09-26, per user).
+                        _park_lines = []
+                        for _row_no, _row in enumerate(rows, start=1):
+                            _parts = edited_alloc_df[edited_alloc_df["check_row"] == _row_no]
+                            _bits = []
+                            _full = len(_parts) == 1
+                            for _, _p in _parts.iterrows():
+                                _inv = open_invoices_df[open_invoices_df["invoice_id"] == _p["invoice_id"]].iloc[0]
+                                _left = round(float(_inv["remaining"]) - float(_p["allocated"]), 2)
+                                _full = _full and abs(_left) <= 0.005
+                                _bits.append(f"invoice **{_inv['doc_ref']}** {php(_p['allocated'])}" + ("" if abs(_left) <= 0.005 else f" (of {php(_inv['remaining'])}, {php(_left)} still unpaid)"))
+                            _mark = "✓ matches the invoice" if _full else "⚠ check the split"
+                            _park_lines.append(f"- {_row['check_date']} · **{php(_row['amount'])}** → " + " + ".join(_bits) + f" — {_mark}")
+                        _is_draft = str(scoped_row["status"]) == "Draft"
+                        _park_summary = (
+                            f"Park **{len(rows)} check(s)** totaling **{php(sum(float(r['amount']) for r in rows))}** for this batch?" + chr(10) + chr(10)
+                            + chr(10).join(_park_lines) + chr(10) + chr(10)
+                            + ("This batch is still a **Draft**: parking promotes it to **Issued** and gives it its permanent OS number." if _is_draft
+                               else "The batch is already Issued.")
+                        )
+
+                        def _do_park(sid=int(batch_scope_pick), cid=scoped_creditor_id, park_rows=list(rows), alloc_df=edited_alloc_df.copy(), draft=_is_draft):
+                            ok, msg, check_ids = issue_checks_grid(cid, sid, park_rows)
+                            if not ok:
+                                return False, msg
+                            alloc_by_row: dict[int, list[tuple[int, float]]] = {i + 1: [] for i in range(len(park_rows))}
+                            for _, arow in alloc_df.iterrows():
                                 alloc_by_row[int(arow["check_row"])].append((int(arow["invoice_id"]), float(arow["allocated"])))
+                            problems = []
                             for row_num, check_id in enumerate(check_ids, start=1):
                                 a_ok, a_msg = allocate_check_to_invoices(check_id, alloc_by_row.get(row_num, []))
                                 if not a_ok:
-                                    st.error(f"Check issued but allocation failed: {a_msg}")
-                            sync_invoice_payment_status(int(batch_scope_pick))
-                            st.success(msg)
+                                    problems.append(a_msg)
+                            sync_invoice_payment_status(sid)
+                            promoted = ""
+                            if draft:
+                                try:
+                                    promoted = f" The batch is now Issued as {promote_draft_statement(sid, 'Issued')}."
+                                except ValueError as e:
+                                    problems.append(f"the batch could not be promoted ({e})")
                             st.session_state.pop(grid_key, None)
                             st.session_state.pop(alloc_grid_key, None)
-                            refresh()
-                        else:
-                            st.error(msg)
-                    else:
-                        st.warning("Duplicate submission ignored — identical to the click just before it.")
+                            clear_park_draft(sid)
+                            st.session_state.get("_park_bases", {}).pop(sid, None)
+                            st.session_state["_park_flash"] = msg + promoted + (" Problems: " + "; ".join(problems) if problems else "")
+                            return True, msg
+
+                        confirm_create_dialog(_park_summary, batch_scoped_key("issue_checks_confirm"), _do_park)
 
             st.markdown("##### Checks already issued against this order statement")
             scoped_checks_df = q(
@@ -4601,7 +4856,7 @@ with tab_suppliers:
                 )
 
             active_checks_df = scoped_checks_df[scoped_checks_df["status"] == "Active"].copy() if not scoped_checks_df.empty else scoped_checks_df
-            parked_active_df = active_checks_df[~active_checks_df["printed_at"].apply(has_value)] if not active_checks_df.empty else active_checks_df
+            parked_active_df = active_checks_df[~active_checks_df["check_number"].apply(has_value)] if not active_checks_df.empty else active_checks_df
             numbered_active_df = active_checks_df[active_checks_df["check_number"].apply(has_value)] if not active_checks_df.empty else active_checks_df
 
             if PRINT_CHECKS_IN_APP:
@@ -4610,9 +4865,9 @@ with tab_suppliers:
 
             st.markdown("##### Edit parked checks")
             if parked_active_df.empty:
-                st.caption("No parked (not-yet-printed) check in this batch to edit.")
+                st.caption("No check without a number in this batch to edit — once a check has its number it is final (use Correct an active check).")
             else:
-                st.caption("Date and amount stay freely editable while a check is parked — no unlock needed. Every change is logged automatically (old → new + timestamp).")
+                st.caption("Date and amount stay freely editable until a check has its check number — no unlock needed, even if it was already exported to Chrysanth (change it there too). Every change is logged automatically (old → new + timestamp).")
                 original_parked_df = parked_active_df[["check_id", "check_date", "amount"]].copy()
                 original_parked_df["check_date"] = pd.to_datetime(original_parked_df["check_date"]).dt.date
                 edited_parked_df = st.data_editor(
@@ -4647,6 +4902,32 @@ with tab_suppliers:
                         st.info("No changes to save.")
                     if updated:
                         refresh()
+
+            st.markdown("##### Un-park checks")
+            unparkable_df = parked_active_df[~parked_active_df["check_number"].apply(has_value)] if not parked_active_df.empty else parked_active_df
+            if batch_is_locked:
+                st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to un-park checks.")
+            elif unparkable_df.empty:
+                st.caption("No check to un-park — only checks that have no number yet can be taken back.")
+            else:
+                st.caption("Took the wrong split, or parked by mistake? Pick parked checks to take back — they are deleted completely (with their invoice links), "
+                           "the balance returns and you can park again. A check that already has its number is final and never touched (cancel or replace it instead). "
+                           "If one was already exported to Chrysanth, remove it there too.")
+                unpark_labels = {int(r["check_id"]): f"{r['check_date']} — {php(r['amount'])}" for _, r in unparkable_df.iterrows()}
+                unpark_pick = st.multiselect("Parked checks to take back", options=list(unpark_labels), format_func=lambda cid: unpark_labels[cid],
+                                             key=batch_scoped_key("unpark_pick"))
+                if st.button("Un-park selected checks", icon=":material/undo:", disabled=not unpark_pick, key=batch_scoped_key("unpark_btn")):
+                    def _do_unpark(sid=int(batch_scope_pick), picked=list(unpark_pick)):
+                        ok, msg = unpark_checks(sid, picked)
+                        if ok:
+                            st.session_state["_park_flash"] = msg
+                            st.session_state.pop(batch_scoped_key("unpark_pick"), None)
+                        return ok, msg
+                    confirm_create_dialog(
+                        f"Delete **{len(unpark_pick)} parked check(s)** totaling **{php(sum(float(unparkable_df[unparkable_df['check_id'] == c]['amount'].iloc[0]) for c in unpark_pick))}**? "
+                        "They are removed completely, their invoice links are released and the balance is available to park again."
+                        + (" Some were already exported to Chrysanth — remove them there too." if unparkable_df[unparkable_df["check_id"].isin(unpark_pick) & unparkable_df["printed_at"].apply(has_value)].shape[0] else ""),
+                        batch_scoped_key("unpark_confirm"), _do_unpark)
 
             st.markdown("##### Correct an active check")
             if batch_is_locked:
@@ -4935,7 +5216,7 @@ with tab_lenders:
                       (SELECT SUM(amount) FROM checks_issued
                        WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date <= DATE('now', 'localtime')), 0
                   ) AS outstanding,
-                  ln.status
+                  ln.status, """ + loan_note_modified_sql("ln") + """ AS last_modified
            FROM loan_notes ln JOIN creditors c ON ln.creditor_id = c.creditor_id
            ORDER BY ln.loan_note_id DESC"""
     )
@@ -4986,6 +5267,8 @@ with tab_lenders:
             filtered_loan_notes_df = loan_notes_df.copy()
             if ln_status_filter:
                 filtered_loan_notes_df = filtered_loan_notes_df[filtered_loan_notes_df["status"].isin(ln_status_filter)]
+            ln_mod_col, _ln_spacer = st.columns([1, 2])
+            filtered_loan_notes_df = date_preset_filter(ln_mod_col, filtered_loan_notes_df, "last_modified", "Filter: last modified", "ln_filter_modified_preset")
             filtered_loan_notes_df = filtered_loan_notes_df.reset_index(drop=True)
 
             ln_browser_event = st.dataframe(
@@ -5337,9 +5620,9 @@ with tab_lenders:
             render_assign_number_section(ln_checks_df, key_prefix=f"ln_check_assign__{selected_lnid}")
 
             active_ln_checks = ln_checks_df[ln_checks_df["status"] == "Active"]
-            parked_ln_checks = active_ln_checks[~active_ln_checks["printed_at"].apply(has_value)] if not active_ln_checks.empty else active_ln_checks
+            parked_ln_checks = active_ln_checks[~active_ln_checks["check_number"].apply(has_value)] if not active_ln_checks.empty else active_ln_checks
             if not parked_ln_checks.empty:
-                with st.expander("Edit parked checks (date & amount stay editable until printed)"):
+                with st.expander("Edit parked checks (date & amount stay editable until numbered)"):
                     original_ln_parked = parked_ln_checks[["check_id", "check_date", "amount"]].copy()
                     original_ln_parked["check_date"] = pd.to_datetime(original_ln_parked["check_date"]).dt.date
                     edited_ln_parked = st.data_editor(
@@ -5471,7 +5754,8 @@ with tab_bank_loans:
                       (SELECT SUM(amount) FROM bank_loan_installments
                        WHERE bank_loan_id = bl.bank_loan_id AND due_date > DATE('now', 'localtime')), 0
                   ) END AS outstanding,
-                  bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, bl.is_cancelled, lb.name AS beneficiary, lb.beneficiary_type, bl.beneficiary_id
+                  bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, bl.is_cancelled, lb.name AS beneficiary, lb.beneficiary_type, bl.beneficiary_id,
+                  """ + bank_loan_modified_sql("bl") + """ AS last_modified
            FROM bank_loans bl JOIN creditors c ON bl.creditor_id = c.creditor_id
            LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id
            ORDER BY bl.bank_loan_id DESC"""
@@ -5554,8 +5838,10 @@ with tab_bank_loans:
         if bank_loans_df.empty:
             st.caption("No bank loans yet — switch to \"New Bank Loan\" above to create the first one.")
         else:
+            bl_mod_col, _bl_spacer = st.columns([1, 2])
+            filtered_bank_loans_df = date_preset_filter(bl_mod_col, bank_loans_df, "last_modified", "Filter: last modified", "bl_filter_modified_preset").reset_index(drop=True)
             bl_browser_event = st.dataframe(
-                bank_loans_df.drop(columns=["beneficiary_id", "is_cancelled"]),
+                filtered_bank_loans_df.drop(columns=["beneficiary_id", "is_cancelled"]),
                 hide_index=True,
                 on_select="rerun",
                 selection_mode="single-row",
@@ -5568,8 +5854,8 @@ with tab_bank_loans:
                 },
             )
             bl_selected_rows = bl_browser_event.selection.rows if bl_browser_event and bl_browser_event.selection else []
-            if bl_selected_rows and bl_selected_rows[0] < len(bank_loans_df):
-                st.session_state["selected_bank_loan_id"] = int(bank_loans_df.iloc[bl_selected_rows[0]]["bank_loan_id"])
+            if bl_selected_rows and bl_selected_rows[0] < len(filtered_bank_loans_df):
+                st.session_state["selected_bank_loan_id"] = int(filtered_bank_loans_df.iloc[bl_selected_rows[0]]["bank_loan_id"])
 
     selected_blid = st.session_state.get("selected_bank_loan_id") if not bank_loans_df.empty else None
 
@@ -6371,9 +6657,15 @@ with tab_checks:
             "Every check already issued (recorded) but not yet printed, across every batch — pick "
             "as many as you like and print them together in one pass. Printing needs no check "
             "number and touches no booklet — the number isn't even drawn on the PDF (it's "
-            "pre-printed on the physical blank stock). Assign numbers separately, below, whenever "
-            "you actually know them."
+            "pre-printed on the physical blank stock). The Chrysanth file needs a number on every row, so "
+            "checks without one get a temporary placeholder number in the file — assign the real numbers below "
+            "after printing."
         )
+        _unprinted_runs = get_unprinted_batches()
+        if not _unprinted_runs.empty:
+            st.warning(":material/print: **Exported to Chrysanth but not marked printed yet:** " + "; ".join(
+                f"{r['tag']} ({r['check_count']} cheque(s), {php(r['total_amount'])}, exported {r['exported_at']})" for _, r in _unprinted_runs.iterrows())
+                + ". Chrysanth reprints everything you tick, so always filter to the one run you mean to print — and use **Mark as printed** in Batch run history below once a run is printed.")
         pending_df = get_pending_check_run()
         if pending_df.empty:
             st.caption("Nothing pending — every issued check has been printed.")
@@ -6415,20 +6707,51 @@ with tab_checks:
                 # in-app "Print these checks" button used to be, so it logs a batch (Batch run
                 # history, below) and stamps printed_at the same way mark_checks_printed() did.
                 # Come back to "Assign check numbers" below once they're physically printed.
-                if st.button("Generate CSV for Chrysanth", icon=":material/download:", disabled=not print_picked_ids, key="check_export_excel_btn"):
+                _cs = get_chrysanth_settings()
+                with st.expander("Chrysanth settings (account number and crossing)", expanded=not _cs["account_no"]):
+                    st.caption("Chrysanth's import only accepts an account that is already set up inside Chrysanth, so type its account number exactly as it appears there (up to 20 characters). "
+                               "The crossing is applied to every cheque in the file.")
+                    _cs_acct = st.text_input("Account number in Chrysanth", value=_cs["account_no"], max_chars=20, key="chrys_account_no")
+                    _cs_cross = st.selectbox("Crossing on every cheque", options=list(CHRYSANTH_CROSSING_OPTIONS), index=list(CHRYSANTH_CROSSING_OPTIONS).index(_cs["crossing"]),
+                                             format_func=lambda k: CHRYSANTH_CROSSING_OPTIONS[k], key="chrys_crossing")
+                    if st.button("Save Chrysanth settings", icon=":material/save:", key="chrys_save_btn"):
+                        ok, msg = save_chrysanth_settings(_cs_acct, _cs_cross)
+                        (st.success if ok else st.error)(msg)
+                        if ok:
+                            refresh()
+                _n_unnumbered = int(sum(1 for _, r in pending_df.iterrows() if not has_value(r["check_number"])))
+                if _n_unnumbered:
+                    st.info(f"{_n_unnumbered} pending check(s) have no check number yet. Chrysanth's file needs one on every row, so those get a temporary placeholder number (starting with 9) "
+                            "in the file only — nothing is assigned here. Assign the real numbers under Assign a check number once they are printed.")
+                if not _cs["account_no"]:
+                    st.info("Save the Chrysanth account number above to enable the export.")
+                # Generating the file IS the "sent for printing" moment: it logs a batch (Batch run history, below)
+                # and stamps printed_at, as the old in-app print button did.
+                if st.button("Generate Chrysanth file (.txt)", icon=":material/download:", disabled=not print_picked_ids or not _cs["account_no"], key="check_export_excel_btn"):
                     if guard_duplicate_submit("create_check_print_batch", tuple(sorted(print_picked_ids))):
-                        csv_bytes = generate_pending_check_run_csv(print_picked_ids)
-                        batch_id = create_check_print_batch(print_picked_ids)
-                        # Keep the file across the rerun that refresh() triggers -- the download button used to vanish with it.
-                        st.session_state["_chrysanth_csv"] = {"batch_id": batch_id, "count": len(print_picked_ids), "bytes": csv_bytes}
-                        refresh()
+                        txt_bytes, txt_problems, txt_ids = generate_pending_check_run_txt(print_picked_ids, log_batch=True)
+                        if not txt_ids:
+                            st.error("Nothing could be exported:" + chr(10) + chr(10).join(f"- {p}" for p in txt_problems))
+                        else:
+                            newest_batch = get_check_print_batches().iloc[0]
+                            # Keep the file across the rerun that refresh() triggers -- the download button used to vanish with it.
+                            st.session_state["_chrysanth_txt"] = {"tag": print_batch_tag(int(newest_batch["print_batch_id"])), "count": len(txt_ids),
+                                                                  "bytes": txt_bytes, "problems": txt_problems,
+                                                                  "file_name": file_name_for_checks(txt_ids, int(newest_batch["print_batch_id"]))}
+                            refresh()
                     else:
                         st.warning("Duplicate submission ignored — identical to the click just before it.")
-                if st.session_state.get("_chrysanth_csv"):
-                    _last_csv = st.session_state["_chrysanth_csv"]
-                    st.success(f"Batch #{_last_csv['batch_id']} logged — {_last_csv['count']} check(s). Download the file for Chrysanth:")
-                    st.download_button("Download checks_to_print.csv", data=_last_csv["bytes"], file_name="checks_to_print.csv", mime="text/csv",
-                                       icon=":material/download:", key="check_export_csv_dl")
+                if st.session_state.get("_chrysanth_txt"):
+                    _last = st.session_state["_chrysanth_txt"]
+                    st.success(f"{_last['tag']} logged — {_last['count']} check(s). Download the file, then in Chrysanth open Transaction, then File, then Import Cheque Transaction and pick it.")
+                    st.info(f"**To print only this run in Chrysanth:** the Remark of every cheque in this run is **{_last['tag']}**. In Cheque Transaction History type **{_last['tag']}** in the **Remark** box "
+                            f"at the top and click **Search** — then only this run is loaded, and the tick-box in the header row is safe to use. Do **not** use the filter arrow on the Remark column: it only hides "
+                            "rows, and the header tick-box still selects the hidden ones. Chrysanth does not remember what was already printed, so check the total at the bottom "
+                            "matches this run before you print, then use Mark as printed in Batch run history.")
+                    st.download_button(f"Download {_last['file_name']}", data=_last["bytes"], file_name=_last["file_name"], mime="text/plain",
+                                       icon=":material/download:", key="check_export_txt_dl")
+                    if _last["problems"]:
+                        st.warning("Please note:" + chr(10) + chr(10).join(f"- {p}" for p in _last["problems"]))
 
     with st.container(border=True):
         st.subheader("Batch run history")
@@ -6440,11 +6763,15 @@ with tab_checks:
             display_batches = batches_df.copy()
             display_batches["total_amount"] = display_batches["total_amount"].apply(php)
             display_batches.insert(0, "batch_no", range(len(display_batches), 0, -1))
+            display_batches.insert(1, "chrysanth_tag", [print_batch_tag(int(b)) for b in display_batches["print_batch_id"]])
+            display_batches["printed"] = display_batches["printed_confirmed_at"].apply(lambda v: f"Printed {str(v)[:16]}" if has_value(v) else "Not printed yet")
             st.dataframe(
-                display_batches[["batch_no", "exported_at", "check_count", "total_amount"]],
+                display_batches[["batch_no", "chrysanth_tag", "printed", "exported_at", "check_count", "total_amount"]],
                 hide_index=True,
                 column_config={
                     "batch_no": "Batch #",
+                    "chrysanth_tag": "Chrysanth run number",
+                    "printed": "Printed in Chrysanth?",
                     "exported_at": "Exported",
                     "check_count": "Checks",
                     "total_amount": "Total",
@@ -6452,8 +6779,28 @@ with tab_checks:
             )
             batch_options = {int(r["print_batch_id"]): f"Batch #{n} — {r['exported_at']} — {r['check_count']} check(s)" for n, (_, r) in zip(range(len(batches_df), 0, -1), batches_df.iterrows())}
             batch_pick = st.selectbox("View batch detail", options=list(batch_options.keys()), format_func=lambda bid: batch_options[bid], key="batch_history_pick")
-            st.download_button("Download this batch's CSV for Chrysanth", data=generate_batch_csv(int(batch_pick)),
-                               file_name=f"checks_batch_{int(batch_pick)}.csv", mime="text/csv", icon=":material/download:", key=f"batch_csv_dl_{int(batch_pick)}")
+            _picked_row = batches_df[batches_df["print_batch_id"] == int(batch_pick)].iloc[0]
+            _picked_printed = has_value(_picked_row["printed_confirmed_at"])
+            _pk1, _pk2 = st.columns([1, 2])
+            if _picked_printed:
+                _pk2.caption(f"{print_batch_tag(int(batch_pick))} was marked printed on {str(_picked_row['printed_confirmed_at'])[:16]}.")
+                if _pk1.button("Un-mark as printed", icon=":material/undo:", key=f"unmark_printed_{int(batch_pick)}"):
+                    ok, msg = mark_batch_printed(int(batch_pick), False)
+                    (st.success if ok else st.error)(msg)
+                    if ok:
+                        refresh()
+            else:
+                _pk2.caption(f"{print_batch_tag(int(batch_pick))} is exported but not marked printed. Once you have printed it in Chrysanth, mark it here.")
+                if _pk1.button("Mark as printed", icon=":material/print:", type="primary", key=f"mark_printed_{int(batch_pick)}"):
+                    ok, msg = mark_batch_printed(int(batch_pick), True)
+                    (st.success if ok else st.error)(msg)
+                    if ok:
+                        refresh()
+            _bx_bytes, _bx_problems = generate_batch_txt(int(batch_pick))
+            st.download_button("Download this batch's Chrysanth file (.txt)", data=_bx_bytes, disabled=not get_chrysanth_settings()["account_no"],
+                               file_name=file_name_for_batch(int(batch_pick)), mime="text/plain", icon=":material/download:", key=f"batch_txt_dl_{int(batch_pick)}")
+            if _bx_problems:
+                st.caption("Not in this file: " + " · ".join(_bx_problems))
             detail_df = get_check_print_batch_detail(int(batch_pick))
             if not detail_df.empty:
                 display_detail = detail_df.copy()
@@ -7486,3 +7833,19 @@ with tab_admin:
         st.subheader("Changelog")
         st.caption("Everything that's shipped, in plain language, newest first. The same source the \"What's new\" popup reads from.")
         st.markdown(_read_whats_new(), unsafe_allow_html=False)
+
+# Guardrail (2026-09-27): reminder for checks typed but never parked -- in the sidebar, and a browser prompt if the page is
+# about to be closed/refreshed while any are pending.
+_pending_drafts = list_park_drafts()
+if _pending_drafts:
+    park_draft_slot.warning(
+        ":material/edit_note: **Checks typed but not parked yet**" + chr(10) + chr(10)
+        + chr(10).join(f"- {d['label']} — {d['n']} check(s), {php(d['total'])}" for d in _pending_drafts)
+        + chr(10) + chr(10) + "Open the batch (Order Statement, Checks) and click **Park Metrobank checks**."
+    )
+else:
+    park_draft_slot.empty()
+components.html(
+    "<script>try{window.parent.onbeforeunload=" + ("function(e){e.preventDefault();e.returnValue='';return '';}" if _pending_drafts else "null") + ";}catch(e){}</script>",
+    height=0,
+)

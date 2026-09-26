@@ -248,7 +248,8 @@ CREATE TABLE IF NOT EXISTS check_print_batches (
     print_batch_id INTEGER PRIMARY KEY AUTOINCREMENT,
     exported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     check_count INTEGER NOT NULL,
-    total_amount REAL NOT NULL
+    total_amount REAL NOT NULL,
+    printed_confirmed_at DATETIME
 );
 
 -- Every check must belong to a batch (statement_id for Supplier, loan_note_id for Lender) --
@@ -275,6 +276,7 @@ CREATE TABLE IF NOT EXISTS checks_issued (
     replacement_reason TEXT,
     replaced_at DATETIME,
     printed_at DATETIME,
+    export_placeholder TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
@@ -591,4 +593,13 @@ CREATE TABLE IF NOT EXISTS cc_payments (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (cc_statement_id) REFERENCES cc_statements(cc_statement_id),
     FOREIGN KEY (card_id) REFERENCES credit_cards(card_id)
+);
+
+-- Checks typed into an order statement's "Issue a check" grid but not parked yet (2026-09-27): remembered so they are never
+-- lost when you open another order statement or refresh the page. One row per batch; removed when the checks are parked.
+CREATE TABLE IF NOT EXISTS park_drafts (
+    statement_id INTEGER PRIMARY KEY,
+    payload TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id)
 );

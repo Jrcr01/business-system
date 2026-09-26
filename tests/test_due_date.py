@@ -22,16 +22,16 @@ def test_terms_blank_or_garbage_defaults_to_zero():
     assert app.parse_terms_days("not a number") == 0
 
 
-def test_resolve_due_date_adds_terms_days_to_invoice_date():
+def test_resolve_due_date_adds_terms_to_invoice_date_by_the_bank_rule():
     assert app.resolve_due_date(date(2026, 1, 15), "120") == date(2026, 5, 15)
-    assert app.resolve_due_date(date(2026, 1, 15), "30") == date(2026, 2, 14)
+    assert app.resolve_due_date(date(2026, 1, 15), "30") == date(2026, 2, 15)      # bank rule: same day, next month
     assert app.resolve_due_date(date(2026, 1, 15), "COD") == date(2026, 1, 15)
 
 
 def test_resolve_due_date_accepts_string_invoice_date():
     """The grid can hand this a str (e.g. from a data_editor cell) as easily as
     a date object -- _as_date() inside resolve_due_date() must handle both."""
-    assert app.resolve_due_date("2026-01-15", "30") == date(2026, 2, 14)
+    assert app.resolve_due_date("2026-01-15", "30") == date(2026, 2, 15)
 
 
 def test_resolve_due_date_is_unconditional_no_override_path():
@@ -42,3 +42,12 @@ def test_resolve_due_date_is_unconditional_no_override_path():
     first = app.resolve_due_date(date(2026, 1, 15), "120")
     second = app.resolve_due_date(date(2026, 1, 15), "120")
     assert first == second == date(2026, 5, 15)
+
+
+def test_prospective_year_assumes_the_next_time_that_month_comes_round():
+    sept = date(2026, 9, 26)
+    assert app.prospective_year(1, sept) == 2027      # January, picked in September: next year
+    assert app.prospective_year(8, sept) == 2027      # August already passed
+    assert app.prospective_year(9, sept) == 2026      # this month stays this year
+    assert app.prospective_year(11, sept) == 2026     # still ahead this year
+    assert app.prospective_year(1, date(2026, 1, 15)) == 2026
