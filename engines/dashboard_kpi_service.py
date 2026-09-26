@@ -128,6 +128,7 @@ _PAYABLES_TREND_UNION = """
     UNION ALL
 
     SELECT bli.due_date AS d, bli.amount AS amount FROM bank_loan_installments bli
+    WHERE bli.bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)
 
     UNION ALL
 

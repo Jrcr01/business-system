@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from engines.validators import money_amount_error
 from datetime import date
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
@@ -79,6 +80,10 @@ def create_bank_loan(
     mode_of_payment: str,
     beneficiary_id: int | None = None,
 ) -> int:
+    if (err := money_amount_error(principal_amount, "Principal amount")):
+        raise ValueError(err)
+    if maturity_date <= start_date:
+        raise ValueError("Maturity date must be after the start date.")
     with _get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -119,6 +124,18 @@ def delete_bank_loan(bank_loan_id: int) -> tuple[bool, str]:
     return True, "Bank loan deleted."
 
 
+def cancel_bank_loan(bank_loan_id: int) -> tuple[bool, str]:
+    """Soft-cancels a loan: it and its repayment rows stay on record, but nothing counts as due."""
+    with _get_conn() as conn:
+        row = conn.execute("SELECT is_cancelled FROM bank_loans WHERE bank_loan_id = ?", (bank_loan_id,)).fetchone()
+        if not row:
+            return False, "Bank loan not found."
+        if row[0]:
+            return False, "This bank loan is already cancelled."
+        conn.execute("UPDATE bank_loans SET is_cancelled = 1 WHERE bank_loan_id = ?", (bank_loan_id,))
+    return True, "Bank loan cancelled. Its repayment rows are kept but no longer counted as due."
+
+
 def add_bank_loan_installment(bank_loan_id: int, due_date: date, amount: float, interest_portion: float = 0.0) -> tuple[bool, str]:
     if amount < 0:
         return False, "Amount cannot be negative."
@@ -143,11 +160,16 @@ def edit_bank_loan_installment(installment_id: int, due_date: date, amount: floa
         return False, "Interest portion cannot be negative."
     with _get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT bank_loan_id FROM bank_loan_installments WHERE installment_id = ?", (installment_id,))
+        cur.execute("SELECT bank_loan_id, due_date FROM bank_loan_installments WHERE installment_id = ?", (installment_id,))
         row = cur.fetchone()
         if not row:
             return False, "Installment not found."
-        (bank_loan_id,) = row
+        bank_loan_id, existing_due_date = row
+        if is_installment_cleared(existing_due_date):
+            # Same rule as delete_bank_loan_installment(): a due date already in the past is
+            # treated as paid -- silently rewriting its amount afterwards would rewrite settled
+            # history with no audit trail.
+            return False, "Cannot edit an installment whose due date has already passed — it's treated as paid."
         cur.execute(
             "UPDATE bank_loan_installments SET due_date = ?, amount = ?, interest_portion = ? WHERE installment_id = ?",
             (str(due_date), amount, interest_portion, installment_id),

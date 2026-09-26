@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from engines.validators import money_amount_error
 from datetime import date
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
@@ -74,6 +75,12 @@ def _recompute_schedule(cur: sqlite3.Cursor, loan_note_id: int) -> None:
     (installment add/edit/delete, and check issue/cancel/replace touching a linked installment)."""
     cur.execute("SELECT principal_amount FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
     (principal_amount,) = cur.fetchone()
+    if principal_amount is None:
+        # A "Pending Setup" placeholder note migrated with no real principal yet (Phase 8a) --
+        # used to crash here with a raw TypeError (None - float) the moment an installment was
+        # added before its terms were filled in. edit_loan_note_terms() is what's meant to
+        # graduate a note out of this state; installments come after that, not before.
+        raise _ScheduleError("This loan note has no principal amount on file yet. Set its terms first, under \"Edit loan note terms,\" before adding installments.")
     cur.execute(
         "SELECT installment_id, principal, interest, status FROM loan_installments WHERE loan_note_id = ? ORDER BY due_date, installment_id",
         (loan_note_id,),
@@ -153,11 +160,16 @@ def edit_loan_installment(installment_id: int, due_date: date, principal: float,
     try:
         with _get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT loan_note_id FROM loan_installments WHERE installment_id = ?", (installment_id,))
+            cur.execute("SELECT loan_note_id, status FROM loan_installments WHERE installment_id = ?", (installment_id,))
             row = cur.fetchone()
             if not row:
                 return False, "Installment not found."
-            (loan_note_id,) = row
+            loan_note_id, status = row
+            if status == "Active":
+                # Same rule as delete_loan_installment(): a check has already been cut against
+                # this row's current amount -- silently rewriting it here would leave the stored
+                # schedule diverging from what was actually issued, with no audit trail.
+                return False, "Cannot edit an installment with an active check — cancel its check first."
             cur.execute(
                 "UPDATE loan_installments SET due_date = ?, principal = ?, interest = ? WHERE installment_id = ?",
                 (str(due_date), principal, interest, installment_id),
@@ -180,8 +192,8 @@ def edit_loan_note_terms(loan_note_id: int, principal_amount: float, monthly_int
     outstanding_balance chain and the note's total_interest/total_payable are recomputed from
     the new principal via _recompute_schedule(), same negative-balance guard as a normal
     installment edit (can't drop principal below what's already scheduled)."""
-    if principal_amount <= 0:
-        return False, "Principal must be greater than zero."
+    if (err := money_amount_error(principal_amount, "Principal")):
+        return False, err
     if monthly_interest_rate < 0:
         return False, "Monthly interest rate cannot be negative."
     try:
@@ -252,3 +264,65 @@ def retarget_installment_check(cur: sqlite3.Cursor, old_check_id: int, new_check
     (postdated/void+reissue, not a cancellation) keeps its installment link, just pointing at
     the new check id. Status stays Active since the check itself wasn't cancelled, just reissued."""
     cur.execute("UPDATE loan_installments SET check_id = ? WHERE check_id = ?", (new_check_id, old_check_id))
+
+
+def unlinked_loan_checks(loan_note_id: int) -> list[tuple]:
+    """Active checks on this loan note that no schedule row points at (typically checks brought over from the
+    legacy system): [(check_id, check_number, check_date, amount)], oldest date first."""
+    with _get_conn() as conn:
+        return conn.execute(
+            """SELECT c.check_id, c.check_number, c.check_date, c.amount FROM checks_issued c
+               WHERE c.loan_note_id = ? AND c.status = 'Active'
+                 AND NOT EXISTS (SELECT 1 FROM loan_installments li WHERE li.check_id = c.check_id)
+               ORDER BY c.check_date, c.check_id""",
+            (loan_note_id,),
+        ).fetchall()
+
+
+def create_schedule_from_checks(loan_note_id: int) -> tuple[bool, str]:
+    """Gives every unlinked Active check its own repayment-schedule row: due date = check date, principal = check
+    amount, interest = 0 (a check alone can't say how much of it is interest -- edit the row afterwards if known).
+    A Pending row that already has the same date and total is linked instead of duplicated. All-or-nothing: if the
+    checks add up to more than the note's principal the balance would go negative, so nothing is saved."""
+    checks = unlinked_loan_checks(loan_note_id)
+    if not checks:
+        return False, "Every active check on this loan note is already tied to a schedule row."
+    try:
+        with _get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT status FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
+            row = cur.fetchone()
+            if not row:
+                return False, "Loan note not found."
+            if row[0] not in ("Active", "Pending Setup"):
+                return False, f"The schedule of a {row[0]} loan note is read-only."
+            created = linked = 0
+            for check_id, _number, check_date, amount in checks:
+                cur.execute(
+                    """SELECT installment_id FROM loan_installments
+                       WHERE loan_note_id = ? AND status = 'Pending' AND check_id IS NULL AND due_date = ?
+                         AND ABS(principal + interest - ?) < 0.005 LIMIT 1""",
+                    (loan_note_id, str(check_date)[:10], amount),
+                )
+                match = cur.fetchone()
+                if match:
+                    cur.execute("UPDATE loan_installments SET status = 'Active', check_id = ? WHERE installment_id = ?", (check_id, match[0]))
+                    linked += 1
+                else:
+                    cur.execute(
+                        """INSERT INTO loan_installments (loan_note_id, installment_no, due_date, principal, interest, outstanding_balance, status, check_id)
+                           VALUES (?, 0, ?, ?, 0, 0, 'Active', ?)""",
+                        (loan_note_id, str(check_date)[:10], amount, check_id),
+                    )
+                    created += 1
+            _recompute_schedule(cur, loan_note_id)
+            _assert_no_negative_balance(cur, loan_note_id)
+            cur.execute(
+                "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('SCHEDULE_FROM_CHECKS', 'loan_notes', ?, ?)",
+                (loan_note_id, f"{created} schedule row(s) created and {linked} existing row(s) linked to existing checks (interest 0)"),
+            )
+    except _ScheduleError:
+        total = sum(float(c[3]) for c in checks)
+        return False, (f"These {len(checks)} checks total {total:,.2f}, which is more than the loan note's principal leaves room for. "
+                       "Nothing was changed. Check the principal under \"Edit loan note terms\", or cancel any check that doesn't belong.")
+    return True, f"Done: {created} schedule row(s) created, {linked} existing row(s) linked. Interest is 0 on the new rows -- edit a row if you know its interest."

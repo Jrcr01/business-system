@@ -14,6 +14,8 @@ statements at all). A source with nothing entered is simply left out of the comp
 shown as a fabricated 0%, and will populate on its own as real terms get entered post-launch.
 """
 import sqlite3
+
+from engines.cc_rules import cc_owed_case
 from datetime import date
 
 import pandas as pd
@@ -35,6 +37,7 @@ _AP_COMPOSITION_UNION = """
     UNION ALL
 
     SELECT bli.due_date AS d, bli.amount AS amount, 'Bank Loan' AS track FROM bank_loan_installments bli
+    WHERE bli.bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)
 
     UNION ALL
 
@@ -147,12 +150,12 @@ def get_bank_loan_pareto(limit: int = 10) -> pd.DataFrame:
                FROM bank_loan_installments bli
                JOIN bank_loans bl ON bli.bank_loan_id = bl.bank_loan_id
                JOIN creditors cr ON bl.creditor_id = cr.creditor_id
-               WHERE bli.due_date > DATE('now', 'localtime')
+               WHERE bli.due_date > DATE('now', 'localtime') AND bl.is_cancelled = 0
                GROUP BY bl.bank_loan_id ORDER BY value DESC LIMIT ?""",
             conn, params=(limit,),
         )
         total_row = pd.read_sql_query(
-            "SELECT COALESCE(SUM(amount), 0) AS total FROM bank_loan_installments WHERE due_date > DATE('now', 'localtime')",
+            "SELECT COALESCE(SUM(amount), 0) AS total FROM bank_loan_installments WHERE due_date > DATE('now', 'localtime') AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)",
             conn,
         )
     if df.empty:
@@ -174,12 +177,8 @@ def get_credit_card_pareto(limit: int = 10) -> pd.DataFrame:
     KPI already uses for this track."""
     with sqlite3.connect(DB_PATH) as conn:
         df = pd.read_sql_query(
-            """SELECT (cc.card_name || ' - ' || cc.card_number_last4) AS name,
-                      COALESCE(SUM(
-                          CASE WHEN cs.unpaid_balance_next > 0 THEN cs.unpaid_balance_next
-                               WHEN cs.due_date >= DATE('now', 'localtime') THEN cs.total_amount_due
-                               ELSE 0 END
-                      ), 0) AS value
+            f"""SELECT (cc.card_name || ' - ' || cc.card_number_last4) AS name,
+                      COALESCE(SUM({cc_owed_case('cs')}), 0) AS value
                FROM cc_statements cs JOIN credit_cards cc ON cs.card_id = cc.card_id
                WHERE cs.status NOT IN ('Paid', 'Cancelled')
                GROUP BY cc.card_id
@@ -188,12 +187,8 @@ def get_credit_card_pareto(limit: int = 10) -> pd.DataFrame:
             conn, params=(limit,),
         )
         total_row = pd.read_sql_query(
-            """SELECT COALESCE(SUM(
-                   CASE WHEN unpaid_balance_next > 0 THEN unpaid_balance_next
-                        WHEN due_date >= DATE('now', 'localtime') THEN total_amount_due
-                        ELSE 0 END
-               ), 0) AS total
-               FROM cc_statements WHERE status NOT IN ('Paid', 'Cancelled')""",
+            f"""SELECT COALESCE(SUM({cc_owed_case('cs')}), 0) AS total
+               FROM cc_statements cs WHERE cs.status NOT IN ('Paid', 'Cancelled')""",
             conn,
         )
     if df.empty:
@@ -232,7 +227,7 @@ def get_all_tracks_pareto(limit: int = 15) -> pd.DataFrame:
                FROM bank_loan_installments bli
                JOIN bank_loans bl ON bli.bank_loan_id = bl.bank_loan_id
                JOIN creditors cr ON bl.creditor_id = cr.creditor_id
-               WHERE bli.due_date > DATE('now', 'localtime')
+               WHERE bli.due_date > DATE('now', 'localtime') AND bl.is_cancelled = 0
                GROUP BY bl.bank_loan_id""",
             conn,
         )
@@ -240,12 +235,8 @@ def get_all_tracks_pareto(limit: int = 15) -> pd.DataFrame:
         # outstanding KPI already uses for the Credit Card leg (app.py) -- kept in lockstep
         # rather than re-deriving a simpler one here.
         cc_df = pd.read_sql_query(
-            """SELECT (cc.card_name || ' - ' || cc.card_number_last4) AS name, 'Credit Card' AS track,
-                      COALESCE(SUM(
-                          CASE WHEN cs.unpaid_balance_next > 0 THEN cs.unpaid_balance_next
-                               WHEN cs.due_date >= DATE('now', 'localtime') THEN cs.total_amount_due
-                               ELSE 0 END
-                      ), 0) AS value
+            f"""SELECT (cc.card_name || ' - ' || cc.card_number_last4) AS name, 'Credit Card' AS track,
+                      COALESCE(SUM({cc_owed_case('cs')}), 0) AS value
                FROM cc_statements cs JOIN credit_cards cc ON cs.card_id = cc.card_id
                WHERE cs.status NOT IN ('Paid', 'Cancelled')
                GROUP BY cc.card_id""",
@@ -342,7 +333,7 @@ def get_debt_cost_comparison() -> pd.DataFrame:
                FROM bank_loans bl
                JOIN creditors cr ON bl.creditor_id = cr.creditor_id
                JOIN bank_loan_installments bli ON bli.bank_loan_id = bl.bank_loan_id
-               WHERE bl.principal_amount IS NOT NULL AND bl.principal_amount > 0
+               WHERE bl.principal_amount IS NOT NULL AND bl.principal_amount > 0 AND bl.is_cancelled = 0
                GROUP BY bl.bank_loan_id
                HAVING SUM(bli.interest_portion) > 0""",
             conn,
@@ -392,7 +383,7 @@ def get_missing_debt_terms(limit: int = 10) -> pd.DataFrame:
                JOIN creditors cr ON bl.creditor_id = cr.creditor_id
                LEFT JOIN bank_loan_installments bli
                  ON bli.bank_loan_id = bl.bank_loan_id AND bli.due_date > DATE('now', 'localtime')
-               WHERE bl.principal_amount IS NULL
+               WHERE bl.principal_amount IS NULL AND bl.is_cancelled = 0
                GROUP BY bl.bank_loan_id
                HAVING outstanding > 0""",
             conn,

@@ -5,11 +5,28 @@ import pandas as pd
 import os
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
+# Nothing this business handles (a loan principal, a card limit) is ever under a peso; a typed
+# value below this is almost always a mistyped number field (e.g. 100000 appended after "0.00"
+# reads back as 0.001) rather than a real amount.
+MIN_MONEY_AMOUNT = 1.0
+
+
+def money_amount_error(value: float, label: str) -> str | None:
+    """None if `value` is a sane amount for a loan/credit-limit field, else a user-facing message."""
+    if value <= 0:
+        return f"{label} must be greater than zero."
+    if value < MIN_MONEY_AMOUNT:
+        return f"{label} of {value:g} looks like a typo -- the minimum is ₱{MIN_MONEY_AMOUNT:,.2f}."
+    return None
+
+
 def calculate_trade_discount(gross_amount: float, discount_rates: list[float]) -> tuple[float, float]:
     """Calculates net invoice amount using compound trade discounts."""
     current_amount = gross_amount
     for rate in discount_rates:
-        if 0 < rate < 100:
+        # A rate of exactly 100 (a full write-off/waiver) used to fall through this check
+        # untouched, silently charging the full gross amount instead of zero.
+        if 0 < rate <= 100:
             current_amount *= (1.0 - (rate / 100.0))
             
     net_payable = round(current_amount, 2)

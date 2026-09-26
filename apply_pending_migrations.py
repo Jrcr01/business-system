@@ -42,15 +42,32 @@ from datetime import datetime
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 SCHEMA_PATH = os.path.join(PROJECT_ROOT, "schema.sql")
-LIVE_DB_PATH = os.path.join(PROJECT_ROOT, "data", "ap_disbursement.db")
+from db_location import live_db_path
+LIVE_DB_PATH = live_db_path()
 
 
 def _table_names(conn: sqlite3.Connection) -> set[str]:
-    return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    # sqlite_sequence is SQLite's own internal bookkeeping table for AUTOINCREMENT columns --
+    # it exists as soon as any table needs it, not something schema.sql ever creates itself, so
+    # diffing it as a "missing table" trips over SQLite refusing to let anything but SQLite
+    # itself create it.
+    return {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        if not r[0].startswith("sqlite_")
+    }
 
 
 def _view_defs(conn: sqlite3.Connection) -> dict[str, str]:
     return {r[0]: r[1] for r in conn.execute("SELECT name, sql FROM sqlite_master WHERE type='view'")}
+
+
+def _index_defs(conn: sqlite3.Connection) -> dict[str, str]:
+    # sqlite_autoindex_* entries are SQLite's own implicit indexes for PRIMARY KEY/UNIQUE column
+    # constraints -- those already travel with the table's own CREATE TABLE statement, so only
+    # explicitly-named CREATE INDEX statements need diffing here.
+    return {
+        r[0]: r[1] for r in conn.execute("SELECT name, sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")
+    }
 
 
 def _create_table_sql(conn: sqlite3.Connection, table: str) -> str | None:
@@ -73,7 +90,7 @@ def diff_and_sync(target_db_path: str, dry_run: bool = False) -> dict:
         ref.executescript(f.read())
 
     target = sqlite3.connect(target_db_path)
-    report = {"tables_added": [], "columns_added": [], "views_synced": [], "skipped": []}
+    report = {"tables_added": [], "columns_added": [], "views_synced": [], "indexes_added": [], "skipped": []}
 
     ref_tables = _table_names(ref)
     target_tables = _table_names(target)
@@ -109,6 +126,21 @@ def diff_and_sync(target_db_path: str, dry_run: bool = False) -> dict:
             if not dry_run:
                 target.execute(f"DROP VIEW IF EXISTS {view_name}")
                 target.execute(view_sql)
+
+    ref_indexes = _index_defs(ref)
+    target_indexes = _index_defs(target)
+    for index_name, index_sql in ref_indexes.items():
+        if target_indexes.get(index_name) == index_sql:
+            continue
+        # A UNIQUE index can't be created if the target table already has real duplicate data --
+        # that's a genuine data problem to fix by hand, not something to force through here.
+        try:
+            if not dry_run:
+                target.execute(f"DROP INDEX IF EXISTS {index_name}")
+                target.execute(index_sql)
+            report["indexes_added"].append(index_name)
+        except sqlite3.IntegrityError as e:
+            report["skipped"].append(f"index {index_name} ({e} -- existing data violates this constraint, needs manual cleanup first)")
 
     if not dry_run:
         target.commit()
@@ -156,6 +188,10 @@ def main():
         print(f"Views synced ({len(report['views_synced'])}):")
         for v in report["views_synced"]:
             print(f"  ~ {v}")
+    if report["indexes_added"]:
+        print(f"Indexes added ({len(report['indexes_added'])}):")
+        for i in report["indexes_added"]:
+            print(f"  + {i}")
     if report["skipped"]:
         print(f"Skipped -- needs a hand-written migration ({len(report['skipped'])}):")
         for s in report["skipped"]:

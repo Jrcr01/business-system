@@ -53,11 +53,11 @@ def _make_loan_note(db_path, creditor_id, monthly_interest_rate=None, note_ref="
 def test_ap_composition_by_track_splits_supplier_and_lender(db):
     supplier_id = make_creditor(db, name="ACME Tires", creditor_type="SUPPLIER")
     statement_id = make_statement(db, supplier_id)
-    _make_check(db, supplier_id, date(2026, 9, 20), 10000.0, statement_id=statement_id)
+    _make_check(db, supplier_id, date.today() + timedelta(days=30), 10000.0, statement_id=statement_id)
 
     lender_id = make_creditor(db, name="Juan Dela Cruz", creditor_type="LENDER")
     loan_note_id = _make_loan_note(db, lender_id)
-    _make_check(db, lender_id, date(2026, 9, 20), 5000.0, loan_note_id=loan_note_id)
+    _make_check(db, lender_id, date.today() + timedelta(days=30), 5000.0, loan_note_id=loan_note_id)
 
     out = analytics_service.get_ap_composition_by_track("month")
     tracks = dict(zip(out["track"], out["amount"]))
@@ -71,7 +71,7 @@ def test_ap_composition_end_date_excludes_far_future_tail(db):
     get_ap_growth_rate() and get_payables_trend()."""
     supplier_id = make_creditor(db, name="ACME Tires", creditor_type="SUPPLIER")
     statement_id = make_statement(db, supplier_id)
-    _make_check(db, supplier_id, date(2026, 9, 20), 10000.0, statement_id=statement_id)
+    _make_check(db, supplier_id, date.today() + timedelta(days=30), 10000.0, statement_id=statement_id)
 
     bank_id = make_creditor(db, name="BDO", creditor_type="BANK_LOAN")
     conn = sqlite3.connect(db)
@@ -111,11 +111,11 @@ def test_ap_growth_rate_first_period_nan_second_period_computed():
 def test_supplier_pareto_cumulative_reaches_true_grand_total(db):
     supplier_a = make_creditor(db, name="Big Supplier", creditor_type="SUPPLIER")
     statement_a = _make_statement(db, supplier_a, "REF-A")
-    _make_check(db, supplier_a, date(2026, 9, 20), 80000.0, statement_id=statement_a)
+    _make_check(db, supplier_a, date.today() + timedelta(days=30), 80000.0, statement_id=statement_a)
 
     supplier_b = make_creditor(db, name="Small Supplier", creditor_type="SUPPLIER")
     statement_b = _make_statement(db, supplier_b, "REF-B")
-    _make_check(db, supplier_b, date(2026, 9, 20), 20000.0, statement_id=statement_b)
+    _make_check(db, supplier_b, date.today() + timedelta(days=30), 20000.0, statement_id=statement_b)
 
     out = analytics_service.get_supplier_pareto(limit=10)
     assert len(out) == 2
@@ -127,11 +127,11 @@ def test_supplier_pareto_cumulative_reaches_true_grand_total(db):
 def test_lender_pareto_cumulative_reaches_true_grand_total(db):
     lender_a = make_creditor(db, name="Big Lender", creditor_type="LENDER")
     note_a = _make_loan_note(db, lender_a, note_ref="LN-A")
-    _make_check(db, lender_a, date(2026, 9, 20), 60000.0, loan_note_id=note_a)
+    _make_check(db, lender_a, date.today() + timedelta(days=30), 60000.0, loan_note_id=note_a)
 
     lender_b = make_creditor(db, name="Small Lender", creditor_type="LENDER")
     note_b = _make_loan_note(db, lender_b, note_ref="LN-B")
-    _make_check(db, lender_b, date(2026, 9, 20), 40000.0, loan_note_id=note_b)
+    _make_check(db, lender_b, date.today() + timedelta(days=30), 40000.0, loan_note_id=note_b)
 
     out = analytics_service.get_lender_pareto(limit=10)
     assert len(out) == 2
@@ -163,11 +163,11 @@ def test_bank_loan_pareto_disambiguates_same_bank_by_loan_ref(db):
 def test_all_tracks_pareto_ranks_across_tracks_with_true_combined_total(db):
     supplier_id = make_creditor(db, name="Big Supplier", creditor_type="SUPPLIER")
     statement_id = _make_statement(db, supplier_id, "REF-SUP")
-    _make_check(db, supplier_id, date(2026, 9, 20), 70000.0, statement_id=statement_id)
+    _make_check(db, supplier_id, date.today() + timedelta(days=30), 70000.0, statement_id=statement_id)
 
     lender_id = make_creditor(db, name="Small Lender", creditor_type="LENDER")
     note_id = _make_loan_note(db, lender_id, note_ref="LN-1")
-    _make_check(db, lender_id, date(2026, 9, 20), 30000.0, loan_note_id=note_id)
+    _make_check(db, lender_id, date.today() + timedelta(days=30), 30000.0, loan_note_id=note_id)
 
     out = analytics_service.get_all_tracks_pareto(limit=10)
     assert len(out) == 2

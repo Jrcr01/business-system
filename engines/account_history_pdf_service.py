@@ -20,6 +20,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+MIN_FONT_PT = 9.0  # nothing in these reports is ever printed smaller than this
+
 ACCENT = colors.HexColor("#1f3a5f")
 ACCENT_LIGHT = colors.HexColor("#eef2f7")
 GREY = colors.HexColor("#6b7280")
@@ -35,7 +37,7 @@ SECTION_TABLE_STYLE = [
     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
     ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-    ("FONTSIZE", (0, 0), (-1, -1), 8),
+    ("FONTSIZE", (0, 0), (-1, -1), 9),
     ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
     ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, ACCENT_LIGHT]),
     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -86,9 +88,42 @@ def _period_text(date_from, date_to) -> str:
     return "Period: all dates on file"
 
 
-def _section_table(headers: list, rows: list, col_widths: list) -> Table:
-    t = Table([headers] + rows, colWidths=col_widths, repeatRows=1)
-    t.setStyle(TableStyle(SECTION_TABLE_STYLE))
+def _section_table(headers: list, rows: list, col_widths: list, right_cols: tuple = ()) -> Table:
+    """Table sized to its content: col_widths are only the preferred proportions. If any cell is
+    too wide for its column, columns are re-fitted to the text and, if needed, the font shrinks
+    (never below 9pt) and long text wraps -- so nothing overlaps its neighbour."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    total = sum(col_widths)
+    pad = 12
+    size = MIN_FONT_PT
+
+    def needs(sz):
+        return [max([stringWidth(str(h), "Helvetica-Bold", sz)] + [stringWidth(str(r[c]), "Helvetica", sz) for r in rows]) + pad
+                for c, h in enumerate(headers)]
+
+    need = needs(size)
+    if all(n <= w for n, w in zip(need, col_widths)):
+        t = Table([headers] + rows, colWidths=col_widths, repeatRows=1)
+        t.setStyle(TableStyle(SECTION_TABLE_STYLE + [("FONTSIZE", (0, 0), (-1, -1), size)] + [("ALIGN", (c, 0), (c, -1), "RIGHT") for c in right_cols]))
+        return t
+    while sum(need) > total and size > MIN_FONT_PT:
+        size -= 0.25
+        need = needs(size)
+    if sum(need) <= total:
+        spare = total - sum(need)
+        widths, data = [n + spare * (n / sum(need)) for n in need], [headers] + rows
+    else:
+        # Numbers and dates never wrap: they keep the width they need, and only the text columns
+        # (names, references) give up room and wrap onto a second line.
+        is_text = [any(any(ch.isalpha() for ch in str(r[c])) for r in rows) and need[c] > 130 for c in range(len(headers))]
+        fixed = sum(n for n, t_ in zip(need, is_text) if not t_)
+        flex = sum(n for n, t_ in zip(need, is_text) if t_) or 1
+        room = max(total - fixed, 60)
+        widths = [n if not t_ else n * room / flex for n, t_ in zip(need, is_text)]
+        cs = ParagraphStyle("SecCell", parent=getSampleStyleSheet()["Normal"], fontSize=size, leading=size + 1.5)
+        data = [headers] + [[Paragraph(str(x), cs) if is_text[c] else x for c, x in enumerate(r)] for r in rows]
+    t = Table(data, colWidths=widths, repeatRows=1)
+    t.setStyle(TableStyle(SECTION_TABLE_STYLE + [("FONTSIZE", (0, 0), (-1, -1), size)] + [("ALIGN", (c, 0), (c, -1), "RIGHT") for c in right_cols]))
     return t
 
 
@@ -349,4 +384,63 @@ def generate_cardholder_statement_pdf(holder_name: str, cards_df, statements_df,
     story.append(_totals_block([("TOTAL UNPAID, all cards (not Paid/Cancelled)", unpaid_live["total_amount_due"].sum() if not unpaid_live.empty else 0)]))
     _finish(doc, story)
     buffer.seek(0)
+    return buffer.getvalue()
+
+
+def generate_rundown_pdf(title: str, scope: str, headers: list, rows: list, widths: list, right_cols: list, summary: list, period: str) -> bytes:
+    """Landscape 'rundown' report used by the Reports tab's batch and invoice rundowns: a title
+    band, a Paid / Partially Paid / Pending summary, then one table (widths are fractions of the
+    page width; right_cols are the column indexes holding money)."""
+    from reportlab.lib.pagesizes import landscape
+    page = landscape(LETTER)
+    width = page[0] - LEFT_MARGIN - RIGHT_MARGIN
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=page, leftMargin=LEFT_MARGIN, rightMargin=RIGHT_MARGIN, topMargin=TOP_MARGIN, bottomMargin=BOTTOM_MARGIN)
+    st = _styles()
+    styles = getSampleStyleSheet()
+    band = Table(
+        [[Paragraph(title.upper(), ParagraphStyle("RdTitle", parent=styles["Normal"], textColor=colors.white, fontSize=16, leading=19, fontName="Helvetica-Bold")),
+          Paragraph(scope, ParagraphStyle("RdSub", parent=styles["Normal"], textColor=colors.white, fontSize=9, leading=12, alignment=2))]],
+        colWidths=[width * 0.55, width * 0.45],
+    )
+    band.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), ACCENT), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14), ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING", (0, 0), (-1, -1), 12), ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+    ]))
+    story = [band, Spacer(1, 6), Paragraph(period, st["grey"]), Spacer(1, 8)]
+    if summary:
+        srows = [[label, count, f"PHP {_money(amount)}"] for label, count, amount in summary]
+        sumt = Table([["Status", "Count", "Amount"]] + srows, colWidths=[width * 0.25, width * 0.15, width * 0.25], hAlign="LEFT")
+        sumt.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (1, 0), (2, -1), "RIGHT")]))
+        story += [sumt, Spacer(1, 10)]
+    if rows:
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        pad = 8  # left + right cell padding, in points (tightened below to match)
+        # Auto-fit at a fixed 9pt: measure the widest text in each column and share any spare room
+        # out in proportion. If the columns don't all fit, numbers and dates keep the width they
+        # need and only the text columns (names, references) shrink and wrap onto a second line.
+        size = MIN_FONT_PT
+        need = [max([stringWidth(str(headers[c]), "Helvetica-Bold", size)] + [stringWidth(str(r[c]), "Helvetica", size) for r in rows]) + pad
+                for c in range(len(headers))]
+        total_need = sum(need)
+        if total_need <= width:
+            spare = width - total_need
+            col_w = [n + spare * (n / total_need) for n in need]
+            data = [headers] + rows
+        else:
+            # Only long text columns wrap; short words like a status ("Pending") stay on one line.
+            is_text = [any(any(ch.isalpha() for ch in str(r[c])) for r in rows) and need[c] > 130 for c in range(len(headers))]
+            fixed = sum(n for n, t_ in zip(need, is_text) if not t_)
+            flex = sum(n for n, t_ in zip(need, is_text) if t_) or 1
+            room = max(width - fixed, 60)
+            col_w = [n if not t_ else n * room / flex for n, t_ in zip(need, is_text)]
+            cell_style = ParagraphStyle("RdCell", parent=styles["Normal"], fontSize=size, leading=size + 1.5)
+            data = [headers] + [[Paragraph(str(x), cell_style) if is_text[c] else x for c, x in enumerate(r)] for r in rows]
+        t = Table(data, colWidths=col_w, repeatRows=1)
+        t.setStyle(TableStyle(SECTION_TABLE_STYLE + [("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4)] + [("ALIGN", (c, 0), (c, -1), "RIGHT") for c in right_cols]))
+        story.append(t)
+    else:
+        story.append(Paragraph("Nothing to show for this selection.", st["empty"]))
+    _finish(doc, story)
     return buffer.getvalue()

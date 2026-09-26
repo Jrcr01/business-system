@@ -258,7 +258,9 @@ def create_bank_loan_placeholder(
             (bank_name, payee["PayeeId"]),
         )
         creditor_id = cur.lastrowid
-    loan_ref = f"PENDING-{payee['PayeeId']}"
+    # The loan keeps its original Access payee name as-is (user decision 2026-09-19: "it will
+    # correct overtime") -- phase8c maps installments back to the right loan by this same name.
+    loan_ref = payee["full_name"]
     cur2 = conn.execute(
         "INSERT INTO bank_loans (creditor_id, beneficiary_id, loan_ref, principal_amount, has_amortization, status) "
         "VALUES (?, ?, ?, NULL, 0, 'Active')",
@@ -299,7 +301,7 @@ def setup_system_settings(conn: sqlite3.Connection) -> None:
     couple of migration-provenance rows."""
     seed = [
         ("bank_name", "Metrobank", "general", "Primary bank display name"),
-        ("default_terms_picklist", "COD,30,60,90,120", "creditors", "Comma-separated terms offered when adding a creditor"),
+        ("default_terms_picklist", "COD,30,60,90,120,140,150", "creditors", "Comma-separated terms offered when adding a creditor"),
         ("primary_bank_account_id", "1", "general", "bank_accounts.bank_account_id for the primary account"),
         ("legacy_source", "Access TblPayee.txt export", "migration", "Origin of Phase 8a migrated master data"),
         ("phase8a_migration_date", date.today().isoformat(), "migration", "Date Phase 8a master data setup was run"),

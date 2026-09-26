@@ -81,6 +81,44 @@ def generate_pending_check_run_excel(check_ids: list[int] | None = None) -> byte
     return buffer.getvalue()
 
 
+CHRYSANTH_COLUMNS = ["Date", "Account No", "Payee", "Amount", "Cheque No", "Remark", "A/C Payee Only"]
+
+
+def _chrysanth_csv(df: pd.DataFrame) -> bytes:
+    dates = pd.to_datetime(df["check_date"])
+    export_df = pd.DataFrame({
+        "Date": [f"{d.month}/{d.day}/{d.year}" for d in dates],
+        "Account No": "",
+        "Payee": df["payee_name"].values,
+        "Amount": [f"{float(a):.2f}" for a in df["amount"]],
+        "Cheque No": df["check_number"].fillna("").astype(str).values,
+        "Remark": df["reference"].fillna("").astype(str).values,
+        "A/C Payee Only": "Y",
+    }, columns=CHRYSANTH_COLUMNS)
+    return export_df.to_csv(index=False).encode("utf-8-sig")
+
+
+def generate_pending_check_run_csv(check_ids: list[int] | None = None) -> bytes:
+    """CSV in Chrysanth's own cheque-transaction layout (2026-09-21, from the sample the user shared):
+    Date, Account No, Payee, Amount, Cheque No, Remark, A/C Payee Only. Account No is left empty (Chrysanth
+    uses its default account), Cheque No is only filled when a number has already been assigned (numbers are
+    normally assigned after printing), Remark is the batch / loan-note reference, and every check is
+    crossed "A/C Payee Only" (Y). Dates are month/day/year like the sample; UTF-8 with a BOM so Excel opens it cleanly."""
+    df = get_pending_check_run()
+    if check_ids is not None:
+        df = df[df["check_id"].isin(check_ids)]
+    return _chrysanth_csv(df)
+
+
+def generate_batch_csv(print_batch_id: int) -> bytes:
+    """The same CSV for a batch that was already exported -- so a file that was lost or never downloaded can
+    be produced again from the batch history (the checks stay tagged with their print_batch_id)."""
+    with sqlite3.connect(DB_PATH) as conn:
+        df = pd.read_sql_query(
+            _CHECK_ROW_SELECT + " WHERE c.print_batch_id = ? ORDER BY c.check_date ASC, c.check_id ASC", conn, params=(int(print_batch_id),))
+    return _chrysanth_csv(df)
+
+
 def get_unnumbered_checks() -> pd.DataFrame:
     """Every Active check that doesn't have a check_number yet, across every batch, Supplier and
     Lender alike -- regardless of printed_at (Phase 6 Redux: printing and number-assignment are
@@ -149,7 +187,7 @@ def get_check_print_batches() -> pd.DataFrame:
     history list."""
     with sqlite3.connect(DB_PATH) as conn:
         return pd.read_sql_query(
-            "SELECT print_batch_id, exported_at, check_count, total_amount FROM check_print_batches ORDER BY print_batch_id DESC",
+            "SELECT print_batch_id, datetime(exported_at, 'localtime') AS exported_at, check_count, total_amount FROM check_print_batches ORDER BY print_batch_id DESC",
             conn,
         )
 

@@ -119,7 +119,7 @@ def test_honda_giorno_attributed_to_rhodora(db, real_buckets):
 
     conn = sqlite3.connect(db)
     summary = p8a.run_migration(conn)
-    giorno_row = next(r for r in summary["bank_loan_rows"] if r["loan_ref"] == "PENDING-154")
+    giorno_row = next(r for r in summary["bank_loan_rows"] if r["loan_ref"] == "HONDA GIORNO")
     beneficiary_name = conn.execute(
         "SELECT name FROM loan_beneficiaries WHERE beneficiary_id = ?", (giorno_row["beneficiary_id"],)
     ).fetchone()[0]

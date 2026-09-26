@@ -2,7 +2,7 @@
 banner reads this directly, so its None-vs-real-dict behavior at the empty-data boundary matters:
 a wrong answer there is either a banner that never fires or one that crashes on an empty db."""
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 from conftest import make_creditor, make_statement
 from engines import dashboard_kpi_service as kpi
@@ -30,11 +30,11 @@ def test_computes_correct_share_of_total(db):
     stmt_big = cur.lastrowid
     conn.commit()
     conn.close()
-    _make_check(db, big, date(2026, 9, 20), 75000.0, stmt_big)
+    _make_check(db, big, date.today() + timedelta(days=30), 75000.0, stmt_big)
 
     small = make_creditor(db, name="Small Supplier", creditor_type="SUPPLIER")
     stmt_small = make_statement(db, small)
-    _make_check(db, small, date(2026, 9, 20), 25000.0, stmt_small)
+    _make_check(db, small, date.today() + timedelta(days=30), 25000.0, stmt_small)
 
     out = kpi.get_top_supplier_dependency()
     assert out["name"] == "Big Supplier"

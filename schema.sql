@@ -65,11 +65,15 @@ CREATE TABLE IF NOT EXISTS order_statements (
 -- issued it (creditors, type CREDIT_CARD). "there is a need of credit card holder registry."
 -- legacy_cardholder_id (migration 035, Phase 8a): traceable link back to the old Access
 -- TblCreditCardHolder id for a cardholder migrated from the legacy system.
+-- is_active (migration 037, Credit Card CRUD parity): reversible soft-delete, same pattern as
+-- creditors.is_active / credit_cards.is_active -- a cardholder who's left stops appearing as
+-- pickable for new cards/statements but keeps their existing history.
 CREATE TABLE IF NOT EXISTS cardholders (
     cardholder_id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     department TEXT,
     contact_number TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
     legacy_cardholder_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -186,6 +190,7 @@ CREATE TABLE IF NOT EXISTS bank_loans (
     mode_of_payment TEXT DEFAULT 'ADA',
     has_amortization INTEGER NOT NULL DEFAULT 0 CHECK(has_amortization IN (0, 1)),
     status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Closed')),
+    is_cancelled INTEGER NOT NULL DEFAULT 0 CHECK(is_cancelled IN (0, 1)),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (beneficiary_id) REFERENCES loan_beneficiaries(beneficiary_id)
@@ -280,6 +285,14 @@ CREATE TABLE IF NOT EXISTS checks_issued (
     CHECK (statement_id IS NOT NULL OR loan_note_id IS NOT NULL)
 );
 
+-- Migration 038 (2026-09-17): app-code alone (_is_check_number_available()) was the only thing
+-- stopping two checks from ending up with the same number on the same bank account -- a real
+-- backstop matters here since more than one code path writes check_number (issuance, manual
+-- correction, booklet assignment). NULL check_number (a parked, not-yet-printed check) is exempt
+-- since SQLite treats every NULL as distinct under a UNIQUE index, so any number of parked checks
+-- can coexist.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_checks_issued_unique_number ON checks_issued(bank_account_id, check_number);
+
 CREATE TABLE IF NOT EXISTS credit_memos (
     credit_memo_id INTEGER PRIMARY KEY AUTOINCREMENT,
     statement_id INTEGER NOT NULL,
@@ -337,6 +350,11 @@ CREATE TABLE IF NOT EXISTS spoiled_checks (
 CREATE TABLE IF NOT EXISTS cc_statements (
     cc_statement_id INTEGER PRIMARY KEY AUTOINCREMENT,
     card_id INTEGER NOT NULL,
+    -- statement_month (migration 039, 2026-09-19): which billing month this statement is FOR, as
+    -- 'YYYY-MM', entered separately from due_date so a month can be tracked even when its due date
+    -- falls in the next one. NULL on rows imported before this existed -- readers fall back to the
+    -- month of due_date (COALESCE(statement_month, SUBSTR(due_date, 1, 7))).
+    statement_month TEXT,
     due_date DATE NOT NULL,
     total_amount_due REAL NOT NULL CHECK(total_amount_due >= 0),
     previous_balance REAL NOT NULL DEFAULT 0,
@@ -344,6 +362,9 @@ CREATE TABLE IF NOT EXISTS cc_statements (
     interest_charged REAL NOT NULL DEFAULT 0,
     amount_paid REAL NOT NULL DEFAULT 0,
     unpaid_balance_next REAL NOT NULL DEFAULT 0,
+    -- paid_confirmed (migration 041, 2026-09-21): 0 = the amount paid is not known yet -- it is confirmed by the
+    -- NEXT statement's carried-over balance. Existing rows are 1 (their figures stand as entered).
+    paid_confirmed INTEGER NOT NULL DEFAULT 1 CHECK(paid_confirmed IN (0, 1)),
     status TEXT NOT NULL DEFAULT 'Unpaid' CHECK(status IN ('Unpaid', 'Partially Paid', 'Paid', 'Cancelled')),
     payment_method TEXT DEFAULT 'Cash / Online' CHECK(payment_method IN ('Cash / Online', 'Direct Debit', 'Check')),
     payment_date DATE,
@@ -549,3 +570,25 @@ CREATE TABLE IF NOT EXISTS creditor_master_internal (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Findings the user reviewed on Reports > Possible duplicates and marked "not a duplicate"
+-- (migration 042, 2026-09-21). dup_key identifies the finding, e.g. inv:<supplier id>:<normalized number>.
+CREATE TABLE IF NOT EXISTS duplicate_dismissals (
+    dismissal_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dup_key TEXT NOT NULL UNIQUE,
+    note TEXT,
+    dismissed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Credit card payments actually made (migration 043, 2026-09-21): when and how much was paid on a statement.
+CREATE TABLE IF NOT EXISTS cc_payments (
+    payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cc_statement_id INTEGER NOT NULL,
+    card_id INTEGER NOT NULL,
+    payment_date DATE NOT NULL,
+    amount REAL NOT NULL CHECK(amount > 0),
+    method TEXT,
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (cc_statement_id) REFERENCES cc_statements(cc_statement_id),
+    FOREIGN KEY (card_id) REFERENCES credit_cards(card_id)
+);

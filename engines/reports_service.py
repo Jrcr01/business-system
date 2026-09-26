@@ -1,4 +1,6 @@
 import sqlite3
+
+from engines.cc_rules import cc_owed_case, superseded_sql
 from datetime import date, timedelta
 
 import pandas as pd
@@ -110,36 +112,50 @@ def get_parked_checks_daily_totals() -> pd.DataFrame:
 
 
 _PAYMENT_SCHEDULE_UNION = """
-    SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Supplier' AS track, COALESCE(c.check_number, 'Pending') AS reference, c.amount AS amount
+    -- 2026-09-22: 'today and future' -- an item due TODAY is still to be paid, so >= (it used to start tomorrow).
+    SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Supplier' AS track, COALESCE(c.check_number, 'Pending') AS reference, os.statement_ref AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND c.check_date > DATE('now', 'localtime')
+    LEFT JOIN order_statements os ON os.statement_id = c.statement_id
+    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND c.check_date >= DATE('now', 'localtime')
 
     UNION ALL
 
-    SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Lender' AS track, COALESCE(c.check_number, 'Pending') AS reference, c.amount AS amount
+    -- Lender checks aren't batched (Loan Notes track, not Order Statements) -- batch is NULL.
+    SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Lender' AS track, COALESCE(c.check_number, 'Pending') AS reference, NULL AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND c.check_date > DATE('now', 'localtime')
+    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND c.check_date >= DATE('now', 'localtime')
 
     UNION ALL
 
+    -- Bank Loan installments have no batch concept either -- NULL, same as Lender above.
     SELECT bli.due_date AS due_date, cr.creditor_name AS payee_name, 'Bank Loan' AS track,
            CASE WHEN lb.name IS NOT NULL THEN lb.name || ' - ' || bl.loan_ref ELSE bl.loan_ref END AS reference,
+           NULL AS batch,
            bli.amount AS amount
     FROM bank_loan_installments bli
     JOIN bank_loans bl ON bli.bank_loan_id = bl.bank_loan_id
     JOIN creditors cr ON bl.creditor_id = cr.creditor_id
     LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id
-    WHERE bli.due_date > DATE('now', 'localtime')
+    WHERE bli.due_date >= DATE('now', 'localtime') AND bl.is_cancelled = 0
 
     UNION ALL
 
+    -- Credit Card statements have no batch concept either -- NULL, same as Lender/Bank Loan above.
     SELECT cs.due_date AS due_date, cr.creditor_name AS payee_name, 'Credit Card' AS track,
-           (cc.card_name || ' - ' || cc.card_number_last4) AS reference, cs.total_amount_due AS amount
+           CASE WHEN ch.name IS NOT NULL THEN ch.name || ' - ' || cc.card_name || ' - ' || cc.card_number_last4
+                ELSE cc.card_name || ' - ' || cc.card_number_last4 END AS reference,
+           NULL AS batch,
+           CASE WHEN cs.unpaid_balance_next > 0 THEN cs.unpaid_balance_next ELSE cs.total_amount_due END AS amount
     FROM cc_statements cs
     JOIN credit_cards cc ON cs.card_id = cc.card_id
     JOIN creditors cr ON cc.creditor_id = cr.creditor_id
-    WHERE cs.status = 'Unpaid' AND cs.due_date >= DATE('now', 'localtime')
+    LEFT JOIN cardholders ch ON cc.cardholder_id = ch.cardholder_id
+    WHERE cs.status IN ('Unpaid', 'Partially Paid') AND cs.due_date >= DATE('now', 'localtime')
+      AND NOT (cs.unpaid_balance_next > 0 AND """ + superseded_sql("cs") + """)
 """
+
+
+PAYMENT_SCHEDULE_TRACK_ORDER = {"Lender": 0, "Bank Loan": 1, "Supplier": 2, "Credit Card": 3}
 
 
 def get_payment_schedule_all_tracks() -> pd.DataFrame:
@@ -150,14 +166,21 @@ def get_payment_schedule_all_tracks() -> pd.DataFrame:
     "reference" is whatever identifies that row within its own track (check number for
     Supplier/Lender, loan ref for Bank Loan -- prefixed with the loan's attributable person's
     name when one is on file, e.g. "Emelita Roxas - PENDING-153", so it's clear at a glance
-    whose loan a row belongs to -- card name+last4 for Credit Card) -- there's no single concept
+    whose loan a row belongs to -- card name+last4 for Credit Card, same cardholder-prefix
+    treatment, e.g. "Rhodora Roxas - Shopmore - 4102", 2026-09-17) -- there's no single concept
     that means the same thing across all four, so the column just holds whichever one applies.
+    "batch" is the Order Statement's statement_ref for Supplier rows (2026-09-20, PDF export
+    request) -- the only track actually built on batches; NULL for Lender/Bank Loan/Credit Card,
+    which have no such concept.
     actual_payment_date shifts a weekend due_date to the following Monday (reports-only display
     convention -- see next_banking_day())."""
     with sqlite3.connect(DB_PATH) as conn:
         df = pd.read_sql_query(f"SELECT * FROM ({_PAYMENT_SCHEDULE_UNION}) ORDER BY due_date ASC, track ASC", conn)
     if not df.empty:
         df["actual_payment_date"] = df["due_date"].apply(next_banking_day)
+        # Within each payment day: by track (Lender, Bank Loan, Supplier, Credit Card), then smallest amount first.
+        df["_track_rank"] = df["track"].map(PAYMENT_SCHEDULE_TRACK_ORDER).fillna(len(PAYMENT_SCHEDULE_TRACK_ORDER))
+        df = df.sort_values(["actual_payment_date", "_track_rank", "amount"], kind="stable").drop(columns="_track_rank").reset_index(drop=True)
     return df
 
 
@@ -199,15 +222,11 @@ def get_combined_ap_summary() -> pd.DataFrame:
                FROM loan_notes ln WHERE status IN ('Active', 'Defaulted')"""
         ).fetchone()[0]
         bank_loan = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date > DATE('now', 'localtime')"
+            "SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date > DATE('now', 'localtime') AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)"
         ).fetchone()[0]
         credit_card = conn.execute(
-            """SELECT COALESCE(SUM(
-                   CASE WHEN unpaid_balance_next > 0 THEN unpaid_balance_next
-                        WHEN due_date >= DATE('now', 'localtime') THEN total_amount_due
-                        ELSE 0 END
-               ), 0)
-               FROM cc_statements WHERE status NOT IN ('Paid', 'Cancelled')"""
+            f"""SELECT COALESCE(SUM({cc_owed_case('cs')}), 0)
+               FROM cc_statements cs WHERE cs.status NOT IN ('Paid', 'Cancelled')"""
         ).fetchone()[0]
 
     df = pd.DataFrame([
@@ -273,7 +292,7 @@ def get_supplier_history(creditor_id: int):
     master reports."""
     with sqlite3.connect(DB_PATH) as conn:
         statements = pd.read_sql_query(
-            "SELECT statement_id, statement_ref, total_amount, status, created_at "
+            "SELECT statement_id, statement_ref, total_amount, status, datetime(created_at, 'localtime') AS created_at "
             "FROM order_statements WHERE creditor_id = ? ORDER BY created_at",
             conn, params=(creditor_id,),
         )
@@ -290,6 +309,73 @@ def get_supplier_history(creditor_id: int):
             conn, params=(creditor_id,),
         )
     return statements, invoices, checks
+
+
+def get_payables_rundown(creditor_id: int | None = None, date_from=None, date_to=None) -> pd.DataFrame:
+    """One row per supplier batch (order statement), for one supplier or all of them, with how
+    much of it is paid and what is still open. Batches are the unit here because that is what is
+    actually paid: the migrated history has batches and checks but no invoice lines.
+
+    paid       = Active checks whose date has arrived (cleared -- the same rule used everywhere)
+    scheduled  = Active checks still post-dated (issued, not yet due)
+    open       = net total - paid - scheduled (not covered by any check yet)
+    status     = Paid (paid covers the net total) / Partially Paid (some paid) / Pending (none paid yet)
+    From/To narrow to batches with a check dated inside that window (a batch with no checks yet is
+    matched on its created date) -- the amounts shown are always the whole batch.
+    Cancelled batches and empty drafts are left out."""
+    query = """
+    SELECT c.creditor_name AS supplier, b.statement_ref AS batch,
+           (SELECT MIN(k.check_date) FROM checks_issued k WHERE k.statement_id = b.statement_id AND k.status = 'Active') AS first_check,
+           (SELECT MAX(k.check_date) FROM checks_issued k WHERE k.statement_id = b.statement_id AND k.status = 'Active') AS last_check,
+           (SELECT DATE(os.created_at, 'localtime') FROM order_statements os WHERE os.statement_id = b.statement_id) AS created,
+           b.net_total AS net_total,
+           COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = b.statement_id
+                     AND k.status = 'Active' AND k.check_date <= DATE('now', 'localtime')), 0) AS paid,
+           COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = b.statement_id
+                     AND k.status = 'Active' AND k.check_date > DATE('now', 'localtime')), 0) AS scheduled
+    FROM v_batch_net_totals b
+    JOIN creditors c ON c.creditor_id = b.creditor_id
+    WHERE b.status = 'Issued' AND c.creditor_type = 'SUPPLIER'
+      AND (? IS NULL OR b.creditor_id = ?)
+    ORDER BY c.creditor_name, b.statement_id
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        df = pd.read_sql_query(query, conn, params=(creditor_id, creditor_id))
+    if date_from is not None or date_to is not None:
+        lo = str(date_from) if date_from else "0000-01-01"
+        hi = str(date_to) if date_to else "9999-12-31"
+        has_checks = df["first_check"].notna()
+        in_window = (df["last_check"].fillna("") >= lo) & (df["first_check"].fillna("9999") <= hi)
+        created_in = (df["created"].fillna("") >= lo) & (df["created"].fillna("") <= hi)
+        df = df[(has_checks & in_window) | (~has_checks & created_in)].copy()
+    df["open"] = (df["net_total"] - df["paid"] - df["scheduled"]).round(2)
+    df["balance"] = (df["net_total"] - df["paid"]).round(2)
+    df["status"] = df.apply(
+        lambda r: "Paid" if r["net_total"] > 0 and r["balance"] <= 0.005 else ("Partially Paid" if r["paid"] > 0.005 else "Pending"),
+        axis=1,
+    )
+    return df
+
+
+def get_invoice_rundown(creditor_id: int | None = None, date_from=None, date_to=None) -> pd.DataFrame:
+    """One row per invoice (cancelled ones left out), for one supplier or all, with its status
+    shown as Paid / Partially Paid / Pending (the stored 'Unpaid'). Date range is on invoice date."""
+    query = """
+    SELECT c.creditor_name AS supplier, i.doc_ref AS invoice, os.statement_ref AS batch,
+           i.invoice_date, i.due_date, i.amount,
+           CASE i.status WHEN 'Unpaid' THEN 'Pending' ELSE i.status END AS status
+    FROM invoices i
+    JOIN creditors c ON c.creditor_id = i.creditor_id
+    LEFT JOIN order_statements os ON os.statement_id = i.statement_id
+    WHERE i.status != 'Cancelled' AND c.creditor_type = 'SUPPLIER'
+      AND (? IS NULL OR i.creditor_id = ?)
+      AND (? IS NULL OR i.invoice_date >= ?) AND (? IS NULL OR i.invoice_date <= ?)
+    ORDER BY c.creditor_name, i.invoice_date, i.doc_ref
+    """
+    d1 = str(date_from) if date_from else None
+    d2 = str(date_to) if date_to else None
+    with sqlite3.connect(DB_PATH) as conn:
+        return pd.read_sql_query(query, conn, params=(creditor_id, creditor_id, d1, d1, d2, d2))
 
 
 def get_lender_history(creditor_id: int):
@@ -397,11 +483,11 @@ def get_bank_loan_servicing_report() -> pd.DataFrame:
     SELECT
         c.creditor_name AS bank_name, bl.loan_ref, bl.account_number, bl.start_date, bl.maturity_date,
         bl.principal_amount,
-        COALESCE(
+        CASE WHEN bl.is_cancelled = 1 THEN 0 ELSE COALESCE(
             (SELECT SUM(amount) FROM bank_loan_installments
              WHERE bank_loan_id = bl.bank_loan_id AND due_date > DATE('now', 'localtime')), 0
-        ) AS outstanding,
-        bl.mode_of_payment, bl.status, lb.name AS beneficiary, lb.beneficiary_type
+        ) END AS outstanding,
+        bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, lb.name AS beneficiary, lb.beneficiary_type
     FROM bank_loans bl
     JOIN creditors c ON bl.creditor_id = c.creditor_id
     LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id

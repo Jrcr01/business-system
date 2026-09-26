@@ -101,7 +101,7 @@ def _info_panel(note, styles) -> Table:
         [Paragraph("PRINCIPAL", label_style), Paragraph("MONTHLY INTEREST", label_style),
          Paragraph("GENERATED", label_style), Paragraph("", label_style)],
         [Paragraph(f"PHP {_money(note['principal_amount'])}", value_style),
-         Paragraph(f"{note['monthly_interest_rate']:g}%", value_style),
+         Paragraph("—" if note["monthly_interest_rate"] is None else f"{note['monthly_interest_rate']:g}%", value_style),
          Paragraph(datetime.now().strftime("%Y-%m-%d %H:%M"), value_style), Paragraph("", value_style)],
     ]
     panel = Table(rows, colWidths=[CONTENT_WIDTH * 0.25] * 4)

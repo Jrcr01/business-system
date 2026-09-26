@@ -11,6 +11,10 @@ DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 # rule (some cards can genuinely go a cycle with no charges) -- just a "check this" prompt.
 STATEMENT_GAP_THRESHOLD_DAYS = 35
 
+# When a card has no Statement day set, its statement is assumed to arrive this many days before
+# last month's due day (used by get_statement_coverage()).
+STATEMENT_ARRIVAL_LEAD_DAYS = 14
+
 
 def get_statement_gap_alerts() -> pd.DataFrame:
     """Flags cards that may be missing a recorded statement: no statement at all, or the most
@@ -25,6 +29,7 @@ def get_statement_gap_alerts() -> pd.DataFrame:
                FROM credit_cards cc
                LEFT JOIN cardholders ch ON cc.cardholder_id = ch.cardholder_id
                LEFT JOIN cc_statements cs ON cc.card_id = cs.card_id
+               WHERE cc.is_active = 1
                GROUP BY cc.card_id""",
             conn,
         )
@@ -40,6 +45,78 @@ def get_statement_gap_alerts() -> pd.DataFrame:
         lambda d: "No statement on file yet" if pd.isna(d) else ("Possibly missing a statement" if d > STATEMENT_GAP_THRESHOLD_DAYS else None)
     )
     return df[df["alert"].notna()].reset_index(drop=True)
+
+
+def get_statement_coverage(today: date | None = None) -> pd.DataFrame:
+    """Month-over-month "did we miss a card?" check (2026-09-19, user request): for every ACTIVE
+    card, whether a statement is recorded (any due date) in the previous month and in the current
+    month, so a card that had one last month but has none yet this month stands out.
+
+    Status, most urgent first:
+      "Missing this month"  had a statement last month, none recorded for this month, and it's
+                            already the day it should have arrived (see below)
+      "Not yet expected"    same, but this card's statement isn't due to arrive yet this month
+      "Missing both months" older history exists, but nothing last month or this month
+      "No statement ever"   nothing on file at all (new/unused card, or history never entered)
+      "OK"                  has a statement recorded for this month
+    "Expected by" is the card's Statement day when one is set; otherwise it is estimated as 14
+    days before last month's due day (statements typically issue ~2-3 weeks ahead of the due date),
+    so a card only turns up as missing once it's actually overdue for follow-up, not on the 1st.
+    Depends on statements actually being on file -- last month only shows up once past
+    statements have been entered (or backfilled), which is why an OK/Missing verdict is only as
+    good as the history behind it."""
+    today = today or date.today()
+    this_start = today.replace(day=1)
+    prev_start = date(this_start.year - (1 if this_start.month == 1 else 0), 12 if this_start.month == 1 else this_start.month - 1, 1)
+    next_start = date(this_start.year + (1 if this_start.month == 12 else 0), 1 if this_start.month == 12 else this_start.month + 1, 1)
+    with sqlite3.connect(DB_PATH) as conn:
+        df = pd.read_sql_query(
+            """SELECT cc.card_id, COALESCE(ch.name, '(no holder)') AS cardholder, cr.creditor_name AS issuer,
+                      cc.card_name, cc.card_number_last4, cc.statement_day,
+                      MAX(CASE WHEN COALESCE(s.statement_month, SUBSTR(s.due_date, 1, 7)) = :prev THEN s.due_date END) AS prev_month_due,
+                      SUM(CASE WHEN COALESCE(s.statement_month, SUBSTR(s.due_date, 1, 7)) = :prev THEN s.total_amount_due END) AS prev_month_amount,
+                      MAX(CASE WHEN COALESCE(s.statement_month, SUBSTR(s.due_date, 1, 7)) = :this THEN s.due_date END) AS this_month_due,
+                      SUM(CASE WHEN COALESCE(s.statement_month, SUBSTR(s.due_date, 1, 7)) = :this THEN s.total_amount_due END) AS this_month_amount,
+                      MAX(s.due_date) AS last_due_date
+               FROM credit_cards cc
+               JOIN creditors cr ON cc.creditor_id = cr.creditor_id
+               LEFT JOIN cardholders ch ON cc.cardholder_id = ch.cardholder_id
+               LEFT JOIN cc_statements s ON cc.card_id = s.card_id
+               WHERE cc.is_active = 1
+               GROUP BY cc.card_id""",
+            conn, params={"prev": prev_start.strftime("%Y-%m"), "this": this_start.strftime("%Y-%m")},
+        )
+    if df.empty:
+        df["status"] = pd.Series(dtype=str)
+        return df
+
+    def status(r):
+        if pd.notna(r["this_month_due"]):
+            return "OK"
+        if pd.notna(r["prev_month_due"]):
+            return "Missing this month"
+        if pd.notna(r["last_due_date"]):
+            return "Missing both months"
+        return "No statement ever"
+
+    def expected_by(r):
+        # Day of THIS month the statement should have arrived by; None when nothing to estimate from.
+        last_day = (next_start - date.resolution).day
+        if pd.notna(r["statement_day"]) and int(r["statement_day"]) > 0:
+            day = int(r["statement_day"])
+        elif pd.notna(r["prev_month_due"]):
+            day = max(1, int(str(r["prev_month_due"])[8:10]) - STATEMENT_ARRIVAL_LEAD_DAYS)
+        else:
+            return None
+        return date(this_start.year, this_start.month, min(day, last_day))
+
+    df["status"] = df.apply(status, axis=1)
+    df["expected_by"] = df.apply(expected_by, axis=1)
+    not_yet = (df["status"] != "OK") & df["expected_by"].notna() & df["expected_by"].apply(lambda d: d is not None and today < d)
+    df.loc[not_yet & (df["status"] == "Missing this month"), "status"] = "Not yet expected"
+    df["expected_by"] = df["expected_by"].apply(lambda d: str(d) if d is not None and not pd.isna(d) else None)
+    order = {"Missing this month": 0, "Missing both months": 1, "No statement ever": 2, "Not yet expected": 3, "OK": 4}
+    return df.assign(_o=df["status"].map(order)).sort_values(["_o", "cardholder", "issuer", "card_name"]).drop(columns="_o").reset_index(drop=True)
 
 
 _MONTH_LABELS = {0: "This month", 1: "Next month"}

@@ -8,6 +8,7 @@ confirmed via the existing add_invoice() path.
 """
 from __future__ import annotations
 
+import difflib
 import io
 from dataclasses import dataclass
 from datetime import date
@@ -82,6 +83,10 @@ def parse_invoice_spreadsheet(file_bytes: bytes, filename: str) -> tuple[list[Im
     except Exception as e:
         return [], [f"Could not read spreadsheet: {e}"]
 
+    return _rows_from_df(df)
+
+
+def _rows_from_df(df: pd.DataFrame) -> tuple[list[ImportedInvoiceRow], list[str]]:
     if df.empty:
         return [], ["Spreadsheet has no rows."]
 
@@ -146,3 +151,68 @@ def parse_invoice_spreadsheet(file_bytes: bytes, filename: str) -> tuple[list[Im
     if not rows:
         messages.append("No usable rows found in the spreadsheet.")
     return rows, messages
+
+
+@dataclass
+class ImportedSheet:
+    sheet_name: str
+    rows: list
+    messages: list
+
+
+def parse_invoice_workbook(file_bytes: bytes) -> tuple[list[ImportedSheet], list[str]]:
+    """Reads EVERY sheet of an .xlsx workbook with the same column rules as a single-sheet import.
+    One sheet = one new batch (tabs starting with "_" are helper tabs and are ignored). Sheets with nothing usable are still returned (with a message) so
+    they show up in the review instead of silently vanishing. Never raises."""
+    try:
+        sheets = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None, dtype=str, engine="openpyxl")
+    except Exception as e:
+        return [], [f"Could not read the workbook: {e}"]
+    out = []
+    for name, df in sheets.items():
+        if str(name).startswith("_"):
+            continue  # helper tabs (instructions, supplier list) are named with a leading underscore
+        rows, messages = _rows_from_df(df.fillna(""))
+        out.append(ImportedSheet(sheet_name=str(name), rows=rows, messages=messages))
+    if not out:
+        return [], ["The workbook has no sheets."]
+    return out, []
+
+
+def _norm_name(text: str) -> str:
+    return " ".join("".join(ch if ch.isalnum() else " " for ch in str(text).lower()).split())
+
+
+def match_supplier(sheet_name: str, suppliers: dict) -> int | None:
+    """Best guess at which supplier a sheet belongs to, from the sheet's tab name. suppliers is
+    {creditor_id: name}. Exact name first, then a name contained in the tab (or the tab contained in
+    a name, so "Acom - Sept" and "Acom" both find Acom Trading), then a close spelling. None if
+    nothing is convincing -- the review screen then makes the user pick."""
+    target = _norm_name(sheet_name)
+    if not target:
+        return None
+    names = {cid: _norm_name(n) for cid, n in suppliers.items()}
+    for cid, n in names.items():
+        if n == target:
+            return cid
+    contained = [(len(n), cid) for cid, n in names.items() if n and (n in target or (len(target) >= 4 and target in n))]
+    if contained:
+        return max(contained)[1]
+    # Leading words: "Acom - Sept" starts with the same word as "Acom Trading". Only trusted when the
+    # match is unique, otherwise the user picks.
+    def lead(a: str, b: str) -> int:
+        n = 0
+        for x, y in zip(a.split(), b.split()):
+            if x != y:
+                break
+            n += 1
+        return n
+    scored = [(lead(target, n), cid) for cid, n in names.items()]
+    scored = [(k, cid) for k, cid in scored if k >= 1 and len(target.split()[0]) >= 4]
+    if scored:
+        top = max(k for k, _ in scored)
+        winners = [cid for k, cid in scored if k == top]
+        if len(winners) == 1:
+            return winners[0]
+    best = max(((difflib.SequenceMatcher(None, target, n).ratio(), cid) for cid, n in names.items()), default=(0, None))
+    return best[1] if best[0] >= 0.8 else None

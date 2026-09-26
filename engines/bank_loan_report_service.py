@@ -97,7 +97,7 @@ def _info_panel(loan, styles) -> Table:
          Paragraph(loan["account_number"] or "—", value_style), Paragraph(loan["status"], value_style)],
         [Paragraph("START DATE", label_style), Paragraph("MATURITY DATE", label_style),
          Paragraph("PRINCIPAL", label_style), Paragraph("MODE OF PAYMENT", label_style)],
-        [Paragraph(loan["start_date"], value_style), Paragraph(loan["maturity_date"], value_style),
+        [Paragraph(loan["start_date"] or "—", value_style), Paragraph(loan["maturity_date"] or "—", value_style),
          Paragraph(f"PHP {_money(loan['principal_amount'])}", value_style), Paragraph(loan["mode_of_payment"] or "—", value_style)],
         [Paragraph("ATTRIBUTABLE TO", label_style), Paragraph("", label_style),
          Paragraph("", label_style), Paragraph("", label_style)],

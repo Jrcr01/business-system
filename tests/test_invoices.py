@@ -23,6 +23,20 @@ def test_add_invoice_computes_net_amount_and_recomputes_batch_total(db):
     assert row == (900.0,)  # recompute_statement_total() ran
 
 
+def test_add_invoice_full_discount_zeroes_out_net_amount(db):
+    """2026-09-17 fix: calculate_trade_discount()'s `0 < rate < 100` used to exclude exactly 100
+    (a full write-off/waiver), silently charging the full gross amount instead of zero."""
+    creditor_id = make_creditor(db)
+    statement_id = make_statement(db, creditor_id)
+
+    net_amount, total_discount, warnings = app.add_invoice(
+        creditor_id, "INV-WAIVED", date(2026, 1, 15), date(2026, 2, 14), 1000.0, [100.0], statement_id,
+    )
+
+    assert net_amount == 0.0
+    assert total_discount == 1000.0
+
+
 def test_add_invoice_duplicate_doc_ref_same_supplier_raises_integrity_error(db):
     # Unlike edit_invoice() (which catches this and returns a friendly message),
     # add_invoice() lets sqlite3.IntegrityError propagate -- documenting that
@@ -129,3 +143,21 @@ def test_delete_invoice_blocked_when_batch_locked(db):
 
     assert not ok
     assert "locked" in msg.lower()
+
+
+def test_delete_invoice_blocked_when_check_already_allocated(db):
+    """2026-09-17 fix: this used to let the DELETE hit invoice_check_allocations' FK constraint
+    as a raw, uncaught sqlite3.IntegrityError instead of a friendly message."""
+    creditor_id = make_creditor(db)
+    statement_id = make_statement(db, creditor_id)
+    app.add_invoice(creditor_id, "INV-009", date(2026, 1, 1), date(2026, 1, 31), 1000.0, [], statement_id)
+    invoice_id = fetchone(db, "SELECT invoice_id FROM invoices WHERE doc_ref = 'INV-009'")[0]
+    ok, _msg, check_ids = app.issue_checks_grid(creditor_id, statement_id, [{"check_date": date(2026, 1, 10), "amount": 1000.0}])
+    assert ok
+    app.allocate_check_to_invoices(check_ids[0], [(invoice_id, 1000.0)])
+
+    ok, msg = app.delete_invoice(invoice_id)
+
+    assert not ok
+    assert "allocated" in msg.lower()
+    assert fetchone(db, "SELECT COUNT(*) FROM invoices WHERE invoice_id = ?", (invoice_id,)) == (1,)

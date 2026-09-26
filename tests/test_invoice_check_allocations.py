@@ -124,3 +124,61 @@ def test_get_invoices_with_remaining_excludes_cancelled_and_fully_allocated(db):
     open_df = app.get_invoices_with_remaining(statement_id)
 
     assert list(open_df["doc_ref"]) == ["INV-OPEN"]
+
+
+def test_cancel_check_releases_its_invoice_allocation(db):
+    """2026-09-17 fix: cancelling an allocated check used to leave its
+    invoice_check_allocations row in place -- the invoice stayed permanently "paid" by a check
+    that no longer existed, and that slice of it could never be allocated to anything else."""
+    creditor_id = make_creditor(db)
+    statement_id = make_statement(db, creditor_id)
+    app.add_invoice(creditor_id, "INV-1", date(2026, 1, 1), date(2026, 1, 31), 1000.0, [], statement_id)
+    invoice_id = fetchone(db, "SELECT invoice_id FROM invoices WHERE doc_ref = 'INV-1'")[0]
+    ok, _msg, check_ids = app.issue_checks_grid(creditor_id, statement_id, [{"check_date": date(2026, 1, 10), "amount": 1000.0}])
+    assert ok
+    app.allocate_check_to_invoices(check_ids[0], [(invoice_id, 1000.0)])
+
+    ok, msg = app.cancel_check(check_ids[0])
+
+    assert ok
+    assert fetchone(db, "SELECT COUNT(*) FROM invoice_check_allocations WHERE check_id = ?", (check_ids[0],)) == (0,)
+    remaining_after = app.get_invoices_with_remaining(statement_id)
+    assert len(remaining_after) == 1
+    assert remaining_after.iloc[0]["remaining"] == 1000.0
+
+
+def test_cancel_check_rejects_locked_batch(db):
+    """2026-09-17 fix: cancel_check() had no batch-lock guard at all, unlike
+    replace_check()/apply_check_correction()."""
+    creditor_id = make_creditor(db)
+    statement_id = make_statement(db, creditor_id)
+    app.add_invoice(creditor_id, "INV-1", date(2026, 1, 1), date(2026, 1, 31), 1000.0, [], statement_id)
+    ok, _msg, check_ids = app.issue_checks_grid(creditor_id, statement_id, [{"check_date": date(2026, 1, 10), "amount": 1000.0}])
+    assert ok
+    with app.get_conn() as conn:
+        conn.execute("UPDATE order_statements SET is_locked = 1 WHERE statement_id = ?", (statement_id,))
+        conn.commit()
+
+    ok, msg = app.cancel_check(check_ids[0])
+
+    assert not ok
+    assert "locked" in msg.lower()
+    assert fetchone(db, "SELECT status FROM checks_issued WHERE check_id = ?", (check_ids[0],)) == ("Active",)
+
+
+def test_replace_check_retargets_its_invoice_allocation(db):
+    """2026-09-17 fix: replacing a check used to leave its invoice_check_allocations row
+    pointing at the now-Replaced old check_id instead of moving to the new one."""
+    creditor_id = make_creditor(db)
+    statement_id = make_statement(db, creditor_id)
+    app.add_invoice(creditor_id, "INV-1", date(2026, 1, 1), date(2026, 1, 31), 1000.0, [], statement_id)
+    invoice_id = fetchone(db, "SELECT invoice_id FROM invoices WHERE doc_ref = 'INV-1'")[0]
+    ok, _msg, check_ids = app.issue_checks_grid(creditor_id, statement_id, [{"check_date": date(2026, 1, 10), "amount": 1000.0}])
+    assert ok
+    app.allocate_check_to_invoices(check_ids[0], [(invoice_id, 1000.0)])
+
+    ok, msg, new_check_id = app.replace_check(check_ids[0], date(2026, 1, 15), "postdated")
+
+    assert ok
+    row = fetchone(db, "SELECT check_id FROM invoice_check_allocations WHERE invoice_id = ?", (invoice_id,))
+    assert row == (new_check_id,)

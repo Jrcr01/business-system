@@ -34,6 +34,15 @@ What gets created, per postdated (date > today) entry in TblPayeeChecks.txt:
     cash" design). Matched to the specific bank_loans row via legacy_payee_id (each legacy
     bank-loan payee became its own bank_loans placeholder in Phase 8a). Also flips
     has_amortization to 1 on any bank loan that gains a real installment this way.
+  - CREDIT CARD (2026-09-17, per user request, second data pull): TblCreditCardStatement.txt was
+    out of scope for the first migration pass (Phase 8a deliberately skipped CC statement history
+    entirely), but the user's updated export included it and asked for the same "postdated only"
+    treatment as everything else. One cc_statements row per still-due (due_date > today) legacy
+    statement, matched to its credit_cards row via legacy_card_id. previous_balance/new_charges/
+    interest_charged/amount_paid/unpaid_balance_next all stay 0 -- there's no rolling-balance
+    detail in the legacy export, just a due date and a total, same "legacy statement" shape the
+    app's own Total AP outstanding KPI already expects (falls through to the due-date-only rule,
+    per its own docstring) -- status 'Unpaid' throughout, since none of these have been paid yet.
 
 Deliberately NOT done: nothing about already-cleared (date <= today) history is touched -- this
 is additive, forward-looking data only, consistent with the "fresh start" rule the rest of
@@ -53,6 +62,7 @@ import phase8a_master_data_setup as p8a
 
 PROJECT_ROOT = p8a.PROJECT_ROOT
 PAYEE_CHECKS_PATH = os.path.join(PROJECT_ROOT, "data", "source", "TblPayeeChecks.txt")
+CC_STATEMENT_PATH = os.path.join(PROJECT_ROOT, "data", "source", "TblCreditCardStatement.txt")
 TEST_DB_PATH = p8a.TEST_DB_PATH
 REPORT_PATH = os.path.join(PROJECT_ROOT, "report_8c.txt")
 
@@ -110,6 +120,35 @@ def parse_postdated_checks(path: str = PAYEE_CHECKS_PATH, today: date = TODAY) -
     return checks
 
 
+def parse_postdated_cc_statements(path: str = CC_STATEMENT_PATH, today: date = TODAY) -> list:
+    """Every credit card statement with a real amount and due_date > today. Row shape confirmed
+    against the legacy file directly: legacy_statement_id, legacy_card_id, due_date, "$"-prefixed
+    total_amount_due, entered_at (unused) -- e.g. '1,1,1/3/2022 0:00:00,$19988.95,"2/21/2022
+    12:44:20 PM"'. Missing file (this table wasn't part of the original export set, only added
+    2026-09-17) degrades to "nothing to import" rather than erroring, so this script still works
+    against the original file set."""
+    if not os.path.exists(path):
+        return []
+    statements = []
+    with open(path, encoding="cp1252", errors="replace") as f:
+        for row in csv.reader(f):
+            if not row or not row[0].strip():
+                continue
+            amt = parse_amount(row[3])
+            if amt == 0:
+                continue
+            d = parse_mdy(row[2])
+            if d is None or d <= today:
+                continue
+            statements.append({
+                "legacy_statement_id": int(row[0]),
+                "legacy_card_id": int(row[1]),
+                "due_date": d,
+                "total_amount_due": amt,
+            })
+    return statements
+
+
 def _creditor_id_by_legacy_payee(conn: sqlite3.Connection) -> dict:
     return {row[0]: row[1] for row in conn.execute(
         "SELECT legacy_payee_id, creditor_id FROM creditors WHERE legacy_payee_id IS NOT NULL"
@@ -119,16 +158,17 @@ def _creditor_id_by_legacy_payee(conn: sqlite3.Connection) -> dict:
 def _bank_loan_id_by_legacy_payee(conn: sqlite3.Connection) -> dict:
     """bank_loans has no legacy_payee_id column of its own -- unlike creditors/cardholders,
     it can't have one directly, since several bank_loans rows share a single creditor (one per
-    issuing bank, per Phase 8a's grouping). Each row's own legacy origin is instead encoded in
-    loan_ref, set to "PENDING-<legacy payee_id>" by create_bank_loan_placeholder()
-    (phase8a_master_data_setup.py) -- parsed back out here for an exact per-loan mapping."""
+    issuing bank, per Phase 8a's grouping). Each row's own legacy origin is instead its loan_ref,
+    which create_bank_loan_placeholder() (phase8a_master_data_setup.py) sets to the original
+    Access payee name as-is -- matched back to PayeeId here by that exact name."""
+    payee_id_by_name = {
+        p["full_name"]: p["PayeeId"]
+        for p in p8a.categorize_and_resolve_payees(p8a.parse_payee_tagged_csv())["bank_loans"]
+    }
     mapping = {}
-    for bank_loan_id, loan_ref in conn.execute("SELECT bank_loan_id, loan_ref FROM bank_loans WHERE loan_ref LIKE 'PENDING-%'"):
-        try:
-            payee_id = int(loan_ref.split("-", 1)[1])
-        except (IndexError, ValueError):
-            continue
-        mapping[payee_id] = bank_loan_id
+    for bank_loan_id, loan_ref in conn.execute("SELECT bank_loan_id, loan_ref FROM bank_loans"):
+        if loan_ref in payee_id_by_name:
+            mapping[payee_id_by_name[loan_ref]] = bank_loan_id
     return mapping
 
 
@@ -136,6 +176,12 @@ def _loan_note_id_by_legacy_payee(conn: sqlite3.Connection) -> dict:
     return {row[0]: row[1] for row in conn.execute(
         "SELECT c.legacy_payee_id, ln.loan_note_id FROM loan_notes ln "
         "JOIN creditors c ON ln.creditor_id = c.creditor_id WHERE c.legacy_payee_id IS NOT NULL"
+    )}
+
+
+def _card_id_by_legacy_card_id(conn: sqlite3.Connection) -> dict:
+    return {row[0]: row[1] for row in conn.execute(
+        "SELECT legacy_card_id, card_id FROM credit_cards WHERE legacy_card_id IS NOT NULL"
     )}
 
 
@@ -156,10 +202,12 @@ def reconstruct_pending_transactions(conn: sqlite3.Connection) -> dict:
         )
 
     postdated = parse_postdated_checks()
+    postdated_cc = parse_postdated_cc_statements()
 
     creditor_by_payee = _creditor_id_by_legacy_payee(conn)
     bank_loan_by_payee = _bank_loan_id_by_legacy_payee(conn)
     loan_note_by_payee = _loan_note_id_by_legacy_payee(conn)
+    card_by_legacy_card = _card_id_by_legacy_card_id(conn)
 
     bank_account_id = conn.execute("SELECT bank_account_id FROM bank_accounts ORDER BY bank_account_id LIMIT 1").fetchone()[0]
 
@@ -168,6 +216,7 @@ def reconstruct_pending_transactions(conn: sqlite3.Connection) -> dict:
     stats = {
         "supplier_statements_created": 0, "supplier_checks_created": 0,
         "lender_checks_created": 0, "bank_loan_installments_created": 0,
+        "cc_statements_created": 0, "skipped_no_card": [],
         "skipped_no_creditor": [], "skipped_no_bank_loan": [], "skipped_no_loan_note": [],
     }
 
@@ -245,6 +294,17 @@ def reconstruct_pending_transactions(conn: sqlite3.Connection) -> dict:
         statement_running_total[statement_id] += chk["amount"]
         stats["supplier_checks_created"] += 1
 
+    for stmt in postdated_cc:
+        card_id = card_by_legacy_card.get(stmt["legacy_card_id"])
+        if card_id is None:
+            stats["skipped_no_card"].append(stmt["legacy_card_id"])
+            continue
+        conn.execute(
+            "INSERT INTO cc_statements (card_id, due_date, total_amount_due, status) VALUES (?, ?, ?, 'Unpaid')",
+            (card_id, stmt["due_date"].isoformat(), stmt["total_amount_due"]),
+        )
+        stats["cc_statements_created"] += 1
+
     # No invoices exist to drive order_statements' usual auto-recompute trigger -- set each
     # reconstructed statement's total directly from the checks actually attached to it.
     for statement_id, total in statement_running_total.items():
@@ -265,10 +325,13 @@ def write_report(stats: dict, path: str = REPORT_PATH) -> None:
         f"  Postdated checks (attached to existing Pending Setup loan note): {stats['lender_checks_created']}",
         "", "BANK LOANS",
         f"  Installments created: {stats['bank_loan_installments_created']}",
-        "", "SKIPPED (no matching creditor/bank_loan/loan_note found)",
+        "", "CREDIT CARDS",
+        f"  Statements created: {stats['cc_statements_created']}",
+        "", "SKIPPED (no matching creditor/bank_loan/loan_note/card found)",
         f"  No creditor match: {sorted(set(stats['skipped_no_creditor']))}",
         f"  No bank_loan match: {sorted(set(stats['skipped_no_bank_loan']))}",
         f"  No loan_note match: {sorted(set(stats['skipped_no_loan_note']))}",
+        f"  No card match: {sorted(set(stats['skipped_no_card']))}",
         "=" * 78,
     ]
     with open(path, "w", encoding="utf-8") as f:

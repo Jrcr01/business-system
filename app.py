@@ -25,6 +25,7 @@ from engines.loan_schedule_import_service import parse_loan_schedule_spreadsheet
 from engines.bank_loan_service import (
     create_bank_loan,
     delete_bank_loan,
+    cancel_bank_loan,
     add_bank_loan_installment,
     edit_bank_loan_installment,
     delete_bank_loan_installment,
@@ -34,10 +35,21 @@ from engines.bank_loan_service import (
 from engines.bank_loan_import_service import parse_bank_loan_spreadsheet, get_template_csv as get_bank_loan_template_csv
 from engines.bank_loan_report_service import generate_bank_loan_pdf
 from engines.invoice_ocr_service import extract_invoice_fields
-from engines.invoice_import_service import parse_invoice_spreadsheet, get_template_csv
+from engines.bank_names import expand_bank_name
+from engines.cc_payment_service import recorded_total as cc_recorded_total
+from engines.cc_rules import cc_owed_case, superseded_sql
+from engines.schema_check import pending_schema_updates
+from engines.name_case import smart_proper_case
+from engines.invoice_template_service import build_invoice_entry_workbook
+from engines.duplicate_scan_service import dismiss as dismiss_duplicates, restore as restore_duplicates, scan_possible_duplicates
+from engines.overview_pdf_service import generate_overview_pdf
+from engines.overview_report_service import PERIOD_KINDS, get_overview
+from engines.invoice_import_service import parse_invoice_spreadsheet, parse_invoice_workbook, match_supplier, get_template_csv
 from engines.loan_schedule_service import (
     suggest_installment_interest,
     add_loan_installment,
+    unlinked_loan_checks,
+    create_schedule_from_checks,
     edit_loan_installment,
     edit_loan_note_terms,
     delete_loan_installment,
@@ -52,7 +64,7 @@ from engines.check_engine import (
     format_metrobank_check_number,
     generate_metrobank_check_pdf,
 )
-from engines.cc_service import settle_cc_statement_via_cash, get_statement_gap_alerts, get_annual_fee_alerts
+from engines.cc_service import settle_cc_statement_via_cash, get_statement_gap_alerts, get_annual_fee_alerts, get_statement_coverage
 from engines.checkbook_service import audit_booklet_gaps, get_checkbook_alerts
 from engines.check_run_service import (
     get_pending_check_run,
@@ -60,13 +72,21 @@ from engines.check_run_service import (
     mark_checks_printed,
     generate_check_run_pdf,
     generate_check_run_summary_pdf,
-    generate_pending_check_run_excel,
+    generate_batch_csv,
+    generate_pending_check_run_csv,
     create_check_print_batch,
     get_check_print_batches,
     get_check_print_batch_detail,
 )
 from engines.backup_service import export_database_backup, restore_database_from_bytes
+from engines.duplicate_service import (
+    loan_check_mismatches,
+    bank_loan_warnings, bank_schedule_warnings, cc_statement_warnings, check_warnings, credit_card_warnings,
+    credit_memo_warnings, cc_statement_month_warnings, creditor_warnings, invoice_warnings, loan_installment_warnings, loan_note_warnings,
+)
 from engines.reports_service import (
+    get_payables_rundown,
+    get_invoice_rundown,
     get_bank_loan_servicing_report,
     get_bank_loan_history,
     get_cardholder_all_cards_history,
@@ -83,6 +103,7 @@ from engines.payment_schedule_report_service import generate_payment_schedule_pd
 from engines.interest_service import get_monthly_interest_summary, get_yearly_interest_trend
 from engines.account_history_pdf_service import (
     generate_supplier_statement_pdf,
+    generate_rundown_pdf,
     generate_lender_statement_pdf,
     generate_bank_loan_statement_pdf,
     generate_credit_card_statement_pdf,
@@ -99,7 +120,7 @@ from engines.dashboard_kpi_service import (
 )
 from engines.search_service import search_records
 from engines.soa_matcher import reconcile_vendor_soa
-from engines.validators import calculate_trade_discount, detect_invoice_anomalies
+from engines.validators import calculate_trade_discount, detect_invoice_anomalies, money_amount_error
 from engines.analytics_service import (
     get_ap_composition_by_track,
     get_ap_growth_rate,
@@ -173,6 +194,48 @@ def guard_duplicate_submit(action_key: str, *values, cooldown_seconds: float = 3
     last = st.session_state.get(state_key)
     st.session_state[state_key] = {"sig": sig, "ts": now}
     return not (last is not None and last["sig"] == sig and (now - last["ts"]) < cooldown_seconds)
+
+
+@st.dialog("Possible double recording")
+def duplicate_warning_dialog(key: str, fp: str, warnings: list) -> None:
+    st.warning("This looks like it may already be on file:")
+    for w in warnings:
+        st.markdown(f"- {w}")
+    st.markdown("**Do you still want to continue?**")
+    c1, c2 = st.columns(2)
+    if c1.button("Yes, continue anyway", icon=":material/check:", width="stretch", key=f"{key}_dup_yes"):
+        st.session_state[f"_dup_ok::{key}"] = {"fp": fp, "ts": time.monotonic()}
+        st.session_state[f"_dup_resume::{key}"] = time.monotonic()
+        st.rerun()
+    if c2.button("No, go back", width="stretch", key=f"{key}_dup_no"):
+        st.rerun()
+
+
+def dup_resume(key: str) -> bool:
+    """True on the rerun right after 'Yes, continue anyway' -- lets the original button's action run
+    again without the user having to click it a second time."""
+    ts = st.session_state.pop(f"_dup_resume::{key}", None)
+    return ts is not None and time.monotonic() - ts < 120
+
+
+def dup_needs_confirm(key: str, warnings: list) -> bool:
+    """True if the action must NOT run yet: warnings exist and the user hasn't said to continue
+    (the pop-up is opened here). Once they confirm, the same warnings pass through once."""
+    if not warnings:
+        return False
+    fp = hashlib.sha256(repr(warnings).encode("utf-8", "ignore")).hexdigest()
+    ok = st.session_state.get(f"_dup_ok::{key}")
+    if ok and ok["fp"] == fp and time.monotonic() - ok["ts"] < 120:
+        st.session_state.pop(f"_dup_ok::{key}", None)
+        return False
+    duplicate_warning_dialog(key, fp, warnings)
+    return True
+
+
+def dup_note(warnings: list) -> str:
+    """Warning block to append to a 'Please confirm before saving' summary."""
+    nl = chr(10)
+    return "" if not warnings else nl + nl + ":warning: **Possible double recording:**" + nl + nl.join(f"- {w}" for w in warnings) + nl + nl + "Save it anyway?"
 
 
 def fix_nullable_int(df: pd.DataFrame, col: str) -> pd.DataFrame:
@@ -313,6 +376,25 @@ def render_check_print_section(checks_df: pd.DataFrame, payee_name: str, key_pre
             )
 
 
+def _render_retract_number_section(active_df: pd.DataFrame, key_prefix: str) -> None:
+    """'Retract a wrongly assigned number': pick a numbered check, confirm, and its number (and booklet link) is removed."""
+    numbered = active_df[active_df["check_number"].apply(has_value)] if not active_df.empty else active_df
+    if numbered.empty:
+        return
+    with st.expander("Assigned the wrong number? Retract it"):
+        st.caption("Removes the number from the check so you can assign the right one. If it came from a booklet, that leaf goes back to the booklet. "
+                   "Only do this if the check was NOT physically written or printed with that number.")
+        r_options = {int(r["check_id"]): f"{r['check_number']} — {php(r['amount'])} — {r['check_date']}" for _, r in numbered.iterrows()}
+        r_pick = st.selectbox("Numbered check", options=list(r_options.keys()), format_func=lambda cid: r_options[cid], key=f"{key_prefix}_retract_pick")
+        if st.button("Retract this number", icon=":material/undo:", key=f"{key_prefix}_retract_btn"):
+            def _do_retract(check_id=int(r_pick)):
+                ok, msg = retract_check_number(check_id)
+                if ok:
+                    st.toast(msg)
+                return ok, msg
+            confirm_create_dialog(f"Take the number off **{r_options[int(r_pick)]}**? The check goes back to having no number.", f"{key_prefix}_retract_check_number", _do_retract)
+
+
 def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_account_id: int = PRIMARY_BANK_ACCOUNT_ID) -> None:
     """Reusable 'assign a check number' block: pick any Active check that doesn't have a number
     yet (regardless of whether it's been printed), pick a booklet, pick one of that booklet's
@@ -325,10 +407,13 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
     open leaf, including ones below the booklet's "suggested next" cursor, so manual selection
     covers backfill too; a plain typed-in fallback remains for a check with no booklet on file."""
     st.markdown("##### Assign a check number")
+    if st.session_state.pop(f"_clear_{key_prefix}_assign_manual_number", False):
+        st.session_state[f"{key_prefix}_assign_manual_number"] = ""   # a typed number never lingers into the next assignment
     active_df = checks_df[checks_df["status"] == "Active"] if not checks_df.empty else checks_df
     unnumbered_df = active_df[~active_df["check_number"].apply(has_value)] if not active_df.empty else active_df
     if unnumbered_df.empty:
         st.caption("Every active check here already has a number.")
+        _render_retract_number_section(active_df, key_prefix)
         return
     options = {
         int(r["check_id"]): f"{php(r['amount'])} — {r['check_date']}" + (" (already printed)" if has_value(r.get("printed_at")) else " (not yet printed)")
@@ -356,24 +441,33 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
         else:
             chosen_number = st.selectbox(
                 "Check number", options=available_numbers,
-                format_func=lambda n: format_metrobank_check_number(n, DEFAULT_BRANCH_CODE),
+                format_func=str,
                 key=f"{key_prefix}_assign_number",
             )
             st.caption(f"{len(available_numbers)} leaf/leaves still available in this booklet.")
         with st.expander("No booklet, or need to type a number directly?"):
+            st.caption("If you type a number here, it is used instead of the booklet number above.")
             manual_number = st.text_input("Check number (typed exactly as physically written)", key=f"{key_prefix}_assign_manual_number") or None
 
     if st.button("Assign check number", icon=":material/tag:", key=f"{key_prefix}_assign_btn"):
-        if guard_duplicate_submit(f"{key_prefix}_assign_check_number", int(picked), booklet_id, chosen_number, manual_number):
-            if chosen_number is not None:
-                ok, msg = assign_check_number(int(picked), int(booklet_id), int(chosen_number), None)
-            else:
-                ok, msg = assign_check_number(int(picked), None, None, manual_number)
-            (st.success if ok else st.error)(msg)
-            if ok:
-                refresh()
+        source, value = pick_number_source(booklet_id, chosen_number, manual_number)
+        if source == "none":
+            st.error("Pick a booklet number, or type the check number directly.")
         else:
-            st.warning("Duplicate submission ignored — identical to the click just before it.")
+            if source == "manual":
+                what = f"the **typed number {value}** (no booklet)"
+            else:
+                what = f"**{value[1]}** from **{b_options[value[0]]}**"
+            summary = f"Give the check {options[int(picked)]} the number {what}?"
+
+            def _do_assign(check_id=int(picked), src=source, val=value):
+                ok, msg = assign_check_number(check_id, *(val[0], val[1], None) if src == "booklet" else (None, None, val))
+                if ok:
+                    st.toast(msg)
+                    st.session_state[f"_clear_{key_prefix}_assign_manual_number"] = True
+                return ok, msg
+            confirm_create_dialog(summary, f"{key_prefix}_assign_check_number", _do_assign)
+    _render_retract_number_section(active_df, key_prefix)
 
 
 def creditor_options(creditor_type: str) -> dict:
@@ -390,6 +484,14 @@ def selectbox_creditor(label: str, creditor_type: str, key: str):
         st.warning(f"No {creditor_type.replace('_', ' ').title()} creditors on file yet. Add one below first.")
         return None
     return st.selectbox(label, options=list(options), format_func=lambda cid: options[cid], key=key)
+
+
+def selectbox_creditor_label(creditor_type: str, creditor_id: int) -> str:
+    return creditor_options_all(creditor_type).get(creditor_id, str(creditor_id))
+
+
+def _pdf_money(v) -> str:
+    return f"{float(v):,.2f}"
 
 
 def creditor_options_all(creditor_type: str) -> dict:
@@ -482,12 +584,15 @@ def filter_by_status(df: pd.DataFrame, col: str, key: str, label: str = "Status"
 
 
 def add_creditor(name: str, creditor_type: str, tin: str, contact_person: str, contact_number: str, email: str, terms: str = "") -> int:
+    if creditor_type in ("BANK_LOAN", "CREDIT_CARD"):
+        name = expand_bank_name(name)
+    name = smart_proper_case(name)  # ALL CAPS / all lowercase becomes proper case; mixed case is left as typed
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO creditors (creditor_name, creditor_type, tin, contact_person, contact_number, email, terms)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (name, creditor_type, tin, contact_person, contact_number, email, terms or None),
+            (name, creditor_type, tin, contact_person, contact_number, email, terms or (DEFAULT_SUPPLIER_TERMS if creditor_type == "SUPPLIER" else None)),
         )
         conn.commit()
         return cur.lastrowid
@@ -498,12 +603,36 @@ CREDITOR_REFERENCE_TABLES = (
 )
 
 
+def get_or_create_card_issuer(name: str) -> int:
+    """Issuer as a plain attribute of a card (2026-09-19): the card form just takes a bank name;
+    this finds the matching CREDIT_CARD creditor behind the scenes (case-insensitive, reactivating
+    one that was deactivated) or creates it. The creditors table stays as the storage, but nobody
+    has to manage issuers as records of their own anymore."""
+    clean = expand_bank_name(name)
+    if not clean:
+        raise ValueError("Issuer name is required.")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT creditor_id, is_active FROM creditors WHERE creditor_type = 'CREDIT_CARD' AND LOWER(creditor_name) = LOWER(?) ORDER BY is_active DESC LIMIT 1",
+            (clean,),
+        ).fetchone()
+        if row:
+            if not row[1]:
+                conn.execute("UPDATE creditors SET is_active = 1 WHERE creditor_id = ?", (row[0],))
+                conn.commit()
+            return row[0]
+    return add_creditor(clean, "CREDIT_CARD", "", "", "", "")
+
+
 def update_creditor(creditor_id: int, name: str, creditor_type: str, tin: str, contact_person: str, contact_number: str, email: str, terms: str) -> None:
     """Edits a creditor's full record, including creditor_type and terms — both now editable
     in-place in the Creditor Master grid. A type change is only safe to apply for a creditor with
     no transaction history yet (checked by the caller via creditor_reference_counts()), since
     reclassifying one that's already in use would silently move it out of the pickers that filter
     by type elsewhere (batches, loan notes, bank loans)."""
+    if creditor_type in ("BANK_LOAN", "CREDIT_CARD"):
+        name = expand_bank_name(name)
+    name = smart_proper_case(name)
     with get_conn() as conn:
         conn.execute(
             "UPDATE creditors SET creditor_name = ?, creditor_type = ?, tin = ?, contact_person = ?, contact_number = ?, email = ?, terms = ? WHERE creditor_id = ?",
@@ -575,14 +704,28 @@ def get_booklets(bank_account_id: int = PRIMARY_BANK_ACCOUNT_ID, statuses: tuple
     )
 
 
-def create_booklet(bank_account_id: int, booklet_code: str, start_num: int, end_num: int, date_received: date) -> None:
+def create_booklet(bank_account_id: int, booklet_code: str, start_num: int, end_num: int, date_received: date) -> tuple[bool, str]:
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.cursor()
+        # Two booklets covering the same leaf numbers on the same bank account would make every
+        # number in the overlap ambiguous about which physical checkbook it actually belongs to.
+        # Archived booklets are excluded -- their range is retired stock, safe to reuse.
+        cur.execute(
+            """SELECT booklet_code, start_number, end_number FROM check_booklets
+               WHERE bank_account_id = ? AND status != 'Archived' AND start_number <= ? AND end_number >= ?""",
+            (bank_account_id, end_num, start_num),
+        )
+        overlap = cur.fetchone()
+        if overlap:
+            other_code, other_start, other_end = overlap
+            return False, f"Overlaps {other_code or 'an existing booklet'}'s range ({other_start}-{other_end}) on this bank account."
+        cur.execute(
             """INSERT INTO check_booklets (bank_account_id, booklet_code, start_number, end_number, next_available_number, date_received, status)
                VALUES (?, ?, ?, ?, ?, ?, 'Active')""",
             (bank_account_id, booklet_code, start_num, end_num, start_num, str(date_received)),
         )
         conn.commit()
+    return True, "Booklet registered."
 
 
 def archive_booklet(booklet_id: int) -> tuple[bool, str]:
@@ -592,11 +735,41 @@ def archive_booklet(booklet_id: int) -> tuple[bool, str]:
     return True, "Booklet archived."
 
 
-def _is_check_number_available(cur: sqlite3.Cursor, bank_account_id: int, number_str: str) -> bool:
-    cur.execute("SELECT 1 FROM checks_issued WHERE bank_account_id = ? AND check_number = ?", (bank_account_id, number_str))
+def _check_number_key(num) -> str:
+    """Canonical form of a check number for comparing: digits only, the bank's 399 prefix dropped
+    from a full 10-digit number, leading zeros dropped -- so "2554301", "02554301" and "3992554301"
+    are all the same physical leaf. Non-numeric text is compared as typed."""
+    text = str(num).strip()
+    if not text.isdigit():
+        return text
+    if len(text) == 10 and text.startswith(DEFAULT_BRANCH_CODE):
+        text = text[len(DEFAULT_BRANCH_CODE):]
+    return text.lstrip("0") or "0"
+
+
+def _check_number_variants(num) -> list[str]:
+    """Every stored form the same leaf could be recorded under (as typed, bare, and 399-prefixed)."""
+    text = str(num).strip()
+    key = _check_number_key(text)
+    variants = {text, key}
+    if key.isdigit():
+        variants.add(DEFAULT_BRANCH_CODE + key.zfill(7))
+    return list(variants)
+
+
+def _is_check_number_available(cur: sqlite3.Cursor, bank_account_id: int, number_str: str, exclude_check_id: int | None = None) -> bool:
+    variants = _check_number_variants(number_str)
+    marks = ",".join("?" * len(variants))
+    if exclude_check_id is None:
+        cur.execute(f"SELECT 1 FROM checks_issued WHERE bank_account_id = ? AND check_number IN ({marks})", (bank_account_id, *variants))
+    else:
+        cur.execute(
+            f"SELECT 1 FROM checks_issued WHERE bank_account_id = ? AND check_number IN ({marks}) AND check_id != ?",
+            (bank_account_id, *variants, exclude_check_id),
+        )
     if cur.fetchone():
         return False
-    cur.execute("SELECT 1 FROM spoiled_checks WHERE bank_account_id = ? AND check_number = ?", (bank_account_id, number_str))
+    cur.execute(f"SELECT 1 FROM spoiled_checks WHERE bank_account_id = ? AND check_number IN ({marks})", (bank_account_id, *variants))
     if cur.fetchone():
         return False
     return True
@@ -615,7 +788,8 @@ def get_available_booklet_numbers(bank_account_id: int, booklet_row) -> list[int
         used.update(r[0] for r in cur.fetchall())
         cur.execute("SELECT check_number FROM spoiled_checks WHERE bank_account_id = ?", (bank_account_id,))
         used.update(r[0] for r in cur.fetchall())
-    return [n for n in range(start, end + 1) if format_metrobank_check_number(n, DEFAULT_BRANCH_CODE) not in used]
+    used_keys = {_check_number_key(u) for u in used}
+    return [n for n in range(start, end + 1) if _check_number_key(n) not in used_keys]
 
 
 def assign_check_number_from_booklet(cur: sqlite3.Cursor, bank_account_id: int, booklet_row: dict, chosen_number: int) -> tuple[str | None, str | None]:
@@ -628,13 +802,13 @@ def assign_check_number_from_booklet(cur: sqlite3.Cursor, bank_account_id: int, 
     start, end = int(booklet_row["start_number"]), int(booklet_row["end_number"])
     if not (start <= chosen_number <= end):
         return None, f"{chosen_number} is outside this booklet's range ({start}-{end})."
-    check_number = format_metrobank_check_number(chosen_number, DEFAULT_BRANCH_CODE)
+    check_number = str(chosen_number)
     if not _is_check_number_available(cur, bank_account_id, check_number):
         return None, f"Check number {check_number} is already on file or logged as spoiled."
 
     if chosen_number >= int(booklet_row["next_available_number"]):
         seq = chosen_number + 1
-        while seq <= end and not _is_check_number_available(cur, bank_account_id, format_metrobank_check_number(seq, DEFAULT_BRANCH_CODE)):
+        while seq <= end and not _is_check_number_available(cur, bank_account_id, str(seq)):
             seq += 1
         new_status = "Exhausted" if seq > end else "Active"
         cur.execute("UPDATE check_booklets SET next_available_number = ?, status = ? WHERE booklet_id = ?", (min(seq, end + 1), new_status, booklet_id))
@@ -736,6 +910,59 @@ def assign_check_number(check_id: int, booklet_id: int | None, chosen_number: in
         )
         conn.commit()
     return True, f"Check number {check_number} assigned."
+
+
+def pick_number_source(booklet_id, chosen_number, manual_number) -> tuple[str, object]:
+    """Which number an 'Assign' click should use. A number typed in by hand ALWAYS wins over the booklet dropdown --
+    typing one is an explicit choice, and ignoring it (as this used to) silently assigned a booklet leaf instead."""
+    if manual_number and str(manual_number).strip():
+        return "manual", str(manual_number).strip()
+    if booklet_id is not None and chosen_number is not None:
+        return "booklet", (int(booklet_id), int(chosen_number))
+    return "none", None
+
+
+def retract_check_number(check_id: int) -> tuple[bool, str]:
+    """Takes a wrongly assigned number back off a check: the check returns to 'no number yet' and, if the number
+    came from a booklet, that leaf becomes available again (no false gap) and the booklet's next-number pointer
+    steps back over the freed leaves. Logged in the audit trail. Refused for a locked batch (unlock it first),
+    the same rule as any other correction to an existing check value."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT check_number, booklet_id, status, statement_id, bank_account_id FROM checks_issued WHERE check_id = ?", (check_id,))
+        row = cur.fetchone()
+        if not row:
+            return False, "Check not found."
+        number, booklet_id, status, statement_id, bank_account_id = row
+        if status != "Active":
+            return False, f"Only Active checks can have a number retracted (current status: {status})."
+        if number is None:
+            return False, "This check has no number to retract."
+        if _batch_lock_status(cur, statement_id):
+            return False, "This batch is locked. Unlock it first to retract a number."
+        cur.execute("UPDATE checks_issued SET check_number = NULL, booklet_id = NULL WHERE check_id = ?", (check_id,))
+        pointer_note = ""
+        if booklet_id is not None:
+            brow = _booklet_row_dict(cur, booklet_id)
+            if brow:
+                start, end, old_next = int(brow["start_number"]), int(brow["end_number"]), int(brow["next_available_number"])
+                cur.execute("SELECT check_number FROM checks_issued WHERE bank_account_id = ? AND check_number IS NOT NULL", (bank_account_id,))
+                used = {_check_number_key(r[0]) for r in cur.fetchall()}
+                cur.execute("SELECT check_number FROM spoiled_checks WHERE bank_account_id = ?", (bank_account_id,))
+                used |= {_check_number_key(r[0]) for r in cur.fetchall()}
+                new_next = old_next
+                while new_next - 1 >= start and _check_number_key(new_next - 1) not in used:
+                    new_next -= 1
+                if new_next != old_next:
+                    cur.execute("UPDATE check_booklets SET next_available_number = ?, status = CASE WHEN status = 'Exhausted' THEN 'Active' ELSE status END WHERE booklet_id = ?",
+                                (new_next, booklet_id))
+                    pointer_note = f"; booklet's next number is back at {new_next}"
+        cur.execute(
+            "INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values, new_values) VALUES ('CHECK_NUMBER_RETRACTED', 'checks_issued', ?, ?, ?)",
+            (check_id, f"check_number {number}", "number removed" + (" (booklet leaf returned)" if booklet_id else "") + pointer_note),
+        )
+        conn.commit()
+    return True, f"Number {number} retracted" + (" — the booklet leaf is available again." if booklet_id else ".")
 
 
 def assign_check_numbers_manual(assignments: dict[int, str], booklet_id: int | None) -> tuple[bool, str, list[int]]:
@@ -954,6 +1181,23 @@ def allocate_check_to_invoices(check_id: int, allocations: list[tuple[int, float
     return True, "Allocated."
 
 
+def unlink_invoice_allocations_for_check(cur: sqlite3.Cursor, check_id: int) -> None:
+    """Called from cancel_check() within its own transaction -- a cancelled check no longer
+    represents a real payment, so its invoice_check_allocations rows must go with it. Without
+    this, get_invoices_with_remaining() kept counting the invoice as paid down by a check that no
+    longer exists, permanently hiding that slice of the invoice from every future allocation
+    (2026-09-17 fix -- mirrors unlink_installment_for_check()'s handling of the loan-note side)."""
+    cur.execute("DELETE FROM invoice_check_allocations WHERE check_id = ?", (check_id,))
+
+
+def retarget_invoice_allocations_for_check(cur: sqlite3.Cursor, old_check_id: int, new_check_id: int) -> None:
+    """Called from replace_check() within its own transaction -- a replaced check (void+reissue,
+    not a cancellation) still pays the same invoice(s), just under a new check id, so the
+    allocation rows move with it rather than being dropped (mirrors
+    retarget_installment_check())."""
+    cur.execute("UPDATE invoice_check_allocations SET check_id = ? WHERE check_id = ?", (new_check_id, old_check_id))
+
+
 def get_latest_check_for_creditor(creditor_id: int) -> tuple[date, float] | None:
     """The most recent (by check_date) Active check ever issued to this creditor -- a quick
     reference point when picking a new one's date ("last time we paid this supplier was..."),
@@ -1091,12 +1335,15 @@ def cancel_check(check_id: int) -> tuple[bool, str]:
         bank_account_id, amount, status, statement_id = row
         if status != "Active":
             return False, f"Only Active checks can be cancelled (current status: {status})."
+        if _batch_lock_status(cur, statement_id):
+            return False, "This batch is locked. Unlock it first to cancel a check."
         cur.execute("UPDATE checks_issued SET status = 'Cancelled' WHERE check_id = ?", (check_id,))
         cur.execute(
             "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_CANCELLED', 'checks_issued', ?, ?)",
             (check_id, f"Cancelled check for {php(amount)}"),
         )
         unlink_installment_for_check(cur, check_id)
+        unlink_invoice_allocations_for_check(cur, check_id)
         conn.commit()
     if statement_id is not None:
         sync_invoice_payment_status(statement_id)
@@ -1140,15 +1387,8 @@ def apply_check_correction(check_id: int, correction_type: str, new_value: str, 
             new_number = (new_value or "").strip()
             if not new_number:
                 return False, "New check number cannot be blank."
-            cur.execute(
-                "SELECT 1 FROM checks_issued WHERE bank_account_id = ? AND check_number = ? AND check_id != ?",
-                (bank_account_id, new_number, check_id),
-            )
-            if cur.fetchone():
-                return False, f"Check number {new_number} is already on file for this bank account."
-            cur.execute("SELECT 1 FROM spoiled_checks WHERE bank_account_id = ? AND check_number = ?", (bank_account_id, new_number))
-            if cur.fetchone():
-                return False, f"Check number {new_number} is logged as spoiled — pick a different number."
+            if not _is_check_number_available(cur, bank_account_id, new_number, exclude_check_id=check_id):
+                return False, f"Check number {new_number} is already on file or logged as spoiled for this bank account."
             old_value = str(old_check_number)
             cur.execute("UPDATE checks_issued SET check_number = ? WHERE check_id = ?", (new_number, check_id))
         elif correction_type == "Amount":
@@ -1242,6 +1482,7 @@ def replace_check(check_id: int, new_check_date: date, reason: str) -> tuple[boo
             (new_check_id, reason, check_id),
         )
         retarget_installment_check(cur, check_id, new_check_id)
+        retarget_invoice_allocations_for_check(cur, check_id, new_check_id)
         cur.execute(
             "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_REPLACED', 'checks_issued', ?, ?)",
             (check_id, f"Replaced by a new parked check (check_id {new_check_id}): {reason or 'no reason given'}"),
@@ -1361,10 +1602,20 @@ def build_dual_copy_check_pdf(payee_name: str, amount: float, check_date: date, 
 # --------------------------------------------------------------------------
 
 
+def new_draft_ref(table: str, column: str) -> str:
+    """Short draft reference in the form DRAFT-YY-MM-NN, e.g. DRAFT-26-09-01, DRAFT-26-09-02 -- the
+    year, the month, then a running number that restarts each month."""
+    prefix = f"DRAFT-{datetime.now().strftime('%y-%m')}-"
+    with get_conn() as conn:
+        used = [r[0][len(prefix):] for r in conn.execute(f"SELECT {column} FROM {table} WHERE {column} LIKE ?", (prefix + "%",))]
+    highest = max((int(x) for x in used if x.isdigit()), default=0)
+    return f"{prefix}{highest + 1:02d}"
+
+
 def create_order_statement(creditor_id: int) -> int:
     """Creates a Draft batch from a supplier alone. total_amount always starts at 0 and is
     never manually entered — it is recalculated from linked invoices (see recompute_statement_total)."""
-    ref = f"DRAFT-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    ref = new_draft_ref("order_statements", "statement_ref")
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -1660,7 +1911,8 @@ def add_invoice(creditor_id: int, doc_ref: str, invoice_date: date, due_date: da
     return net_amount, total_discount, warnings
 
 
-SUPPLIER_TERMS_OPTIONS = ["", "COD", "30", "60", "90", "120"]
+SUPPLIER_TERMS_OPTIONS = ["", "COD", "30", "60", "90", "120", "140", "150"]
+DEFAULT_SUPPLIER_TERMS = "120"
 
 
 def parse_terms_days(terms) -> int:
@@ -1793,6 +2045,14 @@ def delete_invoice(invoice_id: int) -> tuple[bool, str]:
         statement_id, doc_ref, amount = row
         if _batch_lock_status(cur, statement_id):
             return False, "This batch is locked. Unlock it first to delete an invoice."
+        (alloc_count,) = cur.execute(
+            "SELECT COUNT(*) FROM invoice_check_allocations WHERE invoice_id = ?", (invoice_id,)
+        ).fetchone()
+        if alloc_count:
+            # Deleting the invoice row here would otherwise hit invoice_check_allocations' FK
+            # constraint as a raw, uncaught sqlite3.IntegrityError -- a check is already tied to
+            # this invoice, so the invoice needs to stay (or the check cancelled/reallocated first).
+            return False, f"This invoice has {alloc_count} check(s) already allocated to it — cancel or reallocate those first, then delete."
         cur.execute("DELETE FROM invoices WHERE invoice_id = ?", (invoice_id,))
         cur.execute(
             "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('INVOICE_DELETED', 'invoices', ?, ?)",
@@ -1808,6 +2068,26 @@ def delete_invoice(invoice_id: int) -> tuple[bool, str]:
 # --------------------------------------------------------------------------
 # Lenders (Track 2) write helpers
 # --------------------------------------------------------------------------
+
+
+@st.dialog("Please confirm before saving")
+def confirm_create_dialog(summary: str, action_key: str, action) -> None:
+    """Second look at what's about to be saved, in plain words with the amounts formatted -- used
+    on the loan note / bank loan / card forms, where a mistyped number field otherwise saves
+    silently (a stored 0.001 displays as PHP 0.00 afterwards, hiding the typo). action() does the
+    real write and returns (ok, message); guard_duplicate_submit stops a double-clicked Confirm."""
+    st.markdown(summary)
+    c1, c2 = st.columns(2)
+    if c1.button("Yes, save it", icon=":material/check:", width="stretch", key=f"{action_key}_confirm"):
+        if guard_duplicate_submit(action_key + "_confirm", summary):
+            ok, msg = action()
+            if ok:
+                st.cache_data.clear()
+                st.rerun()
+            else:
+                st.error(msg)
+    if c2.button("Go back and edit", width="stretch", key=f"{action_key}_back"):
+        st.rerun()
 
 
 def create_loan_note(creditor_id: int, issue_date: date, principal_amount: float, monthly_interest_rate: float) -> tuple[bool, str, int | None]:
@@ -1828,11 +2108,11 @@ def create_loan_note(creditor_id: int, issue_date: date, principal_amount: float
     edit_loan_note_terms()) rather than trusting the caller — loan_notes.principal_amount has a
     CHECK(principal_amount > 0) constraint, and a 0-or-blank "Principal amount" widget left
     untouched used to hit that raw sqlite3.IntegrityError uncaught, all the way up to the user."""
-    if principal_amount <= 0:
-        return False, "Principal amount must be greater than zero.", None
+    if (err := money_amount_error(principal_amount, "Principal amount")):
+        return False, err, None
     if monthly_interest_rate < 0:
         return False, "Monthly interest rate cannot be negative.", None
-    note_ref = f"DRAFT-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    note_ref = new_draft_ref("loan_notes", "note_ref")
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -1871,10 +2151,19 @@ def promote_draft_loan_note(loan_note_id: int) -> str:
         return permanent_ref
 
 
-def update_loan_note_status(loan_note_id: int, status: str) -> None:
+_LOAN_NOTE_STATUSES = ("Active", "Settled", "Defaulted", "Cancelled", "Pending Setup")
+
+
+def update_loan_note_status(loan_note_id: int, status: str) -> tuple[bool, str]:
+    """Only the UI's own constrained selectbox stopped an invalid status from ever being passed
+    here -- any other caller would have hit the raw sqlite3.IntegrityError from loan_notes' own
+    CHECK(status IN (...)) uncaught. Whitelisted server-side too now."""
+    if status not in _LOAN_NOTE_STATUSES:
+        return False, f"'{status}' isn't a valid loan note status."
     with get_conn() as conn:
         conn.execute("UPDATE loan_notes SET status = ? WHERE loan_note_id = ?", (status, loan_note_id))
         conn.commit()
+    return True, "Status updated."
 
 
 def delete_loan_note(loan_note_id: int) -> tuple[bool, str]:
@@ -1951,6 +2240,22 @@ def confirm_cancel_loan_note_dialog(loan_note_id: int, note_ref: str, active_che
         st.rerun()
 
 
+@st.dialog("Confirm cancel bank loan")
+def confirm_cancel_bank_loan_dialog(bank_loan_id: int, loan_ref: str, installment_count: int) -> None:
+    st.write(f"Are you sure you want to cancel bank loan **{loan_ref}**?")
+    st.caption(f"Its {installment_count} repayment row(s) stay on record, but they stop counting as amounts due on the dashboard, reports and interest figures.")
+    c1, c2 = st.columns(2)
+    if c1.button("Yes, cancel bank loan", icon=":material/cancel:", width="stretch"):
+        ok, msg = cancel_bank_loan(bank_loan_id)
+        if ok:
+            st.cache_data.clear()
+            st.rerun()
+        else:
+            st.error(msg)
+    if c2.button("Go back", width="stretch"):
+        st.rerun()
+
+
 @st.dialog("Confirm delete loan note")
 def confirm_delete_loan_note_dialog(loan_note_id: int, note_ref: str) -> None:
     st.write(f"Are you sure you want to delete loan note **{note_ref}**?")
@@ -1992,6 +2297,32 @@ def add_cardholder(name: str, department: str, contact_number: str) -> int:
         return cur.lastrowid
 
 
+def edit_cardholder(cardholder_id: int, name: str, department: str, contact_number: str) -> tuple[bool, str]:
+    if not name.strip():
+        return False, "Name can't be blank."
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE cardholders SET name = ?, department = ?, contact_number = ? WHERE cardholder_id = ?",
+            (name.strip(), department or None, contact_number or None, cardholder_id),
+        )
+        conn.commit()
+    return True, "Cardholder updated."
+
+
+def deactivate_cardholder(cardholder_id: int) -> None:
+    """Reversible is_active toggle -- a cardholder who's left stops appearing as pickable for new
+    cards/statements but keeps their existing history intact (mirrors deactivate_creditor())."""
+    with get_conn() as conn:
+        conn.execute("UPDATE cardholders SET is_active = 0 WHERE cardholder_id = ?", (cardholder_id,))
+        conn.commit()
+
+
+def reactivate_cardholder(cardholder_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE cardholders SET is_active = 1 WHERE cardholder_id = ?", (cardholder_id,))
+        conn.commit()
+
+
 def add_credit_card(
     creditor_id: int, cardholder_id: int | None, card_name: str, last4: str, credit_limit: float,
     annual_fee_due_month: int | None, statement_day: int | None,
@@ -2000,8 +2331,8 @@ def add_credit_card(
     has a CHECK(credit_limit > 0) constraint, and a 0-or-blank widget left untouched would
     otherwise hit that raw sqlite3.IntegrityError uncaught, same class of bug as
     create_loan_note()'s principal_amount."""
-    if credit_limit <= 0:
-        return False, "Credit limit must be greater than zero."
+    if (err := money_amount_error(credit_limit, "Credit limit")):
+        return False, err
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO credit_cards (creditor_id, cardholder_id, card_name, card_number_last4, credit_limit, annual_fee_due_month, statement_day)
@@ -2012,16 +2343,35 @@ def add_credit_card(
     return True, "Card added."
 
 
-def edit_credit_card(card_id: int, cardholder_id: int | None, credit_limit: float, annual_fee_due_month: int | None, statement_day: int | None) -> tuple[bool, str]:
-    if credit_limit <= 0:
-        return False, "Credit limit must be greater than zero."
+def edit_credit_card(
+    card_id: int, card_name: str, creditor_id: int, cardholder_id: int | None,
+    credit_limit: float, annual_fee_due_month: int | None, statement_day: int | None,
+) -> tuple[bool, str]:
+    if not card_name.strip():
+        return False, "Card name can't be blank."
+    if (err := money_amount_error(credit_limit, "Credit limit")):
+        return False, err
     with get_conn() as conn:
         conn.execute(
-            "UPDATE credit_cards SET cardholder_id = ?, credit_limit = ?, annual_fee_due_month = ?, statement_day = ? WHERE card_id = ?",
-            (cardholder_id, credit_limit, annual_fee_due_month, statement_day, card_id),
+            "UPDATE credit_cards SET card_name = ?, creditor_id = ?, cardholder_id = ?, credit_limit = ?, annual_fee_due_month = ?, statement_day = ? WHERE card_id = ?",
+            (card_name.strip(), creditor_id, cardholder_id, credit_limit, annual_fee_due_month, statement_day, card_id),
         )
         conn.commit()
     return True, "Card updated."
+
+
+def deactivate_credit_card(card_id: int) -> None:
+    """Reversible is_active toggle -- a closed/replaced card stops appearing as pickable for a new
+    statement but keeps its existing statement history intact (mirrors deactivate_creditor())."""
+    with get_conn() as conn:
+        conn.execute("UPDATE credit_cards SET is_active = 0 WHERE card_id = ?", (card_id,))
+        conn.commit()
+
+
+def reactivate_credit_card(card_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE credit_cards SET is_active = 1 WHERE card_id = ?", (card_id,))
+        conn.commit()
 
 
 def get_last_cc_statement_unpaid_balance(card_id: int) -> float:
@@ -2036,16 +2386,63 @@ def get_last_cc_statement_unpaid_balance(card_id: int) -> float:
     return float(row["unpaid_balance_next"][0]) if not row.empty else 0.0
 
 
+def get_unconfirmed_cc_statement(card_id: int) -> dict | None:
+    """The card's latest statement whose payment isn't known yet (paid_confirmed = 0), if any."""
+    row = q_live(
+        "SELECT cc_statement_id, due_date, total_amount_due FROM cc_statements WHERE card_id = ? AND paid_confirmed = 0 AND status != 'Cancelled' "
+        "ORDER BY due_date DESC, cc_statement_id DESC LIMIT 1",
+        (card_id,),
+    )
+    return None if row.empty else {"id": int(row["cc_statement_id"][0]), "due_date": row["due_date"][0], "total": float(row["total_amount_due"][0])}
+
+
+def confirm_cc_payment_from_next_statement(cc_statement_id: int, carried_over: float) -> tuple[float, str]:
+    """The next statement shows what was carried over from this one, so what was paid is its total
+    minus that balance (never below 0 or above the total). Marks the statement confirmed and sets its
+    status. Returns (amount_paid, new_status)."""
+    with get_conn() as conn:
+        (total,) = conn.execute("SELECT total_amount_due FROM cc_statements WHERE cc_statement_id = ?", (cc_statement_id,)).fetchone()
+        paid = round(min(max(total - carried_over, 0.0), total), 2)
+        unpaid_next = round(carried_over, 2)
+        status = "Paid" if unpaid_next <= 0.005 else ("Partially Paid" if paid > 0.005 else "Unpaid")
+        conn.execute(
+            "UPDATE cc_statements SET amount_paid = ?, unpaid_balance_next = ?, status = ?, paid_confirmed = 1 WHERE cc_statement_id = ?",
+            (paid, unpaid_next, status, cc_statement_id),
+        )
+        conn.execute(
+            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CC_PAYMENT_CONFIRMED', 'cc_statements', ?, ?)",
+            (cc_statement_id, f"paid {php(paid)}, carried over {php(unpaid_next)} (from the next statement)"),
+        )
+        conn.commit()
+    return paid, status
+
+
+def get_default_statement_month(card_id: int) -> tuple[int, int]:
+    """(year, month) to pre-select for this card's NEXT statement: the month after the latest
+    statement month already recorded (a statement with no explicit month counts as its due date's
+    month), rolling December over to January of the following year automatically. A card with no
+    statements yet starts at the current month."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT MAX(COALESCE(statement_month, SUBSTR(due_date, 1, 7))) FROM cc_statements WHERE card_id = ?", (card_id,)
+        ).fetchone()
+    if not row or not row[0]:
+        today = date.today()
+        return today.year, today.month
+    year, month = int(row[0][:4]), int(row[0][5:7])
+    return (year + 1, 1) if month == 12 else (year, month + 1)
+
+
 def add_cc_statement(
     card_id: int, due_date: date, previous_balance: float, new_charges: float,
-    interest_charged: float, amount_paid: float,
-) -> None:
+    interest_charged: float, amount_paid: float, statement_month: str | None = None, paid_confirmed: int = 1,
+) -> int:
     """Records a CC statement with a real rolling balance (migration 027, 2026-09-15):
     total_amount_due is computed, not typed in, as previous_balance + new_charges +
     interest_charged; whatever amount_paid doesn't cover becomes unpaid_balance_next, which
     the next statement's previous_balance auto-fills from (get_last_cc_statement_unpaid_balance).
     Status reflects the same computation up front, then stays subject to whatever settles it
-    later (Direct cash settlement, etc.) — same as every other status field in this app."""
+    later (an edit to the statement, etc.) — same as every other status field in this app."""
     total_amount_due = round(previous_balance + new_charges + interest_charged, 2)
     unpaid_balance_next = round(total_amount_due - amount_paid, 2)
     if unpaid_balance_next <= 0.005:
@@ -2055,15 +2452,88 @@ def add_cc_statement(
     else:
         status = "Unpaid"
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO cc_statements
-               (card_id, due_date, total_amount_due, previous_balance, new_charges, interest_charged,
-                amount_paid, unpaid_balance_next, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (card_id, str(due_date), total_amount_due, previous_balance, new_charges, interest_charged,
-             amount_paid, unpaid_balance_next, status),
+               (card_id, statement_month, due_date, total_amount_due, previous_balance, new_charges, interest_charged,
+                amount_paid, unpaid_balance_next, status, paid_confirmed)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (card_id, statement_month, str(due_date), total_amount_due, previous_balance, new_charges, interest_charged,
+             amount_paid, unpaid_balance_next, status, int(paid_confirmed)),
         )
         conn.commit()
+        return cur.lastrowid
+
+
+def _is_latest_cc_statement(cur: sqlite3.Cursor, cc_statement_id: int, card_id: int) -> bool:
+    """A statement's unpaid_balance_next auto-fills the NEXT statement's previous_balance
+    (get_last_cc_statement_unpaid_balance) -- editing or deleting anything but the latest one for
+    its card would leave that later statement's previous_balance chained to a now-stale number.
+    Restricting edit/delete to the latest keeps the rolling balance always consistent."""
+    latest_id = cur.execute(
+        "SELECT cc_statement_id FROM cc_statements WHERE card_id = ? ORDER BY due_date DESC, cc_statement_id DESC LIMIT 1",
+        (card_id,),
+    ).fetchone()[0]
+    return latest_id == cc_statement_id
+
+
+def edit_cc_statement(
+    cc_statement_id: int, due_date: date, previous_balance: float, new_charges: float,
+    interest_charged: float, amount_paid: float, statement_month: str | None = None,
+) -> tuple[bool, str]:
+    """In-place edit of a CC statement's rolling-balance figures -- only allowed on the latest
+    statement for its card (see _is_latest_cc_statement), same recompute as add_cc_statement()."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        row = cur.execute("SELECT card_id FROM cc_statements WHERE cc_statement_id = ?", (cc_statement_id,)).fetchone()
+        if not row:
+            return False, "Statement not found."
+        card_id = row[0]
+        if not _is_latest_cc_statement(cur, cc_statement_id, card_id):
+            return False, "Only the most recent statement for a card can be edited — a later statement already carried its balance forward."
+        total_amount_due = round(previous_balance + new_charges + interest_charged, 2)
+        unpaid_balance_next = round(total_amount_due - amount_paid, 2)
+        if unpaid_balance_next <= 0.005:
+            status = "Paid"
+        elif amount_paid > 0.005:
+            status = "Partially Paid"
+        else:
+            status = "Unpaid"
+        cur.execute(
+            """UPDATE cc_statements SET due_date = ?, total_amount_due = ?, previous_balance = ?, new_charges = ?,
+                      interest_charged = ?, amount_paid = ?, unpaid_balance_next = ?, status = ?, paid_confirmed = 1,
+                      statement_month = COALESCE(?, statement_month)
+               WHERE cc_statement_id = ?""",
+            (str(due_date), total_amount_due, previous_balance, new_charges, interest_charged,
+             amount_paid, unpaid_balance_next, status, statement_month, cc_statement_id),
+        )
+        cur.execute(
+            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CC_STATEMENT_EDITED', 'cc_statements', ?, ?)",
+            (cc_statement_id, f"due {due_date}, total {php(total_amount_due)}"),
+        )
+        conn.commit()
+    return True, "Statement updated."
+
+
+def delete_cc_statement(cc_statement_id: int) -> tuple[bool, str]:
+    """Removes a CC statement entirely -- only allowed on the latest statement for its card, same
+    guard as edit_cc_statement(), so a mistakenly-added statement can be undone cleanly."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        row = cur.execute(
+            "SELECT card_id, due_date, total_amount_due FROM cc_statements WHERE cc_statement_id = ?", (cc_statement_id,)
+        ).fetchone()
+        if not row:
+            return False, "Statement not found."
+        card_id, due_date, total_amount_due = row
+        if not _is_latest_cc_statement(cur, cc_statement_id, card_id):
+            return False, "Only the most recent statement for a card can be deleted — a later statement already carried its balance forward."
+        cur.execute("DELETE FROM cc_statements WHERE cc_statement_id = ?", (cc_statement_id,))
+        cur.execute(
+            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CC_STATEMENT_DELETED', 'cc_statements', ?, ?)",
+            (cc_statement_id, f"Deleted statement due {due_date} ({php(total_amount_due)})"),
+        )
+        conn.commit()
+    return True, "Statement deleted."
 
 
 def get_blocked_dates_for_month(year: int, month: int) -> dict:
@@ -2096,7 +2566,7 @@ def remove_blocked_date(d: date) -> None:
 # Page setup
 # --------------------------------------------------------------------------
 
-LOGO_PATH = "assets/slicks_logo.jpg"
+LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "slicks_logo.jpg")   # absolute: works whatever folder the app was started from
 
 # Sandbox vs live indicator (2026-09-17): both instances run the exact same code, so with nothing
 # else distinguishing them, the only visible difference used to be the port number in the URL --
@@ -2106,8 +2576,86 @@ LOGO_PATH = "assets/slicks_logo.jpg"
 IS_SANDBOX = "TEST" in os.path.basename(DB_PATH).upper()
 _PAGE_TITLE = ("🧪 SANDBOX — " if IS_SANDBOX else "") + "Slick's Tire Supply — AP Disbursement"
 
+
+@st.cache_resource
+def _get_app_start_time() -> datetime:
+    """Computed once per process, cached for that process's whole lifetime (st.cache_resource,
+    unlike st.cache_data, doesn't expire or get cleared by "Refresh data") -- so this only ever
+    changes when the app is actually restarted, not on an ordinary page interaction."""
+    return datetime.now()
+
+
+WHATS_NEW_PATH = "WHATS_NEW.md"
+
+
+def _read_whats_new() -> str:
+    """Full changelog text, HTML-comment header stripped -- backs the permanent Changelog
+    section in Admin & audit. Missing file (e.g. a fresh checkout without it yet) degrades to a
+    plain message instead of crashing the page."""
+    if not os.path.exists(WHATS_NEW_PATH):
+        return "No changelog yet."
+    with open(WHATS_NEW_PATH, encoding="utf-8") as f:
+        text = f.read()
+    return re.sub(r"<!--.*?-->\s*", "", text, count=1, flags=re.DOTALL).strip()
+
+
+def _read_whats_new_latest_section() -> str | None:
+    """Just the newest "## YYYY-MM-DD" section, for the one-time popup -- None if the file is
+    missing or empty so the caller can just skip showing anything."""
+    full = _read_whats_new()
+    if full == "No changelog yet.":
+        return None
+    sections = re.split(r"(?=^## )", full, flags=re.MULTILINE)
+    sections = [s.strip() for s in sections if s.strip().startswith("## ")]
+    return sections[0] if sections else None
+
+
+@st.cache_resource
+def _whats_new_popup_tracker() -> dict:
+    """A mutable object living for this process's whole lifetime (unlike st.session_state, which
+    is per browser tab/session) -- so the "What's new" popup fires exactly once per actual
+    restart, for whoever happens to load the page first, and never again until the next restart
+    -- not once per new tab someone opens against an already-running process."""
+    return {"shown": False}
+
+
 st.set_page_config(page_title=_PAGE_TITLE, page_icon=LOGO_PATH, layout="wide")
-st.logo(LOGO_PATH, size="large")
+
+# Startup check: if the program is newer than the database, say so plainly instead of failing on a missing column.
+_schema_stamp = os.path.getmtime(os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql"))
+if st.session_state.get("_schema_checked") != _schema_stamp:   # re-checks whenever a newer schema.sql arrives, even mid-session
+    _pending_updates = pending_schema_updates(DB_PATH)
+    if _pending_updates:
+        st.error("The database needs a quick update before the system can run.")
+        _nl = chr(10)
+        st.markdown(
+            "New features were added that need a small change to the database. Nothing is lost, and it takes a few seconds:" + _nl + _nl
+            + "1. Close this browser tab." + _nl
+            + "2. Double-click **Update Database** (`update_database.bat`) in the project folder. It backs up your data first, updates it, and restarts the system." + _nl + _nl
+            + "What is missing: " + ", ".join(_pending_updates)
+        )
+        st.stop()
+    st.session_state["_schema_checked"] = _schema_stamp
+try:
+    st.logo(LOGO_PATH, size="large")
+except Exception:
+    pass   # a missing/unreadable logo file (e.g. Google Drive not synced yet) must never stop the app from opening
+
+_whats_new_tracker = _whats_new_popup_tracker()
+# st.runtime.exists() is False during a bare `import app` (pytest's conftest.py, or any other
+# script-mode import) -- st.dialog needs a real, running Streamlit server behind it, and app.py's
+# top-level code (every `with tab_X:` block) already runs unconditionally on import regardless of
+# fixtures, same reason get_check_print_batches() needed guarding against test collection earlier.
+if st.runtime.exists() and not _whats_new_tracker["shown"]:
+    _whats_new_tracker["shown"] = True
+    _latest_whats_new = _read_whats_new_latest_section()
+    if _latest_whats_new:
+        @st.dialog("What's new")
+        def _show_whats_new_dialog(text: str) -> None:
+            st.markdown(text)
+            if st.button("Got it", width="stretch"):
+                st.rerun()
+        _show_whats_new_dialog(_latest_whats_new)
 
 tab_labels = [
     ":material/dashboard: Dashboard",
@@ -2151,6 +2699,12 @@ with st.sidebar:
     if not bank_df.empty:
         bank = bank_df.iloc[0]
         st.caption(f"{bank['bank_name']} · Branch {bank['branch_code']}")
+    # "Did my restart actually pick up the change" indicator (2026-09-17, for a non-coding user
+    # who can't verify that by reading code): st.cache_resource holds its value for the life of
+    # this Python process and only recomputes on a fresh one, so this timestamp changes exactly
+    # when restart_live.bat/run_test_streamlit.bat actually restarts the app -- never on an
+    # ordinary click/rerun within the same still-running process.
+    st.caption(f"App started: {_get_app_start_time().strftime('%b %d, %Y %I:%M %p')}")
 
     st.divider()
     st.caption("Jump to a check, invoice, batch, loan note, or bank loan")
@@ -2310,13 +2864,21 @@ with st.sidebar:
 with tab_dashboard:
     st.header("Overview")
 
+    # "No statement on file yet" (a card with zero statement history, typically not in active use)
+    # is routine, not urgent -- a legacy import can leave 40+ of these, which used to fire this
+    # banner in red (st.error) every single day. Only "Possibly missing a statement" (a card that
+    # HAD statements but seems to have skipped a cycle) is a real, actionable risk worth an error.
     dash_gap_alerts_df = get_statement_gap_alerts()
-    if not dash_gap_alerts_df.empty:
+    dash_missing_recent_df = dash_gap_alerts_df[dash_gap_alerts_df["alert"] == "Possibly missing a statement"] if not dash_gap_alerts_df.empty else dash_gap_alerts_df
+    dash_never_had_df = dash_gap_alerts_df[dash_gap_alerts_df["alert"] == "No statement on file yet"] if not dash_gap_alerts_df.empty else dash_gap_alerts_df
+    if not dash_missing_recent_df.empty:
         st.error(
-            f":material/report: {len(dash_gap_alerts_df)} credit card statement(s) may have been overlooked — "
-            + "; ".join(f"{r['card_name']} ({r['alert'].lower()})" for _, r in dash_gap_alerts_df.iterrows())
+            f":material/report: {len(dash_missing_recent_df)} credit card statement(s) may have been overlooked — "
+            + "; ".join(f"{r['card_name']} ({r['alert'].lower()})" for _, r in dash_missing_recent_df.iterrows())
             + ". Check the Credit cards tab."
         )
+    if not dash_never_had_df.empty:
+        st.caption(f":material/info: {len(dash_never_had_df)} card(s) have never had a statement recorded — routine for cards not yet in active use. See Credit cards tab.")
 
     dash_checkbook_alerts_df = get_checkbook_alerts()
     if not dash_checkbook_alerts_df.empty:
@@ -2356,17 +2918,13 @@ with tab_dashboard:
     supplier_lender_uncleared = q(
         "SELECT COALESCE(SUM(amount), 0) AS total FROM checks_issued WHERE status = 'Active' AND check_date > DATE('now', 'localtime')"
     )
-    loan_pending = q("SELECT COALESCE(SUM(amount), 0) AS total FROM bank_loan_installments WHERE due_date > DATE('now', 'localtime')")
+    loan_pending = q("SELECT COALESCE(SUM(amount), 0) AS total FROM bank_loan_installments WHERE due_date > DATE('now', 'localtime') AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)")
     # unpaid_balance_next-aware (migration 027): a statement carrying a real rolling balance
     # still counts as outstanding past its due date; a legacy statement (unpaid_balance_next
     # always 0) falls through to the original due-date-only rule unchanged.
     cc_unpaid = q(
-        """SELECT COALESCE(SUM(
-               CASE WHEN unpaid_balance_next > 0 THEN unpaid_balance_next
-                    WHEN due_date >= DATE('now', 'localtime') THEN total_amount_due
-                    ELSE 0 END
-           ), 0) AS total
-           FROM cc_statements WHERE status NOT IN ('Paid', 'Cancelled')"""
+        f"""SELECT COALESCE(SUM({cc_owed_case('cs')}), 0) AS total
+           FROM cc_statements cs WHERE cs.status NOT IN ('Paid', 'Cancelled')"""
     )
     ap_outstanding = float(supplier_lender_uncleared["total"][0]) + float(loan_pending["total"][0]) + float(cc_unpaid["total"][0])
 
@@ -2389,9 +2947,9 @@ with tab_dashboard:
         st.metric("Total AP outstanding", php(ap_outstanding), border=True)
         st.metric("Active checks in circulation", f"{int(active_checks['n'][0])} · {php(active_checks['total'][0])}", border=True)
         st.metric(
-            "Needs attention", str(len(critical_alerts) + len(dash_gap_alerts_df) + len(dash_checkbook_alerts_df)),
+            "Needs attention", str(len(critical_alerts) + len(dash_missing_recent_df) + len(dash_checkbook_alerts_df)),
             border=True,
-            help=f"{len(critical_alerts)} critical credit card alert(s), {len(dash_gap_alerts_df)} possibly missed CC statement(s), {len(dash_checkbook_alerts_df)} checkbook issue(s) -- see the banners above, the Credit cards tab, and the Admin & audit tab.",
+            help=f"{len(critical_alerts)} critical credit card alert(s), {len(dash_missing_recent_df)} possibly missed CC statement(s), {len(dash_checkbook_alerts_df)} checkbook issue(s) -- see the banners above, the Credit cards tab, and the Admin & audit tab. ({len(dash_never_had_df)} more card(s) have never had a statement recorded — routine, not counted here.)",
         )
 
     cash_7d = get_upcoming_cash_obligations(7)
@@ -2442,6 +3000,12 @@ with tab_dashboard:
             cal_year_options = sorted(set(cal_year_options) | {cal_year})
 
         cal_col_prev, cal_col_month_pick, cal_col_year_pick, cal_col_next = st.columns([1, 2, 1.4, 1])
+        # Both arrow buttons are checked here, before the month/year selectboxes below are
+        # instantiated (Streamlit raises a StreamlitAPIException if session_state[key] is set
+        # for a widget's key after that widget has already been instantiated in the same script
+        # run). `with cal_col_next:` still renders the button in the rightmost column even
+        # though its code now runs before the middle columns' widgets are declared -- column
+        # placement follows the `st.columns(...)` call, not code order.
         with cal_col_prev:
             if st.button("◀", key="cal_prev_month"):
                 cal_month -= 1
@@ -2455,15 +3019,6 @@ with tab_dashboard:
                 st.session_state["cal_month_pick"] = cal_month_names[cal_month - 1]
                 st.session_state["cal_year_pick"] = cal_year
                 st.rerun()
-        with cal_col_month_pick:
-            cal_picked_month_name = st.selectbox(
-                "Month", cal_month_names, index=cal_month - 1, key="cal_month_pick", label_visibility="collapsed",
-            )
-            cal_month = cal_month_names.index(cal_picked_month_name) + 1
-        with cal_col_year_pick:
-            cal_year = st.selectbox(
-                "Year", cal_year_options, index=cal_year_options.index(cal_year), key="cal_year_pick", label_visibility="collapsed",
-            )
         with cal_col_next:
             if st.button("▶", key="cal_next_month"):
                 cal_month += 1
@@ -2473,6 +3028,15 @@ with tab_dashboard:
                 st.session_state["cal_month_pick"] = cal_month_names[cal_month - 1]
                 st.session_state["cal_year_pick"] = cal_year
                 st.rerun()
+        with cal_col_month_pick:
+            cal_picked_month_name = st.selectbox(
+                "Month", cal_month_names, index=cal_month - 1, key="cal_month_pick", label_visibility="collapsed",
+            )
+            cal_month = cal_month_names.index(cal_picked_month_name) + 1
+        with cal_col_year_pick:
+            cal_year = st.selectbox(
+                "Year", cal_year_options, index=cal_year_options.index(cal_year), key="cal_year_pick", label_visibility="collapsed",
+            )
         st.session_state["cal_year"], st.session_state["cal_month"] = cal_year, cal_month
 
         weekday_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -2772,7 +3336,7 @@ with tab_dashboard:
             itc3.metric("YTD total", php(interest_trend_df["total_interest"].sum()))
 
     with st.expander("Recent audit log"):
-        audit_df = fix_nullable_int(q("SELECT * FROM audit_logs ORDER BY log_id DESC LIMIT 15"), "entity_id")
+        audit_df = fix_nullable_int(q("SELECT log_id, user_action, entity_name, entity_id, old_values, new_values, datetime(timestamp, 'localtime') AS timestamp FROM audit_logs ORDER BY log_id DESC LIMIT 15"), "entity_id")
         st.dataframe(audit_df, hide_index=True)
 
 # --------------------------------------------------------------------------
@@ -3090,7 +3654,7 @@ with tab_suppliers:
                       (SELECT SUM(amount) FROM checks_issued
                        WHERE statement_id = os.statement_id AND status = 'Active' AND check_date <= DATE('now', 'localtime')), 0
                   ) AS outstanding,
-                  os.status, os.is_locked, os.created_at
+                  os.status, os.is_locked, datetime(os.created_at, 'localtime') AS created_at
            FROM order_statements os
            JOIN creditors c ON os.creditor_id = c.creditor_id
            JOIN v_batch_net_totals v ON v.statement_id = os.statement_id
@@ -3126,6 +3690,93 @@ with tab_suppliers:
                     refresh()
                 else:
                     st.warning("Duplicate submission ignored — identical to the click just before it.")
+
+        with st.expander("Import many batches from one Excel file (one sheet = one new batch)"):
+            st.caption(
+                "Upload an .xlsx or .xlsm (the macro entry workbook) where each sheet (tab) holds one supplier's invoices in the usual columns "
+                "(Doc Ref / Date / Amount / Less %). Name each tab after its supplier. The same supplier can have "
+                "several tabs — every tab becomes its own new batch. You review everything before anything is saved."
+            )
+            st.download_button(
+                "Download Excel entry template (with pop-up form)", data=build_invoice_entry_workbook,
+                file_name=f"invoice_entry_{date.today():%Y-%m-%d}.xlsm", mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+                icon=":material/download:", key="multi_import_template_dl",
+                help="A macro-enabled workbook with the supplier list refreshed from the system right now. Open it, enable macros, and use the Add invoice button.",
+            )
+            mb_file = st.file_uploader("Workbook", type=["xlsx", "xlsm"], key="multi_import_uploader")
+            if st.button("Read workbook", icon=":material/upload_file:", key="multi_import_read_btn"):
+                if not mb_file:
+                    st.warning("Upload a file first.")
+                else:
+                    mb_sheets, mb_problems = parse_invoice_workbook(mb_file.getvalue())
+                    st.session_state["multi_import_sheets"] = [
+                        {"sheet": sh.sheet_name, "messages": sh.messages,
+                         "rows": [{"doc_ref": r.doc_ref, "invoice_date": r.invoice_date, "amount": r.amount, "less_pct": r.less_pct} for r in sh.rows]}
+                        for sh in mb_sheets
+                    ]
+                    st.session_state["multi_import_problems"] = mb_problems
+                    st.session_state.pop("multi_import_result", None)
+            for problem in st.session_state.get("multi_import_problems", []):
+                st.error(problem)
+
+            mb_supplier_options = creditor_options("SUPPLIER")
+            mb_state = st.session_state.get("multi_import_sheets", [])
+            mb_plan = []
+            if mb_state:
+                st.markdown("**Review** — pick the supplier for each tab (tabs set to skip are ignored).")
+                for i, sh in enumerate(mb_state):
+                    good_rows = [r for r in sh["rows"] if r["doc_ref"].strip() and r["amount"] > 0]
+                    guess = match_supplier(sh["sheet"], mb_supplier_options)
+                    options = [None] + list(mb_supplier_options)
+                    rc1, rc2 = st.columns([2, 3])
+                    pick = rc2.selectbox(
+                        "Supplier for tab: " + sh["sheet"], options=options,
+                        index=options.index(guess) if guess in options else 0,
+                        format_func=lambda cid: "— skip this tab —" if cid is None else mb_supplier_options[cid],
+                        key=f"multi_import_pick_{i}_{sh['sheet']}",
+                    )
+                    rc1.markdown(f"**{sh['sheet']}**")
+                    rc1.caption(f"{len(good_rows)} invoice(s) · {php(sum(r['amount'] for r in good_rows))}" + (f" · {len(sh['rows']) - len(good_rows)} row(s) will be skipped (missing Doc Ref or amount)" if len(sh["rows"]) != len(good_rows) else ""))
+                    for m in sh["messages"][:3]:
+                        rc1.caption(f":warning: {m}")
+                    if pick is not None and good_rows:
+                        mb_plan.append((sh["sheet"], pick, good_rows))
+                mb_promote = st.checkbox("Also promote each new batch to Issued", value=True, key="multi_import_promote")
+                mb_warnings = [f"{sheet}: {w}" for sheet, cid, rows_ in mb_plan
+                               for w in invoice_warnings(cid, [(r["doc_ref"].strip(), r["invoice_date"], r["amount"]) for r in rows_])]
+                if st.button("Create batches and import invoices", icon=":material/playlist_add:", key="multi_import_go_btn", disabled=not mb_plan) or dup_resume("multi_import"):
+                    if dup_needs_confirm("multi_import", mb_warnings):
+                        pass
+                    elif guard_duplicate_submit("multi_import", repr([(a, b, len(c)) for a, b, c in mb_plan])):
+                        results = []
+                        for sheet, cid, rows_ in mb_plan:
+                            terms_df = q("SELECT terms FROM creditors WHERE creditor_id = ?", (cid,))
+                            terms = terms_df["terms"][0] if not terms_df.empty else ""
+                            sid = create_order_statement(cid)
+                            added, skipped = 0, []
+                            for r in rows_:
+                                try:
+                                    add_invoice(cid, r["doc_ref"].strip(), r["invoice_date"], resolve_due_date(r["invoice_date"], terms),
+                                                r["amount"], [r["less_pct"]] if r["less_pct"] else [], sid)
+                                    added += 1
+                                except sqlite3.IntegrityError:
+                                    skipped.append(r["doc_ref"].strip())
+                            ref = q("SELECT statement_ref FROM order_statements WHERE statement_id = ?", (sid,))["statement_ref"][0]
+                            if mb_promote and added:
+                                try:
+                                    ref = promote_draft_statement(sid, "Issued")
+                                except ValueError:
+                                    pass
+                            results.append({"Tab": sheet, "Supplier": mb_supplier_options[cid], "Batch": ref, "Invoices added": added,
+                                            "Already on file (skipped)": ", ".join(skipped)})
+                        st.session_state["multi_import_result"] = results
+                        st.session_state.pop("multi_import_sheets", None)
+                        refresh()
+                    else:
+                        st.warning("Duplicate submission ignored — identical to the click just before it.")
+            if st.session_state.get("multi_import_result"):
+                st.success("Done — new batches created:")
+                st.dataframe(pd.DataFrame(st.session_state["multi_import_result"]), hide_index=True)
 
     else:
         st.subheader("Order statement browser")
@@ -3419,7 +4070,8 @@ with tab_suppliers:
                     with tab_import:
                         st.caption("Upload a .csv or .xlsx with columns like Doc Ref / Date / Amount / Less % (any reasonable header variant works). More reliable than OCR since it's reading real data, not a photo.")
                         st.download_button(
-                            "Download CSV template", data=get_template_csv(), file_name="invoice_import_template.csv",
+                            "Download CSV template", data=get_template_csv(),
+                            file_name=re.sub(r"[^A-Za-z0-9._-]+", "_", f"{scoped_row['creditor_name']}_{scoped_row['statement_ref']}_invoice_template").strip("_") + ".csv",
                             mime="text/csv", icon=":material/download:", key=batch_scoped_key("import_template_btn"),
                         )
                         import_file = st.file_uploader(
@@ -3465,10 +4117,22 @@ with tab_suppliers:
                                 "less_pct": st.column_config.NumberColumn("Less %", format="%.2f%%", min_value=0.0, max_value=100.0, step=1.0),
                             },
                         )
+                        bulk_promote_after = False
+                        if scoped_row["status"] == "Draft":
+                            bulk_promote_after = st.checkbox(
+                                "Also promote this batch to Issued once the invoices are added", value=True,
+                                key=batch_scoped_key("bulk_promote_after"),
+                                help="Gives the batch its permanent number (e.g. 2026 - OS 0007) in the same step, so you don't need to open \"Promote statement status\" separately.",
+                            )
                         bulk_col_add, bulk_col_discard = st.columns(2)
                         with bulk_col_add:
-                            if st.button("Add these invoices to the batch", icon=":material/playlist_add:", key=batch_scoped_key("bulk_commit_btn")):
-                                if guard_duplicate_submit("bulk_add_invoices", int(batch_scope_pick), edited_staged_df.to_csv(index=False)):
+                            if st.button("Add these invoices to the batch", icon=":material/playlist_add:", key=batch_scoped_key("bulk_commit_btn")) or dup_resume("bulk_add_invoices"):
+                                if dup_needs_confirm("bulk_add_invoices", invoice_warnings(scoped_creditor_id, [
+                                    (cell_text(r["doc_ref"]).strip(), r["invoice_date"], float(r["gross_amount"] or 0))
+                                    for _, r in edited_staged_df.iterrows() if cell_text(r["doc_ref"]).strip() and float(r["gross_amount"] or 0) > 0
+                                ])):
+                                    pass
+                                elif guard_duplicate_submit("bulk_add_invoices", int(batch_scope_pick), edited_staged_df.to_csv(index=False)):
                                     added, commit_errors = 0, []
                                     for _, r in edited_staged_df.iterrows():
                                         doc_ref = cell_text(r["doc_ref"]).strip()
@@ -3487,6 +4151,11 @@ with tab_suppliers:
                                             commit_errors.append(f"'{doc_ref}' already exists for this supplier.")
                                     if added:
                                         st.success(f"{added} invoice(s) added.")
+                                        if bulk_promote_after and not commit_errors:
+                                            try:
+                                                st.toast(f"{added} invoice(s) added; batch promoted to Issued as {promote_draft_statement(int(batch_scope_pick), 'Issued')}.")
+                                            except ValueError as e:
+                                                commit_errors.append(f"Invoices were added, but the batch could not be promoted: {e}")
                                     for e in commit_errors:
                                         st.error(e)
                                     st.session_state[bulk_staged_key] = []
@@ -3528,8 +4197,14 @@ with tab_suppliers:
                         "status": st.column_config.TextColumn("Status"),
                     },
                 )
-                if st.button("Save invoice changes", icon=":material/save:", key=batch_scoped_key("save_invoice_edits")):
-                  if not guard_duplicate_submit("save_invoice_changes", int(batch_scope_pick), edited_invoices_df.to_csv(index=False)):
+                if st.button("Save invoice changes", icon=":material/save:", key=batch_scoped_key("save_invoice_edits")) or dup_resume("save_invoice_changes"):
+                  if dup_needs_confirm("save_invoice_changes", invoice_warnings(scoped_creditor_id, [
+                      (cell_text(r["doc_ref"]).strip(), r["invoice_date"], float(r["gross_amount"] or 0))
+                      for _, r in edited_invoices_df.iterrows()
+                      if pd.isna(r["invoice_id"]) and cell_text(r["doc_ref"]).strip() and float(r["gross_amount"] or 0) > 0
+                  ])):
+                    pass
+                  elif not guard_duplicate_submit("save_invoice_changes", int(batch_scope_pick), edited_invoices_df.to_csv(index=False)):
                     st.warning("Duplicate submission ignored — identical to the click just before it.")
                   else:
                     original_by_id = original_invoices_df.set_index("invoice_id")
@@ -3628,8 +4303,14 @@ with tab_suppliers:
                         "reason": st.column_config.TextColumn("Reason", default=""),
                     },
                 )
-                if st.button("Save credit memo changes", icon=":material/save:", key=batch_scoped_key("save_memo_edits")):
-                  if not guard_duplicate_submit("save_memo_changes", int(batch_scope_pick), edited_memos_df.to_csv(index=False)):
+                if st.button("Save credit memo changes", icon=":material/save:", key=batch_scoped_key("save_memo_edits")) or dup_resume("save_memo_changes"):
+                  if dup_needs_confirm("save_memo_changes", [
+                      w for _, r in edited_memos_df.iterrows()
+                      if pd.isna(r["credit_memo_id"]) and cell_text(r["memo_ref"]).strip() and float(r["amount"] or 0) > 0
+                      for w in credit_memo_warnings(scoped_creditor_id, cell_text(r["memo_ref"]), r["memo_date"], float(r["amount"]))
+                  ]):
+                    pass
+                  elif not guard_duplicate_submit("save_memo_changes", int(batch_scope_pick), edited_memos_df.to_csv(index=False)):
                     st.warning("Duplicate submission ignored — identical to the click just before it.")
                   else:
                     original_by_id = original_memos_df.set_index("credit_memo_id")
@@ -3730,13 +4411,19 @@ with tab_suppliers:
                 # Re-seed the grid whenever the count OR the remaining balance changes (e.g. a check
                 # in this batch got cancelled/corrected) — otherwise a stale pre-split from before
                 # that change would silently linger in session_state.
-                signature = (int(num_checks), round(remaining_balance, 2))
+                # Default check date = the batch's invoice due date (the earliest one still unpaid if there are several),
+                # so a check is dated when it is actually due; every date stays editable in the grid.
+                due_val = q_live("SELECT MIN(due_date) AS d FROM invoices WHERE statement_id = ? AND status IN ('Unpaid', 'Partially Paid')", (int(batch_scope_pick),))["d"][0]
+                if not has_value(due_val):
+                    due_val = q_live("SELECT MIN(due_date) AS d FROM invoices WHERE statement_id = ? AND status != 'Cancelled'", (int(batch_scope_pick),))["d"][0]
+                default_check_date = date.fromisoformat(str(due_val)[:10]) if has_value(due_val) else date.today()
+                signature = (int(num_checks), round(remaining_balance, 2), default_check_date)
                 if st.session_state.get(last_signature_key) != signature:
                     st.session_state[last_signature_key] = signature
                     st.session_state.pop(grid_key, None)
 
                 default_checks_df = pd.DataFrame({
-                    "check_date": [date.today()] * int(num_checks),
+                    "check_date": [default_check_date] * int(num_checks),
                     "amount": split_remaining_evenly(remaining_balance, int(num_checks)),
                 })
                 edited_checks_df = st.data_editor(
@@ -3745,7 +4432,7 @@ with tab_suppliers:
                     num_rows="dynamic",
                     key=grid_key,
                     column_config={
-                        "check_date": st.column_config.DateColumn("Check Date", default=date.today()),
+                        "check_date": st.column_config.DateColumn("Check Date", default=default_check_date),
                         "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.01, step=0.01, default=0.0),
                     },
                 )
@@ -3874,8 +4561,10 @@ with tab_suppliers:
                 if st.button(
                     "Park Metrobank checks", icon=":material/payments:",
                     key=batch_scoped_key("issue_checks_submit"), disabled=not grid_matches or not alloc_ready or memo_guard_blocking,
-                ):
-                    if guard_duplicate_submit("issue_checks_grid", int(batch_scope_pick), repr(rows)):
+                ) or dup_resume("issue_checks_grid"):
+                    if dup_needs_confirm("issue_checks_grid", check_warnings(scoped_creditor_id, [(r["amount"], r["check_date"]) for r in rows])):
+                        pass
+                    elif guard_duplicate_submit("issue_checks_grid", int(batch_scope_pick), repr(rows)):
                         ok, msg, check_ids = issue_checks_grid(scoped_creditor_id, int(batch_scope_pick), rows)
                         if ok:
                             alloc_by_row: dict[int, list[tuple[int, float]]] = {i + 1: [] for i in range(len(rows))}
@@ -3897,7 +4586,7 @@ with tab_suppliers:
 
             st.markdown("##### Checks already issued against this order statement")
             scoped_checks_df = q(
-                "SELECT check_id, check_number, check_date, amount, status, printed_at FROM checks_issued WHERE statement_id = ? ORDER BY check_id",
+                "SELECT check_id, check_number, check_date, amount, status, datetime(printed_at, 'localtime') AS printed_at FROM checks_issued WHERE statement_id = ? ORDER BY check_id",
                 (int(batch_scope_pick),),
             )
             if scoped_checks_df.empty:
@@ -4089,7 +4778,7 @@ with tab_creditor_master:
     st.caption("Master registry of payees tagged supplier, lender, or bank loan. Credit card payees stay in their own track (Credit cards tab).")
 
     creditor_master_df = q(
-        "SELECT creditor_id, creditor_name, creditor_type, tin, contact_person, contact_number, email, terms, is_active, created_at "
+        "SELECT creditor_id, creditor_name, creditor_type, tin, contact_person, contact_number, email, terms, is_active, datetime(created_at, 'localtime') AS created_at "
         "FROM creditors WHERE creditor_type IN ('SUPPLIER', 'LENDER', 'BANK_LOAN') ORDER BY creditor_type, creditor_name"
     )
     creditor_master_df["is_active"] = creditor_master_df["is_active"].astype(int) == 1
@@ -4137,14 +4826,20 @@ with tab_creditor_master:
             "contact_person": st.column_config.TextColumn("Contact person", default=""),
             "contact_number": st.column_config.TextColumn("Contact number", default=""),
             "email": st.column_config.TextColumn("Email", default=""),
-            "terms": st.column_config.SelectboxColumn("Terms", options=SUPPLIER_TERMS_OPTIONS, default=""),
+            "terms": st.column_config.SelectboxColumn("Terms", options=SUPPLIER_TERMS_OPTIONS, default=DEFAULT_SUPPLIER_TERMS),
             "is_active": st.column_config.CheckboxColumn("Active", default=True),
             "created_at": st.column_config.TextColumn("Created"),
         },
     )
 
-    if st.button("Save creditor changes", icon=":material/save:", key="save_creditor_master_edits"):
-        if not guard_duplicate_submit("save_creditor_master", edited_master_df.to_csv(index=False)):
+    if st.button("Save creditor changes", icon=":material/save:", key="save_creditor_master_edits") or dup_resume("save_creditor_master"):
+        if dup_needs_confirm("save_creditor_master", [
+            w for _, r in edited_master_df.iterrows()
+            if pd.isna(r["creditor_id"]) and cell_text(r["creditor_name"]).strip()
+            for w in creditor_warnings(cell_text(r["creditor_name"]), cell_text(r["creditor_type"]))
+        ]):
+            pass
+        elif not guard_duplicate_submit("save_creditor_master", edited_master_df.to_csv(index=False)):
             st.warning("Duplicate submission ignored — identical to the click just before it.")
         else:
             original_by_id = original_master_df.set_index("creditor_id")
@@ -4262,17 +4957,22 @@ with tab_lenders:
             st.caption("LN No. starts as a draft placeholder — use \"Promote to real LN No.\" below once it's ready to assign the permanent number. Total interest/payable are computed from the repayment schedule, not typed in.")
             if st.form_submit_button("Create loan note", icon=":material/description:"):
                 if ln_creditor:
-                    if guard_duplicate_submit("create_loan_note", ln_creditor, ln_issue_date, ln_principal, ln_rate):
-                        ok, msg, new_lnid = create_loan_note(ln_creditor, ln_issue_date, ln_principal, ln_rate)
-                        if ok:
-                            st.session_state["selected_loan_note_id"] = new_lnid
-                            st.session_state["_ln_mode_next"] = "🔍 Browse Loan Notes"
-                            st.success("Draft loan note created — opened below.")
-                            refresh()
-                        else:
-                            st.error(msg)
+                    err = money_amount_error(ln_principal, "Principal amount")
+                    if err:
+                        st.error(err)
                     else:
-                        st.warning("Duplicate submission ignored — identical to the click just before it.")
+                        def _do_create_loan_note(c=ln_creditor, d=ln_issue_date, p=ln_principal, r=ln_rate):
+                            ok, msg, new_lnid = create_loan_note(c, d, p, r)
+                            if ok:
+                                st.session_state["selected_loan_note_id"] = new_lnid
+                                st.session_state["_ln_mode_next"] = "🔍 Browse Loan Notes"
+                            return ok, msg
+                        confirm_create_dialog(
+                            f"Create a loan note for **{selectbox_creditor_label('LENDER', ln_creditor)}** dated "
+                            f"{ln_issue_date:%b %d, %Y}: principal **{php(ln_principal)}** at **{ln_rate:g}% per month**?"
+                            + dup_note(loan_note_warnings(ln_creditor, ln_issue_date, ln_principal)),
+                            "create_loan_note", _do_create_loan_note,
+                        )
                 else:
                     st.error("Lender is required.")
     else:
@@ -4357,9 +5057,10 @@ with tab_lenders:
                         st.caption("Settled fires automatically once Outstanding (uncleared) hits ₱0 — every check issued must also have actually reached its date, not just been written. Use this only to force Defaulted, or to correct a mistake.")
                         override_status = st.selectbox("Status", ["Active", "Settled", "Defaulted"], index=["Active", "Settled", "Defaulted"].index(ln_row["status"]), key="ln_status_override")
                         if st.button("Save status", icon=":material/update:", key="ln_status_save_btn"):
-                            update_loan_note_status(selected_lnid, override_status)
-                            st.success("Status updated.")
-                            refresh()
+                            ok, msg = update_loan_note_status(selected_lnid, override_status)
+                            (st.success if ok else st.error)(msg)
+                            if ok:
+                                refresh()
             with ln_col_export:
                 with st.expander("Export Loan Note PDF"):
                     if st.button("Generate Loan Note PDF", icon=":material/picture_as_pdf:", key="ln_export_btn"):
@@ -4433,8 +5134,10 @@ with tab_lenders:
                     suggested_interest, balance_before = suggest_installment_interest(selected_lnid, add_due_date)
                     st.caption(f"Suggested interest: {php(suggested_interest)} ({(ln_row['monthly_interest_rate'] or 0):g}% × {php(balance_before)} balance × days elapsed ÷ 30) — editable below.")
                     add_interest = st.number_input("Interest", min_value=0.0, step=100.0, value=suggested_interest, key="ln_add_interest")
-                    if st.button("Add installment", icon=":material/playlist_add:", key="ln_add_installment_btn"):
-                        if guard_duplicate_submit("add_loan_installment", selected_lnid, add_due_date, add_principal, add_interest):
+                    if st.button("Add installment", icon=":material/playlist_add:", key="ln_add_installment_btn") or dup_resume("add_loan_installment"):
+                        if dup_needs_confirm("add_loan_installment", loan_installment_warnings(selected_lnid, [(add_due_date, add_principal, add_interest)])):
+                            pass
+                        elif guard_duplicate_submit("add_loan_installment", selected_lnid, add_due_date, add_principal, add_interest):
                             ok, msg = add_loan_installment(selected_lnid, add_due_date, add_principal, add_interest)
                             (st.success if ok else st.error)(msg)
                             if ok:
@@ -4485,8 +5188,13 @@ with tab_lenders:
                         )
                         ln_import_col_add, ln_import_col_discard = st.columns(2)
                         with ln_import_col_add:
-                            if st.button("Add these installments", icon=":material/playlist_add:", key=f"ln_import_commit_btn_{selected_lnid}"):
-                              if not guard_duplicate_submit("ln_import_commit", selected_lnid, ln_edited_import_df.to_csv(index=False)):
+                            if st.button("Add these installments", icon=":material/playlist_add:", key=f"ln_import_commit_btn_{selected_lnid}") or dup_resume("ln_import_commit"):
+                              if dup_needs_confirm("ln_import_commit", loan_installment_warnings(selected_lnid, [
+                                  (r["due_date"], float(r["principal"] or 0), float(r["interest"] or 0))
+                                  for _, r in ln_edited_import_df.iterrows() if not pd.isna(r["due_date"])
+                              ])):
+                                pass
+                              elif not guard_duplicate_submit("ln_import_commit", selected_lnid, ln_edited_import_df.to_csv(index=False)):
                                 st.warning("Duplicate submission ignored — identical to the click just before it.")
                               else:
                                 added, import_commit_errors = 0, []
@@ -4580,8 +5288,10 @@ with tab_lenders:
                     pdc_amount = float(pending_row["principal"] + pending_row["interest"])
                     pdc_date = pd.to_datetime(pending_row["due_date"]).date()
                     st.caption(f"Check Date and Amount are taken directly from this installment's schedule row — {pdc_date} for {php(pdc_amount)}. To change either, edit the schedule row itself (in the Repayment Schedule tab) before issuing. No check number yet — that's assigned when the check is printed.")
-                    if st.button("Issue Metrobank PDC", icon=":material/payments:", key="ln_pdc_issue_btn"):
-                        if guard_duplicate_submit("issue_pdc", int(pending_pick), pdc_amount, pdc_date):
+                    if st.button("Issue Metrobank PDC", icon=":material/payments:", key="ln_pdc_issue_btn") or dup_resume("issue_pdc"):
+                        if dup_needs_confirm("issue_pdc", check_warnings(ln_creditor_id, [(pdc_amount, pdc_date)])):
+                            pass
+                        elif guard_duplicate_submit("issue_pdc", int(pending_pick), pdc_amount, pdc_date):
                             ok, msg, check_id = issue_check(ln_creditor_id, pdc_amount, pdc_date, loan_note_id=selected_lnid, installment_id=int(pending_pick))
                             if ok:
                                 st.success(msg)
@@ -4591,9 +5301,27 @@ with tab_lenders:
                         else:
                             st.warning("Duplicate submission ignored — identical to the click just before it.")
 
+            ln_mismatches = loan_check_mismatches(selected_lnid)
+            if ln_mismatches:
+                st.warning("Checks not matching the repayment schedule:" + chr(10) + chr(10) + chr(10).join(f"- {m}" for m in ln_mismatches))
+            ln_unlinked = unlinked_loan_checks(selected_lnid) if not ln_is_settled_or_defaulted else []
+            if ln_unlinked and ln_row["total_payable"] not in (None, ""):
+                with st.expander(f"Create schedule from existing checks ({len(ln_unlinked)} checks not tied to the schedule)"):
+                    st.caption("Gives each of these checks its own schedule row: due date = check date, principal = check amount, interest = 0 "
+                               "(a check can't say how much of it is interest — edit a row later if you know). Nothing is saved if the checks add up to more than the loan's principal.")
+                    st.dataframe(pd.DataFrame(ln_unlinked, columns=["check_id", "check_number", "check_date", "amount"]), hide_index=True,
+                                 column_config={"amount": st.column_config.NumberColumn("Amount", format="₱ %.2f")})
+                    st.caption(f"Total of these checks: {php(sum(float(c[3]) for c in ln_unlinked))} · Loan principal: {php(ln_row['principal_amount'])}")
+                    if st.button("Create schedule rows from these checks", icon=":material/playlist_add_check:", key="ln_sched_from_checks_btn"):
+                        def _do_sched(lnid=selected_lnid):
+                            ok, msg = create_schedule_from_checks(lnid)
+                            if ok:
+                                st.toast(msg)
+                            return ok, msg
+                        confirm_create_dialog(f"Create a schedule row for each of these {len(ln_unlinked)} checks (interest 0)?", "ln_sched_from_checks", _do_sched)
             st.caption("Checks issued against this loan note")
             ln_checks_df = q(
-                """SELECT chk.check_id, chk.check_number, chk.check_date, chk.amount, chk.status, chk.printed_at,
+                """SELECT chk.check_id, chk.check_number, chk.check_date, chk.amount, chk.status, datetime(chk.printed_at, 'localtime') AS printed_at,
                           li.installment_no
                    FROM checks_issued chk LEFT JOIN loan_installments li ON li.check_id = chk.check_id
                    WHERE chk.loan_note_id = ? ORDER BY chk.check_id DESC""",
@@ -4622,7 +5350,12 @@ with tab_lenders:
                             "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.01, step=0.01),
                         },
                     )
-                    if st.button("Save parked check edits", icon=":material/save:", key="ln_save_parked_edits"):
+                    if (st.button("Save parked check edits", icon=":material/save:", key="ln_save_parked_edits") or dup_resume("ln_save_parked_edits")) and not dup_needs_confirm(
+                        "ln_save_parked_edits",
+                        loan_check_mismatches(selected_lnid, {int(r["check_id"]): (float(r["amount"]), r["check_date"]) for _, r in edited_ln_parked.iterrows()
+                         if str(r["check_date"]) != str(original_ln_parked.set_index("check_id").loc[int(r["check_id"]), "check_date"])
+                         or abs(float(r["amount"]) - float(original_ln_parked.set_index("check_id").loc[int(r["check_id"]), "amount"])) > 0.001}),
+                    ):
                         original_by_id = original_ln_parked.set_index("check_id")
                         updated, row_errors = 0, []
                         for _, r in edited_ln_parked.iterrows():
@@ -4636,6 +5369,59 @@ with tab_lenders:
                                     row_errors.append(f"Check {chk_id}: {msg}")
                         if updated:
                             st.success(f"{updated} parked check(s) updated.")
+                        for e in row_errors:
+                            st.error(e)
+                        if not updated and not row_errors:
+                            st.info("No changes to save.")
+                        if updated:
+                            refresh()
+
+            numbered_ln_checks = active_ln_checks[active_ln_checks["check_number"].apply(has_value)] if not active_ln_checks.empty else active_ln_checks
+            if not ln_is_settled_or_defaulted and not numbered_ln_checks.empty:
+                with st.expander("Correct a numbered check (number, date or amount)"):
+                    st.caption("Edit Check Number, Check Date or Amount directly, then Save. Every change is logged automatically (old → new + timestamp). "
+                               "Date and Amount can only be corrected once a check has been printed — an unprinted check is edited under 'Edit parked checks' instead.")
+                    original_ln_corr = numbered_ln_checks[["check_id", "check_number", "check_date", "amount"]].copy()
+                    original_ln_corr["check_date"] = pd.to_datetime(original_ln_corr["check_date"]).dt.date
+                    edited_ln_corr = st.data_editor(
+                        original_ln_corr, hide_index=True, num_rows="fixed", disabled=["check_id"], key="ln_correct_checks_editor",
+                        column_config={
+                            "check_id": st.column_config.NumberColumn("ID"),
+                            "check_number": st.column_config.TextColumn("Check Number"),
+                            "check_date": st.column_config.DateColumn("Check Date"),
+                            "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.01, step=0.01),
+                        },
+                    )
+                    corr_by_id = original_ln_corr.set_index("check_id")
+
+                    def _ln_corr_changes():
+                        out = {}
+                        for _, r in edited_ln_corr.iterrows():
+                            o = corr_by_id.loc[int(r["check_id"])]
+                            if str(r["check_date"]) != str(o["check_date"]) or abs(float(r["amount"]) - float(o["amount"])) > 0.001:
+                                out[int(r["check_id"])] = (float(r["amount"]), r["check_date"])
+                        return out
+
+                    if (st.button("Save check corrections", icon=":material/save:", key="ln_save_check_corrections") or dup_resume("ln_save_check_corrections")) \
+                            and not dup_needs_confirm("ln_save_check_corrections", loan_check_mismatches(selected_lnid, _ln_corr_changes())):
+                        updated, row_errors = 0, []
+                        for _, r in edited_ln_corr.iterrows():
+                            chk_id = int(r["check_id"])
+                            orig = corr_by_id.loc[chk_id]
+                            new_number = cell_text(r["check_number"]).strip()
+                            for ctype, changed, value in (
+                                ("Check Number", new_number != str(orig["check_number"]).strip(), new_number),
+                                ("Check Date", str(r["check_date"]) != str(orig["check_date"]), str(r["check_date"])),
+                                ("Amount", abs(float(r["amount"]) - float(orig["amount"])) > 0.001, str(float(r["amount"]))),
+                            ):
+                                if changed:
+                                    ok, msg = apply_check_correction(chk_id, ctype, value, "")
+                                    if ok:
+                                        updated += 1
+                                    else:
+                                        row_errors.append(f"Check {chk_id}: {msg}")
+                        if updated:
+                            st.success(f"{updated} correction(s) saved.")
                         for e in row_errors:
                             st.error(e)
                         if not updated and not row_errors:
@@ -4681,11 +5467,11 @@ with tab_bank_loans:
     bank_loans_df = q(
         """SELECT bl.bank_loan_id, c.creditor_name, bl.loan_ref, bl.account_number, bl.start_date, bl.maturity_date,
                   bl.principal_amount,
-                  COALESCE(
+                  CASE WHEN bl.is_cancelled = 1 THEN 0 ELSE COALESCE(
                       (SELECT SUM(amount) FROM bank_loan_installments
                        WHERE bank_loan_id = bl.bank_loan_id AND due_date > DATE('now', 'localtime')), 0
-                  ) AS outstanding,
-                  bl.mode_of_payment, bl.status, lb.name AS beneficiary, lb.beneficiary_type, bl.beneficiary_id
+                  ) END AS outstanding,
+                  bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, bl.is_cancelled, lb.name AS beneficiary, lb.beneficiary_type, bl.beneficiary_id
            FROM bank_loans bl JOIN creditors c ON bl.creditor_id = c.creditor_id
            LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id
            ORDER BY bl.bank_loan_id DESC"""
@@ -4739,17 +5525,28 @@ with tab_bank_loans:
             st.caption("Mode of payment is descriptive only — it doesn't drive any settlement logic. This system tracks payment as untracked cash by default regardless of what's entered here.")
             if st.form_submit_button("Create bank loan", icon=":material/account_balance:"):
                 if bl_creditor and bl_ref:
-                    if guard_duplicate_submit("create_bank_loan", bl_creditor, bl_ref, bl_account_number, bl_start, bl_maturity, bl_repricing, bl_principal, bl_mode_of_payment, bl_beneficiary):
-                        try:
-                            new_blid = create_bank_loan(bl_creditor, bl_ref, bl_account_number, bl_start, bl_maturity, bl_repricing, bl_principal, bl_mode_of_payment, bl_beneficiary)
+                    err = money_amount_error(bl_principal, "Principal amount")
+                    if not err and bl_maturity <= bl_start:
+                        err = "Maturity date must be after the start date."
+                    if err:
+                        st.error(err)
+                    else:
+                        def _do_create_bank_loan(args=(bl_creditor, bl_ref, bl_account_number, bl_start, bl_maturity, bl_repricing, bl_principal, bl_mode_of_payment, bl_beneficiary)):
+                            try:
+                                new_blid = create_bank_loan(*args)
+                            except sqlite3.IntegrityError:
+                                return False, "This loan reference already exists."
+                            except ValueError as e:
+                                return False, str(e)
                             st.session_state["selected_bank_loan_id"] = new_blid
                             st.session_state["_bl_mode_next"] = "🔍 Browse Bank Loans"
-                            st.success("Bank loan created — opened below.")
-                            refresh()
-                        except sqlite3.IntegrityError:
-                            st.error("This loan reference already exists.")
-                    else:
-                        st.warning("Duplicate submission ignored — identical to the click just before it.")
+                            return True, ""
+                        confirm_create_dialog(
+                            f"Create bank loan **{bl_ref}** with **{selectbox_creditor_label('BANK_LOAN', bl_creditor)}**: "
+                            f"principal **{php(bl_principal)}**, {bl_start:%b %d, %Y} to {bl_maturity:%b %d, %Y}?"
+                            + dup_note(bank_loan_warnings(bl_creditor, bl_account_number, bl_principal, bl_start)),
+                            "create_bank_loan", _do_create_bank_loan,
+                        )
                 else:
                     st.error("Bank and loan reference are required.")
     else:
@@ -4758,7 +5555,7 @@ with tab_bank_loans:
             st.caption("No bank loans yet — switch to \"New Bank Loan\" above to create the first one.")
         else:
             bl_browser_event = st.dataframe(
-                bank_loans_df.drop(columns=["beneficiary_id"]),
+                bank_loans_df.drop(columns=["beneficiary_id", "is_cancelled"]),
                 hide_index=True,
                 on_select="rerun",
                 selection_mode="single-row",
@@ -4808,7 +5605,12 @@ with tab_bank_loans:
                         else:
                             st.error("Could not generate the Bank Loan PDF.")
             with bl_col_delete:
-                if bl_installment_count == 0:
+                if int(bl_row["is_cancelled"]):
+                    st.caption("Cancelled — repayment rows are kept on record but not counted as due.")
+                elif bl_installment_count > 0:
+                    if st.button("Cancel this bank loan", icon=":material/cancel:", key="bl_cancel_btn"):
+                        confirm_cancel_bank_loan_dialog(selected_blid, bl_row["loan_ref"], bl_installment_count)
+                if not int(bl_row["is_cancelled"]) and bl_installment_count == 0:
                     if st.button("Delete this bank loan (no schedule rows entered yet)", icon=":material/delete:", key="bl_delete_btn"):
                         ok, msg = delete_bank_loan(selected_blid)
                         (st.success if ok else st.error)(msg)
@@ -4863,8 +5665,12 @@ with tab_bank_loans:
                 )
                 bl_import_col_add, bl_import_col_discard = st.columns(2)
                 with bl_import_col_add:
-                    if st.button("Add these installments", icon=":material/playlist_add:", key=f"bl_import_commit_btn_{selected_blid}"):
-                      if not guard_duplicate_submit("bl_import_commit", selected_blid, bl_edited_import_df.to_csv(index=False)):
+                    if st.button("Add these installments", icon=":material/playlist_add:", key=f"bl_import_commit_btn_{selected_blid}") or dup_resume("bl_import_commit"):
+                      if dup_needs_confirm("bl_import_commit", bank_schedule_warnings(selected_blid, [
+                          (r["due_date"], float(r["amount"] or 0)) for _, r in bl_edited_import_df.iterrows() if not pd.isna(r["due_date"])
+                      ])):
+                        pass
+                      elif not guard_duplicate_submit("bl_import_commit", selected_blid, bl_edited_import_df.to_csv(index=False)):
                         st.warning("Duplicate submission ignored — identical to the click just before it.")
                       else:
                         bl_added, bl_import_commit_errors = 0, []
@@ -4906,7 +5712,9 @@ with tab_bank_loans:
                 "status": st.column_config.TextColumn("Status (auto)"),
             },
         )
-        if st.button("Save schedule changes", icon=":material/save:", key="bl_save_schedule_btn"):
+        if (st.button("Save schedule changes", icon=":material/save:", key="bl_save_schedule_btn") or dup_resume("bl_save_schedule")) and not dup_needs_confirm("bl_save_schedule", bank_schedule_warnings(selected_blid, [
+            (r["due_date"], float(r["amount"] or 0)) for _, r in bl_edited_schedule_df.iterrows() if pd.isna(r["installment_id"]) and not pd.isna(r["due_date"])
+        ])):
             bl_original_by_id = bl_schedule_df.set_index("installment_id") if not bl_schedule_df.empty else pd.DataFrame()
             bl_seen_ids, bl_added_n, bl_updated_n, bl_deleted_n, bl_sched_errors = set(), 0, 0, 0, []
             for _, r in bl_edited_schedule_df.iterrows():
@@ -4960,12 +5768,14 @@ with tab_credit_cards:
     st.caption("Scoped to what matters: due dates, amounts due, whose card it is, making sure every statement gets recorded, and the annual fee waiver reminder.")
 
     cardholders_df = q("SELECT * FROM cardholders ORDER BY name")
+    cardholders_df["is_active"] = pd.to_numeric(cardholders_df["is_active"], errors="coerce").fillna(1).astype(int)
+    active_cardholders_df = cardholders_df[cardholders_df["is_active"] == 1]
     cards_df = q(
-        """SELECT cc.card_id, c.creditor_name AS issuer, ch.name AS cardholder, cc.card_name, cc.card_number_last4, cc.credit_limit,
-                  cc.annual_fee_due_month, cc.statement_day, cc.cardholder_id
+        """SELECT cc.card_id, cc.creditor_id, c.creditor_name AS issuer, ch.name AS cardholder, cc.card_name, cc.card_number_last4, cc.credit_limit,
+                  cc.annual_fee_due_month, cc.statement_day, cc.cardholder_id, cc.is_active
            FROM credit_cards cc JOIN creditors c ON cc.creditor_id = c.creditor_id
            LEFT JOIN cardholders ch ON cc.cardholder_id = ch.cardholder_id
-           ORDER BY cc.card_id"""
+           ORDER BY LOWER(c.creditor_name), LOWER(COALESCE(ch.name, '')), LOWER(cc.card_name), cc.card_number_last4"""
     )
     # q() coerces every NULL to '' app-wide, which mixes '' (str) with real numbers (float) in a
     # nullable numeric column — pyarrow can't serialize that mix for st.dataframe once a real
@@ -4974,10 +5784,13 @@ with tab_credit_cards:
     cards_df["annual_fee_due_month"] = pd.to_numeric(cards_df["annual_fee_due_month"], errors="coerce")
     cards_df["statement_day"] = pd.to_numeric(cards_df["statement_day"], errors="coerce")
     cards_df["credit_limit"] = pd.to_numeric(cards_df["credit_limit"], errors="coerce")
+    cards_df["is_active"] = pd.to_numeric(cards_df["is_active"], errors="coerce").fillna(1).astype(int)
+    active_cards_df = cards_df[cards_df["is_active"] == 1]
 
     def _card_label(cid: int, df: pd.DataFrame = None) -> str:
         d = (df if df is not None else cards_df).set_index("card_id").loc[cid]
-        return f"{d['card_name']} - {d['card_number_last4']} ({d['issuer']})"
+        suffix = "" if d.get("is_active", 1) else " — inactive"
+        return f"{d['card_name']} - {d['card_number_last4']} ({d['issuer']}){suffix}"
 
     def _blank_to_none_int(v):
         # q() coerces every NULL to '' app-wide (engines/db_engine.py df_query) — nullable
@@ -4990,40 +5803,88 @@ with tab_credit_cards:
     # ----------------------------------------------------------------------
     gap_alerts_df = get_statement_gap_alerts()
     fee_alerts_df = get_annual_fee_alerts()
-    if gap_alerts_df.empty and fee_alerts_df.empty:
+    # "No statement on file yet" (a card with zero statement history, typically not in active use)
+    # is routine and can be a large pile after a legacy import -- split it from "Possibly missing a
+    # statement" (a card that HAD statements but seems to have skipped a cycle), which is the one
+    # worth surfacing as a real warning. Otherwise 40+ routine rows bury the rare actionable one.
+    if gap_alerts_df.empty:
+        never_had_df = missing_recent_df = gap_alerts_df
+    else:
+        never_had_df = gap_alerts_df[gap_alerts_df["alert"] == "No statement on file yet"]
+        missing_recent_df = gap_alerts_df[gap_alerts_df["alert"] == "Possibly missing a statement"]
+
+    if missing_recent_df.empty and fee_alerts_df.empty and never_had_df.empty:
         st.caption("Nothing needs attention — every card has a recent statement on file, and no annual fee months are coming up.")
     else:
-        with st.container(border=True):
-            st.markdown("**Needs attention**")
-            for _, r in gap_alerts_df.iterrows():
-                st.warning(f"{r['card_name']} ({r['card_number_last4']}) — {r['cardholder_name'] or 'no cardholder set'}: {r['alert']}" + (f" (last due date on file: {r['last_due_date']})" if r['last_due_date'] else ""))
-            if not fee_alerts_df.empty:
-                st.caption("Annual fee month coming up — month only, since the exact day is the card's issuance date and isn't on file. Request the waiver before it posts.")
-                st.dataframe(fee_alerts_df[["card_name", "card_number_last4", "cardholder_name", "when"]], hide_index=True)
+        if not missing_recent_df.empty or not fee_alerts_df.empty:
+            with st.container(border=True):
+                st.markdown("**Needs attention**")
+                for _, r in missing_recent_df.iterrows():
+                    # Raw truthiness on last_due_date used to silently work by accident when every
+                    # card had zero statements (a uniformly-NULL column, read back as an empty
+                    # string that's already falsy) -- surfaced as a literal "(last due date on file:
+                    # nan)" the moment the column became a real mix of dates and missing values
+                    # (2026-09-17, once the first real cc_statements rows existed): a NaN float is
+                    # truthy in Python, unlike None or ''. pd.notna() is the correct check either way.
+                    st.warning(f"{r['card_name']} ({r['card_number_last4']}) — {r['cardholder_name'] or 'no cardholder set'}: {r['alert']}" + (f" (last due date on file: {r['last_due_date']})" if pd.notna(r['last_due_date']) else ""))
+                if not fee_alerts_df.empty:
+                    st.caption("Annual fee month coming up — month only, since the exact day is the card's issuance date and isn't on file. Request the waiver before it posts.")
+                    st.dataframe(fee_alerts_df[["card_name", "card_number_last4", "cardholder_name", "when"]], hide_index=True)
+        if not never_had_df.empty:
+            with st.expander(f"{len(never_had_df)} card(s) have never had a statement recorded"):
+                st.caption("Routine for a card not in active use yet, or one just brought over from the legacy system. Add its first statement in the Statements tab below once a bill comes in.")
+                st.dataframe(
+                    never_had_df[["card_name", "card_number_last4", "cardholder_name"]].rename(
+                        columns={"card_name": "Card", "card_number_last4": "Last 4", "cardholder_name": "Cardholder"}
+                    ),
+                    hide_index=True,
+                )
 
-    sub_statements, sub_cards = st.tabs([":material/receipt_long: Statements", ":material/credit_card: Cards & cardholders"])
+    sub_statements, sub_cards, sub_check = st.tabs([
+        ":material/receipt_long: Statements", ":material/credit_card: Cards & cardholders", ":material/fact_check: Missing statement check",
+    ])
 
     # ----------------------------------------------------------------------
     with sub_statements:
-        st.caption("Whose card, how much, and when it's due. A statement with a real unpaid balance stays Unpaid/Partially Paid even past its due date — only a statement with nothing left owing (or one without rolling-balance tracking at all) auto-shows as Paid once its due date passes. Direct cash settlement below is still there for recording an actual/early full payment.")
+        st.caption("Whose card, how much, and when it's due. A statement with a real unpaid balance stays Unpaid/Partially Paid even past its due date — only a statement with nothing left owing (or one without rolling-balance tracking at all) auto-shows as Paid once its due date passes.")
         cc_statements_df = q(
-            """SELECT cs.cc_statement_id, cc.card_name, cc.card_number_last4, ch.name AS cardholder, cs.due_date, cs.total_amount_due,
+            f"""SELECT cs.cc_statement_id, cs.card_id, COALESCE(cs.statement_month, SUBSTR(cs.due_date, 1, 7)) AS statement_month, cc.card_name, cc.card_number_last4, ch.name AS cardholder, cs.due_date, cs.total_amount_due,
                       cs.previous_balance, cs.new_charges, cs.interest_charged, cs.amount_paid, cs.unpaid_balance_next,
                       cs.status AS recorded_status,
+                      CASE WHEN cs.paid_confirmed = 0 AND {superseded_sql('cs')} THEN 'Replaced by newer statement'
+                           WHEN cs.paid_confirmed = 0 THEN 'Not yet confirmed' ELSE 'Confirmed' END AS payment_check,
                       CASE WHEN cs.status IN ('Paid', 'Cancelled') THEN cs.status
                            WHEN cs.unpaid_balance_next > 0 AND cs.amount_paid > 0.005 THEN 'Partially Paid'
                            WHEN cs.unpaid_balance_next > 0 THEN 'Unpaid'
                            WHEN cs.due_date < DATE('now', 'localtime') THEN 'Paid'
                            ELSE cs.status END AS effective_status,
-                      cs.payment_method
+                      cs.payment_method, {cc_owed_case('cs')} AS still_owed
                FROM cc_statements cs JOIN credit_cards cc ON cs.card_id = cc.card_id
                LEFT JOIN cardholders ch ON cc.cardholder_id = ch.cardholder_id
                ORDER BY cs.due_date ASC"""
         )
+        sf1, sf2 = st.columns([1, 3])
+        stmt_outstanding_only = sf1.toggle("Outstanding only", value=True, key="stmt_outstanding_only",
+                                           help="Show only statements that still count as owed (the same rule as the payable totals). Turn off to see every statement.")
+        stmt_search = sf2.text_input("Search statements", placeholder="Type a card, cardholder, bank, last 4 digits, month (2026-09) or status — several words narrow it down",
+                                     key="stmt_search", label_visibility="collapsed")
+
+        def filter_statements(df: pd.DataFrame) -> pd.DataFrame:
+            """The 'Outstanding only' toggle + the search words (every word must appear somewhere in the row)."""
+            out = df[df["still_owed"].astype(float) > 0.005] if stmt_outstanding_only else df
+            words = (stmt_search or "").lower().split()
+            if words and not out.empty:
+                blob = out[["card_name", "card_number_last4", "cardholder", "statement_month", "due_date", "effective_status", "payment_method"]].astype(str).agg(" ".join, axis=1).str.lower()
+                out = out[blob.apply(lambda s: all(w in s for w in words))]
+            return out
+
+        shown_statements_df = filter_statements(cc_statements_df)
+        st.caption(f"Showing {len(shown_statements_df)} of {len(cc_statements_df)} statements.")
         st.dataframe(
-            cc_statements_df,
+            shown_statements_df.drop(columns=["card_id"]),
             hide_index=True,
             column_config={
+                "still_owed": st.column_config.NumberColumn("Still owed", format="₱ %.2f"),
                 "total_amount_due": st.column_config.NumberColumn("Amount due", format="₱ %.2f"),
                 "previous_balance": st.column_config.NumberColumn("Previous balance", format="₱ %.2f"),
                 "new_charges": st.column_config.NumberColumn("New charges", format="₱ %.2f"),
@@ -5033,205 +5894,351 @@ with tab_credit_cards:
             },
         )
 
-        col_new_stmt, col_settle_stmt = st.columns(2)
+        col_new_stmt = st.container()
         with col_new_stmt:
             with st.container(border=True):
                 st.markdown("**Add statement**")
                 st.caption("Pick whose card first — one cardholder can have several cards.")
-                if cardholders_df.empty:
+                if active_cardholders_df.empty:
                     st.caption("Add a cardholder first, in Cards & cardholders.")
                     stmt_holder_cards_df = pd.DataFrame(columns=cards_df.columns)
                 else:
                     stmt_holder = st.selectbox(
-                        "Cardholder", options=cardholders_df["cardholder_id"],
-                        format_func=lambda hid: cardholders_df.set_index("cardholder_id").loc[hid, "name"],
+                        "Cardholder", options=active_cardholders_df["cardholder_id"],
+                        format_func=lambda hid: active_cardholders_df.set_index("cardholder_id").loc[hid, "name"],
                         key="stmt_holder_pick",
                     )
-                    stmt_holder_cards_df = cards_df[cards_df["cardholder_id"] == stmt_holder]
+                    stmt_holder_cards_df = active_cards_df[active_cards_df["cardholder_id"] == stmt_holder]
 
                 if stmt_holder_cards_df.empty:
                     st.caption("No cards assigned to this cardholder yet — assign one via \"Edit a card\" in Cards & cardholders.")
                 else:
-                    stmt_card = st.selectbox(
-                        "Card", options=stmt_holder_cards_df["card_id"],
-                        format_func=lambda cid: _card_label(cid, stmt_holder_cards_df),
-                        key="stmt_card_pick",
+                    stmt_issuer_names = sorted(stmt_holder_cards_df["issuer"].unique(), key=str.lower)
+                    stmt_issuer = st.selectbox("Issuer (bank)", options=stmt_issuer_names, key=f"stmt_issuer_pick_{stmt_holder}")
+                    stmt_issuer_cards_df = stmt_holder_cards_df[stmt_holder_cards_df["issuer"] == stmt_issuer].sort_values(
+                        ["card_name", "card_number_last4"], key=lambda col: col.astype(str).str.lower()
                     )
+                    stmt_card = st.selectbox(
+                        "Card", options=stmt_issuer_cards_df["card_id"],
+                        format_func=lambda cid: _card_label(cid, stmt_issuer_cards_df),
+                        key=f"stmt_card_pick_{stmt_holder}_{stmt_issuer}",
+                    )
+                    default_year, default_month = get_default_statement_month(int(stmt_card))
+                    sm_key = f"{int(stmt_card)}_{default_year}_{default_month}"
+                    sm1, sm2 = st.columns([3, 2])
+                    stmt_month_num = sm1.selectbox(
+                        "Statement month", options=list(range(1, 13)), index=default_month - 1,
+                        format_func=lambda m: date(2000, m, 1).strftime("%B"), key=f"stmt_month_{sm_key}",
+                        help="Which month this statement is for. Pre-selected to the month after this card's last recorded statement; after December it rolls to January of the next year on its own.",
+                    )
+                    stmt_year_num = sm2.number_input("Year", min_value=2000, max_value=2100, step=1, value=default_year, key=f"stmt_year_{sm_key}")
                     stmt_due = st.date_input("Due date", value=date.today(), key="stmt_due_date")
 
-                    stmt_previous = get_last_cc_statement_unpaid_balance(int(stmt_card))
-                    st.metric("Previous unpaid balance (from last statement)", php(stmt_previous))
+                    if st.session_state.pop("_clear_stmt_form", False):
+                        for _k in [k for k in st.session_state if str(k).startswith(("stmt_total_direct", "stmt_finance_direct", "stmt_payments_"))]:
+                            st.session_state.pop(_k, None)
 
-                    sc1, sc2 = st.columns(2)
-                    with sc1:
-                        stmt_new_charges = st.number_input(
-                            "New charges this month", min_value=0.0, step=100.0, key="stmt_new_charges",
-                            help="Only new purchases — not the previous balance or interest.",
-                        )
-                    with sc2:
-                        stmt_interest = st.number_input(
-                            "Interest charged by bank", min_value=0.0, step=10.0, key="stmt_interest",
-                            help="Read straight from the statement.",
-                        )
-
-                    stmt_total_due = stmt_previous + stmt_new_charges + stmt_interest
-                    st.metric(
-                        "Total amount due (computed)", php(stmt_total_due),
-                        help=f"Previous {php(stmt_previous)} + New charges {php(stmt_new_charges)} + Interest {php(stmt_interest)}",
+                    # The statement's total already includes everything unpaid before it, so this is all you type:
+                    # what is due, what was paid since the last statement (optional), and any finance charge.
+                    stmt_last = q_live(
+                        """SELECT cc_statement_id AS id, due_date, total_amount_due AS total, paid_confirmed,
+                                  """ + cc_owed_case("cs") + """ AS owed
+                           FROM cc_statements cs WHERE card_id = ? AND status != 'Cancelled' ORDER BY due_date DESC, cc_statement_id DESC LIMIT 1""",
+                        (int(stmt_card),),
                     )
-
-                    stmt_paid = st.number_input(
-                        "Amount paid this month", min_value=0.0, step=100.0,
-                        value=stmt_total_due, key="stmt_amount_paid",
-                        help="Can be less than the total due — the rest carries to next month's previous balance.",
+                    stmt_earlier = stmt_last.iloc[0].to_dict() if not stmt_last.empty and str(stmt_last.iloc[0]["due_date"]) < str(stmt_due) else None
+                    stmt_total_direct = st.number_input(
+                        "Total amount due (from the statement)", min_value=0.0, step=100.0, key="stmt_total_direct",
+                        help="The amount the statement asks you to pay. It already includes any balance carried over, so it is counted once.",
                     )
-                    stmt_unpaid_next = round(stmt_total_due - stmt_paid, 2)
-                    if stmt_unpaid_next > 0.005:
-                        st.warning(f"Unpaid balance carrying to next month: {php(stmt_unpaid_next)}")
-                    elif stmt_unpaid_next < -0.005:
-                        st.info(f"Overpayment — {php(-stmt_unpaid_next)} credit carrying forward.")
+                    stmt_payments = None
+                    if stmt_earlier:
+                        stmt_payments = st.number_input(
+                            f"Payments received since the earlier statement (optional) — earlier total on file {php(stmt_earlier['total'])}",
+                            min_value=0.0, step=100.0, value=None, key=f"stmt_payments_{stmt_earlier['id']}",
+                            help="Add up the payment lines on this statement (the ones ending in C). Type 0 if nothing was paid. Leave empty if you don't know — the statement is still recorded and counted once.",
+                        )
+                    stmt_interest = st.number_input(
+                        "Finance charge / interest on this statement (optional)", min_value=0.0, step=10.0, key="stmt_finance_direct",
+                        help="The interest / finance charge the statement lists, if any. It is part of the total, and feeds the cost-of-financing figures.",
+                    )
+                    stmt_total_due = stmt_total_direct
+                    stmt_math_ok = True
+                    if stmt_earlier and stmt_payments is not None:
+                        stmt_carried_calc = max(float(stmt_earlier["total"]) - float(stmt_payments), 0.0)
+                        stmt_new_calc = round(stmt_total_direct - stmt_carried_calc - stmt_interest, 2)
+                        if stmt_new_calc < -1.0:
+                            stmt_math_ok = False
+                            st.error(f"These don't add up: earlier statement {php(stmt_earlier['total'])} − payments {php(stmt_payments)} + interest {php(stmt_interest)} is already "
+                                     f"{php(stmt_carried_calc + stmt_interest)}, more than the total due {php(stmt_total_direct)}. Check the payments, or the earlier statement's amount on file.")
+                            stmt_previous, stmt_new_charges = stmt_carried_calc, 0.0
+                        else:
+                            if stmt_new_calc < 0:      # a few centavos of rounding on the bank's side
+                                stmt_carried_calc, stmt_new_calc = max(stmt_total_direct - stmt_interest, 0.0), 0.0
+                            stmt_previous, stmt_new_charges = round(stmt_carried_calc, 2), stmt_new_calc
+                            st.caption(f"Earlier {php(stmt_earlier['total'])} − payments {php(stmt_payments)} = {php(stmt_previous)} carried over · "
+                                       f"+ new charges {php(stmt_new_charges)} (worked out) + interest {php(stmt_interest)} = **{php(stmt_total_due)}**")
+                    else:
+                        stmt_previous, stmt_new_charges = 0.0, max(stmt_total_direct - stmt_interest, 0.0)
 
-                    if st.button("Add statement", icon=":material/receipt_long:", key="add_cc_statement_btn"):
-                        if guard_duplicate_submit("add_cc_statement", stmt_card, stmt_due, stmt_new_charges, stmt_interest, stmt_paid):
-                            add_cc_statement(int(stmt_card), stmt_due, stmt_previous, stmt_new_charges, stmt_interest, stmt_paid)
+                    if stmt_total_direct > 0:
+                        if stmt_earlier and float(stmt_earlier["owed"]) > 0.005:
+                            st.info(f"Payables for this card after saving: **{php(stmt_total_due)}** — it replaces the earlier {php(stmt_earlier['owed'])} that is counted now, so nothing is counted twice.")
+                        else:
+                            st.info(f"Payables for this card after saving: **{php(stmt_total_due)}**.")
+
+                    if st.button("Add statement", icon=":material/receipt_long:", key="add_cc_statement_btn", disabled=not stmt_math_ok) or dup_resume("add_cc_statement"):
+                        stmt_month_text = f"{int(stmt_year_num)}-{int(stmt_month_num):02d}"
+                        if dup_needs_confirm("add_cc_statement", cc_statement_warnings(int(stmt_card), stmt_due, stmt_total_due)
+                                             + cc_statement_month_warnings(int(stmt_card), stmt_month_text, stmt_total_due)):
+                            pass
+                        elif guard_duplicate_submit("add_cc_statement", stmt_card, stmt_due, stmt_total_due, stmt_interest, stmt_payments):
+                            add_cc_statement(int(stmt_card), stmt_due, stmt_previous, stmt_new_charges, stmt_interest, 0.0,
+                                             statement_month=stmt_month_text, paid_confirmed=0)
+                            if stmt_earlier and stmt_payments is not None and int(stmt_earlier["paid_confirmed"]) == 0:
+                                earlier_paid, earlier_status = confirm_cc_payment_from_next_statement(int(stmt_earlier["id"]), stmt_previous)
+                                st.toast(f"Earlier statement confirmed: {php(earlier_paid)} paid ({earlier_status}).")
+                            st.session_state["_clear_stmt_form"] = True
                             st.success("Statement recorded.")
                             refresh()
                         else:
                             st.warning("Duplicate submission ignored — identical to the click just before it.")
 
-        with col_settle_stmt:
-            with st.expander("Direct cash settlement"):
-                st.caption("Only statements not yet past their due date are offered here — once a due date passes it's already treated as Paid.")
-                unpaid_stmts = cc_statements_df[cc_statements_df["effective_status"] == "Unpaid"]
-                with st.form("settle_cc_statement_form", border=False):
-                    if unpaid_stmts.empty:
-                        st.caption("No unpaid statements.")
-                        settle_stmt = None
-                    else:
-                        settle_stmt = st.selectbox(
-                            "Statement",
-                            options=unpaid_stmts["cc_statement_id"],
-                            format_func=lambda sid: (
-                                f"{unpaid_stmts.set_index('cc_statement_id').loc[sid, 'card_name']} - "
-                                f"{unpaid_stmts.set_index('cc_statement_id').loc[sid, 'card_number_last4']} — "
-                                f"due {unpaid_stmts.set_index('cc_statement_id').loc[sid, 'due_date']} "
-                                f"({php(unpaid_stmts.set_index('cc_statement_id').loc[sid, 'total_amount_due'])})"
-                            ),
-                        )
-                        default_amt = float(unpaid_stmts.set_index("cc_statement_id").loc[settle_stmt, "total_amount_due"]) if settle_stmt is not None else 0.0
-                    pay_amount = st.number_input("Payment amount", min_value=0.0, step=100.0, value=default_amt if settle_stmt is not None else 0.0)
-                    pay_date = st.date_input("Payment date", value=date.today(), key="cc_pay_date")
-                    if st.form_submit_button("Settle via Cash / Online", icon=":material/payments:") and settle_stmt is not None:
-                        if guard_duplicate_submit("settle_cc_statement", settle_stmt, pay_amount, pay_date):
-                            ok, msg = settle_cc_statement_via_cash(int(settle_stmt), pay_amount, str(pay_date), PRIMARY_BANK_ACCOUNT_ID)
-                            (st.success if ok else st.error)(msg)
-                            if ok:
-                                refresh()
-                        else:
-                            st.warning("Duplicate submission ignored — identical to the click just before it.")
+        with st.expander("Edit / delete a statement"):
+            st.caption("Only the most recent statement for a card can be changed or removed here — an older one already had its balance carried forward into a later statement, so changing it would leave that later one out of sync.")
+            if cc_statements_df.empty:
+                st.caption("No statements recorded yet.")
+            else:
+                latest_stmts_df = (
+                    cc_statements_df.sort_values(["due_date", "cc_statement_id"])
+                    .groupby("card_id", as_index=False).tail(1)
+                )
+                latest_stmts_df = filter_statements(latest_stmts_df)
+                st.caption("Follows the 'Outstanding only' switch and the search box above the table. You can also type in the box below to jump to a statement.")
+            if not cc_statements_df.empty and latest_stmts_df.empty:
+                st.caption("No statement matches — turn off 'Outstanding only' or clear the search above the table.")
+            elif not cc_statements_df.empty:
+                edit_stmt_id = st.selectbox(
+                    "Statement", options=latest_stmts_df["cc_statement_id"],
+                    format_func=lambda sid: (
+                        f"{latest_stmts_df.set_index('cc_statement_id').loc[sid, 'card_name']} - "
+                        f"{latest_stmts_df.set_index('cc_statement_id').loc[sid, 'card_number_last4']} — "
+                        f"due {latest_stmts_df.set_index('cc_statement_id').loc[sid, 'due_date']} "
+                        f"({php(latest_stmts_df.set_index('cc_statement_id').loc[sid, 'total_amount_due'])})"
+                    ),
+                    key="edit_stmt_pick",
+                )
+                cur_stmt = latest_stmts_df.set_index("cc_statement_id").loc[edit_stmt_id]
+                stored_prev, stored_new, stored_int = float(cur_stmt["previous_balance"]), float(cur_stmt["new_charges"]), float(cur_stmt["interest_charged"])
+                stored_total = float(cur_stmt["total_amount_due"])
+                # Statements from the 2026-09-17 legacy CC import were inserted as a lump
+                # total_amount_due with previous_balance/new_charges/interest_charged left at their
+                # 0 default (migration 027's rolling-balance breakdown is "going-forward only, no
+                # backfill" -- see add_cc_statement()). Prefilling "New charges" with 0 here would
+                # silently recompute total_amount_due as 0 the moment this got saved, even from
+                # just fixing the due date. Folding the whole stored total into "New charges" by
+                # default keeps the recomputed total matching what was already on file.
+                is_legacy_lump_sum = round(stored_prev + stored_new + stored_int, 2) != round(stored_total, 2)
+                if is_legacy_lump_sum:
+                    st.info(f"This statement was imported as a lump total ({php(stored_total)}) with no previous balance / new charges / interest breakdown on file. That's folded into \"New charges\" below so saving won't change the total unless you edit it.")
+                    default_new = round(stored_total - stored_prev - stored_int, 2)
+                else:
+                    default_new = stored_new
+                edit_stmt_due = st.date_input("Due date", value=date.fromisoformat(cur_stmt["due_date"]), key=f"edit_stmt_due_{edit_stmt_id}")
+                es1, es2, es3 = st.columns(3)
+                with es1:
+                    edit_stmt_prev = st.number_input("Previous balance", min_value=0.0, step=100.0, value=stored_prev, key=f"edit_stmt_prev_{edit_stmt_id}")
+                with es2:
+                    edit_stmt_new = st.number_input("New charges", min_value=0.0, step=100.0, value=default_new, key=f"edit_stmt_new_{edit_stmt_id}")
+                with es3:
+                    edit_stmt_int = st.number_input("Interest charged", min_value=0.0, step=10.0, value=stored_int, key=f"edit_stmt_int_{edit_stmt_id}")
+                edit_stmt_paid = st.number_input("Amount paid", min_value=0.0, step=100.0, value=float(cur_stmt["amount_paid"]), key=f"edit_stmt_paid_{edit_stmt_id}")
+                st.metric(
+                    "Total amount due (computed)", php(round(edit_stmt_prev + edit_stmt_new + edit_stmt_int, 2)),
+                    help="This is what Save will actually record — check it matches the real statement total before saving.",
+                )
+
+                ec1, ec2 = st.columns(2)
+                with ec1:
+                    if st.button("Save statement changes", icon=":material/save:", key=f"save_stmt_{edit_stmt_id}"):
+                        ok, msg = edit_cc_statement(int(edit_stmt_id), edit_stmt_due, edit_stmt_prev, edit_stmt_new, edit_stmt_int, edit_stmt_paid)
+                        (st.success if ok else st.error)(msg)
+                        if ok:
+                            refresh()
+                with ec2:
+                    confirm_delete_stmt = st.checkbox("Yes, delete this statement", key=f"confirm_delete_stmt_{edit_stmt_id}")
+                    if st.button("Delete this statement", icon=":material/delete:", key=f"delete_stmt_{edit_stmt_id}", disabled=not confirm_delete_stmt):
+                        ok, msg = delete_cc_statement(int(edit_stmt_id))
+                        (st.success if ok else st.error)(msg)
+                        if ok:
+                            refresh()
 
     # ----------------------------------------------------------------------
     with sub_cards:
         st.subheader("Cards on file")
         st.dataframe(
-            cards_df.drop(columns=["cardholder_id"]),
+            cards_df.drop(columns=["cardholder_id", "creditor_id"]),
             hide_index=True,
             column_config={
                 "credit_limit": st.column_config.NumberColumn("Credit limit", format="₱ %.2f"),
                 "annual_fee_due_month": st.column_config.NumberColumn("Annual fee month"),
                 "statement_day": st.column_config.NumberColumn("Statement day"),
+                "is_active": st.column_config.CheckboxColumn("Active"),
             },
         )
 
         if not cards_df.empty:
-            with st.expander("Edit a card (cardholder / credit limit / annual fee month / statement day)"):
-                with st.form("edit_card_form", border=False):
-                    edit_card_id = st.selectbox("Card", options=cards_df["card_id"], format_func=_card_label, key="edit_card_pick")
+            with st.expander("Edit a card (name / issuer / cardholder / credit limit / annual fee month / statement day)"):
+                # Pick the cardholder first, then narrow "Card" to just their cards -- faster than
+                # scanning every card in the system when you already know whose card you want.
+                UNASSIGNED_HOLDER = -1
+                edit_card_holder_norm = cards_df["cardholder_id"].apply(_blank_to_none_int)
+                holder_filter_ids = sorted(
+                    {hid for hid in edit_card_holder_norm if hid is not None},
+                    key=lambda hid: str(cardholders_df.set_index("cardholder_id").loc[hid, "name"]).lower(),
+                )
+                has_unassigned_cards = any(hid is None for hid in edit_card_holder_norm)
+                holder_filter_options = [None] + holder_filter_ids + ([UNASSIGNED_HOLDER] if has_unassigned_cards else [])
+
+                def _holder_filter_label(hid):
+                    if hid is None:
+                        return "All cardholders"
+                    if hid == UNASSIGNED_HOLDER:
+                        return "(no cardholder)"
+                    row = cardholders_df.set_index("cardholder_id").loc[hid]
+                    return row["name"] + ("" if row["is_active"] else " — inactive")
+
+                edit_card_holder_filter = st.selectbox(
+                    "Cardholder", options=holder_filter_options, format_func=_holder_filter_label, key="edit_card_holder_filter",
+                )
+                if edit_card_holder_filter is None:
+                    cards_for_pick_df = cards_df
+                elif edit_card_holder_filter == UNASSIGNED_HOLDER:
+                    cards_for_pick_df = cards_df[edit_card_holder_norm.isnull()]
+                else:
+                    cards_for_pick_df = cards_df[edit_card_holder_norm == edit_card_holder_filter]
+
+                if cards_for_pick_df.empty:
+                    st.caption("No cards for this cardholder.")
+                else:
+                    edit_card_id = st.selectbox(
+                        "Card", options=cards_for_pick_df["card_id"],
+                        format_func=lambda cid: _card_label(cid, cards_for_pick_df),
+                        # Keyed by the cardholder filter + card_id so switching either forces fresh
+                        # widgets instead of showing a previous card's stale values after Save
+                        # (silent wrong-card overwrite risk).
+                        key=f"edit_card_pick_{edit_card_holder_filter}",
+                    )
                     current = cards_df.set_index("card_id").loc[edit_card_id]
-                    holder_options = [None] + list(cardholders_df["cardholder_id"]) if not cardholders_df.empty else [None]
-                    current_holder = _blank_to_none_int(current["cardholder_id"])
-                    edit_holder = st.selectbox(
-                        "Cardholder", options=holder_options,
-                        index=holder_options.index(current_holder) if current_holder in holder_options else 0,
-                        format_func=lambda hid: "—" if hid is None else cardholders_df.set_index("cardholder_id").loc[hid, "name"],
-                    )
-                    edit_limit = st.number_input(
-                        "Credit limit", min_value=0.0, step=10000.0,
-                        value=float(current["credit_limit"]) if pd.notna(current["credit_limit"]) else 0.0,
-                        help="0 shows here for a card imported with no credit limit on file — enter the real limit to save it.",
-                    )
-                    current_month = _blank_to_none_int(current["annual_fee_due_month"])
-                    month_options = [None] + list(range(1, 13))
-                    edit_af_month = st.selectbox(
-                        "Annual fee due — month", options=month_options,
-                        index=month_options.index(current_month) if current_month in month_options else 0,
-                        format_func=lambda m: "—" if m is None else date(2000, m, 1).strftime("%B"),
-                    )
-                    edit_statement_day = st.number_input(
-                        "Statement day", min_value=0, max_value=31, step=1,
-                        value=_blank_to_none_int(current["statement_day"]) or 0, help="0 = not set",
-                    )
-                    if st.form_submit_button("Save card changes", icon=":material/save:"):
-                        ok, msg = edit_credit_card(int(edit_card_id), edit_holder, edit_limit, edit_af_month, edit_statement_day or None)
-                        (st.success if ok else st.error)(msg)
-                        if ok:
+                    with st.form("edit_card_form", border=False):
+                        edit_card_name = st.text_input("Card name", value=str(current["card_name"]), key=f"edit_card_name_{edit_card_id}")
+                        issuer_names = sorted(set(creditor_options("CREDIT_CARD").values()) | {str(current["issuer"])}, key=str.lower)
+                        edit_issuer = st.selectbox(
+                            "Card issuer (bank)", options=issuer_names, index=issuer_names.index(str(current["issuer"])),
+                            accept_new_options=True, key=f"edit_card_issuer_{edit_card_id}",
+                            help="Pick the bank, or type a new name to add it.",
+                        )
+                        current_holder = _blank_to_none_int(current["cardholder_id"])
+                        # Active cardholders only, like "Add a new card" below -- but always keep the
+                        # card's currently assigned cardholder pickable (labeled inactive) even if
+                        # they've since been deactivated, so reopening this form doesn't silently drop
+                        # the assignment (same pattern as edit_issuer's current-value union above).
+                        holder_pick_ids = list(active_cardholders_df["cardholder_id"])
+                        if current_holder is not None and current_holder not in holder_pick_ids:
+                            holder_pick_ids.append(current_holder)
+                        holder_options = [None] + holder_pick_ids
+                        edit_holder = st.selectbox(
+                            "Cardholder", options=holder_options,
+                            index=holder_options.index(current_holder) if current_holder in holder_options else 0,
+                            format_func=lambda hid: "—" if hid is None else (
+                                cardholders_df.set_index("cardholder_id").loc[hid, "name"]
+                                + ("" if cardholders_df.set_index("cardholder_id").loc[hid, "is_active"] else " — inactive")
+                            ),
+                            key=f"edit_card_holder_{edit_card_id}",
+                        )
+                        edit_limit = st.number_input(
+                            "Credit limit", min_value=0.0, step=10000.0,
+                            value=float(current["credit_limit"]) if pd.notna(current["credit_limit"]) else 0.0,
+                            help="0 shows here for a card imported with no credit limit on file — enter the real limit to save it.",
+                            key=f"edit_card_limit_{edit_card_id}",
+                        )
+                        current_month = _blank_to_none_int(current["annual_fee_due_month"])
+                        month_options = [None] + list(range(1, 13))
+                        edit_af_month = st.selectbox(
+                            "Annual fee due — month", options=month_options,
+                            index=month_options.index(current_month) if current_month in month_options else 0,
+                            format_func=lambda m: "—" if m is None else date(2000, m, 1).strftime("%B"),
+                            key=f"edit_card_af_month_{edit_card_id}",
+                        )
+                        edit_statement_day = st.number_input(
+                            "Statement day", min_value=0, max_value=31, step=1,
+                            value=_blank_to_none_int(current["statement_day"]) or 0, help="0 = not set",
+                            key=f"edit_card_stmt_day_{edit_card_id}",
+                        )
+                        if st.form_submit_button("Save card changes", icon=":material/save:"):
+                            ok, msg = edit_credit_card(int(edit_card_id), edit_card_name, get_or_create_card_issuer(edit_issuer), edit_holder, edit_limit, edit_af_month, edit_statement_day or None)
+                            (st.success if ok else st.error)(msg)
+                            if ok:
+                                refresh()
+
+                    if int(current["is_active"]):
+                        if st.button("Deactivate this card", icon=":material/block:", key=f"deactivate_card_{edit_card_id}"):
+                            deactivate_credit_card(int(edit_card_id))
+                            st.success("Card deactivated — its statement history stays intact, but it won't appear when adding a new statement.")
+                            refresh()
+                    else:
+                        st.caption("This card is currently inactive.")
+                        if st.button("Reactivate this card", icon=":material/refresh:", key=f"reactivate_card_{edit_card_id}"):
+                            reactivate_credit_card(int(edit_card_id))
+                            st.success("Card reactivated.")
                             refresh()
 
-        with st.expander("Add new card issuer / add card"):
-            c1, c2 = st.columns(2)
-            with c1:
-                with st.form("new_cc_issuer_form", border=False):
-                    st.markdown("**Add card issuer**")
-                    ci_name = st.text_input("Issuer name")
-                    ci_tin = st.text_input("TIN")
-                    ci_contact = st.text_input("Contact person")
-                    ci_number = st.text_input("Contact number")
-                    ci_email = st.text_input("Email")
-                    if st.form_submit_button("Add issuer", icon=":material/add:"):
-                        if ci_name:
-                            if guard_duplicate_submit("add_cc_issuer", ci_name, ci_tin, ci_contact, ci_number, ci_email):
-                                add_creditor(ci_name, "CREDIT_CARD", ci_tin, ci_contact, ci_number, ci_email)
-                                st.success(f"Added issuer {ci_name}.")
-                                refresh()
-                            else:
-                                st.warning("Duplicate submission ignored — identical to the click just before it.")
+        with st.expander("Add a new card"):
+            with st.form("new_cc_card_form", border=False, clear_on_submit=True):
+                st.markdown("**Add card**")
+                cc_issuer_names = sorted(set(creditor_options("CREDIT_CARD").values()), key=str.lower)
+                cc_issuer = st.selectbox(
+                    "Card issuer (bank)", options=cc_issuer_names, index=None, accept_new_options=True, key="cc_issuer_name",
+                    placeholder="Pick the bank, or type a new one", help="Type a name that isn't listed to add a new bank.",
+                )
+                if active_cardholders_df.empty:
+                    st.caption("Add a cardholder below first.")
+                    cc_holder = None
+                else:
+                    cc_holder = st.selectbox("Cardholder", options=active_cardholders_df["cardholder_id"], format_func=lambda hid: active_cardholders_df.set_index("cardholder_id").loc[hid, "name"])
+                cc_name = st.text_input("Card name")
+                cc_last4 = st.text_input("Last 4 digits", max_chars=4)
+                cc_limit = st.number_input("Credit limit", min_value=0.0, step=10000.0)
+                cc_af_month = st.selectbox(
+                    "Annual fee due — month (optional)", options=[None] + list(range(1, 13)),
+                    format_func=lambda m: "—" if m is None else date(2000, m, 1).strftime("%B"),
+                    help="Month only — the exact day is the card's original issuance date, which isn't tracked here.",
+                )
+                cc_statement_day = st.number_input(
+                    "Statement day (optional)", min_value=0, max_value=31, step=1, value=0,
+                    help="The nth day of the month this card's statement generates — a fixed property of the card, so it's not re-entered per statement. 0 = not set.",
+                )
+                if st.form_submit_button("Add card", icon=":material/credit_card:"):
+                    if cc_issuer and cc_name and cc_limit > 0:
+                        err = money_amount_error(cc_limit, "Credit limit")
+                        if err:
+                            st.error(err)
                         else:
-                            st.error("Issuer name is required.")
-            with c2:
-                with st.form("new_cc_card_form", border=False, clear_on_submit=True):
-                    st.markdown("**Add card**")
-                    cc_issuer = selectbox_creditor("Card issuer", "CREDIT_CARD", "cc_issuer")
-                    if cardholders_df.empty:
-                        st.caption("Add a cardholder below first.")
-                        cc_holder = None
+                            confirm_create_dialog(
+                                f"Add card **{cc_name}** (last 4: {cc_last4 or '—'}) from "
+                                f"**{cc_issuer.strip()}** with a credit limit of **{php(cc_limit)}**?"
+                                + dup_note(credit_card_warnings(cc_issuer, cc_name, cc_last4)),
+                                "add_credit_card",
+                                lambda a=(cc_issuer, cc_holder, cc_name, cc_last4, cc_limit, cc_af_month, cc_statement_day or None): add_credit_card(get_or_create_card_issuer(a[0]), *a[1:]),
+                            )
                     else:
-                        cc_holder = st.selectbox("Cardholder", options=cardholders_df["cardholder_id"], format_func=lambda hid: cardholders_df.set_index("cardholder_id").loc[hid, "name"])
-                    cc_name = st.text_input("Card name")
-                    cc_last4 = st.text_input("Last 4 digits", max_chars=4)
-                    cc_limit = st.number_input("Credit limit", min_value=0.0, step=10000.0)
-                    cc_af_month = st.selectbox(
-                        "Annual fee due — month (optional)", options=[None] + list(range(1, 13)),
-                        format_func=lambda m: "—" if m is None else date(2000, m, 1).strftime("%B"),
-                        help="Month only — the exact day is the card's original issuance date, which isn't tracked here.",
-                    )
-                    cc_statement_day = st.number_input(
-                        "Statement day (optional)", min_value=0, max_value=31, step=1, value=0,
-                        help="The nth day of the month this card's statement generates — a fixed property of the card, so it's not re-entered per statement. 0 = not set.",
-                    )
-                    if st.form_submit_button("Add card", icon=":material/credit_card:"):
-                        if cc_issuer and cc_name and cc_limit > 0:
-                            if guard_duplicate_submit("add_credit_card", cc_issuer, cc_holder, cc_name, cc_last4, cc_limit, cc_af_month, cc_statement_day):
-                                ok, msg = add_credit_card(cc_issuer, cc_holder, cc_name, cc_last4, cc_limit, cc_af_month, cc_statement_day or None)
-                                (st.success if ok else st.error)(msg)
-                                if ok:
-                                    refresh()
-                            else:
-                                st.warning("Duplicate submission ignored — identical to the click just before it.")
-                        else:
-                            st.error("Issuer, card name, and a positive credit limit are required.")
+                        st.error("Issuer, card name, and a positive credit limit are required.")
 
         with st.expander("Cardholder registry"):
-            st.dataframe(cardholders_df, hide_index=True)
+            st.dataframe(
+                cardholders_df, hide_index=True,
+                column_config={"is_active": st.column_config.CheckboxColumn("Active")},
+            )
             with st.form("new_cardholder_form", border=False):
                 ch_name = st.text_input("Name")
                 ch_dept = st.text_input("Department (optional)")
@@ -5246,6 +6253,111 @@ with tab_credit_cards:
                             st.warning("Duplicate submission ignored — identical to the click just before it.")
                     else:
                         st.error("Name is required.")
+
+            if not cardholders_df.empty:
+                st.markdown("**Edit a cardholder**")
+                show_inactive_holders = st.checkbox("Include inactive cardholders", key="show_inactive_holders")
+                holders_pickable_df = cardholders_df if show_inactive_holders else active_cardholders_df
+                if holders_pickable_df.empty:
+                    st.caption("No cardholders to show.")
+                else:
+                    edit_holder_id = st.selectbox(
+                        "Cardholder", options=holders_pickable_df["cardholder_id"],
+                        format_func=lambda hid: holders_pickable_df.set_index("cardholder_id").loc[hid, "name"]
+                        + ("" if holders_pickable_df.set_index("cardholder_id").loc[hid, "is_active"] else " — inactive"),
+                        key="edit_holder_pick",
+                    )
+                    current_holder_row = holders_pickable_df.set_index("cardholder_id").loc[edit_holder_id]
+                    with st.form("edit_cardholder_form", border=False):
+                        edit_holder_name = st.text_input("Name", value=str(current_holder_row["name"]), key=f"edit_holder_name_{edit_holder_id}")
+                        edit_holder_dept = st.text_input("Department (optional)", value=current_holder_row["department"] or "", key=f"edit_holder_dept_{edit_holder_id}")
+                        edit_holder_contact = st.text_input("Contact number (optional)", value=current_holder_row["contact_number"] or "", key=f"edit_holder_contact_{edit_holder_id}")
+                        if st.form_submit_button("Save cardholder changes", icon=":material/save:"):
+                            ok, msg = edit_cardholder(int(edit_holder_id), edit_holder_name, edit_holder_dept, edit_holder_contact)
+                            (st.success if ok else st.error)(msg)
+                            if ok:
+                                refresh()
+
+                    if int(current_holder_row["is_active"]):
+                        if st.button("Deactivate this cardholder", icon=":material/block:", key=f"deactivate_holder_{edit_holder_id}"):
+                            deactivate_cardholder(int(edit_holder_id))
+                            st.success("Cardholder deactivated — their card/statement history stays intact, but they won't appear when adding a new card or statement.")
+                            refresh()
+                    else:
+                        st.caption("This cardholder is currently inactive.")
+                        if st.button("Reactivate this cardholder", icon=":material/refresh:", key=f"reactivate_holder_{edit_holder_id}"):
+                            reactivate_cardholder(int(edit_holder_id))
+                            st.success("Cardholder reactivated.")
+                            refresh()
+
+    # ----------------------------------------------------------------------
+    with sub_check:
+        cov_df = get_statement_coverage()
+        cov_today = date.today()
+        cov_this = cov_today.strftime("%B %Y")
+        cov_prev = (cov_today.replace(day=1) - timedelta(days=1)).strftime("%B %Y")
+        st.caption(
+            f"Compares {cov_prev} with {cov_this} for every active card, so a card that had a statement last month "
+            "but has none recorded yet this month stands out. Only as good as the statements recorded: a card shows "
+            "\"No statement ever\" until its first one is entered."
+        )
+        if cov_df.empty:
+            st.caption("No active cards on file.")
+        else:
+            counts = cov_df["status"].value_counts()
+            with st.container(horizontal=True):
+                st.metric("Missing this month", int(counts.get("Missing this month", 0)), border=True, help=f"Had a statement in {cov_prev}, none recorded for {cov_this}.")
+                st.metric("Missing both months", int(counts.get("Missing both months", 0)), border=True, help=f"Older history, but nothing in {cov_prev} or {cov_this}.")
+                st.metric("No statement ever", int(counts.get("No statement ever", 0)), border=True)
+                st.metric("Not yet expected", int(counts.get("Not yet expected", 0)), border=True, help="Had one last month, but this card's statement isn't due to arrive yet this month (based on its Statement day, or last month's due day).")
+                st.metric("OK", int(counts.get("OK", 0)), border=True, help=f"A statement is recorded for {cov_this}.")
+            only_problems = st.toggle("Show only cards that need attention", value=True, key="cov_only_problems")
+            cov_show = cov_df[~cov_df["status"].isin(["OK", "Not yet expected"])] if only_problems else cov_df
+            report_df = cov_show.rename(columns={
+                "status": "Status", "cardholder": "Card holder", "issuer": "Issuer", "card_name": "Card",
+                "card_number_last4": "Last 4", "prev_month_due": f"{cov_prev} due date", "prev_month_amount": f"{cov_prev} amount",
+                "this_month_due": f"{cov_this} due date", "this_month_amount": f"{cov_this} amount", "last_due_date": "Last statement on file",
+                "expected_by": "Expected by",
+            }).drop(columns=["card_id", "statement_day"])
+            report_df = report_df.sort_values(["Card holder", "Status", "Issuer", "Card"]).reset_index(drop=True)
+            st.dataframe(
+                report_df, hide_index=True,
+                column_config={
+                    f"{cov_prev} amount": st.column_config.NumberColumn(format="₱ %.2f"),
+                    f"{cov_this} amount": st.column_config.NumberColumn(format="₱ %.2f"),
+                },
+            )
+            if report_df.empty:
+                st.success("Every active card has a statement recorded for this month.")
+            else:
+                with st.expander("Follow-up list by card holder (copy and send)", expanded=True):
+                    st.caption("One message per person, listing only the cards still missing a statement — send it so the bill can be paid on time and charges avoided.")
+                    for holder, grp in report_df.groupby("Card holder"):
+                        first_name = holder.split()[0] if holder and holder != "(no holder)" else "there"
+                        card_lines = "\n".join(
+                            f"- {r['Issuer']} {r['Card']} (ending {r['Last 4']})"
+                            + (f" — last month's statement was due {r[f'{cov_prev} due date']}" if pd.notna(r[f"{cov_prev} due date"]) else "")
+                            for _, r in grp.iterrows()
+                        )
+                        st.markdown(f"**{holder}** — {len(grp)} card(s)")
+                        st.code(
+                            f"Hi {first_name}, I don't have the {cov_this} statement yet for these cards:\n{card_lines}\n"
+                            "Please send me a photo or PDF of the statement (or the amount due and due date) so we can pay on time and avoid charges. Thank you!",
+                            language=None,
+                        )
+                xl = io.BytesIO()
+                with pd.ExcelWriter(xl, engine="openpyxl") as writer:
+                    report_df.to_excel(writer, index=False, sheet_name="Missing statements")
+                    ws = writer.sheets["Missing statements"]
+                    for col in ws.columns:
+                        ws.column_dimensions[col[0].column_letter].width = min(max(len(str(c.value or "")) for c in col) + 2, 40)
+                stamp = cov_today.strftime("%Y-%m-%d")
+                d1, d2 = st.columns(2)
+                d1.download_button("Download Excel report", data=xl.getvalue(), file_name=f"missing_cc_statements_{stamp}.xlsx",
+                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/download:", key="cov_dl_xlsx")
+                d2.download_button("Download CSV", data=report_df.to_csv(index=False), file_name=f"missing_cc_statements_{stamp}.csv",
+                                   mime="text/csv", icon=":material/download:", key="cov_dl_csv")
+
 
 # --------------------------------------------------------------------------
 # Tab 6: Checks & checkbook
@@ -5303,16 +6415,20 @@ with tab_checks:
                 # in-app "Print these checks" button used to be, so it logs a batch (Batch run
                 # history, below) and stamps printed_at the same way mark_checks_printed() did.
                 # Come back to "Assign check numbers" below once they're physically printed.
-                if st.button("Generate Excel for Chrysanth", icon=":material/download:", disabled=not print_picked_ids, key="check_export_excel_btn"):
-                    excel_bytes = generate_pending_check_run_excel(print_picked_ids)
-                    batch_id = create_check_print_batch(print_picked_ids)
-                    st.success(f"Batch #{batch_id} logged — {len(print_picked_ids)} check(s). See Batch run history below.")
-                    st.download_button(
-                        "Download checks_to_print.xlsx", data=excel_bytes, file_name="checks_to_print.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="check_export_excel_dl",
-                    )
-                    refresh()
+                if st.button("Generate CSV for Chrysanth", icon=":material/download:", disabled=not print_picked_ids, key="check_export_excel_btn"):
+                    if guard_duplicate_submit("create_check_print_batch", tuple(sorted(print_picked_ids))):
+                        csv_bytes = generate_pending_check_run_csv(print_picked_ids)
+                        batch_id = create_check_print_batch(print_picked_ids)
+                        # Keep the file across the rerun that refresh() triggers -- the download button used to vanish with it.
+                        st.session_state["_chrysanth_csv"] = {"batch_id": batch_id, "count": len(print_picked_ids), "bytes": csv_bytes}
+                        refresh()
+                    else:
+                        st.warning("Duplicate submission ignored — identical to the click just before it.")
+                if st.session_state.get("_chrysanth_csv"):
+                    _last_csv = st.session_state["_chrysanth_csv"]
+                    st.success(f"Batch #{_last_csv['batch_id']} logged — {_last_csv['count']} check(s). Download the file for Chrysanth:")
+                    st.download_button("Download checks_to_print.csv", data=_last_csv["bytes"], file_name="checks_to_print.csv", mime="text/csv",
+                                       icon=":material/download:", key="check_export_csv_dl")
 
     with st.container(border=True):
         st.subheader("Batch run history")
@@ -5336,6 +6452,8 @@ with tab_checks:
             )
             batch_options = {int(r["print_batch_id"]): f"Batch #{n} — {r['exported_at']} — {r['check_count']} check(s)" for n, (_, r) in zip(range(len(batches_df), 0, -1), batches_df.iterrows())}
             batch_pick = st.selectbox("View batch detail", options=list(batch_options.keys()), format_func=lambda bid: batch_options[bid], key="batch_history_pick")
+            st.download_button("Download this batch's CSV for Chrysanth", data=generate_batch_csv(int(batch_pick)),
+                               file_name=f"checks_batch_{int(batch_pick)}.csv", mime="text/csv", icon=":material/download:", key=f"batch_csv_dl_{int(batch_pick)}")
             detail_df = get_check_print_batch_detail(int(batch_pick))
             if not detail_df.empty:
                 display_detail = detail_df.copy()
@@ -5427,7 +6545,7 @@ with tab_checks:
             )
             if spoil_booklet_pick is not None:
                 brow = spoil_booklets_df.set_index("booklet_id").loc[spoil_booklet_pick]
-                suggested_number = format_metrobank_check_number(int(brow["next_available_number"]), DEFAULT_BRANCH_CODE)
+                suggested_number = str(int(brow["next_available_number"]))
         with st.form("spoiled_check_form", border=False):
             spoiled_number = st.text_input("Check number", value=suggested_number, help="Edit if the spoiled leaf's physical number differs from the suggested next number.")
             spoiled_reason = st.text_input("Reason", placeholder="e.g. printer jam, misaligned print")
@@ -5455,9 +6573,13 @@ with tab_reports:
     st.caption("Pick a report — its filters, tables, and exports appear below, one report at a time.")
 
     REPORT_OPTIONS = [
+        "Overview — highlights & insights",
+        "Possible duplicates — check everything on file",
         "Schedule of payments — all tracks",
         "Parked checks (not yet printed)",
         "Supplier — invoice & check history",
+        "Supplier — batch rundown (paid / partial / pending)",
+        "Supplier — invoice rundown (paid / partial / pending)",
         "Private lender — loan note & check history",
         "Bank loan — installment history",
         "Credit card — statement history",
@@ -5468,7 +6590,117 @@ with tab_reports:
     report_choice = st.selectbox("Report", REPORT_OPTIONS, key="report_type_picker")
     st.divider()
 
-    if report_choice == "Schedule of payments — all tracks":
+    if report_choice == "Overview — highlights & insights":
+        st.subheader("Overview — highlights & insights")
+        st.caption("What happened in a day, week, month, quarter or year, compared with the period before it — highlights first, then the numbers behind them. Pick the short version for a quick read or the full one for the detail.")
+        ov1, ov2, ov3 = st.columns([2, 2, 2])
+        ov_kind = ov1.selectbox("Period", PERIOD_KINDS, index=2, key="rpt_ov_kind")
+        ov_anchor = ov2.date_input("Any date inside the period", value=date.today(), key="rpt_ov_anchor")
+        ov_version = ov3.radio("Version", ["Short", "Full"], horizontal=True, key="rpt_ov_version")
+        ov = get_overview(ov_kind, ov_anchor)
+        ov_cur, ov_prev = ov["current"], ov["previous"]
+        st.markdown(f"#### {ov['label']}  ·  compared with {ov['prev_label']}")
+
+        st.markdown("**Highlights**")
+        for line in ov["highlights"]:
+            st.markdown(f"- {line}")
+
+        def _ov_delta(now, before):
+            return None if not before else f"{(now - before) / before * 100:+.0f}%"
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Paid out", php(ov_cur["paid"]), _ov_delta(ov_cur["paid"], ov_prev["paid"]), border=True, help="Checks, loan installments and card payments whose date has arrived.")
+        m2.metric("Scheduled, not yet due", php(ov_cur["scheduled"]), _ov_delta(ov_cur["scheduled"], ov_prev["scheduled"]), border=True)
+        m3.metric("Interest cost", php(ov_cur["interest_total"]), _ov_delta(ov_cur["interest_total"], ov_prev["interest_total"]), delta_color="inverse", border=True)
+        m4.metric("Total outstanding today", php(ov["outstanding_today"]), border=True, help="All four tracks, as on the Dashboard.")
+
+        st.markdown("**Where the money went**")
+        ov_tracks = ov_cur["by_track"].copy()
+        ov_prev_tracks = ov_prev["by_track"].set_index("track")
+        ov_tracks["Total"] = ov_tracks["paid"] + ov_tracks["scheduled"]
+        ov_tracks["Previous"] = [float(ov_prev_tracks.loc[t, "paid"] + ov_prev_tracks.loc[t, "scheduled"]) for t in ov_tracks["track"]]
+        st.dataframe(
+            ov_tracks.rename(columns={"track": "Track", "paid": "Paid", "scheduled": "Scheduled"}), hide_index=True,
+            column_config={c: st.column_config.NumberColumn(c, format="₱ %.2f") for c in ("Paid", "Scheduled", "Total", "Previous")},
+        )
+
+        if ov["watch"]:
+            st.markdown("**Needs attention**")
+            st.dataframe(pd.DataFrame(ov["watch"]).rename(columns={"item": "Item", "count": "Count", "detail": "Detail"}), hide_index=True)
+
+        if ov_version == "Full":
+            if not ov_cur["payees"].empty:
+                st.markdown("**Top payees**")
+                st.dataframe(
+                    ov_cur["payees"].head(10).rename(columns={"payee": "Payee", "track": "Track", "paid": "Paid", "scheduled": "Scheduled", "total": "Total"}), hide_index=True,
+                    column_config={c: st.column_config.NumberColumn(c, format="₱ %.2f") for c in ("Paid", "Scheduled", "Total")},
+                )
+            st.markdown("**Cost of financing**")
+            if ov_cur["interest"].empty:
+                st.caption("No interest recorded in this period.")
+            else:
+                st.dataframe(ov_cur["interest"].head(8).rename(columns={"source": "Source", "name": "Facility", "interest": "Interest"}), hide_index=True,
+                             column_config={"Interest": st.column_config.NumberColumn("Interest", format="₱ %.2f")})
+            st.markdown("**Payment behavior**")
+            ov_b = ov_cur["behavior"]
+            if not ov_b["count"]:
+                st.caption("Not enough itemised supplier invoices in this period to measure how early or late checks were.")
+            else:
+                st.write(f"{ov_b['count']} supplier check(s) cleared — on average {abs(ov_b['avg_days']):.0f} day(s) {'after' if ov_b['avg_days'] > 0 else 'before'} the due date, {ov_b['on_time_pct']:.0f}% on time.")
+            ov_up = ov["upcoming"]
+            st.markdown(f"**Coming up — {ov_up['label']}**")
+            if not ov_up["total"]:
+                st.caption("Nothing scheduled.")
+            else:
+                st.write(f"{php(ov_up['total'])} falls due. " + ("Heaviest days: " + "; ".join(f"{d} ({php(a)})" for d, a in ov_up["peak_days"]) if ov_up["peak_days"] else ""))
+                uc1, uc2 = st.columns(2)
+                uc1.dataframe(pd.DataFrame([{"Track": k, "Amount due": v} for k, v in ov_up["by_track"].items()]), hide_index=True,
+                              column_config={"Amount due": st.column_config.NumberColumn("Amount due", format="₱ %.2f")})
+                uc2.dataframe(pd.DataFrame([{"Week starting": w, "Amount due": a} for w, a in ov_up["by_week"]]), hide_index=True,
+                              column_config={"Amount due": st.column_config.NumberColumn("Amount due", format="₱ %.2f")})
+
+        if st.button("Generate PDF", icon=":material/picture_as_pdf:", key="ov_pdf_btn"):
+            pdf_preview_and_download(
+                generate_overview_pdf(ov, short=(ov_version == "Short")),
+                f"overview_{ov_kind.lower()}_{ov['start']}_{ov_version.lower()}.pdf", key="ov_pdf_download", label="Overview PDF",
+            )
+
+    elif report_choice == "Possible duplicates — check everything on file":
+        st.subheader("Possible duplicates — check everything on file")
+        st.caption(
+            "Looks across every supplier and batch, migrated ones included, for the same invoice number written differently "
+            "(SI-00123 / 123), several invoices with the same amount on the same date, and batches with the same total. "
+            "Not every finding is a mistake — if it is genuine, tick it and mark it as not a duplicate so it stops showing."
+        )
+        dup_show_dismissed = st.checkbox("Also show the ones I dismissed", key="rpt_dup_show_dismissed")
+        dup_df = scan_possible_duplicates(include_dismissed=dup_show_dismissed)
+        if dup_df.empty:
+            st.success("Nothing suspicious found.")
+        else:
+            dm1, dm2 = st.columns(2)
+            dm1.metric("Findings", len(dup_df), border=True)
+            dm2.metric("Amount involved", php(dup_df["amount"].sum()), border=True)
+            dup_view = dup_df[["kind", "supplier", "detail", "amount", "where_found", "count", "dismissed", "dup_key"]].copy()
+            dup_view.insert(0, "select", False)
+            dup_edited = st.data_editor(
+                dup_view.drop(columns=["dup_key"]), hide_index=True, key="rpt_dup_editor",
+                disabled=["kind", "supplier", "detail", "amount", "where_found", "count", "dismissed"],
+                column_config={
+                    "select": st.column_config.CheckboxColumn("Select"), "kind": "What matched", "supplier": "Supplier", "detail": "Details",
+                    "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f"), "where_found": "Batches", "count": "Items", "dismissed": "Dismissed",
+                },
+            )
+            chosen_keys = [dup_view.loc[i, "dup_key"] for i in dup_edited.index[dup_edited["select"]]]
+            dc1, dc2 = st.columns(2)
+            if dc1.button("Mark selected as not a duplicate", icon=":material/check:", key="rpt_dup_dismiss_btn", disabled=not chosen_keys):
+                dismiss_duplicates(chosen_keys)
+                refresh()
+            if dup_show_dismissed and dc2.button("Restore selected", icon=":material/undo:", key="rpt_dup_restore_btn", disabled=not chosen_keys):
+                restore_duplicates(chosen_keys)
+                refresh()
+            st.download_button("Download CSV", data=dup_df.drop(columns=["dup_key"]).to_csv(index=False), file_name="possible_duplicates.csv", mime="text/csv", key="dl_dup_scan")
+
+    elif report_choice == "Schedule of payments — all tracks":
         st.subheader("Schedule of payments — all tracks")
         st.caption("Everything still owed, across all 4 tracks combined. Grouped by actual payment date — a due date falling on a weekend is paid the next banking day (Monday), so \"Due Date\" (as originally scheduled) and \"Payment Date\" (when it's actually paid/needs funding) can differ. \"Reference\" holds whichever identifier applies to that track (check number for Supplier/Lender, loan ref for Bank Loan, card name for Credit Card).")
         sched_detail = get_payment_schedule_all_tracks()
@@ -5684,6 +6916,117 @@ with tab_reports:
                         sup_date_from, sup_date_to, group_by_batch=sup_group_by_batch,
                     ),
                     f"supplier_{sup_slug}_statement.pdf", key="sup_pdf_download", label="Supplier Statement of Account PDF",
+                )
+
+    elif report_choice == "Supplier — batch rundown (paid / partial / pending)":
+        st.subheader("Supplier — batch rundown")
+        st.caption("Every issued batch (order statement) with how much is paid, how much is covered by post-dated checks, and what is still open. Paid = checks whose date has arrived. Pick one supplier or all of them.")
+        rd_options = creditor_options_all("SUPPLIER")
+        rd_choice = st.selectbox("Supplier", options=[None] + list(rd_options), format_func=lambda cid: "All suppliers" if cid is None else rd_options[cid], key="rpt_rundown_pick")
+        rd_all = get_payables_rundown(rd_choice)
+        if not rd_all.empty and rd_all["first_check"].notna().any():
+            rd_min, rd_max = date.fromisoformat(rd_all["first_check"].min()), date.fromisoformat(rd_all["last_check"].max())
+        else:
+            rd_min = rd_max = date.today()
+        rd_from_col, rd_to_col = st.columns(2)
+        rd_from = rd_from_col.date_input("From", value=rd_min, key=f"rpt_rundown_from_{rd_choice}", help="Batches with a check dated on or after this day.")
+        rd_to = rd_to_col.date_input("To", value=rd_max, key=f"rpt_rundown_to_{rd_choice}", help="Batches with a check dated on or before this day. Amounts shown are for the whole batch.")
+        rd_df = get_payables_rundown(rd_choice, rd_from, rd_to)
+        if rd_df.empty:
+            st.caption("No issued batches for this selection.")
+        else:
+            rd_status_order = ["Paid", "Partially Paid", "Pending"]
+            rd_cols = st.columns(3)
+            for col, status_name in zip(rd_cols, rd_status_order):
+                part = rd_df[rd_df["status"] == status_name]
+                col.metric(status_name, f"{len(part)} batch(es)", border=True)
+                col.caption(f"Net total {php(part['net_total'].sum())} · still owed {php(part['balance'].sum())}")
+            rd_picked = st.multiselect("Show", options=rd_status_order, default=rd_status_order, key="rpt_rundown_status")
+            rd_view = rd_df[rd_df["status"].isin(rd_picked)].copy()
+            rd_view["running_balance"] = rd_view["balance"].groupby(rd_view["supplier"]).cumsum()
+            rd_money = {"first_check": st.column_config.DateColumn("First check"), "last_check": st.column_config.DateColumn("Last check")}
+            rd_money.update({c: st.column_config.NumberColumn(label, format="₱ %.2f") for c, label in
+                        [("net_total", "Net total"), ("paid", "Paid"), ("scheduled", "Post-dated"), ("open", "Not yet covered"), ("balance", "Still owed"), ("running_balance", "Running balance")]})
+            if rd_choice is None:
+                st.markdown("**Per supplier**")
+                rd_sum = rd_view.pivot_table(index="supplier", columns="status", values="net_total", aggfunc="sum", fill_value=0.0)
+                for name in rd_status_order:
+                    if name not in rd_sum.columns:
+                        rd_sum[name] = 0.0
+                rd_sum = rd_sum[rd_status_order].reset_index()
+                rd_sum["Total"] = rd_sum[rd_status_order].sum(axis=1)
+                st.dataframe(rd_sum, hide_index=True, column_config={n: st.column_config.NumberColumn(n, format="₱ %.2f") for n in rd_status_order + ["Total"]})
+            st.markdown("**Batches**")
+            st.dataframe(
+                rd_view[["supplier", "batch", "status", "first_check", "last_check", "net_total", "paid", "scheduled", "open", "balance", "running_balance"]],
+                hide_index=True, column_config=rd_money,
+            )
+            st.download_button("Download rundown CSV", data=rd_view.to_csv(index=False), file_name="batch_rundown.csv", mime="text/csv", key="dl_rundown")
+            if st.button("Generate PDF", icon=":material/picture_as_pdf:", key="batch_rundown_pdf_btn"):
+                rd_rows = [[r.supplier, r.batch, r.status, str(r.first_check or "—")[:10], str(r.last_check or "—")[:10], _pdf_money(r.net_total), _pdf_money(r.paid), _pdf_money(r.scheduled), _pdf_money(r.balance), _pdf_money(r.running_balance)] for r in rd_view.itertuples()]
+                rd_summary = [(n, int((rd_view["status"] == n).sum()), float(rd_view.loc[rd_view["status"] == n, "balance"].sum())) for n in rd_status_order]
+                pdf_preview_and_download(
+                    generate_rundown_pdf(
+                        "Batch rundown", "All suppliers" if rd_choice is None else rd_options[rd_choice],
+                        ["Supplier", "Batch", "Status", "First check", "Last check", "Net total", "Paid", "Post-dated", "Still owed", "Running Balance"], rd_rows,
+                        [0.16, 0.13, 0.08, 0.07, 0.07, 0.09, 0.09, 0.09, 0.10, 0.12], [5, 6, 7, 8, 9], rd_summary, f"Checks dated {rd_from} to {rd_to}  ·  amounts in the summary are still owed",
+                    ),
+                    "batch_rundown.pdf", key="batch_rundown_pdf_download", label="Batch Rundown PDF",
+                )
+
+    elif report_choice == "Supplier — invoice rundown (paid / partial / pending)":
+        st.subheader("Supplier — invoice rundown")
+        st.caption("Every invoice with its status — Paid, Partially Paid or Pending. Pick one supplier or all of them, and narrow by invoice date. For payments per batch, use the batch rundown.")
+        ir_options = creditor_options_all("SUPPLIER")
+        ir_choice = st.selectbox("Supplier", options=[None] + list(ir_options), format_func=lambda cid: "All suppliers" if cid is None else ir_options[cid], key="rpt_inv_rundown_pick")
+        ir_all = get_invoice_rundown(ir_choice)
+        if ir_all.empty:
+            st.caption("No invoices on file for this selection. (Migrated history was loaded as batches only — see the batch rundown for those.)")
+        else:
+            ir_min, ir_max = date.fromisoformat(str(ir_all["invoice_date"].min())[:10]), date.fromisoformat(str(ir_all["invoice_date"].max())[:10])
+            ir_from_col, ir_to_col = st.columns(2)
+            ir_from = ir_from_col.date_input("From", value=ir_min, key=f"rpt_inv_from_{ir_choice}")
+            ir_to = ir_to_col.date_input("To", value=ir_max, key=f"rpt_inv_to_{ir_choice}")
+            ir_df = get_invoice_rundown(ir_choice, ir_from, ir_to)
+            ir_order = ["Paid", "Partially Paid", "Pending"]
+            for col, status_name in zip(st.columns(3), ir_order):
+                part = ir_df[ir_df["status"] == status_name]
+                col.metric(status_name, f"{len(part)} invoice(s)", border=True)
+                col.caption(f"Amount {php(part['amount'].sum())}")
+            ir_picked = st.multiselect("Show", options=ir_order, default=ir_order, key="rpt_inv_rundown_status")
+            ir_view = ir_df[ir_df["status"].isin(ir_picked)].copy()
+            # Running balance = what is still owed, adding up row by row within each supplier (Paid rows add nothing).
+            ir_view["running_balance"] = ir_view["amount"].where(ir_view["status"] != "Paid", 0.0).groupby(ir_view["supplier"]).cumsum()
+            if ir_choice is None and not ir_view.empty:
+                st.markdown("**Per supplier**")
+                ir_sum = ir_view.pivot_table(index="supplier", columns="status", values="amount", aggfunc="sum", fill_value=0.0)
+                for name in ir_order:
+                    if name not in ir_sum.columns:
+                        ir_sum[name] = 0.0
+                ir_sum = ir_sum[ir_order].reset_index()
+                ir_sum["Total"] = ir_sum[ir_order].sum(axis=1)
+                st.dataframe(ir_sum, hide_index=True, column_config={n: st.column_config.NumberColumn(n, format="₱ %.2f") for n in ir_order + ["Total"]})
+            st.markdown("**Invoices**")
+            st.dataframe(
+                ir_view, hide_index=True,
+                column_config={
+                    "invoice_date": st.column_config.DateColumn("Invoice Date"),
+                    "due_date": st.column_config.DateColumn("Due Date"),
+                    "amount": st.column_config.NumberColumn("Net Amount", format="₱ %.2f"),
+                    "running_balance": st.column_config.NumberColumn("Running Balance", format="₱ %.2f"),
+                },
+            )
+            st.download_button("Download invoice rundown CSV", data=ir_view.to_csv(index=False), file_name="invoice_rundown.csv", mime="text/csv", key="dl_inv_rundown")
+            if st.button("Generate PDF", icon=":material/picture_as_pdf:", key="inv_rundown_pdf_btn"):
+                ir_rows = [[r.supplier, r.invoice, r.batch or "—", str(r.invoice_date)[:10], str(r.due_date)[:10], _pdf_money(r.amount), r.status, _pdf_money(r.running_balance)] for r in ir_view.itertuples()]
+                ir_summary = [(n, int((ir_view["status"] == n).sum()), float(ir_view.loc[ir_view["status"] == n, "amount"].sum())) for n in ir_order]
+                pdf_preview_and_download(
+                    generate_rundown_pdf(
+                        "Invoice rundown", "All suppliers" if ir_choice is None else ir_options[ir_choice],
+                        ["Supplier", "Invoice", "Batch", "Invoice Date", "Due Date", "Net Amount", "Status", "Running Balance"], ir_rows,
+                        [0.20, 0.09, 0.20, 0.09, 0.09, 0.11, 0.09, 0.13], [5, 7], ir_summary, f"Invoice dates {ir_from} to {ir_to}",
+                    ),
+                    "invoice_rundown.pdf", key="inv_rundown_pdf_download", label="Invoice Rundown PDF",
                 )
 
     elif report_choice == "Private lender — loan note & check history":
@@ -5928,6 +7271,16 @@ with tab_reports:
                 },
             )
             st.download_button("Download CSV", data=aging_df.to_csv(index=False), file_name="supplier_ap_aging.csv", mime="text/csv", key="dl_aging")
+            if st.button("Generate PDF", icon=":material/picture_as_pdf:", key="aging_pdf_btn"):
+                pdf_preview_and_download(
+                    generate_rundown_pdf(
+                        "Supplier AP aging", "All suppliers",
+                        ["Supplier", "Open", "Total Unpaid", "Current", "1-30 Days", "31-60 Days", "60+ Days"],
+                        [[r.supplier_name, int(r.open_invoices), _pdf_money(r.total_unpaid), _pdf_money(r.current_due), _pdf_money(r.days_1_30), _pdf_money(r.days_31_60), _pdf_money(r.days_over_60)] for r in aging_df.itertuples()],
+                        [0.32, 0.07, 0.14, 0.12, 0.12, 0.12, 0.11], [1, 2, 3, 4, 5, 6], [], f"As of {date.today()}",
+                    ),
+                    "supplier_ap_aging.pdf", key="aging_pdf_download", label="Supplier AP Aging PDF",
+                )
 
     elif report_choice == "Master rollup — private lender exposure":
         st.subheader("Master rollup — private lender exposure")
@@ -5947,6 +7300,16 @@ with tab_reports:
                 },
             )
             st.download_button("Download CSV", data=lender_master_df.to_csv(index=False), file_name="private_lender_exposure.csv", mime="text/csv", key="dl_lender_master")
+            if st.button("Generate PDF", icon=":material/picture_as_pdf:", key="lender_master_pdf_btn"):
+                pdf_preview_and_download(
+                    generate_rundown_pdf(
+                        "Private lender exposure", "All private lenders",
+                        ["Lender", "Note", "Issue Date", "Principal", "Interest", "Total Payable", "Outstanding", "Status"],
+                        [[r.lender_name, r.note_ref, str(r.issue_date)[:10], _pdf_money(r.principal_amount), _pdf_money(r.total_interest), _pdf_money(r.total_payable), _pdf_money(r.outstanding_uncleared), r.status] for r in lender_master_df.itertuples()],
+                        [0.2, 0.13, 0.09, 0.11, 0.1, 0.12, 0.11, 0.14], [3, 4, 5, 6], [], f"As of {date.today()}",
+                    ),
+                    "private_lender_exposure.pdf", key="lender_master_pdf_download", label="Private Lender Exposure PDF",
+                )
 
     elif report_choice == "Master rollup — bank loan servicing":
         st.subheader("Master rollup — bank loan servicing")
@@ -5965,6 +7328,16 @@ with tab_reports:
                 },
             )
             st.download_button("Download CSV", data=bl_master_df.to_csv(index=False), file_name="bank_loan_servicing.csv", mime="text/csv", key="dl_bl_master")
+            if st.button("Generate PDF", icon=":material/picture_as_pdf:", key="bl_master_pdf_btn"):
+                pdf_preview_and_download(
+                    generate_rundown_pdf(
+                        "Bank loan servicing", "All bank loans",
+                        ["Bank", "Loan Ref", "Start", "Maturity", "Principal", "Outstanding", "Status"],
+                        [[r.bank_name, r.loan_ref, str(r.start_date or "—")[:10], str(r.maturity_date or "—")[:10], _pdf_money(r.principal_amount) if pd.notna(r.principal_amount) else "—", _pdf_money(r.outstanding), r.status] for r in bl_master_df.itertuples()],
+                        [0.16, 0.32, 0.09, 0.09, 0.12, 0.12, 0.10], [4, 5], [], f"As of {date.today()}",
+                    ),
+                    "bank_loan_servicing.pdf", key="bl_master_pdf_download", label="Bank Loan Servicing PDF",
+                )
 
 # --------------------------------------------------------------------------
 # Tab 8: Admin & audit
@@ -6011,22 +7384,25 @@ with tab_admin:
             "you pick from manually — no auto-sequencing."
         )
         booklets_df = q("SELECT * FROM check_booklets ORDER BY booklet_id DESC")
+        if booklets_df.empty:
+            st.info("No checkbooks registered yet — every check on file so far was issued/migrated without one. \"Assign a check number\" won't have anything to offer, and the gap/duplicate audit below has nothing to check against, until at least one is registered here.")
         st.dataframe(booklets_df, hide_index=True)
 
         with st.expander("Register new booklet"):
             with st.form("new_booklet_form", border=False):
                 bk_code = st.text_input("Booklet code", value="Booklet A")
                 bk1, bk2 = st.columns(2)
-                bk_start = bk1.number_input("Start check number", min_value=1, step=1, value=1000)
-                bk_end = bk2.number_input("End check number", min_value=1, step=1, value=1050)
+                bk_start = bk1.number_input("Start check number", min_value=1, step=1, value=1000, help="The full number printed on the first leaf, e.g. 3992554301. It is used exactly as typed.")
+                bk_end = bk2.number_input("End check number", min_value=1, step=1, value=1050, help="The full number printed on the last leaf, e.g. 3992554400.")
                 bk_received = st.date_input("Date received", value=date.today())
                 if st.form_submit_button("Register booklet", icon=":material/menu_book:"):
                     if bk_end < bk_start:
                         st.error("End check number must be greater than or equal to start check number.")
                     elif guard_duplicate_submit("create_booklet", bk_code, bk_start, bk_end, bk_received):
-                        create_booklet(PRIMARY_BANK_ACCOUNT_ID, bk_code, int(bk_start), int(bk_end), bk_received)
-                        st.success("Booklet registered.")
-                        refresh()
+                        ok, msg = create_booklet(PRIMARY_BANK_ACCOUNT_ID, bk_code, int(bk_start), int(bk_end), bk_received)
+                        (st.success if ok else st.error)(msg)
+                        if ok:
+                            refresh()
                     else:
                         st.warning("Duplicate submission ignored — identical to the click just before it.")
 
@@ -6085,7 +7461,7 @@ with tab_admin:
                 )
         with c2:
             st.markdown("**Restore**")
-            st.caption("This overwrites the live database. This action cannot be undone.")
+            st.caption("This overwrites the live database with the uploaded file. The current database is saved as a .bak_before_restore file first, in case this needs undoing.")
             restore_file = st.file_uploader("Upload backup file (.db)", type=["db"])
             confirm_text = st.text_input("Type RESTORE to confirm")
             if st.button("Restore database", icon=":material/restore:", type="secondary"):
@@ -6094,15 +7470,19 @@ with tab_admin:
                 elif confirm_text != "RESTORE":
                     st.error("Type RESTORE in the confirmation box to proceed.")
                 else:
-                    if restore_database_from_bytes(restore_file.getvalue()):
-                        st.success("Database restored.")
+                    ok, msg = restore_database_from_bytes(restore_file.getvalue())
+                    (st.success if ok else st.error)(msg)
+                    if ok:
                         refresh()
-                    else:
-                        st.error("Restore failed.")
 
     with st.container(border=True):
         st.subheader("Audit log")
-        audit_full = fix_nullable_int(q("SELECT * FROM audit_logs ORDER BY log_id DESC"), "entity_id")
+        audit_full = fix_nullable_int(q("SELECT log_id, user_action, entity_name, entity_id, old_values, new_values, datetime(timestamp, 'localtime') AS timestamp FROM audit_logs ORDER BY log_id DESC"), "entity_id")
         action_filter = st.multiselect("Filter by action", options=sorted(audit_full["user_action"].unique()) if not audit_full.empty else [])
         display_audit = audit_full[audit_full["user_action"].isin(action_filter)] if action_filter else audit_full
         st.dataframe(display_audit, hide_index=True)
+
+    with st.container(border=True):
+        st.subheader("Changelog")
+        st.caption("Everything that's shipped, in plain language, newest first. The same source the \"What's new\" popup reads from.")
+        st.markdown(_read_whats_new(), unsafe_allow_html=False)
