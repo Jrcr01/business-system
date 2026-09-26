@@ -4233,8 +4233,12 @@ with tab_suppliers:
                     bt1, bt2 = st.columns(2)
                     bp_type = bt1.radio("Statement type", ["Batch Statement (A4)", "Thermal 80mm"], horizontal=True, key="bulk_print_type")
                     bp_history = bt2.toggle("Include full check history (incl. cancelled/replaced)", value=True, key="bulk_print_history")
+                    bp_unprinted = bt2.toggle("Include checks not yet printed", value=True, key="bulk_print_unprinted",
+                                              help="On: every check is listed, as usual. Off: only checks already printed appear on the statements, and only they count as covering an invoice. "
+                                                   "A check counts as printed once its Chrysanth run is marked printed (Batch run history > Mark as printed); parked checks and checks in a run "
+                                                   "not marked printed yet (e.g. RUN 005) are left out.")
                     bp_summary_on = st.toggle("Put a summary page of the included order statements in front", value=True, key="bulk_print_summary")
-                    bp_summary = bulk_summary_rows([int(x) for x in bp_picked])
+                    bp_summary = bulk_summary_rows([int(x) for x in bp_picked], bp_unprinted)
                     if bp_summary:
                         st.dataframe(pd.DataFrame(bp_summary).drop(columns=["statement_id"]).rename(columns={
                             "ref": "Order statement", "supplier": "Supplier", "stage": "Status", "invoices": "Invoices", "net_total": "Net total", "checks": "Checks", "checks_total": "Checks total"}),
@@ -4251,12 +4255,13 @@ with tab_suppliers:
                         made, failed = 0, []
                         if bp_summary_on and bp_summary:
                             _scope_text = f"Since last check print ({bp_last_print_day})" if bp_scope == "Since last check print" and bp_last_print_day else bp_scope
-                            _type_text = bp_type + (f" · {dict(both='both copies', filing='filing copy', supplier='supplier copy')[bp_copies]}" if bp_type == "Batch Statement (A4)" else "")
+                            _type_text = (bp_type + (f" · {dict(both='both copies', filing='filing copy', supplier='supplier copy')[bp_copies]}" if bp_type == "Batch Statement (A4)" else "")
+                                          + ("" if bp_unprinted else " · printed checks only"))
                             for page in PdfReader(io.BytesIO(generate_bulk_summary_pdf(bp_summary, _scope_text, _type_text))).pages:
                                 merged.add_page(page)
                         for sid in bp_picked:
-                            one = (generate_batch_statement_pdf(sid, bp_history, bp_copies, bp_apply) if bp_type == "Batch Statement (A4)"
-                                   else generate_batch_statement_thermal_pdf(sid, bp_history))
+                            one = (generate_batch_statement_pdf(sid, bp_history, bp_copies, bp_apply, bp_unprinted) if bp_type == "Batch Statement (A4)"
+                                   else generate_batch_statement_thermal_pdf(sid, bp_history, bp_unprinted))
                             if not one:
                                 failed.append(bp_labels[sid])
                                 continue

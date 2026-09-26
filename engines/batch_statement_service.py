@@ -48,6 +48,15 @@ def _money(v) -> str:
     return f"{v:,.2f}" if v is not None else "—"
 
 
+def _printed_sql(alias: str) -> str:
+    """SQL condition: this check counts as PRINTED (2026-09-27, per user): it belongs to a Chrysanth run that has been marked printed (Batch run
+    history > Mark as printed) -- or it was printed the old in-app way (no run, printed_at set). A check that is only parked, or exported in a
+    run not marked printed yet (e.g. RUN 005), is NOT printed."""
+    a = alias
+    return (f"((({a}.print_batch_id IS NOT NULL) AND EXISTS (SELECT 1 FROM check_print_batches _b WHERE _b.print_batch_id = {a}.print_batch_id AND _b.printed_confirmed_at IS NOT NULL))"
+            f" OR ({a}.print_batch_id IS NULL AND {a}.printed_at IS NOT NULL))")
+
+
 def _invoice_display_status(inv, cover) -> str:
     """The status printed on the statement (2026-09-27, per user): 'Unpaid' on a statement whose checks are already issued read as
     confusing. So: Unpaid = no check covers it; Partly covered = checks cover only part; 'Check issued . <date>' = fully covered by issued
@@ -67,7 +76,7 @@ def _invoice_display_status(inv, cover) -> str:
     return "Partly covered" if covered > 0.005 else "Unpaid"
 
 
-def _fetch_batch_data(statement_id: int, include_full_history: bool) -> dict | None:
+def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unprinted: bool = True) -> dict | None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
@@ -99,6 +108,7 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool) -> dict | N
                           MAX(c.check_date) AS last_check_date
                    FROM invoice_check_allocations a JOIN checks_issued c ON c.check_id = a.check_id
                    WHERE c.status = 'Active' AND a.invoice_id IN (SELECT invoice_id FROM invoices WHERE statement_id = ?)
+                     """ + ("" if include_unprinted else "AND " + _printed_sql("c")) + """
                    GROUP BY a.invoice_id""",
                 (statement_id,),
             ).fetchall()
@@ -112,6 +122,8 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool) -> dict | N
         check_sql = "SELECT check_number, check_date, amount, status FROM checks_issued WHERE statement_id = ?"
         if not include_full_history:
             check_sql += " AND status = 'Active'"
+        if not include_unprinted:
+            check_sql += " AND " + _printed_sql("checks_issued")
         check_sql += " ORDER BY check_id"
         checks = cur.execute(check_sql, (statement_id,)).fetchall()
 
@@ -121,7 +133,8 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool) -> dict | N
         # check itself as one "Not itemized" line so the ledger still reconciles to the real
         # balance even for a check issued before per-invoice tracking existed.
         active_checks = cur.execute(
-            "SELECT check_id, check_number, check_date, amount FROM checks_issued WHERE statement_id = ? AND status = 'Active' ORDER BY check_date, check_id",
+            "SELECT check_id, check_number, check_date, amount FROM checks_issued WHERE statement_id = ? AND status = 'Active'"
+            + ("" if include_unprinted else " AND " + _printed_sql("checks_issued")) + " ORDER BY check_date, check_id",
             (statement_id,),
         ).fetchall()
         alloc_rows = cur.execute(
@@ -288,7 +301,8 @@ def _footer(canvas, doc) -> None:
     canvas.restoreState()
 
 
-def generate_batch_statement_pdf(statement_id: int, include_full_history: bool = True, copies: str = "both", show_payment_application: bool = False) -> bytes | None:
+def generate_batch_statement_pdf(statement_id: int, include_full_history: bool = True, copies: str = "both", show_payment_application: bool = False,
+                                 include_unprinted_checks: bool = True) -> bytes | None:
     """Batch Statement PDF. copies: "both" (internal filing + supplier, default),
     "filing" (internal filing copy only), or "supplier" (supplier copy only).
 
@@ -299,7 +313,7 @@ def generate_batch_statement_pdf(statement_id: int, include_full_history: bool =
     the Checks table -- one row per invoice a check's amount was applied to (migration 025),
     with a running balance -- off by default so the existing report is unchanged unless asked for.
     """
-    data = _fetch_batch_data(statement_id, include_full_history)
+    data = _fetch_batch_data(statement_id, include_full_history, include_unprinted_checks)
     if data is None:
         return None
     labels = []
@@ -335,18 +349,19 @@ def generate_batch_statement_pdf(statement_id: int, include_full_history: bool =
     return best_pdf
 
 
-def bulk_summary_rows(statement_ids: list[int]) -> list[dict]:
+def bulk_summary_rows(statement_ids: list[int], include_unprinted_checks: bool = True) -> list[dict]:
     """One line per order statement for the bulk-print summary: ref, supplier, stage (Draft / Parked / Issued / Cancelled -- the same rule as the
     order statement browser), invoice count, net total, active checks and their total."""
     if not statement_ids:
         return []
     marks = ",".join("?" * len(statement_ids))
+    unprinted_filter = "" if include_unprinted_checks else "AND " + _printed_sql("k")
     with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute(
             f"""SELECT os.statement_id, os.statement_ref, cr.creditor_name, os.status, v.net_total,
                        (SELECT COUNT(*) FROM invoices i WHERE i.statement_id = os.statement_id AND i.status != 'Cancelled'),
-                       (SELECT COUNT(*) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active'),
-                       (SELECT COALESCE(SUM(k.amount), 0) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active'),
+                       (SELECT COUNT(*) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' {unprinted_filter}),
+                       (SELECT COALESCE(SUM(k.amount), 0) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' {unprinted_filter}),
                        (SELECT COUNT(*) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' AND k.printed_at IS NOT NULL)
                 FROM order_statements os JOIN creditors cr ON cr.creditor_id = os.creditor_id JOIN v_batch_net_totals v ON v.statement_id = os.statement_id
                 WHERE os.statement_id IN ({marks})""",
@@ -495,12 +510,12 @@ def _draw_thermal(c: pdfcanvas.Canvas, lines: list[dict], y_start: float) -> Non
     c.setFillColor(colors.black)
 
 
-def generate_batch_statement_thermal_pdf(statement_id: int, include_full_history: bool = True) -> bytes | None:
+def generate_batch_statement_thermal_pdf(statement_id: int, include_full_history: bool = True, include_unprinted_checks: bool = True) -> bytes | None:
     """80mm-wide thermal-printer Batch Statement: one continuous strip (no page
     breaks), auto-sized to the batch's actual content and capped at the
     printer's max continuous-roll length (3276mm) rather than always printing
     a fixed-length page. Single copy — a thermal roll isn't meant to hold two."""
-    data = _fetch_batch_data(statement_id, include_full_history)
+    data = _fetch_batch_data(statement_id, include_full_history, include_unprinted_checks)
     if data is None:
         return None
     lines = _thermal_lines(data)
