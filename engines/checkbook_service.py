@@ -51,6 +51,9 @@ def audit_booklet_gaps(booklet_id: int) -> dict:
             FROM checks_issued
             WHERE bank_account_id = ? AND check_number IS NOT NULL AND check_number != ''
         """, conn, params=(bank_account_id,))
+        # Leaves logged as spoiled / error checks (Log a spoiled check) -- accounted for, so they are neither open stock nor a gap.
+        df_spoiled = pd.read_sql_query(
+            "SELECT check_number, reason FROM spoiled_checks WHERE bank_account_id = ?", conn, params=(bank_account_id,))
 
     # A booklet range is normally the FULL check number as printed (e.g. 3992554301-3992554400),
     # and a check is stored under that same number. Older raw-sequence ranges (1000-1050 with
@@ -68,12 +71,29 @@ def audit_booklet_gaps(booklet_id: int) -> dict:
     df_recorded['check_num_int'] = df_recorded['check_num_int'].astype(int)
     max_issued = df_recorded['check_num_int'].max() if not df_recorded.empty else start_num - 1
 
-    inventory_breakdown, missing_gaps, duplicate_numbers = [], [], []
+    spoiled_by_leaf = {}
+    for _, sp in df_spoiled.iterrows():
+        leaf = _leaf_in_range(sp['check_number'])
+        if leaf is not None:
+            spoiled_by_leaf[int(leaf)] = (sp['reason'] or '').strip()
+
+    inventory_breakdown, missing_gaps, duplicate_numbers, spoiled_leaves = [], [], [], []
 
     for num in range(start_num, end_num + 1):
         num_str = str(num).zfill(10)
         matches = df_recorded[df_recorded['check_num_int'] == num]
-        if len(matches) > 1:
+        if num in spoiled_by_leaf and len(matches) >= 1:
+            inventory_breakdown.append({
+                'check_number': num_str, 'state': 'CRITICAL: SPOILED AND ISSUED',
+                'amount': float(matches['amount'].sum()), 'note': 'Logged as a spoiled leaf but also recorded as a check',
+            })
+            duplicate_numbers.append(num_str)
+        elif num in spoiled_by_leaf:
+            reason = spoiled_by_leaf[num]
+            inventory_breakdown.append({'check_number': num_str, 'state': 'Spoiled (error check)', 'amount': 0.0,
+                                        'note': f"Error check: {reason}" if reason else 'Logged as spoiled'})
+            spoiled_leaves.append(num_str)
+        elif len(matches) > 1:
             texts = ", ".join(sorted(matches['check_number'].unique()))
             inventory_breakdown.append({
                 'check_number': num_str, 'state': 'CRITICAL: DUPLICATE CHECK NUMBER',
@@ -96,6 +116,8 @@ def audit_booklet_gaps(booklet_id: int) -> dict:
         'missing_gaps_list': missing_gaps,
         'duplicate_numbers_count': len(duplicate_numbers),
         'duplicate_numbers_list': duplicate_numbers,
+        'spoiled_count': len(spoiled_leaves),
+        'spoiled_list': spoiled_leaves,
         'detailed_breakdown': pd.DataFrame(inventory_breakdown)
     }
 

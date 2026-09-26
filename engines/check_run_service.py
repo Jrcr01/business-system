@@ -413,6 +413,34 @@ def _legacy_placeholder(check_id: int) -> str:
     return f"{PLACEHOLDER_NUMBER_PREFIX}{int(check_id):011d}"
 
 
+def stand_in_number_for_row(r) -> str:
+    """The stand-in cheque number an UNNUMBERED check carries (or will carry) in the Chrysanth file -- the number Chrysanth's 'Cheque No
+    Ascending' print order sorts on. Stored one if it was exported under the current scheme, the old id-based one if it was exported
+    before that, otherwise the order-statement-first one it would get now."""
+    stored = r.get("export_placeholder") if hasattr(r, "get") else None
+    if isinstance(stored, str) and stored:
+        return stored
+    pb = r.get("print_batch_id")
+    if pb is not None and not pd.isna(pb):
+        return _legacy_placeholder(int(r["check_id"]))
+    sid, lid = r.get("statement_id"), r.get("loan_note_id")
+    return placeholder_cheque_number(int(r["check_id"]), r.get("reference"), None if sid is None or pd.isna(sid) else int(sid),
+                                     None if lid is None or pd.isna(lid) else int(lid))
+
+
+def sort_by_print_order(df: pd.DataFrame) -> pd.DataFrame:
+    """Checks in the order Chrysanth prints them (order statement number, then check) -- so the first cheque out of the printer is the first
+    row. Numbered checks (which Chrysanth sorts by their real number) come first, by number."""
+    if df.empty:
+        return df
+    out = df.copy()
+    out["_print_key"] = [
+        ("0" + str(r["check_number"]).zfill(18)) if isinstance(r.get("check_number"), str) and r.get("check_number") else ("1" + stand_in_number_for_row(r))
+        for _, r in out.iterrows()
+    ]
+    return out.sort_values("_print_key").drop(columns="_print_key").reset_index(drop=True)
+
+
 def chrysanth_export_problems(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     """Returns (rows for the file, plain-language notes). Chrysanth's import needs a cheque number on every row, so a
     check with no number yet gets a placeholder one (see placeholder_cheque_number) and is noted; a real number must

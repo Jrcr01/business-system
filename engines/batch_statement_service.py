@@ -8,7 +8,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch, mm
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas as pdfcanvas
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 import os
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
@@ -23,7 +23,9 @@ TOP_MARGIN = 0.5 * inch
 BOTTOM_MARGIN = 0.65 * inch
 CONTENT_WIDTH = LETTER[0] - LEFT_MARGIN - RIGHT_MARGIN
 
-SECTION_TABLE_STYLE = [
+def _section_style(pad: float = 5) -> list:
+    """Table style with the given top/bottom cell padding (5 = normal; smaller when a statement only just overflows a page, see _fit_pad)."""
+    return [
     ("BACKGROUND", (0, 0), (-1, 0), ACCENT),
     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
@@ -32,15 +34,37 @@ SECTION_TABLE_STYLE = [
     ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
     ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, ACCENT_LIGHT]),
     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ("TOPPADDING", (0, 0), (-1, -1), 5),
-    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ("TOPPADDING", (0, 0), (-1, -1), pad),
+    ("BOTTOMPADDING", (0, 0), (-1, -1), pad),
     ("LEFTPADDING", (0, 0), (-1, -1), 6),
     ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-]
+    ]
+
+
+SECTION_TABLE_STYLE = _section_style(5)
 
 
 def _money(v) -> str:
     return f"{v:,.2f}" if v is not None else "—"
+
+
+def _invoice_display_status(inv, cover) -> str:
+    """The status printed on the statement (2026-09-27, per user): 'Unpaid' on a statement whose checks are already issued read as
+    confusing. So: Unpaid = no check covers it; Partly covered = checks cover only part; 'Check issued . <date>' = fully covered by issued
+    checks that have not all cleared yet (date = the last of those checks); Paid = every covering check has cleared. An invoice with no
+    per-invoice check tracking (issued before it existed) keeps its stored status. Only the printed label -- the stored status that the
+    payables and reports rely on is unchanged."""
+    stored = inv["status"]
+    if stored == "Cancelled":
+        return "Cancelled"
+    if cover is None:
+        return {"Partially Paid": "Partly paid"}.get(stored, stored)
+    amount, covered, cleared = float(inv["amount"]), float(cover["covered"] or 0), float(cover["cleared"] or 0)
+    if amount - cleared <= 0.005:
+        return "Paid"
+    if amount - covered <= 0.005:
+        return f"Check issued \u00b7 {str(cover['last_check_date'])[:10]}"
+    return "Partly covered" if covered > 0.005 else "Unpaid"
 
 
 def _fetch_batch_data(statement_id: int, include_full_history: bool) -> dict | None:
@@ -57,11 +81,29 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool) -> dict | N
         ).fetchone()
         if not stmt:
             return None
-        invoices = cur.execute(
-            """SELECT doc_ref, invoice_date, due_date, gross_amount, amount, status
+        # The status printed in the header follows the same rule as the order statement browser: Draft = no checks, Parked = checks parked but none
+        # printed yet, Issued = at least one check already exported / printed (2026-09-27).
+        printed, active = cur.execute(
+            "SELECT COALESCE(SUM(printed_at IS NOT NULL), 0), COUNT(*) FROM checks_issued WHERE statement_id = ? AND status = 'Active'", (statement_id,)).fetchone()
+        stage = "Cancelled" if stmt["status"] == "Cancelled" else "Issued" if printed else "Parked" if active else "Draft"
+        stmt = dict(stmt, status=stage)
+        invoice_rows = cur.execute(
+            """SELECT invoice_id, doc_ref, invoice_date, due_date, gross_amount, amount, status
                FROM invoices WHERE statement_id = ? ORDER BY invoice_id""",
             (statement_id,),
         ).fetchall()
+        cover = {
+            r["invoice_id"]: r for r in cur.execute(
+                """SELECT a.invoice_id, SUM(a.amount) AS covered,
+                          SUM(CASE WHEN c.check_date <= DATE('now', 'localtime') THEN a.amount ELSE 0 END) AS cleared,
+                          MAX(c.check_date) AS last_check_date
+                   FROM invoice_check_allocations a JOIN checks_issued c ON c.check_id = a.check_id
+                   WHERE c.status = 'Active' AND a.invoice_id IN (SELECT invoice_id FROM invoices WHERE statement_id = ?)
+                   GROUP BY a.invoice_id""",
+                (statement_id,),
+            ).fetchall()
+        }
+        invoices = [dict(r, display_status=_invoice_display_status(r, cover.get(r["invoice_id"]))) for r in invoice_rows]
         memos = cur.execute(
             """SELECT memo_ref, memo_date, amount, reason
                FROM credit_memos WHERE statement_id = ? ORDER BY credit_memo_id""",
@@ -152,30 +194,37 @@ def _section_heading(text: str, styles) -> Paragraph:
     return Paragraph(text, style)
 
 
-def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_application: bool = False) -> None:
+def _add_section(story: list, text: str, styles) -> None:
+    """A section heading that is never left stranded at the bottom of a page away from its table (2026-09-27): if less than ~1.6 inch is left,
+    the page breaks first, so the heading always travels with the table's header row and its first few rows."""
+    story.append(CondPageBreak(1.6 * inch))
+    story.append(_section_heading(text, styles))
+
+
+def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_application: bool = False, pad: float = 5) -> None:
     stmt = data["statement"]
 
     story.append(_title_band(copy_label, styles))
     story.append(Spacer(1, 10))
     story.append(_info_panel(stmt, styles))
 
-    story.append(_section_heading("Invoices", styles))
+    _add_section(story, "Invoices", styles)
     inv_rows = [["Doc Ref", "Invoice Date", "Due Date", "Gross (PHP)", "Net (PHP)", "Status"]]
     for i in data["invoices"]:
-        inv_rows.append([i["doc_ref"], i["invoice_date"], i["due_date"], _money(i["gross_amount"]), _money(i["amount"]), i["status"]])
+        inv_rows.append([i["doc_ref"], i["invoice_date"], i["due_date"], _money(i["gross_amount"]), _money(i["amount"]), i["display_status"]])
     if len(inv_rows) == 1:
         inv_rows.append(["—", "—", "—", "—", "—", "—"])
-    inv_table = Table(inv_rows, colWidths=[CONTENT_WIDTH * w for w in (0.20, 0.17, 0.17, 0.15, 0.15, 0.16)], repeatRows=1)
-    inv_table.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (3, 1), (4, -1), "RIGHT")]))
+    inv_table = Table(inv_rows, colWidths=[CONTENT_WIDTH * w for w in (0.15, 0.14, 0.14, 0.14, 0.14, 0.29)], repeatRows=1)
+    inv_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (3, 1), (4, -1), "RIGHT")]))
     story.append(inv_table)
 
     if data["memos"]:
-        story.append(_section_heading("Credit Memos (applied pre-issuance)", styles))
+        _add_section(story, "Credit Memos (applied pre-issuance)", styles)
         memo_rows = [["Memo Ref", "Date", "Amount (PHP)", "Reason"]]
         for m in data["memos"]:
             memo_rows.append([m["memo_ref"], m["memo_date"], _money(m["amount"]), m["reason"] or ""])
         memo_table = Table(memo_rows, colWidths=[CONTENT_WIDTH * w for w in (0.2, 0.17, 0.18, 0.45)], repeatRows=1)
-        memo_table.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (2, 1), (2, -1), "RIGHT")]))
+        memo_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (2, 1), (2, -1), "RIGHT")]))
         story.append(memo_table)
 
     story.append(Spacer(1, 10))
@@ -197,18 +246,18 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     ]))
     story.append(totals_table)
 
-    story.append(_section_heading("Checks", styles))
+    _add_section(story, "Checks", styles)
     chk_rows = [["Check Number", "Check Date", "Amount (PHP)", "Status"]]
     for c in data["checks"]:
         chk_rows.append([c["check_number"] or "Pending", c["check_date"] or "—", _money(c["amount"]), c["status"]])
     if len(chk_rows) == 1:
         chk_rows.append(["—", "—", "—", "—"])
     chk_table = Table(chk_rows, colWidths=[CONTENT_WIDTH * w for w in (0.3, 0.23, 0.22, 0.25)], repeatRows=1)
-    chk_table.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (2, 1), (2, -1), "RIGHT")]))
+    chk_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (2, 1), (2, -1), "RIGHT")]))
     story.append(chk_table)
 
     if show_payment_application:
-        story.append(_section_heading("Payment Application", styles))
+        _add_section(story, "Payment Application", styles)
         ledger = data["payment_ledger"]
         led_rows = [["Invoice", "Check Number", "Check Date", "Amount Applied (PHP)", "Balance (PHP)"]]
         for r in ledger:
@@ -216,7 +265,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
         if len(led_rows) == 1:
             led_rows.append(["—", "—", "—", "—", "—"])
         led_table = Table(led_rows, colWidths=[CONTENT_WIDTH * w for w in (0.26, 0.22, 0.16, 0.18, 0.18)], repeatRows=1)
-        led_table.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (3, 1), (4, -1), "RIGHT")]))
+        led_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (3, 1), (4, -1), "RIGHT")]))
         story.append(led_table)
         story.append(Spacer(1, 4))
         story.append(Paragraph(
@@ -224,8 +273,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
             "Only Active checks are included (a Cancelled/Replaced check's money never actually left); “Not itemized” means that check was issued before per-invoice tracking existed.",
             ParagraphStyle("Note", parent=styles["Normal"], fontSize=7, textColor=GREY),
         ))
-
-    story.append(Spacer(1, 24))
+    # (no trailing spacer: on a page the content fills almost to the bottom it spilled onto a page of its own -- a blank sheet with only the footer)
 
 
 def _footer(canvas, doc) -> None:
@@ -254,25 +302,37 @@ def generate_batch_statement_pdf(statement_id: int, include_full_history: bool =
     data = _fetch_batch_data(statement_id, include_full_history)
     if data is None:
         return None
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=LETTER,
-        leftMargin=LEFT_MARGIN, rightMargin=RIGHT_MARGIN, topMargin=TOP_MARGIN, bottomMargin=BOTTOM_MARGIN,
-    )
-    styles = getSampleStyleSheet()
     labels = []
     if copies in ("both", "filing"):
         labels.append("Internal Filing Copy")
     if copies in ("both", "supplier"):
         labels.append("Supplier Copy")
-    story: list = []
-    for i, label in enumerate(labels):
-        if i > 0:
-            story.append(PageBreak())
-        _build_copy(story, data, label, styles, show_payment_application)
-    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
-    buffer.seek(0)
-    return buffer.getvalue()
+
+    def build(pad: float) -> tuple[bytes, int]:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, pagesize=LETTER,
+            leftMargin=LEFT_MARGIN, rightMargin=RIGHT_MARGIN, topMargin=TOP_MARGIN, bottomMargin=BOTTOM_MARGIN,
+        )
+        styles = getSampleStyleSheet()
+        story: list = []
+        for i, label in enumerate(labels):
+            if i > 0:
+                story.append(PageBreak())
+            _build_copy(story, data, label, styles, show_payment_application, pad)
+        doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+        return buffer.getvalue(), doc.page
+
+    # A statement that overflows a page by just a row or two used to leave a page holding almost nothing (2026-09-27). So: build at the normal
+    # row height, and only if tighter rows would save whole pages, use the roomiest tightening that gets the fewest pages.
+    best_pdf, best_pages = build(5)
+    for pad in (4, 3, 2.5):
+        if best_pages <= len(labels):
+            break
+        pdf, pages = build(pad)
+        if pages < best_pages:
+            best_pdf, best_pages = pdf, pages
+    return best_pdf
 
 
 # --- 80mm thermal-printer statement (continuous roll, single copy) ---------
@@ -330,7 +390,7 @@ def _thermal_lines(data: dict) -> list[dict]:
     for i in data["invoices"]:
         add(i["doc_ref"])
         add(f"  Recv {i['invoice_date']}  Due {i['due_date']}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, color=GREY)
-        add(f"  Net PHP {_money(i['amount'])}   [{i['status']}]", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
+        add(f"  Net PHP {_money(i['amount'])}   [{i['display_status']}]", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
     add_divider()
 
     if data["memos"]:

@@ -67,6 +67,7 @@ from engines.check_engine import (
 from engines.cc_service import settle_cc_statement_via_cash, get_statement_gap_alerts, get_annual_fee_alerts, get_statement_coverage
 from engines.checkbook_service import audit_booklet_gaps, get_checkbook_alerts
 from engines.last_modified_sql import statement_modified_sql, loan_note_modified_sql, bank_loan_modified_sql
+from engines.global_search_service import search_everything
 from engines.park_draft_service import save_park_draft, load_park_draft, clear_park_draft, list_park_drafts
 from engines.check_run_service import (
     get_pending_check_run,
@@ -77,6 +78,7 @@ from engines.check_run_service import (
     generate_batch_csv,
     generate_pending_check_run_csv,
     generate_batch_txt,
+    sort_by_print_order,
     generate_pending_check_run_txt,
     print_batch_tag,
     file_name_for_checks,
@@ -215,11 +217,11 @@ def duplicate_warning_dialog(key: str, fp: str, warnings: list) -> None:
         st.markdown(f"- {w}")
     st.markdown("**Do you still want to continue?**")
     c1, c2 = st.columns(2)
-    if c1.button("Yes, continue anyway", icon=":material/check:", width="stretch", key=f"{key}_dup_yes"):
+    if c1.button("Yes, continue anyway  [Enter]", icon=":material/check:", width="stretch", key=f"{key}_dup_yes"):
         st.session_state[f"_dup_ok::{key}"] = {"fp": fp, "ts": time.monotonic()}
         st.session_state[f"_dup_resume::{key}"] = time.monotonic()
         st.rerun()
-    if c2.button("No, go back", width="stretch", key=f"{key}_dup_no"):
+    if c2.button("No, go back  [Esc]", width="stretch", key=f"{key}_dup_no"):
         st.rerun()
 
 
@@ -505,6 +507,43 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
                     st.session_state[f"_clear_{key_prefix}_assign_manual_number"] = True
                 return ok, msg
             confirm_create_dialog(summary, f"{key_prefix}_assign_check_number", _do_assign)
+
+    # Whole batch at once (2026-09-27): the same booklet leaves, but for every unnumbered check of THIS order statement / loan note, previewed
+    # and confirmed once -- the check-per-batch discipline stays, without one confirmation per check.
+    if len(unnumbered_df) >= 2 and not booklets_df.empty:
+        with st.expander(f"Assign all {len(unnumbered_df)} unnumbered checks of this batch in sequence"):
+            st.caption("The next free leaves of the booklet go to this batch's checks in the order they were created (the order Chrysanth prints them). "
+                       "Leaves already used or spoiled are skipped. Review the list, then one confirmation assigns them all — all or nothing, every leaf re-checked when saving.")
+            seq_batch_rows = unnumbered_df.sort_values("check_id")
+            seq_bid = st.selectbox("Booklet", options=list(b_options.keys()), format_func=lambda bid: b_options[bid], key=f"{key_prefix}_seq_booklet")
+            seq_free = get_available_booklet_numbers(bank_account_id, booklets_df.set_index("booklet_id").loc[int(seq_bid)])
+            seq_default = int(seq_free[0]) if seq_free else int(booklets_df.set_index("booklet_id").loc[int(seq_bid)]["start_number"])
+            seq_start = st.number_input("Start at leaf (first free one is pre-filled)", value=seq_default, step=1, format="%d", key=f"{key_prefix}_seq_start_{seq_bid}_{seq_default}")
+            seq_plan, seq_skipped, seq_err = plan_sequential_numbers(int(seq_bid), int(seq_start), [int(x) for x in seq_batch_rows["check_id"]])
+            if seq_err:
+                st.error(seq_err)
+            else:
+                seq_leaf = dict(seq_plan)
+                seq_view = seq_batch_rows[["check_id", "check_date", "amount"]].copy()
+                seq_view.insert(0, "check_number", [str(seq_leaf[int(c)]) for c in seq_view["check_id"]])
+                seq_view.insert(0, "no", range(1, len(seq_view) + 1))
+                st.dataframe(seq_view.drop(columns="check_id"), hide_index=True, column_config={
+                    "no": "#", "check_number": "Check number", "check_date": "Check date", "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f")})
+                if seq_skipped:
+                    st.caption(f"Skipping {len(seq_skipped)} leaf/leaves already used or spoiled: {', '.join(str(n) for n in seq_skipped[:12])}{' …' if len(seq_skipped) > 12 else ''}")
+                seq_first, seq_last = seq_plan[0][1], seq_plan[-1][1]
+                if st.button(f"Assign {len(seq_plan)} numbers ({seq_first} – {seq_last})", icon=":material/format_list_numbered:", key=f"{key_prefix}_seq_btn", type="primary"):
+                    seq_summary = (
+                        f"Assign **{len(seq_plan)}** check numbers **{seq_first}** to **{seq_last}** from **{b_options[int(seq_bid)]}** to this batch's checks "
+                        f"(first: {seq_batch_rows.iloc[0]['check_date']} {php(seq_batch_rows.iloc[0]['amount'])}; last: {seq_batch_rows.iloc[-1]['check_date']} {php(seq_batch_rows.iloc[-1]['amount'])}; "
+                        f"total {php(float(seq_batch_rows['amount'].sum()))})?" + (f" {len(seq_skipped)} used/spoiled leaf/leaves are skipped." if seq_skipped else ""))
+
+                    def _do_seq_assign(plan=list(seq_plan), bid=int(seq_bid)):
+                        ok, msg, ids = assign_check_numbers_from_booklet(plan, bid)
+                        if ok:
+                            st.toast(msg)
+                        return ok, msg
+                    confirm_create_dialog(seq_summary, f"{key_prefix}_seq_assign", _do_seq_assign)
     _render_retract_number_section(active_df, key_prefix)
 
 
@@ -1039,6 +1078,67 @@ def assign_check_numbers_manual(assignments: dict[int, str], booklet_id: int | N
             assigned_ids.append(check_id)
         conn.commit()
     return True, f"Assigned check numbers to {len(assigned_ids)} check(s).", assigned_ids
+
+
+def plan_sequential_numbers(booklet_id: int, start_number: int | None, check_ids: list[int]) -> tuple[list[tuple[int, int]], list[int], str | None]:
+    """Fast bulk assignment (2026-09-27): the next consecutive FREE leaves of a booklet, from start_number (default: its first free leaf), for
+    check_ids in the given order. Leaves already used or logged as spoiled are stepped over. Returns (pairs [(check_id, leaf)], the leaves
+    stepped over, error). Nothing is written -- this is the preview the user reviews before one confirmation."""
+    if not check_ids:
+        return [], [], "Pick at least one check."
+    with get_conn() as conn:
+        cur = conn.cursor()
+        brow = _booklet_row_dict(cur, booklet_id)
+        if not brow:
+            return [], [], "Booklet not found."
+        bank_account_id = int(brow["bank_account_id"])
+    free = get_available_booklet_numbers(bank_account_id, brow)
+    if start_number is not None:
+        free = [n for n in free if n >= int(start_number)]
+    if len(free) < len(check_ids):
+        return [], [], f"Only {len(free)} free leaf/leaves are left from there in this booklet, but {len(check_ids)} checks need a number."
+    leaves = free[:len(check_ids)]
+    free_set = set(leaves)
+    stepped_over = [n for n in range(leaves[0], leaves[-1] + 1) if n not in free_set]
+    return list(zip(check_ids, leaves)), stepped_over, None
+
+
+class _BulkAssignError(Exception):
+    pass
+
+
+def assign_check_numbers_from_booklet(assignments: list[tuple[int, int]], booklet_id: int) -> tuple[bool, str, list[int]]:
+    """Assigns the planned (check_id, leaf) pairs in ONE transaction -- all or nothing. Every leaf is re-validated at write time (inside the
+    booklet, still free, not spoiled) exactly as a single assignment is, and the booklet's next-free pointer moves on. Each is audit-logged."""
+    if not assignments:
+        return False, "Nothing to assign.", []
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            brow = _booklet_row_dict(cur, booklet_id)
+            if not brow:
+                raise _BulkAssignError("Booklet not found.")
+            done = []
+            for check_id, leaf in sorted(assignments, key=lambda x: x[1]):
+                cur.execute("SELECT bank_account_id FROM checks_issued WHERE check_id = ? AND status = 'Active' AND check_number IS NULL", (check_id,))
+                row = cur.fetchone()
+                if not row:
+                    raise _BulkAssignError(f"Check {check_id} is not an Active check without a number any more.")
+                number, err = assign_check_number_from_booklet(cur, row[0], brow, int(leaf))
+                if err:
+                    raise _BulkAssignError(err)
+                cur.execute("UPDATE checks_issued SET check_number = ?, booklet_id = ? WHERE check_id = ?", (number, booklet_id, check_id))
+                cur.execute(
+                    "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_NUMBER_ASSIGNED', 'checks_issued', ?, ?)",
+                    (check_id, f"Assigned check number {number} (bulk, booklet {booklet_id})"),
+                )
+                done.append(check_id)
+            conn.commit()
+    except _BulkAssignError as e:
+        return False, f"{e} Nothing was assigned.", []
+    except sqlite3.IntegrityError as e:          # the database's own duplicate-number rule
+        return False, f"{e}. Nothing was assigned.", []
+    return True, f"Assigned {len(done)} check numbers.", done
 
 
 def get_batch_balance(statement_id: int) -> tuple[float, float, float]:
@@ -1674,20 +1774,66 @@ def edit_parked_check(check_id: int, new_amount: float, new_check_date: date) ->
     return True, f"{len(changes)} field(s) updated."
 
 
-def log_spoiled_check(check_number: str, reason: str, bank_account_id: int = PRIMARY_BANK_ACCOUNT_ID) -> tuple[bool, str]:
+def spoiled_check_problems(check_number: str, bank_account_id: int = PRIMARY_BANK_ACCOUNT_ID) -> tuple[str, list[str], list[str]]:
+    """Checks a number about to be logged as spoiled (2026-09-27, a gap the user found: the same number could be logged twice, and
+    nothing looked at the booklets). Returns (canonical number, blocking problems, warnings):
+    - blocking: not a number; already logged as spoiled; already the number of a check on file.
+    - warning:  not inside any registered booklet's range (could be a leaf from a booklet that was never registered, so it can go ahead
+                once confirmed).
+    The number is stored in the full 10-digit form the checks use, so 7-digit and 10-digit typings of one leaf are the same leaf."""
+    text = str(check_number or "").strip()
+    if not text:
+        return text, ["Check number is required."], []
+    if not text.isdigit():
+        return text, ["A check number is digits only."], []
+    canonical = DEFAULT_BRANCH_CODE + text.zfill(7) if len(text) <= 7 else text
+    variants = _check_number_variants(canonical)
+    marks = ",".join("?" * len(variants))
+    blocking, warnings = [], []
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO spoiled_checks (bank_account_id, check_number, reason) VALUES (?, ?, ?)",
-            (bank_account_id, check_number, reason),
-        )
-        spoiled_id = cur.lastrowid
-        cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_SPOILED', 'spoiled_checks', ?, ?)",
-            (spoiled_id, f"Check {check_number} logged as spoiled: {reason or 'no reason given'}"),
-        )
-        conn.commit()
-    return True, f"Check {check_number} logged as spoiled under 'Error Checks Only (for control)'."
+        row = cur.execute(f"SELECT spoiled_id, logged_at FROM spoiled_checks WHERE bank_account_id = ? AND check_number IN ({marks}) LIMIT 1",
+                          (bank_account_id, *variants)).fetchone()
+        if row:
+            blocking.append(f"Check {canonical} is already logged as spoiled (entry #{row[0]}, {str(row[1])[:16]}) — one leaf can only be logged once.")
+        row = cur.execute(
+            f"""SELECT c.check_id, c.status, c.amount, cr.creditor_name FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
+                WHERE c.bank_account_id = ? AND c.check_number IN ({marks}) LIMIT 1""",
+            (bank_account_id, *variants),
+        ).fetchone()
+        if row:
+            blocking.append(f"Check {canonical} is already the number of a {row[1]} check to {row[3]} ({php(row[2])}) — it can't also be spoiled.")
+        key = int(_check_number_key(canonical))
+        in_range = False
+        for start, end in cur.execute("SELECT start_number, end_number FROM check_booklets WHERE bank_account_id = ?", (bank_account_id,)).fetchall():
+            if int(_check_number_key(start)) <= key <= int(_check_number_key(end)):
+                in_range = True
+                break
+        if not in_range:
+            warnings.append(f"Check {canonical} is not inside any registered booklet's range. Log it anyway only if the leaf really came from a booklet that isn't registered here.")
+    return canonical, blocking, warnings
+
+
+def log_spoiled_check(check_number: str, reason: str, bank_account_id: int = PRIMARY_BANK_ACCOUNT_ID) -> tuple[bool, str]:
+    canonical, blocking, _warnings = spoiled_check_problems(check_number, bank_account_id)
+    if blocking:
+        return False, blocking[0]
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO spoiled_checks (bank_account_id, check_number, reason) VALUES (?, ?, ?)",
+                (bank_account_id, canonical, reason),
+            )
+            spoiled_id = cur.lastrowid
+            cur.execute(
+                "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_SPOILED', 'spoiled_checks', ?, ?)",
+                (spoiled_id, f"Check {canonical} logged as spoiled: {reason or 'no reason given'}"),
+            )
+            conn.commit()
+    except sqlite3.IntegrityError as e:      # the database's own hard rule (a duplicate check number) caught what the screen check could not
+        return False, str(e)
+    return True, f"Check {canonical} logged as spoiled under 'Error Checks Only (for control)'."
 
 
 def build_dual_copy_check_pdf(payee_name: str, amount: float, check_date: date, bank_account_id: int = PRIMARY_BANK_ACCOUNT_ID) -> bytes | None:
@@ -2211,7 +2357,7 @@ def confirm_create_dialog(summary: str, action_key: str, action) -> None:
     real write and returns (ok, message); guard_duplicate_submit stops a double-clicked Confirm."""
     st.markdown(summary)
     c1, c2 = st.columns(2)
-    if c1.button("Yes, save it", icon=":material/check:", width="stretch", key=f"{action_key}_confirm"):
+    if c1.button("Yes, save it  [Enter]", icon=":material/check:", width="stretch", key=f"{action_key}_confirm"):
         if guard_duplicate_submit(action_key + "_confirm", summary):
             ok, msg = action()
             if ok:
@@ -2219,7 +2365,7 @@ def confirm_create_dialog(summary: str, action_key: str, action) -> None:
                 st.rerun()
             else:
                 st.error(msg)
-    if c2.button("Go back and edit", width="stretch", key=f"{action_key}_back"):
+    if c2.button("Go back and edit  [Esc]", width="stretch", key=f"{action_key}_back"):
         st.rerun()
 
 
@@ -2818,6 +2964,28 @@ def _jump(tab_label: str, **state) -> None:
         st.session_state[k] = v
 
 
+_pending_global_jump = st.session_state.pop("_global_jump", None)
+if _pending_global_jump:
+    _jump(tab_labels[_pending_global_jump["tab"]], **_pending_global_jump["state"])
+
+@st.dialog("Search everything", width="large")
+def global_search_dialog() -> None:
+    st.caption("Results update as you type (at least 2 characters). Finds checks, invoices, order statements, loan notes, bank loans, creditors, credit cards and spoiled checks — by number, reference, name, TIN/contact or an exact amount. Click a result to open it.")
+    term = st.text_input("Search", key="global_search_q", placeholder="e.g. 3992554313, 69055, Tire Asia, 81711.50 …", label_visibility="collapsed")
+    if len((term or "").strip()) < 2:
+        return
+    groups = search_everything(term)
+    if not groups:
+        st.info(f"Nothing found for '{term}'.")
+    for gi, g in enumerate(groups):
+        more = f" — showing {len(g['rows'])} of {g['total']}" if g["total"] > len(g["rows"]) else ""
+        st.markdown(f"**{g['title']}** ({g['total']}){more}")
+        for ri, r in enumerate(g["rows"]):
+            if st.button(r["label"], key=f"gs_{gi}_{ri}", width="stretch"):
+                st.session_state["_global_jump"] = {"tab": r["tab"], "state": r["state"]}
+                st.rerun()
+
+
 with st.sidebar:
     park_draft_slot = st.empty()      # "checks typed but not parked" reminder, filled at the end of the script
     if IS_SANDBOX:
@@ -2897,6 +3065,9 @@ with st.sidebar:
                         _jump(TAB_LENDERS, selected_loan_note_id=m["id"], ln_mode="🔍 Browse Loan Notes")
                     else:
                         _jump(TAB_BANK_LOANS, selected_bank_loan_id=m["id"], bl_mode="🔍 Browse Bank Loans")
+
+    if st.button("Search everything  [ / ]", icon=":material/search:", key="global_search_open_side", width="stretch"):
+        global_search_dialog()
 
     st.divider()
     # Mini calendar grid, not a flat list (2026-09-17, revised per user's actual purpose: a quick
@@ -3005,6 +3176,23 @@ with st.sidebar:
 
     st.divider()
     st.button("Refresh data", icon=":material/refresh:", on_click=lambda: st.cache_data.clear(), width="stretch")
+    with st.expander("Keyboard shortcuts", icon=":material/keyboard:"):
+        st.markdown(
+            "| Keys | What it does |" + chr(10) + "|---|---|" + chr(10)
+            + "| **Enter** | In a confirmation pop-up: **Yes** (unless a button is focused) |" + chr(10)
+            + "| **Esc** | In a pop-up: go back |" + chr(10)
+            + "| **Alt + 1 … 9, 0** | Switch main tab (1 = Dashboard … 0 = the tenth tab) — hover a tab to see its key |" + chr(10)
+            + "| **/** | Open **Search everything** (checks, invoices, batches, loans, creditors, cards…) |" + chr(10)
+            + "| **Alt + P** | Press the screen's main **P**ark / Save / Add button (only if there is one) |" + chr(10)
+            + "| **Alt + N** | Open the **N**ew … form (New Batch, New Loan Note, New Bank Loan) |" + chr(10)
+            + "| **Tab / Shift+Tab** | Next / previous box or button |" + chr(10)
+            + "| **Enter / Space** | Press the focused button |" + chr(10)
+            + "| **↑ ↓** | Move through a dropdown (or just type to search it) |"
+        )
+
+st.markdown("<style>.st-key-global_search_open_main{position:absolute;width:0;height:0;overflow:hidden;opacity:0;}</style>", unsafe_allow_html=True)
+if st.button("Search everything", key="global_search_open_main"):
+    global_search_dialog()
 
 (
     tab_dashboard,
@@ -3819,7 +4007,11 @@ with tab_suppliers:
                        WHERE statement_id = os.statement_id AND status = 'Active' AND check_date <= DATE('now', 'localtime')), 0
                   ) AS outstanding,
                   os.status, os.is_locked, datetime(os.created_at, 'localtime') AS created_at,
-                  """ + statement_modified_sql("os") + """ AS last_modified
+                  """ + statement_modified_sql("os") + """ AS last_modified,
+                  CASE WHEN os.status = 'Cancelled' THEN 'Cancelled'
+                       WHEN EXISTS (SELECT 1 FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' AND k.printed_at IS NOT NULL) THEN 'Issued'
+                       WHEN EXISTS (SELECT 1 FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active') THEN 'Parked'
+                       ELSE 'Draft' END AS stage
            FROM order_statements os
            JOIN creditors c ON os.creditor_id = c.creditor_id
            JOIN v_batch_net_totals v ON v.statement_id = os.statement_id
@@ -3956,7 +4148,8 @@ with tab_suppliers:
                 "Filter: supplier", options=sorted(statements_df["creditor_name"].unique()), key="batch_filter_supplier"
             )
             status_filter_browser = fc2.multiselect(
-                "Filter: status", options=sorted(statements_df["status"].unique()), key="batch_filter_status"
+                "Filter: status", options=[s for s in ("Draft", "Parked", "Issued", "Cancelled") if s in set(statements_df["stage"])], key="batch_filter_status",
+                help="Draft = no checks yet · Parked = checks parked, none printed yet · Issued = at least one check already exported/printed · Cancelled"
             )
             created_dates = pd.to_datetime(statements_df["created_at"]).dt.date
             full_range = (min(created_dates.min(), date.today()), max(created_dates.max(), date.today()))
@@ -3989,7 +4182,7 @@ with tab_suppliers:
             if supplier_filter:
                 filtered_statements_df = filtered_statements_df[filtered_statements_df["creditor_name"].isin(supplier_filter)]
             if status_filter_browser:
-                filtered_statements_df = filtered_statements_df[filtered_statements_df["status"].isin(status_filter_browser)]
+                filtered_statements_df = filtered_statements_df[filtered_statements_df["stage"].isin(status_filter_browser)]
             if isinstance(date_range, tuple) and len(date_range) == 2:
                 start_d, end_d = date_range
                 row_dates = pd.to_datetime(filtered_statements_df["created_at"]).dt.date
@@ -3999,7 +4192,7 @@ with tab_suppliers:
 
             st.caption("Click a row to open that batch — every action below (invoices, credit memo, lock/unlock, issue check, export) defaults to it.")
             browser_event = st.dataframe(
-                filtered_statements_df,
+                filtered_statements_df.assign(status=filtered_statements_df["stage"]).drop(columns=["stage"]),      # shown status: Draft / Parked / Issued
                 hide_index=True,
                 on_select="rerun",
                 selection_mode="single-row",
@@ -4016,6 +4209,56 @@ with tab_suppliers:
             if selected_rows and selected_rows[0] < len(filtered_statements_df):
                 st.session_state["selected_statement_id"] = int(filtered_statements_df.iloc[selected_rows[0]]["statement_id"])
             selected_sid = st.session_state.get("selected_statement_id")
+
+            with st.expander("Print statements in bulk"):
+                st.caption("Print the statements of several order statements in one go, as one combined PDF. Printing here does not lock batches and nothing is marked as printed, "
+                           "so you can always reprint after an adjustment or revision.")
+                bp1, bp2 = st.columns([2, 3])
+                # "Session" = since the day checks were last printed (2026-09-27, per user: checks are not issued every day, so a calendar day or a page
+                # visit is the wrong yardstick). The last print day is the latest date any check was exported / printed.
+                _lp = q_live("SELECT DATE(MAX(printed_at), 'localtime') AS d FROM checks_issued")["d"][0]
+                bp_last_print_day = str(_lp)[:10] if has_value(_lp) else None
+                bp_scope = bp1.radio("Which order statements", ["Since last check print", "Today", "Last 7 days", "All"], horizontal=True, key="bulk_print_scope",
+                                     help="'Since last check print' = created or changed on or after the day checks were last printed / exported to Chrysanth"
+                                          + (f" ({bp_last_print_day})." if bp_last_print_day else " (no check has been printed yet, so this shows everything)."))
+                bp_since = {"Since last check print": f"{bp_last_print_day} 00:00:00" if bp_last_print_day else "0000-00-00", "Today": f"{date.today():%Y-%m-%d} 00:00:00",
+                            "Last 7 days": f"{date.today() - timedelta(days=6):%Y-%m-%d} 00:00:00", "All": "0000-00-00"}[bp_scope]
+                bp_pool = statements_df[(statements_df["stage"] != "Cancelled") & (statements_df["last_modified"].astype(str) >= bp_since)].sort_values("statement_ref")
+                if bp_pool.empty:
+                    st.info(f"No order statements {f'created or changed since {bp_last_print_day}, the day checks were last printed,' if bp_scope == 'Since last check print' else 'in that period'} — pick a wider range above.")
+                else:
+                    bp_labels = {int(r["statement_id"]): f"{r['statement_ref']} · {r['creditor_name']} · {php(r['net_total'])} · {r['stage']}" for _, r in bp_pool.iterrows()}
+                    bp_picked = st.multiselect(f"Statements to print ({len(bp_labels)} found — untick any you don't want)", options=list(bp_labels), default=list(bp_labels),
+                                               format_func=lambda sid: bp_labels[sid], key=f"bulk_print_pick_{bp_scope}_{len(bp_labels)}")
+                    bt1, bt2 = st.columns(2)
+                    bp_type = bt1.radio("Statement type", ["Batch Statement (A4)", "Thermal 80mm"], horizontal=True, key="bulk_print_type")
+                    bp_history = bt2.toggle("Include full check history (incl. cancelled/replaced)", value=True, key="bulk_print_history")
+                    bp_copies = "both"
+                    bp_apply = False
+                    if bp_type == "Batch Statement (A4)":
+                        bp_copies = st.radio("Copies to print", ["both", "filing", "supplier"], horizontal=True, key="bulk_print_copies",
+                                             format_func=lambda c: {"both": "Both (filing + supplier)", "filing": "Filing copy only", "supplier": "Supplier copy only"}[c])
+                        bp_apply = st.toggle("Include payment application & running balance", value=False, key="bulk_print_apply")
+                    if st.button(f"Generate one PDF for {len(bp_picked)} statement(s)", icon=":material/picture_as_pdf:", type="primary", disabled=not bp_picked, key="bulk_print_btn"):
+                        merged = PdfWriter()
+                        made, failed = 0, []
+                        for sid in bp_picked:
+                            one = (generate_batch_statement_pdf(sid, bp_history, bp_copies, bp_apply) if bp_type == "Batch Statement (A4)"
+                                   else generate_batch_statement_thermal_pdf(sid, bp_history))
+                            if not one:
+                                failed.append(bp_labels[sid])
+                                continue
+                            for page in PdfReader(io.BytesIO(one)).pages:
+                                merged.add_page(page)
+                            made += 1
+                        if made:
+                            out = io.BytesIO()
+                            merged.write(out)
+                            st.success(f"{made} statement(s) combined into one PDF." + (f" Could not generate: {'; '.join(failed)}" if failed else ""))
+                            pdf_preview_and_download(out.getvalue(), f"statements_{datetime.now():%Y%m%d_%H%M}{'_thermal' if bp_type != 'Batch Statement (A4)' else ''}.pdf",
+                                                     key="bulk_print_download", label="Combined statements PDF")
+                        else:
+                            st.error("Could not generate any statement PDF.")
 
             with st.expander("Promote statement status"):
                 st.caption("Informational only — checks can be issued from any status once the batch has a payable balance. Promotion is not required.")
@@ -6896,16 +7139,21 @@ with tab_checks:
         with st.form("spoiled_check_form", border=False):
             spoiled_number = st.text_input("Check number", value=suggested_number, help="Edit if the spoiled leaf's physical number differs from the suggested next number.")
             spoiled_reason = st.text_input("Reason", placeholder="e.g. printer jam, misaligned print")
-            if st.form_submit_button("Log spoiled check", icon=":material/report:"):
-                if not spoiled_number:
-                    st.error("Check number is required.")
-                elif guard_duplicate_submit("log_spoiled_check", spoiled_number, spoiled_reason):
-                    ok, msg = log_spoiled_check(spoiled_number, spoiled_reason)
-                    (st.success if ok else st.error)(msg)
-                    if ok:
-                        refresh()
-                else:
-                    st.warning("Duplicate submission ignored — identical to the click just before it.")
+            _spoil_submitted = st.form_submit_button("Log spoiled check", icon=":material/report:")
+        # handled outside the form: the "not in any booklet" confirmation pop-up has its own buttons, which a form cannot hold
+        if _spoil_submitted or dup_resume("log_spoiled_check"):
+            _sp_number, _sp_blocking, _sp_warnings = spoiled_check_problems(spoiled_number)
+            if _sp_blocking:
+                st.error(_sp_blocking[0])
+            elif dup_needs_confirm("log_spoiled_check", _sp_warnings):
+                pass
+            elif guard_duplicate_submit("log_spoiled_check", spoiled_number, spoiled_reason):
+                ok, msg = log_spoiled_check(spoiled_number, spoiled_reason)
+                (st.success if ok else st.error)(msg)
+                if ok:
+                    refresh()
+            else:
+                st.warning("Duplicate submission ignored — identical to the click just before it.")
 
     spoiled_df = q("SELECT * FROM spoiled_checks ORDER BY spoiled_id DESC")
     if not spoiled_df.empty:
@@ -7779,13 +8027,16 @@ with tab_admin:
                 )
                 if st.button("Run gap audit", icon=":material/search:"):
                     result = audit_booklet_gaps(int(audit_pick))
-                    a1, a2, a3, a4 = st.columns(4)
+                    a1, a2, a3, a5, a4 = st.columns(5)
                     a1.metric("Total leaves", result["total_leaves"], border=True)
                     a2.metric("Missing gaps", result["missing_gaps_count"], border=True)
                     a3.metric("Duplicates", result["duplicate_numbers_count"], border=True)
+                    a5.metric("Spoiled (error checks)", result["spoiled_count"], border=True)
                     a4.metric("Booklet", result["booklet_code"], border=True)
                     if result["missing_gaps_count"] > 0:
                         st.error(f"Unaccounted (skipped) check numbers: {', '.join(result['missing_gaps_list'])}")
+                    if result["spoiled_count"] > 0:
+                        st.info(f"Spoiled leaves logged as error checks (accounted for, not missing): {', '.join(result['spoiled_list'])}")
                     if result["duplicate_numbers_count"] > 0:
                         st.warning(f"Same leaf recorded under conflicting text (e.g. \"1\" vs \"01\"): {', '.join(result['duplicate_numbers_list'])} — see the breakdown below for details.")
                     st.dataframe(result["detailed_breakdown"], hide_index=True)
@@ -7849,3 +8100,97 @@ components.html(
     "<script>try{window.parent.onbeforeunload=" + ("function(e){e.preventDefault();e.returnValue='';return '';}" if _pending_drafts else "null") + ";}catch(e){}</script>",
     height=0,
 )
+
+# Keyboard shortcuts (2026-09-27, per user: less trackpad/mouse). Streamlit has no hotkey setting, so a small script on the page listens for keys and clicks
+# the matching control. It replaces its own listener on every run, so it never doubles up. The list is shown in the sidebar (Keyboard shortcuts).
+components.html(r"""<script>
+(function () {
+  var P = window.parent, D = P.document;
+  if (P.__apHotkeys) D.removeEventListener('keydown', P.__apHotkeys, true);
+  function visible(el) { return el && el.offsetParent !== null; }
+  function isTyping(t) { if (!t) return false; var tag = (t.tagName || '').toLowerCase(); return tag === 'input' || tag === 'textarea' || t.isContentEditable; }
+  function buttons(root) { return Array.from(root.querySelectorAll('button')).filter(function (b) { return !b.disabled && visible(b); }); }
+  function flash(msg) {
+    var old = D.getElementById('ap-hotkey-flash'); if (old) old.remove();
+    var d = D.createElement('div'); d.id = 'ap-hotkey-flash'; d.textContent = msg;
+    d.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1f3a5f;color:#fff;padding:10px 18px;border-radius:8px;z-index:99999;font-size:14px;';
+    D.body.appendChild(d); setTimeout(function () { d.remove(); }, 2600);
+  }
+  function searchBox() { return Array.from(D.querySelectorAll('input')).find(function (i) { return (i.placeholder || '').indexOf('Check #') === 0; }); }
+  var handler = function (e) {
+    var dlg = D.querySelector('[role=dialog]');
+    if (dlg) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.ctrlKey) {
+        var a = D.activeElement;
+        if (a && a.tagName === 'BUTTON') return;                      // a focused button keeps its own behaviour
+        var yes = buttons(dlg).find(function (b) { return /^\s*(\S+\s+)?yes/i.test(b.innerText || ''); });
+        if (yes) { yes.click(); e.preventDefault(); }
+      } else if (e.key === 'Escape') {
+        var back = buttons(dlg).find(function (b) { return /go back|no, go back/i.test(b.innerText || ''); });
+        if (back) { back.click(); e.preventDefault(); }
+      }
+      return;
+    }
+    if (e.altKey && !e.ctrlKey && !e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
+      var n = e.code === 'Digit0' ? 9 : parseInt(e.code.slice(5), 10) - 1;
+      var main = Array.from(D.querySelectorAll('[role=tablist]')).find(function (l) { return l.querySelectorAll('[role=tab]').length >= 10 && /Dashboard/.test(l.innerText); });
+      var tabs = main ? main.querySelectorAll('[role=tab]') : [];
+      if (tabs[n]) { tabs[n].click(); e.preventDefault(); }
+      return;
+    }
+    if (e.key === '/' && !e.altKey && !e.ctrlKey && !isTyping(e.target)) {
+      var opener = D.querySelector('.st-key-global_search_open_main button');
+      if (opener) {
+        opener.click();
+        var tries = 0, timer = setInterval(function () {                 // put the cursor in the pop-up's search box as soon as it exists
+          var inp = D.querySelector('[role=dialog] input');
+          if (inp) { inp.focus(); clearInterval(timer); } else if (++tries > 30) { clearInterval(timer); }
+        }, 100);
+      } else { var box = searchBox(); if (box) box.focus(); }
+      e.preventDefault();
+      return;
+    }
+    if (e.altKey && !e.ctrlKey && !e.shiftKey && e.code === 'KeyP') {
+      var area = D.querySelector('[data-testid="stMain"]') || D;
+      var re = /Park Metrobank checks|Save invoice changes|Save statement changes|Add statement|Assign check number|Save changes|Save parked check edits|Save check corrections|Add installment|Add invoice|Create schedule rows/i;
+      var cands = buttons(area).filter(function (b) { return re.test(b.innerText || ''); });
+      if (cands.length === 1) { cands[0].click(); }
+      else if (cands.length === 0) { flash('No Park / Save button on this screen.'); }
+      else { flash(cands.length + ' Park / Save buttons here - click the one you want.'); }
+      e.preventDefault();
+      return;
+    }
+    if (e.altKey && !e.ctrlKey && !e.shiftKey && e.code === 'KeyN') {
+      var area2 = D.querySelector('[data-testid="stMain"]') || D;
+      var nb = buttons(area2).find(function (b) { return /New (Batch|Loan Note|Bank Loan)/i.test(b.innerText || ''); });
+      if (nb) { nb.click(); } else { flash('No "New ..." form on this screen.'); }
+      e.preventDefault();
+    }
+  };
+  P.__apHotkeys = handler;
+  D.addEventListener('keydown', handler, true);
+  // Search as you type: Streamlit only reads a text box on Enter, so once you pause typing in the Search everything box a synthetic Enter is sent.
+  if (P.__apLiveSearch) D.removeEventListener('input', P.__apLiveSearch, true);
+  P.__apLiveSearch = function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== 'INPUT' || !t.closest('[role=dialog]') || (t.placeholder || '').indexOf('e.g. 3992554313') !== 0) return;
+    if (P.__apSearchTimer) P.clearTimeout(P.__apSearchTimer);
+    P.__apSearchTimer = P.setTimeout(function () {
+      t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+    }, 350);
+  };
+  D.addEventListener('input', P.__apLiveSearch, true);
+  // hovering a main tab shows its hotkey (Streamlit redraws tabs now and then, so this is re-applied every second)
+  function labelTabs() {
+    var main = Array.from(D.querySelectorAll('[role=tablist]')).find(function (l) { return l.querySelectorAll('[role=tab]').length >= 10 && /Dashboard/.test(l.innerText); });
+    if (!main) return;
+    Array.from(main.querySelectorAll('[role=tab]')).slice(0, 10).forEach(function (t, i) {
+      var tip = 'Alt+' + ((i + 1) % 10);
+      if (t.title !== tip) t.title = tip;
+    });
+  }
+  if (P.__apHotkeyTimer) P.clearInterval(P.__apHotkeyTimer);
+  P.__apHotkeyTimer = P.setInterval(labelTabs, 1000);
+  labelTabs();
+})();
+</script>""", height=0)

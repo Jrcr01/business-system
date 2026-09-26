@@ -51,6 +51,7 @@ import engines.cc_service as cc_service  # noqa: E402
 import engines.check_engine as check_engine  # noqa: E402
 import engines.check_run_service as check_run_service  # noqa: E402
 import engines.park_draft_service as park_draft_service  # noqa: E402
+import engines.global_search_service as global_search_service  # noqa: E402
 import engines.checkbook_service as checkbook_service  # noqa: E402
 import engines.dashboard_kpi_service as dashboard_kpi_service  # noqa: E402
 import engines.duplicate_service as duplicate_service  # noqa: E402
@@ -71,7 +72,7 @@ import engines.validators as validators  # noqa: E402
 # here means that module silently keeps pointing at the real production DB.
 _DB_PATH_MODULES = [
     app, analytics_service, db_engine, backup_service, bank_loan_report_service, bank_loan_service,
-    batch_statement_service, cc_service, check_engine, check_run_service, park_draft_service,
+    batch_statement_service, cc_service, check_engine, check_run_service, park_draft_service, global_search_service,
     checkbook_service, dashboard_kpi_service, duplicate_service, cc_payment_service, duplicate_scan_service, invoice_template_service, overview_report_service, interest_service, loan_note_service, loan_schedule_service,
     reports_service, search_service, soa_matcher, validators,
 ]

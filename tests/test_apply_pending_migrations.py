@@ -37,6 +37,8 @@ def test_diff_and_sync_skips_index_when_data_already_violates_it(tmp_path):
     db_path = str(tmp_path / "target.db")
     _build_target_without_the_new_index(db_path)
     conn = sqlite3.connect(db_path)
+    for _t in ("trg_checks_issued_no_duplicate_bi", "trg_checks_issued_no_duplicate_bu", "trg_spoiled_checks_no_duplicate_bi"):
+        conn.execute(f"DROP TRIGGER IF EXISTS {_t}")      # simulate legacy data written before the database-level rule existed
     conn.execute(
         "INSERT INTO creditors (creditor_id, creditor_name, creditor_type) VALUES (1, 'Test Co', 'SUPPLIER')"
     )

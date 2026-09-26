@@ -59,6 +59,8 @@ def test_audit_flags_true_duplicate_check_number(db):
     _insert_check(db, statement_id, creditor_id, 2000)  # "3990002000", the modern booklet format
     import sqlite3
     conn = sqlite3.connect(db)
+    for _t in ("trg_checks_issued_no_duplicate_bi", "trg_checks_issued_no_duplicate_bu", "trg_spoiled_checks_no_duplicate_bi"):
+        conn.execute(f"DROP TRIGGER IF EXISTS {_t}")      # simulate legacy data written before the database-level rule existed
     conn.execute(
         "INSERT INTO checks_issued (bank_account_id, statement_id, creditor_id, check_number, amount, check_date, status) "
         "VALUES (?, ?, ?, '2000', ?, ?, 'Active')",
@@ -270,3 +272,30 @@ def test_a_typed_number_always_wins_over_the_booklet_dropdown():
     assert app.pick_number_source(1, 3992554304, "3992542553") == ("manual", "3992542553")
     assert app.pick_number_source(1, 3992554304, "  ") == ("booklet", (1, 3992554304))
     assert app.pick_number_source(None, None, None) == ("none", None)
+
+
+def test_audit_shows_spoiled_leaves_as_error_checks_not_open_stock_or_gaps(db):
+    """2026-09-27: leaves logged under 'Log a spoiled check' were invisible to the audit -- still 'Open Stock', or a 'MISSING GAP' when an
+    issued number lay beyond them."""
+    creditor_id = make_creditor(db, creditor_type="SUPPLIER")
+    statement_id = make_statement(db, creditor_id)
+    app.create_booklet(BANK_ACCOUNT_ID, "TEST-BOOK-3", 3990003000, 3990003005, date(2026, 1, 1))
+    booklet_id = fetchone(db, "SELECT booklet_id FROM check_booklets WHERE booklet_code = 'TEST-BOOK-3'")[0]
+    assert app.log_spoiled_check("3990003001", "printer jam")[0]
+    assert app.log_spoiled_check("3990003003", "")[0]
+    import sqlite3
+    conn = sqlite3.connect(db)
+    conn.execute("INSERT INTO checks_issued (bank_account_id, statement_id, creditor_id, check_number, amount, check_date, status) VALUES (?, ?, ?, '3990003004', 100, '2026-01-01', 'Active')",
+                 (BANK_ACCOUNT_ID, statement_id, creditor_id))
+    conn.commit()
+    conn.close()
+
+    result = audit_booklet_gaps(booklet_id)
+    states = dict(zip(result["detailed_breakdown"]["check_number"], result["detailed_breakdown"]["state"]))
+
+    assert states["3990003001"] == "Spoiled (error check)" and states["3990003003"] == "Spoiled (error check)"
+    assert result["spoiled_count"] == 2
+    notes = dict(zip(result["detailed_breakdown"]["check_number"], result["detailed_breakdown"]["note"]))
+    assert notes["3990003001"] == "Error check: printer jam"
+    assert result["missing_gaps_list"] == ["3990003000", "3990003002"]     # only the genuinely unaccounted leaves before the last issued one
+    assert states["3990003005"] == "Open Stock"

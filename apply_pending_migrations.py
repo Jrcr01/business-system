@@ -61,6 +61,10 @@ def _view_defs(conn: sqlite3.Connection) -> dict[str, str]:
     return {r[0]: r[1] for r in conn.execute("SELECT name, sql FROM sqlite_master WHERE type='view'")}
 
 
+def _trigger_defs(conn: sqlite3.Connection) -> dict[str, str]:
+    return {r[0]: r[1] for r in conn.execute("SELECT name, sql FROM sqlite_master WHERE type='trigger'")}
+
+
 def _index_defs(conn: sqlite3.Connection) -> dict[str, str]:
     # sqlite_autoindex_* entries are SQLite's own implicit indexes for PRIMARY KEY/UNIQUE column
     # constraints -- those already travel with the table's own CREATE TABLE statement, so only
@@ -90,7 +94,7 @@ def diff_and_sync(target_db_path: str, dry_run: bool = False) -> dict:
         ref.executescript(f.read())
 
     target = sqlite3.connect(target_db_path)
-    report = {"tables_added": [], "columns_added": [], "views_synced": [], "indexes_added": [], "skipped": []}
+    report = {"tables_added": [], "columns_added": [], "views_synced": [], "indexes_added": [], "triggers_synced": [], "skipped": []}
 
     ref_tables = _table_names(ref)
     target_tables = _table_names(target)
@@ -142,6 +146,16 @@ def diff_and_sync(target_db_path: str, dry_run: bool = False) -> dict:
         except sqlite3.IntegrityError as e:
             report["skipped"].append(f"index {index_name} ({e} -- existing data violates this constraint, needs manual cleanup first)")
 
+    # Triggers hold no data, so like views they are always safe to drop and recreate to match schema.sql.
+    ref_triggers = _trigger_defs(ref)
+    target_triggers = _trigger_defs(target)
+    for trigger_name, trigger_sql in ref_triggers.items():
+        if target_triggers.get(trigger_name) != trigger_sql:
+            report["triggers_synced"].append(trigger_name)
+            if not dry_run:
+                target.execute(f"DROP TRIGGER IF EXISTS {trigger_name}")
+                target.execute(trigger_sql)
+
     if not dry_run:
         target.commit()
     target.close()
@@ -192,6 +206,10 @@ def main():
         print(f"Indexes added ({len(report['indexes_added'])}):")
         for i in report["indexes_added"]:
             print(f"  + {i}")
+    if report["triggers_synced"]:
+        print(f"Triggers synced ({len(report['triggers_synced'])}):")
+        for t in report["triggers_synced"]:
+            print(f"  ~ {t}")
     if report["skipped"]:
         print(f"Skipped -- needs a hand-written migration ({len(report['skipped'])}):")
         for s in report["skipped"]:

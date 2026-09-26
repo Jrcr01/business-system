@@ -40,6 +40,11 @@ def test_renumbering_updates_short_numbers_and_leaves_full_ones(db, monkeypatch)
 def test_a_collision_stops_everything_without_changes(db, monkeypatch):
     creditor_id = make_creditor(db, creditor_type="SUPPLIER")
     statement_id = make_statement(db, creditor_id)
+    _conn = sqlite3.connect(db)
+    for _t in ("trg_checks_issued_no_duplicate_bi", "trg_checks_issued_no_duplicate_bu"):
+        _conn.execute(f"DROP TRIGGER IF EXISTS {_t}")      # simulate legacy data written before the database-level rule existed
+    _conn.commit()
+    _conn.close()
     _insert(db, statement_id, creditor_id, "2554250")
     _insert(db, statement_id, creditor_id, "3992554250")   # already the full form of the same leaf
     monkeypatch.setattr(sys, "argv", ["x", "--db", db])
