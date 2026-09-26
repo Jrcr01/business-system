@@ -19,7 +19,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from engines.db_engine import df_query, promote_draft_statement
-from engines.batch_statement_service import generate_batch_statement_pdf, generate_batch_statement_thermal_pdf
+from engines.batch_statement_service import generate_batch_statement_pdf, generate_batch_statement_thermal_pdf, bulk_summary_rows, generate_bulk_summary_pdf
 from engines.loan_note_service import generate_loan_note_pdf
 from engines.loan_schedule_import_service import parse_loan_schedule_spreadsheet, get_template_csv as get_schedule_template_csv
 from engines.bank_loan_service import (
@@ -4233,6 +4233,13 @@ with tab_suppliers:
                     bt1, bt2 = st.columns(2)
                     bp_type = bt1.radio("Statement type", ["Batch Statement (A4)", "Thermal 80mm"], horizontal=True, key="bulk_print_type")
                     bp_history = bt2.toggle("Include full check history (incl. cancelled/replaced)", value=True, key="bulk_print_history")
+                    bp_summary_on = st.toggle("Put a summary page of the included order statements in front", value=True, key="bulk_print_summary")
+                    bp_summary = bulk_summary_rows([int(x) for x in bp_picked])
+                    if bp_summary:
+                        st.dataframe(pd.DataFrame(bp_summary).drop(columns=["statement_id"]).rename(columns={
+                            "ref": "Order statement", "supplier": "Supplier", "stage": "Status", "invoices": "Invoices", "net_total": "Net total", "checks": "Checks", "checks_total": "Checks total"}),
+                            hide_index=True, column_config={"Net total": st.column_config.NumberColumn(format="₱ %.2f"), "Checks total": st.column_config.NumberColumn(format="₱ %.2f")})
+                        st.caption(f"{len(bp_summary)} order statement(s) · net total {php(sum(r['net_total'] for r in bp_summary))} · {sum(r['checks'] for r in bp_summary)} check(s) {php(sum(r['checks_total'] for r in bp_summary))}")
                     bp_copies = "both"
                     bp_apply = False
                     if bp_type == "Batch Statement (A4)":
@@ -4242,6 +4249,11 @@ with tab_suppliers:
                     if st.button(f"Generate one PDF for {len(bp_picked)} statement(s)", icon=":material/picture_as_pdf:", type="primary", disabled=not bp_picked, key="bulk_print_btn"):
                         merged = PdfWriter()
                         made, failed = 0, []
+                        if bp_summary_on and bp_summary:
+                            _scope_text = f"Since last check print ({bp_last_print_day})" if bp_scope == "Since last check print" and bp_last_print_day else bp_scope
+                            _type_text = bp_type + (f" · {dict(both='both copies', filing='filing copy', supplier='supplier copy')[bp_copies]}" if bp_type == "Batch Statement (A4)" else "")
+                            for page in PdfReader(io.BytesIO(generate_bulk_summary_pdf(bp_summary, _scope_text, _type_text))).pages:
+                                merged.add_page(page)
                         for sid in bp_picked:
                             one = (generate_batch_statement_pdf(sid, bp_history, bp_copies, bp_apply) if bp_type == "Batch Statement (A4)"
                                    else generate_batch_statement_thermal_pdf(sid, bp_history))

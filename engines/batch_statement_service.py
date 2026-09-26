@@ -335,6 +335,64 @@ def generate_batch_statement_pdf(statement_id: int, include_full_history: bool =
     return best_pdf
 
 
+def bulk_summary_rows(statement_ids: list[int]) -> list[dict]:
+    """One line per order statement for the bulk-print summary: ref, supplier, stage (Draft / Parked / Issued / Cancelled -- the same rule as the
+    order statement browser), invoice count, net total, active checks and their total."""
+    if not statement_ids:
+        return []
+    marks = ",".join("?" * len(statement_ids))
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            f"""SELECT os.statement_id, os.statement_ref, cr.creditor_name, os.status, v.net_total,
+                       (SELECT COUNT(*) FROM invoices i WHERE i.statement_id = os.statement_id AND i.status != 'Cancelled'),
+                       (SELECT COUNT(*) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active'),
+                       (SELECT COALESCE(SUM(k.amount), 0) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active'),
+                       (SELECT COUNT(*) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' AND k.printed_at IS NOT NULL)
+                FROM order_statements os JOIN creditors cr ON cr.creditor_id = os.creditor_id JOIN v_batch_net_totals v ON v.statement_id = os.statement_id
+                WHERE os.statement_id IN ({marks})""",
+            [int(x) for x in statement_ids],
+        ).fetchall()
+    by_id = {r[0]: r for r in rows}
+    out = []
+    for sid in statement_ids:
+        r = by_id.get(int(sid))
+        if not r:
+            continue
+        stage = "Cancelled" if r[3] == "Cancelled" else "Issued" if r[8] else "Parked" if r[6] else "Draft"
+        out.append({"statement_id": r[0], "ref": r[1], "supplier": r[2], "stage": stage, "net_total": float(r[4] or 0), "invoices": int(r[5]),
+                    "checks": int(r[6]), "checks_total": float(r[7] or 0)})
+    return out
+
+
+def generate_bulk_summary_pdf(rows: list[dict], scope_label: str, statement_type: str) -> bytes:
+    """Cover sheet for a bulk print: what is in the combined PDF -- one line per order statement with its supplier, status, invoices, net total and
+    checks, plus grand totals -- so the stack can be checked against it."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=LETTER, leftMargin=LEFT_MARGIN, rightMargin=RIGHT_MARGIN, topMargin=TOP_MARGIN, bottomMargin=BOTTOM_MARGIN,
+                            title="Bulk statement print - summary")
+    styles = getSampleStyleSheet()
+    story: list = [_title_band("Bulk print summary", styles), Spacer(1, 10)]
+    info_style = ParagraphStyle("BulkInfo", parent=styles["Normal"], fontSize=9, leading=13, textColor=colors.HexColor("#374151"))
+    story.append(Paragraph(
+        f"<b>{len(rows)}</b> order statement(s) &nbsp;·&nbsp; {scope_label} &nbsp;·&nbsp; {statement_type} &nbsp;·&nbsp; printed {datetime.now():%Y-%m-%d %H:%M}", info_style))
+    story.append(Spacer(1, 8))
+    table_rows = [["#", "Order statement", "Supplier", "Status", "Inv.", "Net total (PHP)", "Checks", "Checks total (PHP)"]]
+    for n, r in enumerate(rows, start=1):
+        table_rows.append([str(n), r["ref"], r["supplier"][:34], r["stage"], str(r["invoices"]), _money(r["net_total"]), str(r["checks"]), _money(r["checks_total"])])
+    table_rows.append(["", "TOTAL", "", "", str(sum(r["invoices"] for r in rows)), _money(sum(r["net_total"] for r in rows)),
+                       str(sum(r["checks"] for r in rows)), _money(sum(r["checks_total"] for r in rows))])
+    widths = [CONTENT_WIDTH * w for w in (0.05, 0.15, 0.27, 0.09, 0.06, 0.14, 0.08, 0.16)]
+    table = Table(table_rows, colWidths=widths, repeatRows=1)
+    table.setStyle(TableStyle(_section_style(4) + [
+        ("ALIGN", (4, 1), (4, -1), "RIGHT"), ("ALIGN", (5, 1), (5, -1), "RIGHT"), ("ALIGN", (6, 1), (6, -1), "RIGHT"), ("ALIGN", (7, 1), (7, -1), "RIGHT"),
+        ("ALIGN", (0, 1), (0, -1), "RIGHT"),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("LINEABOVE", (0, -1), (-1, -1), 1, ACCENT), ("BACKGROUND", (0, -1), (-1, -1), ACCENT_LIGHT),
+    ]))
+    story.append(table)
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    return buffer.getvalue()
+
+
 # --- 80mm thermal-printer statement (continuous roll, single copy) ---------
 
 THERMAL_WIDTH_MM = 80
