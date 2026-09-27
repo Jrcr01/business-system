@@ -29,7 +29,7 @@ def test_totals_are_computed_from_the_lines_not_the_stored_total(db):
     t = slip.totals
     assert (t["gross"], t["memos"], t["net"], t["checks"], t["balance"]) == (3500.5, 200.0, 3300.5, 3300.5, 0.0)
     text = render_text(slip)
-    assert "NET TOTAL" in text and "PHP 3,300.50" in text and "999,999" not in text
+    assert "NET AMOUNT DUE" in text and "PHP 3,300.50" in text and "999,999" not in text
 
 
 def test_no_line_is_wider_than_48_columns_and_copy_labels_and_signature(db):
@@ -44,14 +44,14 @@ def test_no_line_is_wider_than_48_columns_and_copy_labels_and_signature(db):
 
 def test_reprint_and_revised_headers(db):
     sid = _batch(db)
-    assert "REPRINT 2026-09-27" in render_text(build_slip(sid, "FILE", print_type="REPRINT", reprint_date="2026-09-27"))
+    assert "REPRINT - Sep 27, 2026" in render_text(build_slip(sid, "FILE", print_type="REPRINT", reprint_date="2026-09-27"))
     assert "REVISED v3 – supersedes v2" in render_text(build_slip(sid, "FILE", print_type="REVISED", version=3))
 
 
 def test_missing_values_print_a_dash_never_none_or_a_false_zero(monkeypatch):
     data = {
         "statement": {"statement_ref": "OS 0001", "creditor_name": None, "status": "Draft"},
-        "invoices": [{"doc_ref": "INV-9", "invoice_date": None, "due_date": "2026-10-01", "amount": None, "status": "Unpaid", "display_status": "Unpaid"},
+        "invoices": [{"doc_ref": "INV-9", "invoice_date": "2026-09-01", "due_date": None, "amount": None, "status": "Unpaid", "display_status": "Unpaid"},
                      {"doc_ref": "INV-10", "invoice_date": "2026-09-01", "due_date": "2026-10-01", "amount": 500.0, "status": "Unpaid", "display_status": "Unpaid"}],
         "memos": [], "checks": [], "payment_ledger": [],
     }
@@ -62,8 +62,9 @@ def test_missing_values_print_a_dash_never_none_or_a_false_zero(monkeypatch):
     assert "None" not in text
     inv9 = next(line for line in text.split("\n") if line.startswith("INV-9"))
     assert inv9.rstrip().endswith(DASH) and "0.00" not in inv9                        # the missing amount is a dash, not 0.00
-    assert next(line for line in text.split("\n") if line.startswith("NET TOTAL")).rstrip().endswith(DASH)
-    assert "Supplier: " + DASH in text and "Recv " + DASH in text
+    assert next(line for line in text.split("\n") if line.startswith("NET AMOUNT DUE")).rstrip().endswith(DASH)
+    assert "Supplier: " + DASH in text and inv9.split()[1] == DASH                              # missing due date -> dash
+    assert "2026-09-01" not in text and "Sep 01, 2026" not in text                              # no received date on the slip
     assert fmt_text(None) == fmt_text("") == fmt_text(float("nan")) == DASH and fmt_money(None) == DASH and fmt_money(0) == "PHP 0.00"
 
 
@@ -78,7 +79,7 @@ def test_a_cancelled_invoice_is_listed_but_not_counted(monkeypatch):
     slip = build_slip(1, "FILE")
     assert slip.totals["gross"] == 100.0 and slip.totals["checks"] == 0 and slip.totals["balance"] == 100.0
     text = render_text(slip)
-    assert "(not counted)" in text and "[Cancelled - not counted]" in text
+    assert text.count("Cancelled - not counted") == 2                          # the invoice and the check
 
 
 def test_the_escpos_job_initializes_prints_the_qr_feeds_and_cuts_once_per_copy(db):

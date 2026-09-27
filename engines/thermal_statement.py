@@ -82,6 +82,35 @@ def fmt_money(v, sign: str = "") -> str:
         return DASH
 
 
+C1, C2 = 14, 14                    # table columns: reference | date | amount (right-aligned, the rest of the 48)
+
+
+def row3(first: str, second: str, amount: str) -> str:
+    """One table row: reference (14), date (14), amount right-aligned in the remaining 20 columns."""
+    return f"{first:<{C1}}{second:<{C2}}{amount:>{COLUMNS - C1 - C2}}"
+
+
+def fmt_date_long(v) -> str:
+    """'Jan 08, 2027' -- easier to read on paper than 2027-01-08; a missing date -> '—'."""
+    s = fmt_date(v)
+    if s == DASH:
+        return DASH
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").strftime("%b %d, %Y")
+    except ValueError:
+        return s
+
+
+def status_words(status) -> str:
+    """An invoice's status said plainly, for the line under it."""
+    s = fmt_text(status)
+    if s.startswith("Check issued"):
+        parts = s.split("\u00b7")
+        return "Check issued, dated " + fmt_date_long(parts[1].strip()) if len(parts) > 1 else "Check issued"
+    return {"Unpaid": "No check yet", "Partly covered": "Partly covered by checks", "Partly paid": "Partly paid",
+            "Paid": "Paid", "Cancelled": "Cancelled - not counted"}.get(s, s)
+
+
 def _num(v):
     """float, or None when the amount is missing / not a number."""
     if v is None or fmt_text(v) == DASH:
@@ -177,59 +206,54 @@ def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: b
     add(Line("BATCH PAYMENT STATEMENT", "center", bold=True))
     add(Line(COPY_LABELS[copy], "center", bold=True, big=True))
     if print_type == "REPRINT":
-        add(Line(f"REPRINT {fmt_date(reprint_date or datetime.now().date().isoformat())}", "center", bold=True))
+        add(Line(f"REPRINT - {fmt_date_long(reprint_date or datetime.now().date().isoformat())}", "center", bold=True))
     elif print_type == "REVISED":
         add(Line(f"REVISED v{version} – supersedes v{version - 1}", "center", bold=True))
     rule("=")
     for label, value in (("Batch", stmt["statement_ref"]), ("Supplier", stmt["creditor_name"]), ("Status", stmt["status"]),
-                         ("Version", f"v{version}"), ("Printed", (printed_at or datetime.now()).strftime("%Y-%m-%d %H:%M"))):
+                         ("Version", str(version)), ("Printed", (printed_at or datetime.now()).strftime("%b %d, %Y %I:%M %p"))):
         for i, ln in enumerate(wrap(fmt_text(value), COLUMNS - 10)):
             add(Line((f"{label + ':':<10}" if i == 0 else " " * 10) + ln))
-    rule()
 
-    add(Line(f"INVOICES ({len(data['invoices'])})", bold=True))
-    if not data["invoices"]:
-        add(Line("  (none)"))
-    for inv in data["invoices"]:
-        cancelled = (inv.get("display_status") or inv["status"]) == "Cancelled"
-        for ln in two_col(fmt_text(inv["doc_ref"]), fmt_money(inv["amount"]) + (" *" if cancelled else "")):
-            add(Line(ln))
-        add(Line(f"  Recv {fmt_date(inv['invoice_date'])}  Due {fmt_date(inv['due_date'])}"))
-        for ln in wrap(fmt_text(inv.get("display_status") or inv["status"]) + ("  (not counted)" if cancelled else ""), COLUMNS, indent="  "):
-            add(Line(("  " + ln) if not ln.startswith("  ") else ln))
-    rule()
-
-    if data["memos"]:
-        add(Line(f"CREDIT MEMOS ({len(data['memos'])})", bold=True))
-        for m in data["memos"]:
-            for ln in two_col(f"{fmt_text(m['memo_ref'])}  {fmt_date(m['memo_date'])}", fmt_money(m["amount"], sign="-")):
-                add(Line(ln))
-            if m["reason"]:
-                for ln in wrap(fmt_text(m["reason"]), COLUMNS, indent="  "):
-                    add(Line(("  " + ln) if not ln.startswith("  ") else ln))
+    # Readable layout (owner, 2026-09-27: "make it more readable and not confusing"): each list is a small table with column
+    # headings, dates are written out (Jan 08, 2027), and an invoice's status is said in words on the line under it.
+    def table(title, headers, rows):
+        add(Line(""))
+        add(Line(title, bold=True))
+        add(Line(row3(*headers), bold=True))
         rule()
+        if not rows:
+            add(Line("  (none)"))
+        for first, second, amount, note in rows:
+            if len(first) > C1:                                   # a long reference gets its own line
+                add(Line(first))
+                first = ""
+            add(Line(row3(first, second, amount)))
+            if note:
+                for ln in wrap(note, COLUMNS - 2):
+                    add(Line("  " + ln))
 
-    for ln in two_col(f"Invoices ({t['invoices']})", fmt_money(t["gross"])):
-        add(Line(ln))
-    for ln in two_col(f"Less credit memos ({t['memo_count']})", fmt_money(t["memos"], sign="-" if t["memos"] else "")):
-        add(Line(ln))
-    for ln in two_col("NET TOTAL", fmt_money(t["net"])):
-        add(Line(ln, bold=True))
+    table(f"INVOICES ({len(data['invoices'])})", ("Invoice #", "Due date", "Amount"),
+          [(fmt_text(i["doc_ref"]), fmt_date_long(i["due_date"]), fmt_money(i["amount"]), status_words(i.get("display_status") or i["status"]))
+           for i in data["invoices"]])        # date received is left off the slip (owner, 2026-09-27)
+    if data["memos"]:
+        table(f"CREDIT MEMOS ({len(data['memos'])})", ("Memo #", "Date", "Amount"),
+              [(fmt_text(m["memo_ref"]), fmt_date_long(m["memo_date"]), fmt_money(m["amount"], sign="-"),
+                fmt_text(m["reason"]) if fmt_text(m["reason"]) != DASH else "") for m in data["memos"]])
+    table(f"CHECKS ({len(data['checks'])})", ("Check #", "Check date", "Amount"),
+          [(fmt_text(c["check_number"]) if fmt_text(c["check_number"]) != DASH else "Not numbered", fmt_date_long(c["check_date"]),
+            fmt_money(c["amount"]), "" if c["status"] == "Active" else f"{fmt_text(c['status'])} - not counted") for c in data["checks"]])
+
+    add(Line(""))
+    add(Line("SUMMARY", bold=True))
     rule()
-
-    add(Line(f"CHECKS ({len(data['checks'])})", bold=True))
-    if not data["checks"]:
-        add(Line("  (none)"))
-    for c in data["checks"]:
-        num = f"#{fmt_text(c['check_number'])}" if fmt_text(c["check_number"]) != DASH else "No number yet"
-        for ln in two_col(f"{num}  {fmt_date(c['check_date'])}", fmt_money(c["amount"])):
-            add(Line(ln))
-        if c["status"] != "Active":
-            add(Line(f"  [{fmt_text(c['status'])} - not counted]"))
-    for ln in two_col(f"Checks ({t['active_checks']} active)", fmt_money(t["checks"])):
-        add(Line(ln))
-    for ln in two_col("BALANCE", fmt_money(t["balance"])):
-        add(Line(ln, bold=True))
+    for label, value, bold in ((f"Invoices ({t['invoices']})", fmt_money(t["gross"]), False),
+                               ("Less credit memos" + ("" if t["memo_count"] else " (none)"), fmt_money(t["memos"], sign="-" if t["memos"] else ""), False),
+                               ("NET AMOUNT DUE", fmt_money(t["net"]), True),
+                               (f"Less checks issued ({t['active_checks']})", fmt_money(t["checks"], sign="-" if t["checks"] else ""), False),
+                               ("REMAINING BALANCE", fmt_money(t["balance"]), True)):
+        for ln in two_col(label, value):
+            add(Line(ln, bold=bold))
     if t["missing_amounts"]:
         for ln in wrap(f"Note: {t['missing_amounts']} line(s) have no amount on file, so the affected totals show {DASH}.", COLUMNS):
             add(Line(ln))
