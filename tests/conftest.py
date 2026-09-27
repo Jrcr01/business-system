@@ -66,7 +66,7 @@ import engines.search_service as search_service  # noqa: E402
 import engines.soa_matcher as soa_matcher  # noqa: E402
 import engines.validators as validators  # noqa: E402
 
-# Every module with its own DB_PATH global (app and every engines.* module) is pointed at the test database. Found
+# Every module with its own DB_PATH global (app, every engines.* module and any views.* screen module) is pointed at the test database. Found
 # automatically (2026-09-27): every engines module is imported here, so a new module can never be forgotten -- a
 # forgotten one would silently keep pointing at the real production database.
 import importlib  # noqa: E402
@@ -79,7 +79,7 @@ for _mod in pkgutil.iter_modules(engines.__path__):
 
 
 def _db_path_modules() -> list:
-    return [m for name, m in list(sys.modules.items()) if m is not None and (name == "app" or name.startswith("engines.")) and hasattr(m, "DB_PATH")]
+    return [m for name, m in list(sys.modules.items()) if m is not None and (name == "app" or name.startswith(("engines.", "views."))) and hasattr(m, "DB_PATH")]
 
 
 @pytest.fixture
