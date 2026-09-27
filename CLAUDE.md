@@ -267,6 +267,14 @@ Schedule of payments (`sched_show`); the batch and invoice rundowns are "Supplie
 the three master rollups are "Master rollups — aging and exposure" (`rpt_rollup_view`). `OLD_REPORTS` maps the old menu names to the new
 report + view (a tab left open on an old one lands in the right place). Nothing was deleted: every screen function, PDF and query remains.
 
+**Due today = still owed, EVERYWHERE (2026-09-28, owner picked it after phase 2).** Something dated today is not paid / cleared yet;
+it is paid once its date has PASSED. SQL `<= DATE('now','localtime')` (paid) became `<`, `>` (owed / scheduled) became `>=`, in 46 places:
+`v_effective_checks` ("Cleared" -- migration 052, view re-created by update_database.bat), statement_rules (invoice Paid status),
+loan_schedule_service (Settled), bank_loan_service.CLEARED_SQL (+ interest_service, bank_loan_report_service, views/bank_loans), batch
+rundown / lender master / servicing, dashboard KPIs (DPO too), analytics, overview `_cash_rows`, report_builder, views/order_statement,
+views/lenders. Also fixed: the AP aging used JULIANDAY('now') (UTC time of day), so an invoice due today fell in no bucket -- now
+`JULIANDAY(DATE('now','localtime'))`, due today = Current. Tests: `tests/test_due_today_rule.py`. Keep this rule for anything new.
+
 **Where things live (2026-09-28, owner asked "where should I store my system?").** Live data `C:\AP_Data` (database, `bank\`, `drive\`
 sign-in files) -- stays on the local disk, never in a syncing folder (BitLocker recommended). Daily backups -> Google Drive
 `H:\My Drive\Claude9OS\AP_Backups`, now pinned by `local_settings.bat` (`AP_BACKUP_DIR`, not in git) so they stay off-site even if the

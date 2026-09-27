@@ -52,14 +52,14 @@ def get_supplier_check_lag() -> pd.DataFrame:
 def get_average_dpo_suppliers() -> float | None:
     """Average Days Payable Outstanding for suppliers: mean lag between a batch's
     invoice-weighted due date and the check_date of its actually-cleared checks (check_date
-    <= today, the same cleared convention used everywhere else in this app -- a postdated
-    Active check that hasn't reached its date yet isn't "paid" so it doesn't count toward how
+    before today, the same cleared convention used everywhere else in this app -- due today = still owed, 2026-09-28 -- a postdated
+    Active check whose date hasn't passed yet isn't "paid" so it doesn't count toward how
     long payment actually took). Returns None if there's no cleared supplier check yet."""
     df = get_supplier_check_lag()
     if df.empty:
         return None
     today_str = date.today().isoformat()
-    cleared = df[(df["status"] == "Active") & (df["check_date"] <= today_str)]
+    cleared = df[(df["status"] == "Active") & (df["check_date"] < today_str)]
     if cleared.empty:
         return None
     return float(cleared["lag_days"].mean())
@@ -96,7 +96,7 @@ def get_top_suppliers(metric: str = "outstanding", limit: int = 10) -> pd.DataFr
                 """SELECT cr.creditor_name AS supplier_name, COALESCE(SUM(c.amount), 0) AS value
                    FROM checks_issued c
                    JOIN creditors cr ON c.creditor_id = cr.creditor_id
-                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date <= DATE('now', 'localtime')
+                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date < DATE('now', 'localtime')
                    GROUP BY cr.creditor_name
                    ORDER BY value DESC
                    LIMIT ?""",
@@ -107,7 +107,7 @@ def get_top_suppliers(metric: str = "outstanding", limit: int = 10) -> pd.DataFr
                 """SELECT cr.creditor_name AS supplier_name, COALESCE(SUM(c.amount), 0) AS value
                    FROM checks_issued c
                    JOIN creditors cr ON c.creditor_id = cr.creditor_id
-                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date > DATE('now', 'localtime')
+                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= DATE('now', 'localtime')
                    GROUP BY cr.creditor_name
                    ORDER BY value DESC
                    LIMIT ?""",
@@ -228,7 +228,7 @@ def get_supplier_concentration(limit: int = 5) -> dict:
     with sqlite3.connect(DB_PATH) as conn:
         total_row = pd.read_sql_query(
             """SELECT COALESCE(SUM(amount), 0) AS total FROM checks_issued
-               WHERE statement_id IS NOT NULL AND status = 'Active' AND check_date > DATE('now', 'localtime')""",
+               WHERE statement_id IS NOT NULL AND status = 'Active' AND check_date >= DATE('now', 'localtime')""",
             conn,
         )
     total_outstanding = float(total_row["total"][0])

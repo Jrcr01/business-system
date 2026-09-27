@@ -127,8 +127,13 @@ def test_bank_loan_interest_extraction(db):
     )
     ok, _msg = add_bank_loan_installment(bank_loan_id, today, 10500.0, interest_portion=2500.0)
     assert ok
+    # due today = still owed (owner, 2026-09-28): not paid interest yet
+    assert interest_service.get_monthly_interest_summary(today.year, today.month)["bank_loans"]["subtotal"] == 0
 
-    summary = interest_service.get_monthly_interest_summary(today.year, today.month)
+    past = date(today.year - 1, today.month, 1)                     # a due date that has passed counts
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE bank_loan_installments SET due_date = ? WHERE bank_loan_id = ?", (past.isoformat(), bank_loan_id))
+    summary = interest_service.get_monthly_interest_summary(past.year, past.month)
     assert summary["bank_loans"]["subtotal"] == 2500.0
     assert summary["bank_loans"]["count"] == 1
 
@@ -173,7 +178,7 @@ def test_cc_interest_extraction(db):
 def test_unified_interest_total(db):
     """Total interest = private + bank + credit cards, combining all three sources set
     up the same way the individual extraction tests do."""
-    today = date.today()
+    today = date(date.today().year - 1, date.today().month, 15)   # a past date: bank-loan interest counts once its due date has passed
 
     lender_id = make_creditor(db, creditor_type="LENDER", name="Mom")
     loan_note_id = _make_loan_note(db, lender_id, total_payable=100000.0)

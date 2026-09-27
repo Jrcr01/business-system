@@ -1,9 +1,9 @@
 """Overall report: highlights and insights for a Day / Week / Month / Quarter / Year (2026-09-21).
 
 Everything is compared with the period just before it. Money definitions follow the rest of the app:
-  paid       Supplier / Lender checks (Active or Cleared) whose check date has arrived, Bank Loan
-             installments whose due date has arrived, Credit Card statement amounts paid.
-  scheduled  the same items dated later than today (issued or scheduled, not yet due).
+  paid       Supplier / Lender checks (Active or Cleared) whose check date has passed, Bank Loan
+             installments whose due date has passed, Credit Card statement amounts paid.
+  scheduled  the same items dated today or later (due today = still owed, owner 2026-09-28).
 Nothing here writes to the database.
 """
 import os
@@ -66,15 +66,15 @@ def _cash_rows(conn, start: date, end: date) -> pd.DataFrame:
     parts.append(pd.read_sql_query(
         """SELECT CASE WHEN c.loan_note_id IS NOT NULL THEN 'Private Lender' ELSE 'Supplier' END AS track,
                   cr.creditor_name AS payee, c.check_date AS date,
-                  CASE WHEN c.check_date <= ? THEN c.amount ELSE 0 END AS paid,
-                  CASE WHEN c.check_date > ? THEN c.amount ELSE 0 END AS scheduled
+                  CASE WHEN c.check_date < ? THEN c.amount ELSE 0 END AS paid,
+                  CASE WHEN c.check_date >= ? THEN c.amount ELSE 0 END AS scheduled
            FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
            WHERE c.status IN ('Active', 'Cleared') AND c.check_date BETWEEN ? AND ?""",
         conn, params=(today, today, s, e)))
     parts.append(pd.read_sql_query(
         """SELECT 'Bank Loan' AS track, cr.creditor_name AS payee, bli.due_date AS date,
-                  CASE WHEN bli.due_date <= ? THEN bli.amount ELSE 0 END AS paid,
-                  CASE WHEN bli.due_date > ? THEN bli.amount ELSE 0 END AS scheduled
+                  CASE WHEN bli.due_date < ? THEN bli.amount ELSE 0 END AS paid,
+                  CASE WHEN bli.due_date >= ? THEN bli.amount ELSE 0 END AS scheduled
            FROM bank_loan_installments bli JOIN bank_loans bl ON bl.bank_loan_id = bli.bank_loan_id
            JOIN creditors cr ON cr.creditor_id = bl.creditor_id
            WHERE bl.is_cancelled = 0 AND bli.due_date BETWEEN ? AND ?""",
@@ -89,7 +89,7 @@ def _cash_rows(conn, start: date, end: date) -> pd.DataFrame:
     parts.append(pd.read_sql_query(
         """SELECT 'Credit Card' AS track, cr.creditor_name AS payee, cs.due_date AS date,
                   CASE WHEN EXISTS (SELECT 1 FROM cc_payments p WHERE p.cc_statement_id = cs.cc_statement_id) THEN 0 ELSE cs.amount_paid END AS paid,
-                  CASE WHEN cs.due_date > ? THEN MAX(cs.total_amount_due - cs.amount_paid, 0) ELSE 0 END AS scheduled
+                  CASE WHEN cs.due_date >= ? THEN MAX(cs.total_amount_due - cs.amount_paid, 0) ELSE 0 END AS scheduled
            FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id
            JOIN creditors cr ON cr.creditor_id = cc.creditor_id
            WHERE cs.status != 'Cancelled' AND cs.due_date BETWEEN ? AND ?""",
@@ -105,13 +105,13 @@ def _interest(conn, start: date, end: date) -> pd.DataFrame:
             """SELECT 'Private loans' AS source, cr.creditor_name AS name, SUM(li.interest) AS interest
                FROM loan_installments li JOIN loan_notes ln ON ln.loan_note_id = li.loan_note_id
                JOIN creditors cr ON cr.creditor_id = ln.creditor_id JOIN checks_issued ck ON ck.check_id = li.check_id
-               WHERE li.status = 'Active' AND ck.status = 'Active' AND ck.check_date BETWEEN ? AND ? AND ck.check_date <= ?
+               WHERE li.status = 'Active' AND ck.status = 'Active' AND ck.check_date BETWEEN ? AND ? AND ck.check_date < ?
                GROUP BY cr.creditor_id""", conn, params=(s, e, today)),
         pd.read_sql_query(
             """SELECT 'Bank loans' AS source, cr.creditor_name AS name, SUM(bli.interest_portion) AS interest
                FROM bank_loan_installments bli JOIN bank_loans bl ON bl.bank_loan_id = bli.bank_loan_id
                JOIN creditors cr ON cr.creditor_id = bl.creditor_id
-               WHERE bl.is_cancelled = 0 AND bli.due_date BETWEEN ? AND ? AND bli.due_date <= ?
+               WHERE bl.is_cancelled = 0 AND bli.due_date BETWEEN ? AND ? AND bli.due_date < ?
                GROUP BY cr.creditor_id""", conn, params=(s, e, today)),
         pd.read_sql_query(
             """SELECT 'Credit cards' AS source, (cc.card_name || ' - ' || cc.card_number_last4) AS name, SUM(cs.interest_charged) AS interest
@@ -151,7 +151,7 @@ def _behavior(start: date, end: date) -> dict:
     if df.empty:
         return {"count": 0, "avg_days": None, "on_time_pct": None}
     today = str(date.today())
-    d = df[(df["status"] == "Active") & (df["check_date"] >= str(start)) & (df["check_date"] <= str(end)) & (df["check_date"] <= today)]
+    d = df[(df["status"] == "Active") & (df["check_date"] >= str(start)) & (df["check_date"] <= str(end)) & (df["check_date"] < today)]
     if d.empty:
         return {"count": 0, "avg_days": None, "on_time_pct": None}
     return {"count": int(len(d)), "avg_days": float(d["lag_days"].mean()), "on_time_pct": float((d["lag_days"] <= 0).mean() * 100)}

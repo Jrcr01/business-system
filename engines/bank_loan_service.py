@@ -31,7 +31,7 @@ DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 # Same "cleared" convention as v_checks_ledger.effective_status (schema.sql) and the Loan Notes/
 # Order Statement cleared-vs-issued work: a due date counts as cleared once it's in the past.
-CLEARED_SQL = "due_date <= DATE('now', 'localtime')"
+CLEARED_SQL = "due_date < DATE('now', 'localtime')"
 
 
 def _get_conn():

@@ -3,7 +3,7 @@ MBOS statement and drops it here; the app reads it, stores each bank line once, 
 (engines/bank_statement_service.py). Only the exceptions need a look. The insight tabs (engines/cash_insights_service.py) are computed on
 this laptop -- nothing is sent anywhere (owner: local first; an AI write-up may come later, optional).
 
-Show-both rule (owner): the rest of the app still treats a check as cleared on its check date; the bank's real cleared date is shown here
+Show-both rule (owner): the rest of the app still treats a check as cleared once its check date has passed; the bank's real cleared date is shown here
 and next to the checks."""
 from __future__ import annotations
 

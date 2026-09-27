@@ -13,7 +13,7 @@ The owner downloads the statement from Metrobank MBOS and drops the file in the 
                           the owner only has to look at: amount differs, a cancelled / replaced check cleared anyway, a returned
                           customer check, a check the system does not know.
 
-Show-both rule (owner, 2026-09-27): the rest of the app keeps treating a check as cleared on its check date; the bank-confirmed date is shown
+Show-both rule (owner, 2026-09-27): the rest of the app keeps treating a check as cleared once its check date has passed; the bank-confirmed date is shown
 next to it and drives the reconciliation lists. Switching the totals over is a later decision.
 """
 from __future__ import annotations

@@ -2,7 +2,7 @@
 Order Statements (Batch Statement) and Loan Notes (LN/MOU) already get: header block (Loan Ref,
 Bank, Account Number, Start/Maturity dates, Mode of Payment, Principal) plus the Due Date/Amount
 schedule table. "Status" per row is computed the same way as everywhere else in this system --
-due_date <= today means cleared -- never a stored value.
+due_date before today means cleared (due today = still owed) -- never a stored value.
 """
 import io
 import sqlite3
@@ -133,7 +133,7 @@ def generate_bank_loan_pdf(bank_loan_id: int) -> bytes | None:
     today = date.today()
 
     total_amount = sum(r["amount"] for r in installments)
-    outstanding = sum(r["amount"] for r in installments if date.fromisoformat(r["due_date"]) > today)
+    outstanding = sum(r["amount"] for r in installments if date.fromisoformat(r["due_date"]) >= today)
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -164,7 +164,7 @@ def generate_bank_loan_pdf(bank_loan_id: int) -> bytes | None:
     story.append(_section_heading("Repayment Schedule", styles))
     sched_rows = [["No.", "Due Date", "Amount (PHP)", "Status"]]
     for r in installments:
-        cleared = date.fromisoformat(r["due_date"]) <= today
+        cleared = date.fromisoformat(r["due_date"]) < today
         sched_rows.append([r["installment_no"], r["due_date"], _money(r["amount"]), "Paid" if cleared else "Pending"])
     if len(sched_rows) == 1:
         sched_rows.append(["—", "—", "—", "—"])

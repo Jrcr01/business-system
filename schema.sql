@@ -422,7 +422,7 @@ SELECT
     c.status AS recorded_status,
     CASE 
         WHEN c.status = 'Active' AND c.check_date < DATE('now', '-180 days') THEN 'Stale'
-        WHEN c.status = 'Active' AND c.check_date <= DATE('now', 'localtime') THEN 'Cleared'
+        WHEN c.status = 'Active' AND c.check_date < DATE('now', 'localtime') THEN 'Cleared'
         ELSE c.status
     END AS effective_status,
     c.replacement_check_id,

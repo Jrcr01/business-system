@@ -131,7 +131,7 @@ def render() -> None:
                   ln.monthly_interest_rate, ln.total_interest, ln.total_payable,
                   ln.total_payable - COALESCE(
                       (SELECT SUM(amount) FROM checks_issued
-                       WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date <= DATE('now', 'localtime')), 0
+                       WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < DATE('now', 'localtime')), 0
                   ) AS outstanding,
                   ln.status, """ + loan_note_modified_sql("ln") + """ AS last_modified
            FROM loan_notes ln JOIN creditors c ON ln.creditor_id = c.creditor_id
@@ -203,7 +203,7 @@ def render() -> None:
                 st.caption(f"Pending Setup — principal and rate not yet entered. Fill them in below (\"Edit loan note terms\") to activate this lender. Status: {ln_row['status']}")
             else:
                 diff = round(ln_row["total_payable"] - float(q(
-                    "SELECT COALESCE(SUM(amount),0) AS s FROM checks_issued WHERE loan_note_id = ? AND status='Active' AND check_date <= DATE('now', 'localtime')",
+                    "SELECT COALESCE(SUM(amount),0) AS s FROM checks_issued WHERE loan_note_id = ? AND status='Active' AND check_date < DATE('now', 'localtime')",
                     (selected_lnid,),
                 )["s"][0]), 2)
                 st.caption(
@@ -229,7 +229,7 @@ def render() -> None:
                     st.caption("Pending Setup — use \"Edit loan note terms\" below to activate.")
                 else:
                     with st.expander("Override status"):
-                        st.caption("Settled fires automatically once Outstanding (uncleared) hits ₱0 — every check issued must also have actually reached its date, not just been written. Use this only to force Defaulted, or to correct a mistake.")
+                        st.caption("Settled fires automatically once Outstanding (uncleared) hits ₱0 — every check issued must also have actually passed its date, not just been written. Use this only to force Defaulted, or to correct a mistake.")
                         override_status = st.selectbox("Status", ["Active", "Settled", "Defaulted"], index=["Active", "Settled", "Defaulted"].index(ln_row["status"]), key="ln_status_override")
                         if st.button("Save status", icon=":material/update:", key="ln_status_save_btn"):
                             ok, msg = update_loan_note_status(selected_lnid, override_status)

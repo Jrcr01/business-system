@@ -128,7 +128,7 @@ DATASETS: dict[str, Dataset] = {
          "amount": Field("Amount", "money"), "interest_portion": Field("Interest part", "money"), "status": Field("Status", "choice")},
         ("loan_ref", "bank", "installment_no", "due_date", "amount", "status"), ("due_date",),
         sql="""SELECT bl.loan_ref, cr.creditor_name AS bank, bli.installment_no, bli.due_date, bli.amount, bli.interest_portion,
-                      CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' WHEN bli.due_date <= DATE('now', 'localtime') THEN 'Paid' ELSE 'Upcoming' END AS status
+                      CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' WHEN bli.due_date < DATE('now', 'localtime') THEN 'Paid' ELSE 'Upcoming' END AS status
                FROM bank_loan_installments bli JOIN bank_loans bl ON bl.bank_loan_id = bli.bank_loan_id JOIN creditors cr ON cr.creditor_id = bl.creditor_id
                ORDER BY bli.due_date, bli.installment_id"""),
     "card_statements": Dataset(

@@ -128,7 +128,7 @@ def render_bank_loan_schedule(selected_blid: int) -> None:
     )
     if not bl_schedule_df.empty:
         bl_schedule_df["due_date"] = pd.to_datetime(bl_schedule_df["due_date"]).dt.date
-        bl_schedule_df["status"] = bl_schedule_df["due_date"].apply(lambda d: "Paid" if d <= date.today() else "Pending")
+        bl_schedule_df["status"] = bl_schedule_df["due_date"].apply(lambda d: "Paid" if d < date.today() else "Pending")
 
     bl_import_staged_key = f"bl_import_staged_{selected_blid}"
     bl_import_errors_key = f"bl_import_errors_{selected_blid}"
@@ -272,7 +272,7 @@ def render() -> None:
                   bl.principal_amount,
                   CASE WHEN bl.is_cancelled = 1 THEN 0 ELSE COALESCE(
                       (SELECT SUM(amount) FROM bank_loan_installments
-                       WHERE bank_loan_id = bl.bank_loan_id AND due_date > DATE('now', 'localtime')), 0
+                       WHERE bank_loan_id = bl.bank_loan_id AND due_date >= DATE('now', 'localtime')), 0
                   ) END AS outstanding,
                   bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, bl.is_cancelled, lb.name AS beneficiary, lb.beneficiary_type, bl.beneficiary_id,
                   """ + bank_loan_modified_sql("bl") + """ AS last_modified

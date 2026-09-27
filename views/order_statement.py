@@ -497,7 +497,7 @@ def render() -> None:
                   v.credit_memo_total, v.net_total,
                   v.net_total - COALESCE(
                       (SELECT SUM(amount) FROM checks_issued
-                       WHERE statement_id = os.statement_id AND status = 'Active' AND check_date <= DATE('now', 'localtime')), 0
+                       WHERE statement_id = os.statement_id AND status = 'Active' AND check_date < DATE('now', 'localtime')), 0
                   ) AS outstanding,
                   os.status, os.is_locked, os.needs_reprint, datetime(os.created_at, 'localtime') AS created_at,
                   """ + statement_modified_sql("os") + """ AS last_modified,

@@ -358,7 +358,7 @@ def _overview_story(data: dict, short: bool, pages: dict) -> list:
         ["Checks cancelled / replaced", str(cur["checks"]["voided"]), str(prev["checks"]["voided"]), "-"],
     ]
     story.append(_section_table(["Measure", "This period", "Previous", "Change"], rows, [CONTENT_WIDTH * w for w in (0.4, 0.22, 0.22, 0.16)], right_cols=(1, 2, 3)))
-    story.append(Paragraph("Paid = checks and installments whose date has arrived; scheduled = dated later than today. Figures are in Philippine pesos.", st["grey"]))
+    story.append(Paragraph("Paid = checks and installments whose date has passed; scheduled = dated today or later. Figures are in Philippine pesos.", st["grey"]))
 
     trend = data["trend"]
     story.append(Spacer(1, 10))

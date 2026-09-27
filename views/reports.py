@@ -173,7 +173,7 @@ def _overview() -> None:
         return None if not before else f"{(now - before) / before * 100:+.0f}%"
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Paid out", php(ov_cur["paid"]), _ov_delta(ov_cur["paid"], ov_prev["paid"]), border=True, help="Checks, loan installments and card payments whose date has arrived.")
+    m1.metric("Paid out", php(ov_cur["paid"]), _ov_delta(ov_cur["paid"], ov_prev["paid"]), border=True, help="Checks, loan installments and card payments whose date has passed. Anything dated today still counts as scheduled.")
     m2.metric("Scheduled, not yet due", php(ov_cur["scheduled"]), _ov_delta(ov_cur["scheduled"], ov_prev["scheduled"]), border=True)
     m3.metric("Interest cost", php(ov_cur["interest_total"]), _ov_delta(ov_cur["interest_total"], ov_prev["interest_total"]), delta_color="inverse", border=True)
     m4.metric("Total outstanding today", php(ov["outstanding_today"]), border=True, help="All four tracks, as on the Dashboard.")
@@ -431,7 +431,7 @@ def _rundown() -> None:
 
 
 def _batch_rundown() -> None:
-    st.caption("Every issued batch (order statement) with how much is paid, how much is covered by post-dated checks, and what is still open. Paid = checks whose date has arrived. Pick one supplier or all of them.")
+    st.caption("Every issued batch (order statement) with how much is paid, how much is covered by post-dated checks, and what is still open. Paid = checks whose date has passed (a check dated today is still post-dated). Pick one supplier or all of them.")
     rd_options = creditor_options_all("SUPPLIER")
     rd_choice = st.selectbox("Supplier", options=[None] + list(rd_options), format_func=lambda cid: "All suppliers" if cid is None else rd_options[cid], key="rpt_rundown_pick")
     rd_all = c_rundown(rd_choice)

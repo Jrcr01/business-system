@@ -122,13 +122,13 @@ def get_lender_pareto(limit: int = 10) -> pd.DataFrame:
         df = pd.read_sql_query(
             """SELECT cr.creditor_name AS name, COALESCE(SUM(c.amount), 0) AS value
                FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-               WHERE c.loan_note_id IS NOT NULL AND c.status = 'Active' AND c.check_date > DATE('now', 'localtime')
+               WHERE c.loan_note_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= DATE('now', 'localtime')
                GROUP BY cr.creditor_id ORDER BY value DESC LIMIT ?""",
             conn, params=(limit,),
         )
         total_row = pd.read_sql_query(
             """SELECT COALESCE(SUM(amount), 0) AS total FROM checks_issued
-               WHERE loan_note_id IS NOT NULL AND status = 'Active' AND check_date > DATE('now', 'localtime')""",
+               WHERE loan_note_id IS NOT NULL AND status = 'Active' AND check_date >= DATE('now', 'localtime')""",
             conn,
         )
     if df.empty:
@@ -150,12 +150,12 @@ def get_bank_loan_pareto(limit: int = 10) -> pd.DataFrame:
                FROM bank_loan_installments bli
                JOIN bank_loans bl ON bli.bank_loan_id = bl.bank_loan_id
                JOIN creditors cr ON bl.creditor_id = cr.creditor_id
-               WHERE bli.due_date > DATE('now', 'localtime') AND bl.is_cancelled = 0
+               WHERE bli.due_date >= DATE('now', 'localtime') AND bl.is_cancelled = 0
                GROUP BY bl.bank_loan_id ORDER BY value DESC LIMIT ?""",
             conn, params=(limit,),
         )
         total_row = pd.read_sql_query(
-            "SELECT COALESCE(SUM(amount), 0) AS total FROM bank_loan_installments WHERE due_date > DATE('now', 'localtime') AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)",
+            "SELECT COALESCE(SUM(amount), 0) AS total FROM bank_loan_installments WHERE due_date >= DATE('now', 'localtime') AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)",
             conn,
         )
     if df.empty:
@@ -210,14 +210,14 @@ def get_all_tracks_pareto(limit: int = 15) -> pd.DataFrame:
         supplier_df = pd.read_sql_query(
             """SELECT cr.creditor_name AS name, 'Supplier' AS track, COALESCE(SUM(c.amount), 0) AS value
                FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-               WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date > DATE('now', 'localtime')
+               WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= DATE('now', 'localtime')
                GROUP BY cr.creditor_id""",
             conn,
         )
         lender_df = pd.read_sql_query(
             """SELECT cr.creditor_name AS name, 'Lender' AS track, COALESCE(SUM(c.amount), 0) AS value
                FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-               WHERE c.loan_note_id IS NOT NULL AND c.status = 'Active' AND c.check_date > DATE('now', 'localtime')
+               WHERE c.loan_note_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= DATE('now', 'localtime')
                GROUP BY cr.creditor_id""",
             conn,
         )
@@ -227,7 +227,7 @@ def get_all_tracks_pareto(limit: int = 15) -> pd.DataFrame:
                FROM bank_loan_installments bli
                JOIN bank_loans bl ON bli.bank_loan_id = bl.bank_loan_id
                JOIN creditors cr ON bl.creditor_id = cr.creditor_id
-               WHERE bli.due_date > DATE('now', 'localtime') AND bl.is_cancelled = 0
+               WHERE bli.due_date >= DATE('now', 'localtime') AND bl.is_cancelled = 0
                GROUP BY bl.bank_loan_id""",
             conn,
         )
@@ -370,7 +370,7 @@ def get_missing_debt_terms(limit: int = 10) -> pd.DataFrame:
                FROM creditors cr
                JOIN loan_notes ln ON ln.creditor_id = cr.creditor_id
                LEFT JOIN checks_issued c
-                 ON c.loan_note_id = ln.loan_note_id AND c.status = 'Active' AND c.check_date > DATE('now', 'localtime')
+                 ON c.loan_note_id = ln.loan_note_id AND c.status = 'Active' AND c.check_date >= DATE('now', 'localtime')
                WHERE ln.monthly_interest_rate IS NULL
                GROUP BY ln.loan_note_id
                HAVING outstanding > 0""",
@@ -382,7 +382,7 @@ def get_missing_debt_terms(limit: int = 10) -> pd.DataFrame:
                FROM bank_loans bl
                JOIN creditors cr ON bl.creditor_id = cr.creditor_id
                LEFT JOIN bank_loan_installments bli
-                 ON bli.bank_loan_id = bl.bank_loan_id AND bli.due_date > DATE('now', 'localtime')
+                 ON bli.bank_loan_id = bl.bank_loan_id AND bli.due_date >= DATE('now', 'localtime')
                WHERE bl.principal_amount IS NULL AND bl.is_cancelled = 0
                GROUP BY bl.bank_loan_id
                HAVING outstanding > 0""",
