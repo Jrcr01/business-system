@@ -117,6 +117,7 @@ summary documents, not BIR records; the database remains the system of record.
 
 **Owner answers (2026-09-27)**
 * Keep the existing "Thermal Statement (80mm) PDF" (print dialog) alongside direct printing, as a backup.
+* Other (office) printers stay PDF-then-print (owner, 2026-09-28): only the thermal printer is connected directly. An automatic print-dialog option was offered and declined for now.
 * A4 copy colour: keep today's navy #1f3a5f. Bluetooth warning threshold: 120 lines (a normal slip is ~55, ~71 with the QR). Schema proposal approved.
 * The slip lists the same content as today's statement: invoices, credit memos, the checks (number, date, amount) and totals.
 * Slip layout (owner, 2026-09-27: "exclude" the date received; "make it more readable and not confusing"; "remove check issued, dated..."; "if detailed information is needed then that is the use of QR code"): the slip is a SUMMARY -- small tables with column headings (# / date / amount), dates written out (Jan 08, 2027), one line per item, invoices show the date RECEIVED (not the due date -- owner, later the same day), credit memos listed when the batch has any, no status lines, no memo reasons; only what is counted is listed (cancelled invoices and cancelled / replaced checks are left off -- they are in the A4 copy behind the QR), so every amount on the slip adds up to the SUMMARY block (invoices, less credit memos, NET AMOUNT DUE, less checks issued, REMAINING BALANCE); "Scan for the full statement:" above the QR. The thermal PDF and the A4 statement are unchanged.

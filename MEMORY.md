@@ -624,4 +624,4 @@ Written 2026-09-27 as a catch-up: this log had stopped at 2026-09-15 while a lot
 **Bank statement import (2026-09-27)**
 * Owner: knows reconciliation matters but has no time to tick off cleared checks; has Metrobank MBOS and can download statements; wants AI business-intelligence insights. Decided: the owner only downloads and drops the file, the app matches (number + amount) and shows exceptions only; insights local first (AI write-up later, optional); show both (totals keep the check-date rule for now); working capital starts with cash vs payables.
 * The real MBOS PDF read cleanly (655 lines, balances all add up). Its checks were Jan-Feb 2026, before the system's checks (from Sep 20, 2026), but it already surfaced one legacy record whose date and amount look mistyped (check 3992527921).
-
+* 2026-09-28: office printers stay PDF-then-print (preview, normal Windows print window, nothing to maintain; checks print via Chrysanth); only the thermal printer is connected directly, since it needs ESC/POS and every copy must be counted.
