@@ -245,6 +245,22 @@ screen, files and PDF match (widget key `sched_period_filter`). Overview shows t
 names in title bands / section headings / subtitles are escaped ("S&P"); `generate_rundown_pdf` now uses `widths` to share the room
 between text columns when the table is too wide. Tests: `tests/test_reports_quickwins.py`.
 
+**Phase 4 (done 2026-09-28) -- "My reports" builder** (Reports page switch "Standard reports / My reports"; `views/my_reports.py`,
+`engines/report_builder.py`). A report is a JSON spec checked by `validate()` against a fixed `DATASETS` list (checks, invoices, payables
+all tracks via `_cash_rows`, credit memos, loan-note installments, bank-loan installments, card statements -- last 4 only, never
+`card_number_full` -- bank lines, audit log); **no free SQL**. Spec: dataset, date_field + `preset` (`PRESETS`, worked out on the day it runs
+by `preset_range()`, so saved reports roll forward; Last/Next N days; Custom range), filters (`OPS` per field kind: contains / is one of /
+is not one of / between), columns (in order), group_by (up to 2; dates by day / week / month / quarter / year), aggregates (count, sum,
+avg, min, max), sort, top_n, chart (bar / line, grouped reports only). `run(spec, today, data, override_range)` -> `ReportResult` (table
+with Subtotal / Grand total rows, kinds, detail_all for "Export all rows", criteria in words, headline, chart data);
+`generate_report_pdf()` (rundown PDF + chart via the new `before_table` flowables). Saved in `saved_reports` (migration 051): `save_report`
+(unique name, any case), `duplicate_report`, `delete_report` (audited REPORT_SAVED / REPORT_DELETED), `set_flags` (pin_dashboard,
+include_in_overview), `mark_run`, `pinned_results()` (Dashboard "My reports" cards: headline + chart + Open), `overview_results(start, end)`
+(Overview screen + its own PDF page, run for the overview period when the report has a date; contents page number included). View notes:
+criteria widgets live under `mr_*` keys; `_persist()` keeps them alive while hidden; `_mr_pick_next` selects a report before the picker is
+drawn (Save, Duplicate, the Dashboard's Open). Export helpers take `kinds` (money / number / count / date / datetime). Tests:
+`tests/test_report_builder.py`.
+
 ---
 
 ## Current Priority / Scope

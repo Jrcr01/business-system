@@ -388,12 +388,14 @@ def generate_cardholder_statement_pdf(holder_name: str, cards_df, statements_df,
     return buffer.getvalue()
 
 
-def generate_rundown_pdf(title: str, scope: str, headers: list, rows: list, widths: list, right_cols: list, summary: list, period: str) -> bytes:
+def generate_rundown_pdf(title: str, scope: str, headers: list, rows: list, widths: list, right_cols: list, summary: list, period: str,
+                         before_table: list | None = None) -> bytes:
     """Landscape 'rundown' report used by the Reports tab's batch and invoice rundowns: a title
     band, a Paid / Partially Paid / Pending summary, then one table (right_cols are the column
     indexes holding money). Columns are sized to their content; when the table is too wide for the
     page, numbers and dates keep their width and the text columns share what is left in proportion
-    to `widths` (fractions of the page, one per column) -- 2026-09-28: `widths` used to be ignored."""
+    to `widths` (fractions of the page, one per column) -- 2026-09-28: `widths` used to be ignored. `before_table`: flowables (a chart)
+    placed between the summary and the table."""
     from reportlab.lib.pagesizes import landscape
     page = landscape(LETTER)
     width = page[0] - LEFT_MARGIN - RIGHT_MARGIN
@@ -417,6 +419,8 @@ def generate_rundown_pdf(title: str, scope: str, headers: list, rows: list, widt
         sumt = Table([["Status", "Count", "Amount"]] + srows, colWidths=[width * 0.25, width * 0.15, width * 0.25], hAlign="LEFT")
         sumt.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (1, 0), (2, -1), "RIGHT")]))
         story += [sumt, Spacer(1, 10)]
+    for flowable in before_table or []:              # e.g. the "My reports" chart
+        story += [flowable, Spacer(1, 8)]
     if rows:
         from reportlab.pdfbase.pdfmetrics import stringWidth
         pad = 8  # left + right cell padding, in points (tightened below to match)

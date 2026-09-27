@@ -46,11 +46,18 @@ def label(col: str, labels: dict | None = None) -> str:
     """The friendly name of a column: the caller's own name first, then the shared list, then 'some_name' -> 'Some name'."""
     if labels and col in labels:
         return labels[col]
-    return COLUMN_LABELS.get(col) or str(col).replace("_", " ").strip().capitalize()
+    if col in COLUMN_LABELS:
+        return COLUMN_LABELS[col]
+    if "_" not in str(col) and str(col) != str(col).lower():          # already a friendly name ("Sum of Amount", "Total")
+        return str(col)
+    return str(col).replace("_", " ").strip().capitalize()
 
 
-def kind_of(col: str, series: pd.Series | None = None) -> str:
-    """'money' / 'date' / 'datetime' / 'other' -- by name (the shared lists), so a money column is formatted the same everywhere."""
+def kind_of(col: str, kinds: dict | None = None) -> str:
+    """'money' / 'date' / 'datetime' / 'number' / 'other' -- the caller's own `kinds` first (the report builder names its columns itself),
+    then by name (the shared lists), so a money column is formatted the same everywhere."""
+    if kinds and col in kinds:
+        return kinds[col]
     if col in MONEY_COLUMNS:
         return "money"
     if col in DATE_COLUMNS:
@@ -60,11 +67,11 @@ def kind_of(col: str, series: pd.Series | None = None) -> str:
     return "other"
 
 
-def with_real_dates(df: pd.DataFrame) -> pd.DataFrame:
+def with_real_dates(df: pd.DataFrame, kinds: dict | None = None) -> pd.DataFrame:
     """Date and date-time columns (stored as text in SQLite) turned into real dates, for date formatting on screen and in Excel."""
     out = df.copy()
     for c in out.columns:
-        k = kind_of(c)
+        k = kind_of(c, kinds)
         if k == "date":
             out[c] = pd.to_datetime(out[c], errors="coerce").dt.date
         elif k == "datetime":
@@ -77,17 +84,18 @@ def friendly(df: pd.DataFrame, labels: dict | None = None) -> pd.DataFrame:
     return df.rename(columns={c: label(c, labels) for c in df.columns})
 
 
-def csv_bytes(df: pd.DataFrame, labels: dict | None = None) -> bytes:
+def csv_bytes(df: pd.DataFrame, labels: dict | None = None, kinds: dict | None = None) -> bytes:
     """CSV with friendly headers; money as plain numbers with two decimals, dates as YYYY-MM-DD (spreadsheet-friendly). UTF-8 with a BOM
     so Excel shows ₱ and accents correctly when the file is double-clicked."""
-    out = with_real_dates(df)
+    out = with_real_dates(df, kinds)
     for c in out.columns:
-        if kind_of(c) == "money":
+        if kind_of(c, kinds) == "money":
             out[c] = pd.to_numeric(out[c], errors="coerce").round(2)
     return friendly(out, labels).to_csv(index=False, float_format="%.2f").encode("utf-8-sig")
 
 
-def excel_bytes(sheets: dict[str, pd.DataFrame] | pd.DataFrame, labels: dict | None = None, sheet_name: str = "Report") -> bytes:
+def excel_bytes(sheets: dict[str, pd.DataFrame] | pd.DataFrame, labels: dict | None = None, sheet_name: str = "Report",
+                kinds: dict | None = None) -> bytes:
     """An .xlsx workbook, one sheet per table: friendly headers in bold, money as #,##0.00, dates as Mmm dd, yyyy, columns sized to fit,
     the header row frozen."""
     from openpyxl.styles import Font
@@ -98,14 +106,14 @@ def excel_bytes(sheets: dict[str, pd.DataFrame] | pd.DataFrame, labels: dict | N
     with pd.ExcelWriter(buf, engine="openpyxl") as xw:
         for name, df in sheets.items():
             safe = "".join(ch for ch in str(name) if ch not in '[]:*?/\\')[:31] or "Sheet"
-            data = with_real_dates(df)
+            data = with_real_dates(df, kinds)
             friendly(data, labels).to_excel(xw, sheet_name=safe, index=False)
             ws = xw.sheets[safe]
             ws.freeze_panes = "A2"
             for i, col in enumerate(data.columns, start=1):
                 ws.cell(row=1, column=i).font = Font(bold=True)
-                k = kind_of(col)
-                fmt = {"money": "#,##0.00", "date": "mmm dd, yyyy", "datetime": "mmm dd, yyyy h:mm AM/PM"}.get(k)
+                k = kind_of(col, kinds)
+                fmt = {"money": "#,##0.00", "number": "#,##0.00", "count": "#,##0", "date": "mmm dd, yyyy", "datetime": "mmm dd, yyyy h:mm AM/PM"}.get(k)
                 if fmt:
                     for row in ws.iter_rows(min_row=2, min_col=i, max_col=i):
                         row[0].number_format = fmt

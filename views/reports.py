@@ -197,6 +197,19 @@ def _overview() -> None:
         st.markdown("**Needs attention**")
         st.dataframe(pd.DataFrame(ov["watch"]).rename(columns={"item": "Item", "count": "Count", "detail": "Detail"}), hide_index=True)
 
+    for mr_row, mr in ov.get("my_reports") or []:      # saved "My reports" included in the overall report
+        st.markdown(f"**My report — {mr_row['name']}**")
+        if isinstance(mr, str):
+            st.warning(f"This saved report no longer runs: {mr}")
+            continue
+        st.caption(" · ".join(mr.criteria))
+        if mr.table.empty:
+            st.caption("Nothing in this period.")
+        else:
+            show_table(mr.table.head(50), kinds=mr.kinds)
+            if len(mr.table) > 50:
+                st.caption(f"First 50 of {len(mr.table):,} rows — open it under My reports for all of them.")
+
     if ov_version == "Full":
         if not ov_cur["payees"].empty:
             st.markdown("**Top payees**")
@@ -699,6 +712,13 @@ REPORTS = dict(zip(REPORT_OPTIONS, [_overview, _duplicates, _schedule, _parked, 
 
 def render() -> None:
     page_header("Reports")
+    mode = st.segmented_control("Reports", ["Standard reports", "My reports"], default="Standard reports", required=True, key="rpt_mode",
+                                label_visibility="collapsed")
+    if mode == "My reports":                          # the owner's own saved reports (views/my_reports.py, 2026-09-28)
+        from views.my_reports import render as render_my_reports
+
+        render_my_reports()
+        return
     st.caption("Pick a report — its filters, tables, and exports appear below, one report at a time.")
     report_choice = st.selectbox("Report", REPORT_OPTIONS, key="report_type_picker")
     st.divider()

@@ -285,7 +285,7 @@ def _delta_text(now: float, before: float, prev_label: str) -> str:
     return f"vs {prev_label}: n/a" if c is None else f"{'+' if c >= 0 else '-'}{abs(c):.0f}% vs {prev_label}"
 
 
-TOC_GUESS = {"highlights": 2, "bank": 3, "charts": 4, "detail": 5}
+TOC_GUESS = {"highlights": 2, "bank": 3, "my_reports": 4, "charts": 4, "detail": 5}
 
 
 def _cover(data: dict, short: bool, st: dict, pages: dict) -> list:
@@ -313,6 +313,8 @@ def _cover(data: dict, short: bool, st: dict, pages: dict) -> list:
     story += [big, Spacer(1, 0.3 * inch)]
     # page numbers come from a first build (generate_overview_pdf builds twice), so they are right however long each section runs
     contents = [["Highlights and key numbers", str(pages["highlights"])], ["Bank and cash", str(pages["bank"])]]
+    if data.get("my_reports"):
+        contents.append(["My reports", str(pages.get("my_reports", pages["bank"] + 1))])
     if not short:
         contents += [["Charts", str(pages["charts"])], ["Detail: top payees, financing, behavior, coming up", str(pages["detail"])]]
     story += [_section_table(["Contents", "Page"], contents, [CONTENT_WIDTH * 0.85, CONTENT_WIDTH * 0.15], right_cols=(1,)), PageBreak()]
@@ -377,6 +379,29 @@ def _overview_story(data: dict, short: bool, pages: dict) -> list:
         story.append(_section_table(["Measure", "Figure"], brows, [CONTENT_WIDTH * 0.55, CONTENT_WIDTH * 0.45], right_cols=(1,)))
         story.append(Spacer(1, 4))
     story.append(Paragraph(_esc(bank_note(bank)), st["grey"]))
+
+    # ---- My reports the owner chose to include (engines/report_builder.py), each run for this period
+    if data.get("my_reports"):
+        from engines.report_builder import _cell
+
+        story.append(PageBreak())
+        story += _section("My reports", st, toc="my_reports")
+        for row, res in data["my_reports"]:
+            story.append(Paragraph(f"<b>{_esc(row['name'])}</b>", st["body"]))
+            if isinstance(res, str):
+                story.append(Paragraph(_esc(f"This saved report no longer runs: {res}"), st["grey"]))
+                continue
+            story.append(Paragraph(_esc(" · ".join(res.criteria)), st["grey"]))
+            if res.table.empty:
+                story.append(Paragraph("Nothing in this period.", st["grey"]))
+            else:
+                cols = list(res.table.columns)
+                rows = [[_cell(v, res.kinds.get(c, "text")) for c, v in zip(cols, rec)] for rec in res.table.head(40).itertuples(index=False)]
+                right = tuple(i for i, c in enumerate(cols) if res.kinds.get(c) in ("money", "number", "count"))
+                story.append(_section_table(cols, rows, [CONTENT_WIDTH / len(cols)] * len(cols), right_cols=right))
+                if len(res.table) > 40:
+                    story.append(Paragraph(f"First 40 of {len(res.table):,} rows - open it under Reports, My reports for all of them.", st["grey"]))
+            story.append(Spacer(1, 10))
 
     if not short:
         # ---- charts page

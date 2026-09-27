@@ -343,5 +343,15 @@ def get_overview(kind: str, anchor: date) -> dict:
         "kind": kind, "label": label, "start": start, "end": end, "prev_label": plabel,
         "current": cur, "previous": prev, "upcoming": upcoming, "watch": watch, "trend": _trend(kind, start),
         "outstanding_today": float(outstanding.loc[outstanding["track"] == "TOTAL", "outstanding"].iloc[0]),
-        "highlights": highlights, "bank": bank,
+        "highlights": highlights, "bank": bank, "my_reports": _my_reports(start, end),
     }
+
+
+def _my_reports(start: date, end: date) -> list:
+    """Saved "My reports" marked "Include in the overall report", run for this period (engines/report_builder.py)."""
+    try:
+        from engines.report_builder import overview_results
+
+        return overview_results(start, end)
+    except sqlite3.OperationalError:
+        return []

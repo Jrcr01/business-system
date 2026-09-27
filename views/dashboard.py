@@ -186,6 +186,30 @@ def render() -> None:
                           help="From the cash forecast: bank balance + expected money in − checks not cleared and loan / card dues.")
         show_alerts(dash_bank_alerts)
 
+    # My reports pinned to the Dashboard (2026-09-28, plan phase 4; engines/report_builder.py): each one's headline figure and chart.
+    try:
+        from engines.report_builder import pinned_results
+
+        dash_pins = pinned_results()
+    except Exception:                                   # a database without saved_reports yet
+        dash_pins = []
+    if dash_pins:
+        from views.my_reports import headline_text, show_chart
+
+        st.subheader("My reports")
+        for start in range(0, len(dash_pins), 3):
+            for col, (pin_row, pin_res) in zip(st.columns(3), dash_pins[start:start + 3]):
+                with col.container(border=True):
+                    st.markdown(f"**{pin_row['name']}**")
+                    if isinstance(pin_res, str):
+                        st.warning(f"This report no longer runs: {pin_res}")
+                    else:
+                        st.metric(pin_res.headline[0], headline_text(pin_res))
+                        st.caption(" · ".join(pin_res.criteria[1:]) or pin_res.dataset_label)
+                        show_chart(pin_res, height=170)
+                    if st.button("Open", icon=":material/open_in_new:", key=f"dash_pin_open_{pin_row['report_id']}"):
+                        go_to("reports", rpt_mode="My reports", _mr_pick_next=int(pin_row["report_id"]))
+
     # TRIAL C (2026-09-14): calendar heatmap — hover a day to see that day's all-tracks total,
     # instead of picking a date (Trial A) or reading it off the issue-check grid (Trial B). A
     # third option to compare, not a replacement — drop this block if it doesn't win.
