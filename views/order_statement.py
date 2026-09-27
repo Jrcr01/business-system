@@ -308,7 +308,8 @@ def render() -> None:
                 st.session_state["selected_statement_id"] = int(filtered_statements_df.iloc[selected_rows[0]]["statement_id"])
             selected_sid = st.session_state.get("selected_statement_id")
 
-            with st.expander("Print statements in bulk"):
+            # stateful (key + on_change) so the Payment run page's "Print statements" button can open it
+            with st.expander("Print statements in bulk", icon=":material/picture_as_pdf:", key="bulk_print_exp", on_change="rerun"):
                 st.caption("Print the statements of several order statements in one go, as one combined PDF. Printing here does not lock batches and nothing is marked as printed, "
                            "so you can always reprint after an adjustment or revision.")
                 bp1, bp2 = st.columns([2, 3])

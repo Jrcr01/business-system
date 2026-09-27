@@ -66,6 +66,7 @@ from engines.cc_service import get_statement_gap_alerts, get_annual_fee_alerts, 
 from engines.checkbook_service import audit_booklet_gaps, get_checkbook_alerts
 from engines.last_modified_sql import statement_modified_sql, loan_note_modified_sql, bank_loan_modified_sql
 from engines.global_search_service import search_everything
+from engines.payment_run_service import get_run_stages, waiting_count
 from engines.park_draft_service import save_park_draft, load_park_draft, clear_park_draft, list_park_drafts
 from engines.check_run_service import (
     get_pending_check_run,
@@ -270,6 +271,7 @@ import views.creditor_master
 import views.dashboard
 import views.lenders
 import views.order_statement
+import views.payment_run
 import views.reports
 from views.shared import (  # noqa: F401
     BL_BROWSE,
@@ -387,9 +389,18 @@ show_flashes()      # "Saved ..." toasts queued by refresh(done=...) before the 
 # Sidebar menu (2026-09-27, per user: a grouped menu instead of 10 tabs across the top). Each page is one views/<x>.render();
 # only the open page runs. The id is the page's web address (localhost:8501/<id>) and what jumps / the search use.
 # --------------------------------------------------------------------------
+@st.cache_data(ttl="15s")
+def _run_waiting() -> int:
+    """How many things wait in the payment cycle -- shown beside Payment run in the menu."""
+    return waiting_count(get_run_stages())
+
+
+_n_waiting = _run_waiting()
 PAGES.clear()
 PAGES.update({
-    "dashboard": st.Page(views.dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard", default=True),
+    "payment-run": st.Page(views.payment_run.render, title="Payment run" + (f" · {_n_waiting}" if _n_waiting else ""), icon=":material/checklist:",
+                           url_path="payment-run", default=True),
+    "dashboard": st.Page(views.dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard"),
     "order-statements": st.Page(views.order_statement.render, title="Order statements", icon=":material/description:", url_path="order-statements"),
     "checks": st.Page(views.checks.render, title="Checks and checkbook", icon=":material/receipt_long:", url_path="checks"),
     "lenders": st.Page(views.lenders.render, title="Lenders", icon=":material/handshake:", url_path="lenders"),
@@ -401,9 +412,9 @@ PAGES.update({
     "admin": st.Page(views.admin.render, title="Admin and audit", icon=":material/admin_panel_settings:", url_path="admin"),
 })
 MENU = {
-    "Daily work": ["dashboard", "order-statements", "checks"],
+    "Daily work": ["payment-run", "order-statements", "checks"],
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
-    "Records and reports": ["creditors", "analytics", "reports"],
+    "Records and reports": ["dashboard", "creditors", "analytics", "reports"],
     "System": ["admin"],
 }
 page = st.navigation({section: [PAGES[pid] for pid in ids] for section, ids in MENU.items()}, position="sidebar")
@@ -487,7 +498,7 @@ with st.sidebar:
         # Order Statement/Lenders/Checks & checkbook tabs). The sidebar is the one part of this app
         # that stays on screen regardless of which tab is active -- a modal/dialog popup would close
         # the moment you switched tabs, so this is the only surface that actually works for that.
-        st.caption("Mini calendar — for reference while issuing checks")
+        st.caption("For reference while issuing checks.")
         # Month/year pickers + prev/next arrows. The arrows change the pickers through on_click callbacks, NOT by calling
         # st.rerun() from here: this sidebar is drawn before the main tabs, so an early st.rerun() made Streamlit forget
         # which tab was open and dropped you back on the Dashboard every time (2026-09-26). A callback runs before the page
@@ -508,7 +519,7 @@ with st.sidebar:
             if y in side_cal_years:
                 st.session_state["side_cal_month_pick"], st.session_state["side_cal_year_pick"] = m, y
 
-        side_cal_prev_col, side_cal_month_col, side_cal_year_col, side_cal_next_col = st.columns([1, 2.4, 2.2, 1], vertical_alignment="center")
+        side_cal_prev_col, side_cal_month_col, side_cal_year_col, side_cal_next_col = st.columns([0.8, 2, 2.5, 0.8], vertical_alignment="center", gap="small")
         side_cal_prev_col.button("◀", key="side_cal_prev", on_click=_side_cal_step, args=(-1,))
         def _side_cal_month_picked() -> None:
             st.session_state["side_cal_year_pick"] = prospective_year(st.session_state["side_cal_month_pick"])

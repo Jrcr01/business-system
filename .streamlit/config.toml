@@ -19,7 +19,7 @@ showSidebarBorder = false
 baseRadius = "8px"
 font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
 baseFontSize = 15
-headingFontSizes = ["28px", "21px", "17px", "15px", "14px", "13px"]
+headingFontSizes = ["30px", "26px", "18px", "15px", "14px", "13px"]
 headingFontWeights = [700, 600, 600, 600, 600, 600]
 dataframeHeaderBackgroundColor = "#EAF1F7"
 dataframeBorderColor = "#D6E0EA"
