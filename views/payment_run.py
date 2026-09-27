@@ -8,6 +8,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from engines.bank_statement_service import last_import
 from engines.cc_service import get_statement_gap_alerts
 from engines.check_run_service import mark_batch_printed
 from engines.common import php
@@ -152,6 +153,19 @@ def render() -> None:
     if overdue_links:
         st.warning(f":material/link: {overdue_links} statement QR link(s) are past their date but Google Drive could not be reached to switch them "
                    "off. Double-click **drive_connect.bat** to sign in again; they are switched off the next day.")
+    try:
+        li = last_import()
+    except Exception:                                   # database without the bank tables yet
+        li = None
+    if li:
+        from datetime import date as _date
+        age = (_date.today() - _date.fromisoformat(str(li["imported_at"])[:10])).days
+        if age > 7:
+            b1, b2 = st.columns([5, 1.6], vertical_alignment="center")
+            b1.info(f":material/account_balance: The last bank statement was imported {age} days ago (covers up to {li['period_to']}). "
+                    "Download the latest one from MBOS so cleared checks and your cash position stay current.")
+            if b2.button("Open Bank and cash", icon=":material/account_balance_wallet:", key="pr_bank_btn", width="stretch"):
+                go_to("bank-cash")
     reprint = _stages().get("needs_reprint")
     if reprint is not None and not reprint.empty:
         rp1, rp2 = st.columns([5, 1.6], vertical_alignment="center")

@@ -4,6 +4,7 @@
 
 - [Current State (2026-09-27)](#current-state-2026-09-27) — **read this first**: what is live now, where things are, rules added since 2026-09-17
 - [Thermal Statement Printing](#thermal-statement-printing) — gated mini-phase (2026-09-27): spec, locked decisions, build order, acceptance criteria
+- [Bank Statement Import and Cash Insights](#bank-statement-import-and-cash-insights) — MBOS statement import, automatic check matching, cash insights (2026-09-27)
 - [Current Priority / Scope](#current-priority--scope) — Phased roadmap (Phases 1-6)
 - [Update Protocol](#update-protocol) — How to maintain this file
 - [Core System Configuration](#core-system-configuration) — Bank account, database, branding, core rules
@@ -138,6 +139,45 @@ Printer config can use the existing `settings` key/value table (category `therma
 * A batch edited after unlock shows "Needs reprint" until reprinted.
 * One button click produces exactly one print and one audit entry per copy.
 * A long statement over Bluetooth triggers the guardrail warning.
+
+---
+
+## Bank Statement Import and Cash Insights
+
+Started 2026-09-27 (owner: "I do not have the time to reconcile which checks are cleared ... then from there we can use AI business
+intelligence to provide insights"). The owner downloads the Statement of Account from Metrobank MBOS and drops it in the app; the app does
+the matching. Also the foundation for the owner's future goal: suggested check dates under cash constraints.
+
+**Owner decisions (2026-09-27):** insights local first (nothing leaves the laptop; an AI write-up later, optional); **show both** -- the
+app's totals keep "cleared on its check date", the bank-confirmed date is shown beside it (switching the totals is a later decision);
+insights wanted: cash position & forecast, checks not yet cleared, collections / inflow trends, unusual items, working capital starting
+with cash vs payables (receivables / inventory later).
+
+**MBOS statement (real sample, Jan-Feb 2026, 65-page PDF):** one table per page, 11 columns: Transaction Date, Posting Date, Time,
+Check Number (10 digits, 0000000000 = none), Transaction Description, Debit Amount, Credit Amount, Balance, Branch/Channel, Subscriber
+Number/TIN, Sequence Number. Headers are printed sideways (pdfplumber reads the words backwards, sometimes in reverse order); dates
+MM/DD/YYYY; long amounts wrap inside the cell ("1000000.0 0"). Descriptions seen: IM IN- CLRNG- BATCH / MO CHK IN-CLRNG / MO ENCSHMNT
+(our checks clearing), MO CSH DEP / MO LOC CHK DEP / ET CR IBFT / WA CR / MO CM (money in), DE DM RET CHK (returned deposited check),
+MO DM PAY UTLTY (bills payment), MO DM (debit memo). Every running balance added up (655 lines).
+
+**Phase 1 (done):** `engines/bank_statement_service.py`: `parse_statement()` (PDF + CSV/Excel with the same headings; never raises;
+running-balance check; masked account), `classify()`, `import_statement()` (file hash unique = never twice; `line_key` unique = overlapping
+periods never double up; keeps a copy in `bank_dir()` = C:/AP_Data/bank, outside git; audit `BANK_STATEMENT_IMPORTED`), `match_checks()`
+(number via `norm_check_number` = migration 047's 7/10-digit rule + amount -> `checks_issued.bank_cleared_date` / `bank_txn_id`;
+exceptions: amount_mismatch, cancelled_check_cleared, not_in_system; returned_check), `preview_matches()` (read-only), `exceptions()`,
+`not_yet_cleared()` (numbered active checks dated up to the last imported bank date, not cleared), `statement_coverage()`, `last_import()`,
+`mark_reviewed()`. Schema: migration 050 (`bank_statement_imports`, `bank_transactions`, `checks_issued.bank_cleared_date`, `bank_txn_id`)
+-- test database only so far; live via update_database.bat. UI: `views/bank_cash.py` "Bank and cash" (Daily work): Import tab (drop file ->
+preview: period, lines, closing balance, balances check, kinds, how checks would match -> Import) and Reconciliation tab (confirmed / not yet
+cleared / need a look, mark looked-at with a note, not-in-system list, checks not yet cleared with days waiting). Payment run reminds when
+the last import is over 7 days old; a batch's check table shows "Bank cleared". The sidebar menu is `expanded=True` (13 pages).
+**First finding** (test copy import of the Jan-Feb sample): check 3992527921, First Rubber Manufacturing (LEGACY-MS-ACCESS-54), is in the
+system as Oct 29, 2026, PHP 6,409 and still active, but the bank cleared it Jan 29, 2026 for PHP 6,408 -- likely a legacy typo; left for
+the owner to correct. The system's own checks start Sep 20, 2026, so matching needs a statement from then on.
+Tests: `tests/test_bank_statement_import.py` (made-up MBOS-layout statement; real statements never go into the project).
+
+**Phase 2 (next):** local insights on the same page -- cash position & forecast, float of uncleared checks, inflow trends, unusual items,
+cash vs payables.
 
 ---
 

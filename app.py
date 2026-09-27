@@ -264,6 +264,7 @@ from engines.card_rules import (  # noqa: F401
 import views.add_data
 import views.admin
 import views.analytics
+import views.bank_cash
 import views.bank_loans
 import views.checks
 import views.credit_cards
@@ -405,6 +406,7 @@ PAGES.update({
     "dashboard": st.Page(views.dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard"),
     "order-statements": st.Page(views.order_statement.render, title="Order statements", icon=":material/description:", url_path="order-statements"),
     "checks": st.Page(views.checks.render, title="Checks and checkbook", icon=":material/receipt_long:", url_path="checks"),
+    "bank-cash": st.Page(views.bank_cash.render, title="Bank and cash", icon=":material/account_balance_wallet:", url_path="bank-cash"),
     "lenders": st.Page(views.lenders.render, title="Lenders", icon=":material/handshake:", url_path="lenders"),
     "bank-loans": st.Page(views.bank_loans.render, title="Bank loans", icon=":material/account_balance:", url_path="bank-loans"),
     "credit-cards": st.Page(views.credit_cards.render, title="Credit cards", icon=":material/credit_card:", url_path="credit-cards"),
@@ -414,12 +416,13 @@ PAGES.update({
     "admin": st.Page(views.admin.render, title="Admin and audit", icon=":material/admin_panel_settings:", url_path="admin"),
 })
 MENU = {
-    "Daily work": ["payment-run", "add-data", "order-statements", "checks"],
+    "Daily work": ["payment-run", "add-data", "order-statements", "checks", "bank-cash"],
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records and reports": ["dashboard", "creditors", "analytics", "reports"],
     "System": ["admin"],
 }
-page = st.navigation({section: [PAGES[pid] for pid in ids] for section, ids in MENU.items()}, position="sidebar")
+page = st.navigation({section: [PAGES[pid] for pid in ids] for section, ids in MENU.items()}, position="sidebar",
+                     expanded=True)          # always show every page (Streamlit folds long menus behind "View more"; Alt+1..0 need the links)
 
 # A jump requested by the search pop-up or a page button (set, then st.rerun()): apply it before any page draws.
 _pending_global_jump = st.session_state.pop("_global_jump", None)

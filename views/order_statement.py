@@ -941,7 +941,7 @@ def render() -> None:
             checks_view = st.segmented_control("Checks", CHECKS_VIEWS, format_func=CHECKS_VIEW_LABELS.get, required=True,
                                                key=checks_view_key, label_visibility="collapsed")
             scoped_checks_df = q(
-                "SELECT check_id, check_number, check_date, amount, status, datetime(printed_at, 'localtime') AS printed_at FROM checks_issued WHERE statement_id = ? ORDER BY check_id",
+                "SELECT check_id, check_number, check_date, amount, status, datetime(printed_at, 'localtime') AS printed_at, bank_cleared_date FROM checks_issued WHERE statement_id = ? ORDER BY check_id",
                 (int(batch_scope_pick),),
             )
             active_checks_df = scoped_checks_df[scoped_checks_df["status"] == "Active"].copy() if not scoped_checks_df.empty else scoped_checks_df
@@ -1265,7 +1265,9 @@ def render() -> None:
                     st.dataframe(
                         display_scoped_checks,
                         hide_index=True,
-                        column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)},
+                        column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
+                                       "bank_cleared_date": st.column_config.TextColumn("Bank cleared", help="The date the bank cleared this check, from an imported "
+                                                                                        "bank statement (Bank and cash). Empty = not on a statement yet.")},
                     )
 
                 section("Edit parked checks")

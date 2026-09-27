@@ -280,6 +280,9 @@ CREATE TABLE IF NOT EXISTS checks_issued (
     printed_at DATETIME,
     export_placeholder TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- bank statement import (migration 050): the bank's own cleared date and the matching bank line (NULL = not on a statement yet)
+    bank_cleared_date DATE,
+    bank_txn_id INTEGER,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
     FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id),
@@ -680,3 +683,52 @@ CREATE TABLE IF NOT EXISTS statement_prints (
     FOREIGN KEY (version_id) REFERENCES statement_versions(version_id)
 );
 CREATE INDEX IF NOT EXISTS idx_statement_prints_statement ON statement_prints(statement_id, printed_at);
+
+-- BANK STATEMENT IMPORT (migration 050, 2026-09-27): imported MBOS statements and their lines.
+-- One row per imported file. file_hash is unique: the same file is never imported twice.
+CREATE TABLE IF NOT EXISTS bank_statement_imports (
+    import_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_account_id INTEGER NOT NULL DEFAULT 1,
+    file_name TEXT NOT NULL,
+    file_hash TEXT NOT NULL UNIQUE,
+    stored_path TEXT,
+    account_last4 TEXT,
+    period_from DATE,
+    period_to DATE,
+    opening_balance REAL,
+    closing_balance REAL,
+    line_count INTEGER,
+    new_lines INTEGER,
+    balance_ok INTEGER NOT NULL DEFAULT 1,
+    imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id)
+);
+
+-- One row per bank line. line_key is unique, so overlapping statement periods never double up.
+-- kind: CHECK (ours clearing) / DEPOSIT / RETURNED_CHECK / BILLS_PAYMENT / DEBIT_MEMO / OTHER.
+-- match_status (CHECK lines): matched / amount_mismatch / cancelled_check_cleared / not_in_system; returned_check for RETURNED_CHECK.
+CREATE TABLE IF NOT EXISTS bank_transactions (
+    txn_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    import_id INTEGER NOT NULL,
+    bank_account_id INTEGER NOT NULL DEFAULT 1,
+    txn_date DATE NOT NULL,
+    posting_date DATE NOT NULL,
+    txn_time TEXT,
+    check_number TEXT,
+    description TEXT,
+    debit REAL NOT NULL DEFAULT 0,
+    credit REAL NOT NULL DEFAULT 0,
+    balance REAL,
+    channel TEXT,
+    sequence_no TEXT,
+    kind TEXT NOT NULL DEFAULT 'OTHER',
+    matched_check_id INTEGER,
+    match_status TEXT,
+    reviewed INTEGER NOT NULL DEFAULT 0,
+    note TEXT,
+    line_key TEXT NOT NULL UNIQUE,
+    FOREIGN KEY (import_id) REFERENCES bank_statement_imports(import_id),
+    FOREIGN KEY (matched_check_id) REFERENCES checks_issued(check_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bank_transactions_date ON bank_transactions(posting_date);
+CREATE INDEX IF NOT EXISTS idx_bank_transactions_check ON bank_transactions(check_number);
