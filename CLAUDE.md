@@ -176,8 +176,18 @@ system as Oct 29, 2026, PHP 6,409 and still active, but the bank cleared it Jan 
 the owner to correct. The system's own checks start Sep 20, 2026, so matching needs a statement from then on.
 Tests: `tests/test_bank_statement_import.py` (made-up MBOS-layout statement; real statements never go into the project).
 
-**Phase 2 (next):** local insights on the same page -- cash position & forecast, float of uncleared checks, inflow trends, unusual items,
-cash vs payables.
+**Phase 2 (done) -- local insights** (`engines/cash_insights_service.py`, tabs on "Bank and cash"; only the open tab is computed; nothing
+leaves the laptop): `cash_position()` (last bank balance + date), `expected_daily_inflow()` (average money in per weekday over the last 8
+imported weeks), `scheduled_outflows(start, end)` (our active checks NOT bank-cleared on their check date -- or on `start` if already past --
+weekend -> Monday via `next_banking_day`; plus Bank Loan / Credit Card dues from `get_payment_schedule_all_tracks()`), `forecast(days)`
+(day-by-day from today; cash buffer in settings `cash_buffer`; lowest day, first day under the buffer), `float_summary()` (not cleared: past
+the last bank date by age bucket / payee vs dated ahead), `inflow_trends()` (weekly / monthly / by type; partial weeks at the edges of the
+imported period are shown light blue and not counted in the average or the slow flag; slow = under 75% of the average), `unusual_items()`
+(returned checks, bank debits that are not our checks, lines > 5x the median of their own type, mismatched clearings),
+`working_capital()` (cash vs payables due in 7/30/60/90 days, cover, left, days of cash, DPO). Every insight tab warns when the latest bank
+balance is over 14 days old. Tests: `tests/test_cash_insights.py` (hand-worked figures). Altair note: nested `alt.condition` / chained
+`alt.when` on boolean fields failed here -- use a category column + `alt.Color(scale=domain/range)`. Restart the test app after editing views
+(it does not always reload them).
 
 ---
 
