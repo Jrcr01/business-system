@@ -299,9 +299,12 @@ add a help text when the field has a rule, a catch or a computed meaning.
 **Where things live (2026-09-28, owner asked "where should I store my system?").** Live data `C:\AP_Data` (database, `bank\`, `drive\`
 sign-in files) -- stays on the local disk, never in a syncing folder (BitLocker recommended). Daily backups -> Google Drive
 `H:\My Drive\Claude9OS\AP_Backups`, now pinned by `local_settings.bat` (`AP_BACKUP_DIR`, not in git) so they stay off-site even if the
-program folder moves. Program: recommended move from Google Drive to `C:\AP_System` (a git history inside a syncing folder can collide)
-plus a private GitHub copy of the code only -- owner to do the copy, re-point the "AP System Daily Backup" scheduled task and the desktop
-Start / Stop shortcuts (the session's safety rules do not allow Claude to set these up). History audit before any push: no databases,
+program folder moves. **Program: MOVED to `C:\AP_System` on 2026-09-28** (from `H:\My Drive\Claude9OS\Project_Checke`, now retired --
+a git history inside a syncing folder can collide); the owner copied it and re-pointed the "AP System Daily Backup" task (daily 18:00,
+runs only while signed in, no password) and the desktop Start / Stop shortcuts; update_database.bat was then run from here (migrations
+050-052 live). `.claude/launch.json` points here. Still to do: a private GitHub copy of the code only (owner creates the repo and signs
+in; Claude adds the remote and pushes). Card numbers: every live / copy / backup database was checked on 2026-09-28 -- no full card
+number anywhere (the 2026-09-27 clean-up covered them all). History audit before any push: no databases,
 statements, CSVs or sign-in files ever committed; `excel_invoice_entry/invoice_entry_master.xlsm` holds the supplier list + terms only;
 docs / tests mention some real supplier names and check numbers (fine for a PRIVATE repository only). The test app
 (`run_test_streamlit.bat`) now listens on 127.0.0.1 like the live one -- the test copy holds real data.

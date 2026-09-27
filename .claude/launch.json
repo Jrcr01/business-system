@@ -4,12 +4,12 @@
     {
       "name": "ap-disbursement",
       "runtimeExecutable": "C:\\Users\\Rhodora\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-      "runtimeArgs": ["-m", "streamlit", "run", "H:\\My Drive\\Claude9OS\\Project_Checke\\app.py", "--server.headless", "true"],
+      "runtimeArgs": ["-m", "streamlit", "run", "C:\\AP_System\\app.py", "--server.headless", "true"],
       "port": 8501
     },
     {
       "name": "test-copy-8502",
-      "runtimeExecutable": "H:\\My Drive\\Claude9OS\\Project_Checke\\run_test_streamlit.bat",
+      "runtimeExecutable": "C:\\AP_System\\run_test_streamlit.bat",
       "runtimeArgs": [],
       "port": 8502
     }
