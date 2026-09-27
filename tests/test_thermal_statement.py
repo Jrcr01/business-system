@@ -68,7 +68,7 @@ def test_missing_values_print_a_dash_never_none_or_a_false_zero(monkeypatch):
     assert fmt_text(None) == fmt_text("") == fmt_text(float("nan")) == DASH and fmt_money(None) == DASH and fmt_money(0) == "PHP 0.00"
 
 
-def test_a_cancelled_invoice_is_listed_but_not_counted(monkeypatch):
+def test_cancelled_items_are_left_off_the_slip_so_every_line_adds_up(monkeypatch):
     data = {
         "statement": {"statement_ref": "OS 0002", "creditor_name": "ACME", "status": "Draft"},
         "invoices": [{"doc_ref": "A", "invoice_date": "2026-09-01", "due_date": "2026-10-01", "amount": 100.0, "status": "Unpaid", "display_status": "Unpaid"},
@@ -79,7 +79,9 @@ def test_a_cancelled_invoice_is_listed_but_not_counted(monkeypatch):
     slip = build_slip(1, "FILE")
     assert slip.totals["gross"] == 100.0 and slip.totals["checks"] == 0 and slip.totals["balance"] == 100.0
     text = render_text(slip)
-    assert text.count("Cancelled - not counted") == 2                          # the invoice and the check
+    lines = text.splitlines()
+    assert not any(line.startswith(("B ", "3990000001")) for line in lines)   # cancelled invoice / check: only in the A4 copy (QR)
+    assert "INVOICES (1)" in lines and "CHECKS (0)" in lines and "Cancelled" not in text
 
 
 def test_the_escpos_job_initializes_prints_the_qr_feeds_and_cuts_once_per_copy(db):
@@ -116,7 +118,11 @@ def test_printer_settings_come_from_the_settings_table_with_defaults(db):
     assert get_printer_config()["thermal_bt_line_threshold"] == 75
 
 
-def test_a_fully_covered_invoice_gets_no_status_line_other_statuses_stay():
-    from engines.thermal_statement import status_words
-    assert status_words("Check issued \u00b7 2027-03-09") == ""          # owner: remove "Check issued, dated ..."
-    assert status_words("Unpaid") == "No check yet" and status_words("Cancelled") == "Cancelled - not counted"
+
+def test_the_slip_is_one_line_per_item_with_no_status_lines_and_points_to_the_qr(db):
+    sid = _batch(db)
+    text = render_text(build_slip(sid, "SUPPLIER", qr_link="https://drive.google.com/file/d/abc/view"))
+    for word in ("No check yet", "Check issued", "Partly covered", "damaged"):          # statuses and the memo reason are in the A4 copy
+        assert word not in text
+    lines = [line.strip() for line in text.splitlines()]
+    assert lines.index("Scan for the full statement:") < lines.index("[ QR ]")

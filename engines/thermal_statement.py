@@ -101,16 +101,6 @@ def fmt_date_long(v) -> str:
         return s
 
 
-def status_words(status) -> str:
-    """An invoice's status said plainly, for the line under it ('' = no line). A fully covered invoice gets no line (owner, 2026-09-27:
-    "remove check issued, dated..." -- its checks are listed in the CHECKS table)."""
-    s = fmt_text(status)
-    if s.startswith("Check issued"):
-        return ""
-    return {"Unpaid": "No check yet", "Partly covered": "Partly covered by checks", "Partly paid": "Partly paid",
-            "Paid": "Paid", "Cancelled": "Cancelled - not counted"}.get(s, s)
-
-
 def _num(v):
     """float, or None when the amount is missing / not a number."""
     if v is None or fmt_text(v) == DASH:
@@ -167,13 +157,23 @@ class Slip:
     qr_link: str | None
 
 
+def counted_invoices(data: dict) -> list:
+    """Invoices that are on the slip and counted: every one except Cancelled."""
+    return [i for i in data["invoices"] if (i.get("display_status") or i.get("status")) != "Cancelled"]
+
+
+def counted_checks(data: dict) -> list:
+    """Checks that are on the slip and counted: Active only (cancelled / replaced ones are in the A4 copy behind the QR)."""
+    return [c for c in data["checks"] if c["status"] == "Active"]
+
+
 def statement_totals(data: dict) -> dict:
     """Totals computed from the lines that are printed. Cancelled invoices and non-Active checks are listed but not counted.
     A counted line without an amount makes that total (and everything built on it) None -> printed as '—'."""
-    counted_inv = [i for i in data["invoices"] if (i.get("display_status") or i.get("status")) != "Cancelled"]
+    counted_inv = counted_invoices(data)
     inv_amounts = [_num(i["amount"]) for i in counted_inv]
     memo_amounts = [_num(m["amount"]) for m in data["memos"]]
-    active_checks = [c for c in data["checks"] if c["status"] == "Active"]
+    active_checks = counted_checks(data)
     chk_amounts = [_num(c["amount"]) for c in active_checks]
     gross = None if None in inv_amounts else round(sum(inv_amounts), 2)
     memos = None if None in memo_amounts else round(sum(memo_amounts), 2)
@@ -215,8 +215,10 @@ def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: b
         for i, ln in enumerate(wrap(fmt_text(value), COLUMNS - 10)):
             add(Line((f"{label + ':':<10}" if i == 0 else " " * 10) + ln))
 
-    # Readable layout (owner, 2026-09-27: "make it more readable and not confusing"): each list is a small table with column
-    # headings, dates are written out (Jan 08, 2027), and an invoice's status is said in words on the line under it.
+    # Summary slip (owner, 2026-09-27: "make it more readable and not confusing" ... "if detailed information is needed then that is
+    # the use of QR code"): small tables with column headings, dates written out (Jan 08, 2027), one line per item, no status lines or
+    # memo reasons, and only what is counted -- cancelled invoices and cancelled / replaced checks are in the A4 copy behind the QR --
+    # so every amount on the slip adds up to the summary.
     def table(title, headers, rows):
         add(Line(""))
         add(Line(title, bold=True))
@@ -224,25 +226,21 @@ def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: b
         rule()
         if not rows:
             add(Line("  (none)"))
-        for first, second, amount, note in rows:
+        for first, second, amount in rows:
             if len(first) > C1:                                   # a long reference gets its own line
                 add(Line(first))
                 first = ""
             add(Line(row3(first, second, amount)))
-            if note:
-                for ln in wrap(note, COLUMNS - 2):
-                    add(Line("  " + ln))
 
-    table(f"INVOICES ({len(data['invoices'])})", ("Invoice #", "Due date", "Amount"),
-          [(fmt_text(i["doc_ref"]), fmt_date_long(i["due_date"]), fmt_money(i["amount"]), status_words(i.get("display_status") or i["status"]))
-           for i in data["invoices"]])        # date received is left off the slip (owner, 2026-09-27)
+    invoices, checks = counted_invoices(data), counted_checks(data)
+    table(f"INVOICES ({len(invoices)})", ("Invoice #", "Due date", "Amount"),
+          [(fmt_text(i["doc_ref"]), fmt_date_long(i["due_date"]), fmt_money(i["amount"])) for i in invoices])   # no date received (owner)
     if data["memos"]:
         table(f"CREDIT MEMOS ({len(data['memos'])})", ("Memo #", "Date", "Amount"),
-              [(fmt_text(m["memo_ref"]), fmt_date_long(m["memo_date"]), fmt_money(m["amount"], sign="-"),
-                fmt_text(m["reason"]) if fmt_text(m["reason"]) != DASH else "") for m in data["memos"]])
-    table(f"CHECKS ({len(data['checks'])})", ("Check #", "Check date", "Amount"),
+              [(fmt_text(m["memo_ref"]), fmt_date_long(m["memo_date"]), fmt_money(m["amount"], sign="-")) for m in data["memos"]])
+    table(f"CHECKS ({len(checks)})", ("Check #", "Check date", "Amount"),
           [(fmt_text(c["check_number"]) if fmt_text(c["check_number"]) != DASH else "Not numbered", fmt_date_long(c["check_date"]),
-            fmt_money(c["amount"]), "" if c["status"] == "Active" else f"{fmt_text(c['status'])} - not counted") for c in data["checks"]])
+            fmt_money(c["amount"])) for c in checks])
 
     add(Line(""))
     add(Line("SUMMARY", bold=True))
@@ -265,6 +263,7 @@ def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: b
         add(Line(""))
         add(Line("Date: " + "_" * 20))
         add(Line(""))
+    add(Line("Scan for the full statement:", "center"))
     if not qr_link:
         add(Line("[QR code to the A4 copy goes here]", "center"))
     add(Line("Internal summary - not an official receipt.", "center"))
@@ -280,7 +279,7 @@ def render_text(slip: Slip) -> str:
     text = "\n".join(out)
     if slip.qr_link:                                       # the QR prints just before the closing lines
         head, tail = "\n".join(out[:-2]), "\n".join(out[-2:])
-        text = head + "\n" + "[ QR ]".center(COLUMNS).rstrip() + "\n" + slip.qr_link[:COLUMNS].center(COLUMNS).rstrip() + "\n" + tail
+        text = head + "\n" + "[ QR ]".center(COLUMNS).rstrip() + "\n" + tail          # the paper shows only the QR code, not the link text
     return text
 
 
