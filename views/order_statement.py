@@ -93,6 +93,11 @@ from views.shared import (  # noqa: F401
 )
 
 
+CHECKS_VIEWS = ["Issue checks", "Checks in this batch", "Assign numbers", "Corrections"]
+CHECKS_VIEW_LABELS = {"Issue checks": ":material/payments: Issue checks", "Checks in this batch": ":material/list_alt: Checks in this batch",
+                      "Assign numbers": ":material/format_list_numbered: Assign numbers", "Corrections": ":material/build: Corrections"}
+
+
 def _batch_context(statement_id: int):
     """What the Invoices / Credit Memo sections need to know about a batch: (id, row with statement_ref / creditor_name /
     status / net_total, creditor_id, supplier terms, locked?, cancelled?)."""
@@ -685,6 +690,12 @@ def render() -> None:
                 selection_mode="single-row",
                 key="batch_browser_df",
                 column_config={
+                    "statement_id": st.column_config.NumberColumn("ID", width="small"),
+                    "statement_ref": "Order statement",
+                    "creditor_name": "Supplier",
+                    "status": "Status",
+                    "created_at": "Created",
+                    "last_modified": "Last changed",
                     "total_amount": st.column_config.NumberColumn("Gross total", format=MONEY_FORMAT),
                     "credit_memo_total": st.column_config.NumberColumn("Credit memos", format=MONEY_FORMAT),
                     "net_total": st.column_config.NumberColumn("Net total (checks cut against this)", format=MONEY_FORMAT),
@@ -765,31 +776,6 @@ def render() -> None:
                         else:
                             st.error("Could not generate any statement PDF.")
 
-            with st.expander("Promote statement status"):
-                st.caption("Informational only — checks can be issued from any status once the batch has a payable balance. Promotion is not required.")
-                promotable = statements_df[statements_df["status"] == "Draft"]
-                with st.form("promote_statement_form", border=False):
-                    if promotable.empty:
-                        st.caption("No draft statements to promote.")
-                        stmt_choice = None
-                    else:
-                        stmt_choice = st.selectbox(
-                            "Statement",
-                            options=promotable["statement_id"],
-                            format_func=lambda sid: f"{promotable.set_index('statement_id').loc[sid, 'statement_ref']} ({promotable.set_index('statement_id').loc[sid, 'status']})",
-                            index=default_index(promotable["statement_id"], st.session_state.get("selected_statement_id")),
-                            key=batch_scoped_key("stmt_choice"),
-                        )
-                    if st.form_submit_button("Promote to Issued", icon=":material/arrow_upward:") and stmt_choice is not None:
-                        if guard_duplicate_submit("promote_statement", int(stmt_choice)):
-                            try:
-                                new_ref = promote_draft_statement(int(stmt_choice), "Issued")
-                                refresh(done=f"Promoted to Issued as {new_ref}.")
-                            except ValueError as e:
-                                st.error(str(e))
-                        else:
-                            st.warning("Duplicate submission ignored — identical to the click just before it.")
-
     batch_is_open = selected_sid is not None and selected_sid in set(statements_df["statement_id"])
     batch_scope_pick = selected_sid if batch_is_open else None
 
@@ -804,11 +790,35 @@ def render() -> None:
 
         with st.container(border=True):
             batch_is_cancelled = scoped_row["status"] == "Cancelled"
-            hc1, hc2, hc3, hc4 = st.columns([4, 2, 2, 1])
+            hc1, hc2, hc3, hc4 = st.columns([5, 1.6, 1.6, 1.1])
             with hc1:
-                st.markdown(f"**{scoped_row['statement_ref']}** — {scoped_row['creditor_name']}")
-                lock_badge = "🔒 Locked" if batch_is_locked else "🔓 Unlocked"
-                st.caption(f"Net {php(scoped_row['net_total'])} · {scoped_row['status']} · {lock_badge} · Terms: {supplier_terms or 'not set'}")
+                # Batch header (2026-09-27): who / status at a glance, the money, and how far the batch is in the payment cycle.
+                st.markdown(f"#### {scoped_row['statement_ref']} — {scoped_row['creditor_name']}  "
+                            + status_text(scoped_row["stage"]) + " " + status_text("Locked" if batch_is_locked else "Unlocked"))
+                _hk = q_live(
+                    """SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total,
+                              SUM(printed_at IS NOT NULL AND printed_at != '') AS exported,
+                              SUM(check_number IS NOT NULL AND check_number != '') AS numbered,
+                              (SELECT COUNT(*) FROM invoices WHERE statement_id = ? AND status != 'Cancelled') AS invoices
+                       FROM checks_issued WHERE statement_id = ? AND status = 'Active'""",
+                    (int(batch_scope_pick), int(batch_scope_pick)),
+                ).iloc[0]
+                _n, _checks_total = int(_hk["n"] or 0), float(_hk["total"] or 0)
+                _balance = float(scoped_row["net_total"]) - _checks_total
+                st.markdown(f"Net **{php(scoped_row['net_total'])}** · checks **{php(_checks_total)}** ({_n}) · "
+                            + (f"balance **{php(_balance)}**" if abs(_balance) > 0.005 else ":green[fully covered]")
+                            + f" · terms {supplier_terms or 'not set'}")
+
+                def _step(label: str, done: bool, partly: bool = False) -> str:
+                    return (f":green[:material/check_circle: {label}]" if done else f":orange[:material/timelapse: {label}]" if partly
+                            else f":gray[:material/radio_button_unchecked: {label}]")
+                _exported, _numbered = int(_hk["exported"] or 0), int(_hk["numbered"] or 0)
+                st.markdown("  →  ".join([
+                    _step(f"{int(_hk['invoices'] or 0)} invoice(s)", int(_hk["invoices"] or 0) > 0),
+                    _step("Checks parked", _n > 0 and abs(_balance) <= 0.005, _n > 0),
+                    _step("Sent to Chrysanth", _n > 0 and _exported == _n, _exported > 0),
+                    _step("Numbered", _n > 0 and _numbered == _n, _numbered > 0),
+                ]))
             with hc2:
                 if batch_is_cancelled:
                     st.caption("Cancelled — permanently locked.")
@@ -842,7 +852,7 @@ def render() -> None:
                             int(invoice_count_row["n"][0]),
                         )
             with hc4:
-                if st.button("Clear", key="clear_batch_selection"):
+                if st.button("Close", icon=":material/close:", key="clear_batch_selection", help="Close this batch (nothing is changed)."):
                     st.session_state["selected_statement_id"] = None
                     refresh()
 
@@ -917,500 +927,538 @@ def render() -> None:
             render_batch_memos(int(batch_scope_pick))
 
         with tab_checks_sub:
-            section("Issue a check")
-            _park_flash = st.session_state.pop("_park_flash", None)
-            if _park_flash:
-                st.success(_park_flash)
-            net_total, active_checks_sum, remaining_balance = get_batch_balance(int(batch_scope_pick))
-            is_balanced = abs(remaining_balance) <= 0.005
-            is_overpaid = remaining_balance < -0.005
-
-            if net_total <= 0:
-                st.info("No payable total yet — add invoices (and any credit memos) before issuing checks.")
-            elif is_overpaid:
-                st.warning(f"Overpaid — active checks ({php(active_checks_sum)}) exceed the net total ({php(net_total)}) by {php(-remaining_balance)}. Correct or replace a check to restore balance.")
-            elif is_balanced:
-                st.success(f"Balanced — net total {php(net_total)} fully covered by {php(active_checks_sum)} in active checks.")
-            else:
-                st.info(f"Net total {php(net_total)} · Active checks so far {php(active_checks_sum)} · Remaining balance {php(remaining_balance)}")
-
-            is_payable = not batch_is_locked and scoped_row["status"] != "Cancelled" and remaining_balance >= 0.01
-            if not is_payable:
-                reasons = []
-                if scoped_row["status"] == "Cancelled":
-                    reasons.append("batch is cancelled")
-                elif batch_is_locked:
-                    reasons.append("batch is locked")
-                if remaining_balance < 0.01:
-                    reasons.append("no remaining balance to pay" if net_total > 0 else "batch has no payable total yet")
-                st.caption("Cannot issue a new check here: " + "; ".join(reasons) + ".")
-            else:
-                st.caption(f"Remaining balance: {php(remaining_balance)} — split it into as many checks as you like; amounts are pre-calculated evenly and fully editable. No check number yet — that's assigned when the check is printed.")
-
-                latest_check_for_supplier = get_latest_check_for_creditor(scoped_creditor_id)
-                if latest_check_for_supplier:
-                    latest_date, latest_amount = latest_check_for_supplier
-                    st.caption(f"Last check issued to this supplier: {latest_date.strftime('%b %d, %Y')} — {php(latest_amount)}.")
-
-                num_checks_key = batch_scoped_key("issue_checks_count")
-                grid_key = batch_scoped_key("issue_checks_editor")
-                last_signature_key = batch_scoped_key("issue_checks_last_signature")
-
-                open_invoices_df = get_invoices_with_remaining(int(batch_scope_pick))
-                # Guardrail (2026-09-27): checks typed into this grid but never parked used to vanish when you opened another
-                # order statement. The grid is now remembered per batch for the session and put back when you return.
-                park_bases = st.session_state.setdefault("_park_bases", {})
-                _sid = int(batch_scope_pick)
-                _draft = load_park_draft(_sid)
-                _split_key = batch_scoped_key("issue_split_mode")
-                _restoring = False
-                if _draft and _split_key not in st.session_state:          # widgets were dropped while another batch was open
-                    if abs(_draft["balance"] - round(remaining_balance, 2)) <= 0.005 and _draft["invoice_ids"] == tuple(open_invoices_df["invoice_id"]):
-                        st.session_state[_split_key] = _draft["mode"]
-                        st.session_state[num_checks_key] = _draft["count"]
-                        _restoring = True
-                    else:
-                        clear_park_draft(_sid)
-                        park_bases.pop(_sid, None)
-                        _draft = None
-                        st.info("The checks you had typed for this batch were cleared because its invoices or balance changed in the meantime.")
-                split_mode = st.radio(
-                    "How to split", ["By number of checks", "One check per invoice"], horizontal=True, key=batch_scoped_key("issue_split_mode"),
-                    help="Some suppliers want one check for each invoice. 'One check per invoice' makes a row for every invoice still to be paid, dated on that invoice's due date.",
-                )
-                per_invoice = split_mode == "One check per invoice" and not open_invoices_df.empty
-                if per_invoice:
-                    num_checks = len(open_invoices_df)
-                    st.caption(f"{num_checks} invoice(s) still to pay — one check each, dated on the invoice's due date and for its remaining amount. Every date and amount stays editable below.")
-                else:
-                    if split_mode == "One check per invoice":
-                        st.caption("No open invoices to make checks for.")
-                    num_checks = st.number_input(
-                        "Number of checks", min_value=1, max_value=50, step=1,
-                        value=int(st.session_state.get(num_checks_key, 1)), key=num_checks_key,
-                    )
-                    st.caption("Two ways to issue: use the count above to pre-split evenly (whole pesos, editable), or just add/remove rows in the table below and type amounts yourself.")
-
-                # Re-seed the grid whenever the count OR the remaining balance changes (e.g. a check
-                # in this batch got cancelled/corrected) — otherwise a stale pre-split from before
-                # that change would silently linger in session_state.
-                # Default check date = the batch's invoice due date (the earliest one still unpaid if there are several),
-                # so a check is dated when it is actually due; every date stays editable in the grid.
-                due_val = q_live("SELECT MIN(due_date) AS d FROM invoices WHERE statement_id = ? AND status IN ('Unpaid', 'Partially Paid')", (int(batch_scope_pick),))["d"][0]
-                if not has_value(due_val):
-                    due_val = q_live("SELECT MIN(due_date) AS d FROM invoices WHERE statement_id = ? AND status != 'Cancelled'", (int(batch_scope_pick),))["d"][0]
-                default_check_date = date.fromisoformat(str(due_val)[:10]) if has_value(due_val) else date.today()
-                signature = (int(num_checks), round(remaining_balance, 2), default_check_date, per_invoice,
-                             tuple(open_invoices_df["invoice_id"]) if per_invoice else ())
-                if st.session_state.get(last_signature_key) != signature:
-                    st.session_state[last_signature_key] = signature
-                    st.session_state.pop(grid_key, None)
-                    if not _restoring:
-                        park_bases.pop(_sid, None)
-
-                if per_invoice:
-                    default_checks_df = pd.DataFrame({
-                        "check_date": [date.fromisoformat(str(d)[:10]) for d in open_invoices_df["due_date"]],
-                        "amount": [round(float(x), 2) for x in open_invoices_df["remaining"]],
-                    })
-                else:
-                    default_checks_df = pd.DataFrame({
-                        "check_date": [default_check_date] * int(num_checks),
-                        "amount": split_remaining_evenly(remaining_balance, int(num_checks)),
-                    })
-                computed_default_df = default_checks_df
-                if st.session_state.get(last_signature_key) is not None and _restoring:
-                    park_bases[_sid] = pd.DataFrame({"check_date": [date.fromisoformat(d) for d, _ in _draft["rows"]], "amount": [x for _, x in _draft["rows"]]})
-                elif grid_key not in st.session_state:
-                    park_bases.pop(_sid, None)
-                default_checks_df = park_bases.get(_sid, computed_default_df)
-                edited_checks_df = st.data_editor(
-                    default_checks_df,
-                    hide_index=True,
-                    num_rows="dynamic",
-                    key=grid_key,
-                    column_config={
-                        "check_date": st.column_config.DateColumn("Check Date", default=default_check_date, format="MMM DD, YYYY"),
-                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01, default=0.0),
-                    },
-                )
-
-                _typed = [(str(r["check_date"])[:10], round(float(r["amount"]), 2)) for _, r in edited_checks_df.iterrows() if pd.notna(r["amount"]) and float(r["amount"]) > 0]
-                _computed = [(str(r["check_date"])[:10], round(float(r["amount"]), 2)) for _, r in computed_default_df.iterrows()]
-                grid_is_edited = bool(_typed) and _typed != _computed
-                if grid_is_edited:
-                    _now_draft = {"mode": split_mode, "count": int(num_checks), "balance": round(remaining_balance, 2),
-                                  "invoice_ids": tuple(int(i) for i in open_invoices_df["invoice_id"]), "rows": _typed}
-                    if not _draft or any(_draft.get(k) != v for k, v in _now_draft.items()):
-                        save_park_draft(_sid, split_mode, int(num_checks), remaining_balance, list(open_invoices_df["invoice_id"]), _typed)
-                    st.warning(":material/edit_note: These checks are typed in but **not parked yet** — click **Park Metrobank checks** below to save them. "
-                               "They are remembered — even if you open another order statement or refresh the page — until you park them.")
-                elif _draft:
-                    clear_park_draft(_sid)
-                grid_total = float(edited_checks_df["amount"].sum())
-                grid_diff = remaining_balance - grid_total
-                grid_matches = abs(grid_diff) <= 0.005
-                if grid_matches:
-                    st.success(f"Grid total {php(grid_total)} matches the remaining balance.")
-                else:
-                    st.warning(f"Grid total {php(grid_total)} vs remaining balance {php(remaining_balance)} — off by {php(grid_diff)}. Adjust amounts to match exactly before issuing.")
-
-                # num_rows="dynamic" always leaves one blank "add a row" affordance in the
-                # returned data — drop it rather than reject it as "needs an amount".
-                rows = [r for r in edited_checks_df.to_dict("records") if float(r.get("amount") or 0) > 0]
-
-                # Same-day-duplicate warning (2026-09-17, per user request): this business
-                # deliberately avoids ever writing two checks to the same supplier on the same
-                # day, postdating past the due date instead specifically to prevent it. A
-                # warning, not a block -- st.warning() doesn't disable the submit button below,
-                # since there can be a genuine reason to do it anyway and the owner asked to keep
-                # that override available.
-                existing_check_dates = get_existing_check_dates_for_creditor(scoped_creditor_id)
-                grid_dates = [r["check_date"] for r in rows]
-                same_day_conflicts = sorted({
-                    d for d in grid_dates
-                    if d in existing_check_dates or grid_dates.count(d) > 1
-                })
-                if same_day_conflicts:
-                    conflict_list = ", ".join(d.strftime("%b %d, %Y") for d in same_day_conflicts)
-                    st.warning(
-                        f":material/warning: This supplier already has (or would have) more than one check dated {conflict_list} — "
-                        "double-check before parking. Still allowed if that's genuinely intended."
-                    )
-
-                alloc_ready = False
-                alloc_grid_key = batch_scoped_key("issue_checks_alloc_editor")
-                edited_alloc_df = pd.DataFrame(columns=["check_row", "check_date", "invoice_id", "doc_ref", "allocated"])
-
-                if grid_matches and rows:
-                    st.markdown("##### Allocate to invoices")
-                    if open_invoices_df.empty:
-                        st.error("No open invoices left to allocate these checks to — every invoice in this batch is already fully allocated or Cancelled. Add more invoices, or reduce the check amounts.")
-                    else:
-                        st.caption("Every check must be tied to the specific invoice(s) it pays — auto-filled oldest due date first below; adjust the amounts if a check should be split differently.")
-                        alloc_signature_key = batch_scoped_key("issue_checks_alloc_signature")
-                        alloc_signature = (repr(rows), repr(open_invoices_df["invoice_id"].tolist()), repr(open_invoices_df["remaining"].tolist()))
-                        if st.session_state.get(alloc_signature_key) != alloc_signature:
-                            st.session_state[alloc_signature_key] = alloc_signature
-                            st.session_state.pop(alloc_grid_key, None)
-
-                        preview_df = waterfall_allocate_preview(rows, open_invoices_df)
-                        if preview_df.empty:
-                            st.error("Couldn't auto-allocate — check the amounts above.")
-                        else:
-                            edited_alloc_df = st.data_editor(
-                                preview_df[["check_row", "check_date", "doc_ref", "allocated"]],
-                                hide_index=True,
-                                disabled=["check_row", "check_date", "doc_ref"],
-                                key=alloc_grid_key,
-                                column_config={
-                                    "check_row": st.column_config.NumberColumn("Check #"),
-                                    "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
-                                    "doc_ref": st.column_config.TextColumn("Invoice"),
-                                    "allocated": st.column_config.NumberColumn("Allocated", format=MONEY_FORMAT, min_value=0.01, step=0.01),
-                                },
-                            )
-                            edited_alloc_df = edited_alloc_df.copy()
-                            edited_alloc_df["invoice_id"] = preview_df["invoice_id"].values
-
-                            alloc_ok = True
-                            per_check_totals = edited_alloc_df.groupby("check_row")["allocated"].sum()
-                            for idx, row in enumerate(rows, start=1):
-                                allocated_for_row = float(per_check_totals.get(idx, 0.0))
-                                if abs(allocated_for_row - float(row["amount"])) > 0.01:
-                                    alloc_ok = False
-                                    st.warning(f"Check #{idx} ({php(row['amount'])}) has {php(allocated_for_row)} allocated — must match exactly.")
-
-                            per_invoice_totals = edited_alloc_df.groupby("invoice_id")["allocated"].sum()
-                            for _, inv in open_invoices_df.iterrows():
-                                allocated_for_inv = float(per_invoice_totals.get(inv["invoice_id"], 0.0))
-                                if allocated_for_inv > float(inv["remaining"]) + 0.01:
-                                    alloc_ok = False
-                                    st.warning(f"Invoice {inv['doc_ref']} only has {php(inv['remaining'])} remaining — {php(allocated_for_inv)} allocated.")
-
-                            alloc_ready = alloc_ok
-
-                memo_status = get_batch_memo_status(int(batch_scope_pick))
-                memo_guard_blocking = memo_status["unapplied_count"] > 0 and not memo_status["confirmed"]
-                if memo_guard_blocking:
-                    st.warning(
-                        f"This batch has {memo_status['unapplied_count']} credit memo(s) totaling {php(memo_status['total_amount'])} "
-                        f"reducing the net total to {php(net_total)} — confirm you've reviewed them, or remove one, before issuing checks."
-                    )
-                    mc1, mc2 = st.columns(2)
-                    with mc1:
-                        if st.button("Confirm", icon=":material/check:", key=batch_scoped_key("confirm_memos_btn")):
-                            confirm_credit_memos(int(batch_scope_pick))
-                            refresh()
-                    with mc2:
-                        remove_toggle_key = batch_scoped_key("show_remove_memo_form")
-                        if st.button("Remove memo", key=batch_scoped_key("remove_memo_toggle_btn")):
-                            st.session_state[remove_toggle_key] = not st.session_state.get(remove_toggle_key, False)
-                    if st.session_state.get(batch_scoped_key("show_remove_memo_form")):
-                        batch_memos_df = q("SELECT credit_memo_id, memo_ref, amount FROM credit_memos WHERE statement_id = ?", (int(batch_scope_pick),))
-                        if batch_memos_df.empty:
-                            st.caption("No credit memos left on this batch.")
-                        else:
-                            memo_options = {
-                                int(r["credit_memo_id"]): f"{r['memo_ref']} — {php(r['amount'])}"
-                                for _, r in batch_memos_df.iterrows()
-                            }
-                            memo_pick = st.selectbox(
-                                "Which memo to remove?", options=list(memo_options), format_func=lambda mid: memo_options[mid],
-                                key=batch_scoped_key("remove_memo_pick"),
-                            )
-                            if st.button("Confirm removal", key=batch_scoped_key("remove_memo_confirm_btn")):
-                                ok, msg = delete_credit_memo(int(memo_pick))
-                                (st.success if ok else st.error)(msg)
-                                if ok:
-                                    st.session_state.pop(batch_scoped_key("show_remove_memo_form"), None)
-                                    refresh(done=msg)
-
-                if st.button(
-                    "Park Metrobank checks", icon=":material/payments:", type="primary",
-                    key=batch_scoped_key("issue_checks_submit"), disabled=not grid_matches or not alloc_ready or memo_guard_blocking,
-                ) or dup_resume("issue_checks_grid"):
-                    if dup_needs_confirm("issue_checks_grid", check_warnings(scoped_creditor_id, [(r["amount"], r["check_date"]) for r in rows])):
-                        pass
-                    else:
-                        # Confirmation first: shows which invoice each check pays and for how much, then parks the checks, ties them to
-                        # their invoices and -- if the batch is still a Draft -- promotes it to Issued (2026-09-26, per user).
-                        _park_lines = []
-                        for _row_no, _row in enumerate(rows, start=1):
-                            _parts = edited_alloc_df[edited_alloc_df["check_row"] == _row_no]
-                            _bits = []
-                            _full = len(_parts) == 1
-                            for _, _p in _parts.iterrows():
-                                _inv = open_invoices_df[open_invoices_df["invoice_id"] == _p["invoice_id"]].iloc[0]
-                                _left = round(float(_inv["remaining"]) - float(_p["allocated"]), 2)
-                                _full = _full and abs(_left) <= 0.005
-                                _bits.append(f"invoice **{_inv['doc_ref']}** {php(_p['allocated'])}" + ("" if abs(_left) <= 0.005 else f" (of {php(_inv['remaining'])}, {php(_left)} still unpaid)"))
-                            _mark = ":green[:material/check_circle: matches the invoice]" if _full else ":orange[:material/warning: check the split]"
-                            _park_lines.append(f"- {_row['check_date']} · **{php(_row['amount'])}** → " + " + ".join(_bits) + f" — {_mark}")
-                        _is_draft = str(scoped_row["status"]) == "Draft"
-                        _park_summary = (
-                            f"Park **{len(rows)} check(s)** totaling **{php(sum(float(r['amount']) for r in rows))}** for this batch?" + chr(10) + chr(10)
-                            + chr(10).join(_park_lines) + chr(10) + chr(10)
-                            + ("This batch is still a **Draft**: parking promotes it to **Issued** and gives it its permanent OS number." if _is_draft
-                               else "The batch is already Issued.")
-                        )
-
-                        def _do_park(sid=int(batch_scope_pick), cid=scoped_creditor_id, park_rows=list(rows), alloc_df=edited_alloc_df.copy(), draft=_is_draft):
-                            ok, msg, check_ids = issue_checks_grid(cid, sid, park_rows)
-                            if not ok:
-                                return False, msg
-                            alloc_by_row: dict[int, list[tuple[int, float]]] = {i + 1: [] for i in range(len(park_rows))}
-                            for _, arow in alloc_df.iterrows():
-                                alloc_by_row[int(arow["check_row"])].append((int(arow["invoice_id"]), float(arow["allocated"])))
-                            problems = []
-                            for row_num, check_id in enumerate(check_ids, start=1):
-                                a_ok, a_msg = allocate_check_to_invoices(check_id, alloc_by_row.get(row_num, []))
-                                if not a_ok:
-                                    problems.append(a_msg)
-                            sync_invoice_payment_status(sid)
-                            promoted = ""
-                            if draft:
-                                try:
-                                    promoted = f" The batch is now Issued as {promote_draft_statement(sid, 'Issued')}."
-                                except ValueError as e:
-                                    problems.append(f"the batch could not be promoted ({e})")
-                            st.session_state.pop(grid_key, None)
-                            st.session_state.pop(alloc_grid_key, None)
-                            clear_park_draft(sid)
-                            st.session_state.get("_park_bases", {}).pop(sid, None)
-                            st.session_state["_park_flash"] = msg + promoted + (" Problems: " + "; ".join(problems) if problems else "")
-                            return True, msg
-
-                        confirm_create_dialog(_park_summary, batch_scoped_key("issue_checks_confirm"), _do_park)
-
-            section("Checks already issued against this order statement")
+            # The Checks tab used to stack 7 sections; one switch shows one part at a time (2026-09-27). The check lists every
+            # part needs are loaded first.
+            checks_view_key = batch_scoped_key("os_checks_view")
+            if st.session_state.get(checks_view_key) not in CHECKS_VIEWS:
+                st.session_state[checks_view_key] = CHECKS_VIEWS[0]
+            checks_view = st.segmented_control("Checks", CHECKS_VIEWS, format_func=CHECKS_VIEW_LABELS.get, required=True,
+                                               key=checks_view_key, label_visibility="collapsed")
             scoped_checks_df = q(
                 "SELECT check_id, check_number, check_date, amount, status, datetime(printed_at, 'localtime') AS printed_at FROM checks_issued WHERE statement_id = ? ORDER BY check_id",
                 (int(batch_scope_pick),),
             )
-            if scoped_checks_df.empty:
-                st.caption("No checks issued against this order statement yet.")
-            else:
-                display_scoped_checks = scoped_checks_df.copy()
-                display_scoped_checks["check_number"] = display_scoped_checks["check_number"].fillna("Pending (not yet printed)")
-                st.dataframe(
-                    display_scoped_checks,
-                    hide_index=True,
-                    column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)},
-                )
-
             active_checks_df = scoped_checks_df[scoped_checks_df["status"] == "Active"].copy() if not scoped_checks_df.empty else scoped_checks_df
             parked_active_df = active_checks_df[~active_checks_df["check_number"].apply(has_value)] if not active_checks_df.empty else active_checks_df
             numbered_active_df = active_checks_df[active_checks_df["check_number"].apply(has_value)] if not active_checks_df.empty else active_checks_df
 
-            if PRINT_CHECKS_IN_APP:
-                render_check_print_section(scoped_checks_df, scoped_row["creditor_name"], key_prefix=batch_scoped_key("os_check_print"))
-            render_assign_number_section(scoped_checks_df, key_prefix=batch_scoped_key("os_check_assign"))
+            if checks_view == "Issue checks":
+                section("Issue a check")
+                _park_flash = st.session_state.pop("_park_flash", None)
+                if _park_flash:
+                    st.success(_park_flash)
+                net_total, active_checks_sum, remaining_balance = get_batch_balance(int(batch_scope_pick))
+                is_balanced = abs(remaining_balance) <= 0.005
+                is_overpaid = remaining_balance < -0.005
 
-            section("Edit parked checks")
-            if parked_active_df.empty:
-                st.caption("No check without a number in this batch to edit — once a check has its number it is final (use Correct an active check).")
-            else:
-                st.caption("Date and amount stay freely editable until a check has its check number — no unlock needed, even if it was already exported to Chrysanth (change it there too). Every change is logged automatically (old → new + timestamp).")
-                original_parked_df = parked_active_df[["check_id", "check_date", "amount"]].copy()
-                original_parked_df["check_date"] = pd.to_datetime(original_parked_df["check_date"]).dt.date
-                edited_parked_df = st.data_editor(
-                    original_parked_df,
-                    hide_index=True,
-                    num_rows="fixed",
-                    disabled=["check_id"],
-                    key=batch_scoped_key("edit_parked_editor"),
-                    column_config={
-                        "check_id": st.column_config.NumberColumn("ID"),
-                        "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
-                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
-                    },
-                )
-                if st.button("Save parked check edits", icon=":material/save:", key=batch_scoped_key("save_parked_edits")):
-                    original_by_id = original_parked_df.set_index("check_id")
-                    updated, row_errors = 0, []
-                    for _, r in edited_parked_df.iterrows():
-                        chk_id = int(r["check_id"])
-                        orig = original_by_id.loc[chk_id]
-                        if str(r["check_date"]) != str(orig["check_date"]) or abs(float(r["amount"]) - float(orig["amount"])) > 0.001:
-                            ok, msg = edit_parked_check(chk_id, float(r["amount"]), r["check_date"])
-                            if ok:
-                                updated += 1
-                            else:
-                                row_errors.append(f"Check {chk_id}: {msg}")
-                    if updated:
-                        st.success(f"{updated} parked check(s) updated.")
-                    for e in row_errors:
-                        st.error(e)
-                    if not updated and not row_errors:
-                        st.info("No changes to save.")
-                    if updated:
-                        refresh()
+                if net_total <= 0:
+                    st.info("No payable total yet — add invoices (and any credit memos) before issuing checks.")
+                elif is_overpaid:
+                    st.warning(f"Overpaid — active checks ({php(active_checks_sum)}) exceed the net total ({php(net_total)}) by {php(-remaining_balance)}. Correct or replace a check to restore balance.")
+                elif is_balanced:
+                    st.success(f"Balanced — net total {php(net_total)} fully covered by {php(active_checks_sum)} in active checks.")
+                else:
+                    st.info(f"Net total {php(net_total)} · Active checks so far {php(active_checks_sum)} · Remaining balance {php(remaining_balance)}")
 
-            section("Un-park checks")
-            unparkable_df = parked_active_df[~parked_active_df["check_number"].apply(has_value)] if not parked_active_df.empty else parked_active_df
-            if batch_is_locked:
-                st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to un-park checks.")
-            elif unparkable_df.empty:
-                st.caption("No check to un-park — only checks that have no number yet can be taken back.")
-            else:
-                st.caption("Took the wrong split, or parked by mistake? Pick parked checks to take back — they are deleted completely (with their invoice links), "
-                           "the balance returns and you can park again. A check that already has its number is final and never touched (cancel or replace it instead). "
-                           "If one was already exported to Chrysanth, remove it there too.")
-                unpark_labels = {int(r["check_id"]): f"{r['check_date']} — {php(r['amount'])}" for _, r in unparkable_df.iterrows()}
-                unpark_pick = st.multiselect("Parked checks to take back", options=list(unpark_labels), format_func=lambda cid: unpark_labels[cid],
-                                             key=batch_scoped_key("unpark_pick"))
-                if st.button("Un-park selected checks", icon=":material/undo:", disabled=not unpark_pick, key=batch_scoped_key("unpark_btn")):
-                    def _do_unpark(sid=int(batch_scope_pick), picked=list(unpark_pick)):
-                        ok, msg = unpark_checks(sid, picked)
-                        if ok:
-                            st.session_state["_park_flash"] = msg
-                            st.session_state.pop(batch_scoped_key("unpark_pick"), None)
-                        return ok, msg
-                    confirm_create_dialog(
-                        f"Delete **{len(unpark_pick)} parked check(s)** totaling **{php(sum(float(unparkable_df[unparkable_df['check_id'] == c]['amount'].iloc[0]) for c in unpark_pick))}**? "
-                        "They are removed completely, their invoice links are released and the balance is available to park again."
-                        + (" Some were already exported to Chrysanth — remove them there too." if unparkable_df[unparkable_df["check_id"].isin(unpark_pick) & unparkable_df["printed_at"].apply(has_value)].shape[0] else ""),
-                        batch_scoped_key("unpark_confirm"), _do_unpark)
+                is_payable = not batch_is_locked and scoped_row["status"] != "Cancelled" and remaining_balance >= 0.01
+                if not is_payable:
+                    reasons = []
+                    if scoped_row["status"] == "Cancelled":
+                        reasons.append("batch is cancelled")
+                    elif batch_is_locked:
+                        reasons.append("batch is locked")
+                    if remaining_balance < 0.01:
+                        reasons.append("no remaining balance to pay" if net_total > 0 else "batch has no payable total yet")
+                    st.caption("Cannot issue a new check here: " + "; ".join(reasons) + ".")
+                else:
+                    st.caption(f"Remaining balance: {php(remaining_balance)} — split it into as many checks as you like; amounts are pre-calculated evenly and fully editable. No check number yet — that's assigned when the check is printed.")
 
-            section("Correct an active check")
-            if batch_is_locked:
-                st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to correct a check.")
-            elif numbered_active_df.empty:
-                st.caption("No numbered active check in this batch to correct (assign a number first — above — or edit an unprinted check via 'Edit parked checks').")
-            else:
-                st.caption("Edit Check Number, Check Date, or Amount directly, then Save. Every change is logged automatically (old → new + timestamp). Amount/Date can only be corrected once a check has been printed — otherwise edit it via 'Edit parked checks' above.")
-                original_active_df = numbered_active_df[["check_id", "check_number", "check_date", "amount"]].copy()
-                original_active_df["check_date"] = pd.to_datetime(original_active_df["check_date"]).dt.date
-                edited_active_df = st.data_editor(
-                    original_active_df,
-                    hide_index=True,
-                    num_rows="fixed",
-                    disabled=["check_id"],
-                    key=batch_scoped_key("correct_checks_editor"),
-                    column_config={
-                        "check_id": st.column_config.NumberColumn("ID"),
-                        "check_number": st.column_config.TextColumn("Check Number"),
-                        "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
-                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
-                    },
-                )
-                if st.button("Save check corrections", icon=":material/save:", key=batch_scoped_key("save_check_corrections")):
-                    original_by_id = original_active_df.set_index("check_id")
-                    updated, row_errors = 0, []
-                    for _, r in edited_active_df.iterrows():
-                        chk_id = int(r["check_id"])
-                        orig = original_by_id.loc[chk_id]
-                        new_number = cell_text(r["check_number"]).strip()
-                        if new_number != str(orig["check_number"]).strip():
-                            ok, msg = apply_check_correction(chk_id, "Check Number", new_number, "")
-                            if ok:
-                                updated += 1
-                            else:
-                                row_errors.append(f"Check {chk_id}: {msg}")
-                        if str(r["check_date"]) != str(orig["check_date"]):
-                            ok, msg = apply_check_correction(chk_id, "Check Date", str(r["check_date"]), "")
-                            if ok:
-                                updated += 1
-                            else:
-                                row_errors.append(f"Check {chk_id}: {msg}")
-                        if abs(float(r["amount"]) - float(orig["amount"])) > 0.001:
-                            ok, msg = apply_check_correction(chk_id, "Amount", str(float(r["amount"])), "")
-                            if ok:
-                                updated += 1
-                            else:
-                                row_errors.append(f"Check {chk_id}: {msg}")
-                    if updated:
-                        st.success(f"{updated} correction(s) saved.")
-                    for e in row_errors:
-                        st.error(e)
-                    if not updated and not row_errors:
-                        st.info("No changes to save.")
-                    if updated:
-                        refresh()
+                    latest_check_for_supplier = get_latest_check_for_creditor(scoped_creditor_id)
+                    if latest_check_for_supplier:
+                        latest_date, latest_amount = latest_check_for_supplier
+                        st.caption(f"Last check issued to this supplier: {latest_date.strftime('%b %d, %Y')} — {php(latest_amount)}.")
 
-                with st.expander("Add a note to a check"):
-                    note_pick = st.selectbox(
+                    num_checks_key = batch_scoped_key("issue_checks_count")
+                    grid_key = batch_scoped_key("issue_checks_editor")
+                    last_signature_key = batch_scoped_key("issue_checks_last_signature")
+
+                    open_invoices_df = get_invoices_with_remaining(int(batch_scope_pick))
+                    # Guardrail (2026-09-27): checks typed into this grid but never parked used to vanish when you opened another
+                    # order statement. The grid is now remembered per batch for the session and put back when you return.
+                    park_bases = st.session_state.setdefault("_park_bases", {})
+                    _sid = int(batch_scope_pick)
+                    _draft = load_park_draft(_sid)
+                    _split_key = batch_scoped_key("issue_split_mode")
+                    _restoring = False
+                    if _draft and _split_key not in st.session_state:          # widgets were dropped while another batch was open
+                        if abs(_draft["balance"] - round(remaining_balance, 2)) <= 0.005 and _draft["invoice_ids"] == tuple(open_invoices_df["invoice_id"]):
+                            st.session_state[_split_key] = _draft["mode"]
+                            st.session_state[num_checks_key] = _draft["count"]
+                            _restoring = True
+                        else:
+                            clear_park_draft(_sid)
+                            park_bases.pop(_sid, None)
+                            _draft = None
+                            st.info("The checks you had typed for this batch were cleared because its invoices or balance changed in the meantime.")
+                    split_mode = st.radio(
+                        "How to split", ["By number of checks", "One check per invoice"], horizontal=True, key=batch_scoped_key("issue_split_mode"),
+                        help="Some suppliers want one check for each invoice. 'One check per invoice' makes a row for every invoice still to be paid, dated on that invoice's due date.",
+                    )
+                    per_invoice = split_mode == "One check per invoice" and not open_invoices_df.empty
+                    if per_invoice:
+                        num_checks = len(open_invoices_df)
+                        st.caption(f"{num_checks} invoice(s) still to pay — one check each, dated on the invoice's due date and for its remaining amount. Every date and amount stays editable below.")
+                    else:
+                        if split_mode == "One check per invoice":
+                            st.caption("No open invoices to make checks for.")
+                        num_checks = st.number_input(
+                            "Number of checks", min_value=1, max_value=50, step=1,
+                            value=int(st.session_state.get(num_checks_key, 1)), key=num_checks_key,
+                        )
+                        st.caption("Two ways to issue: use the count above to pre-split evenly (whole pesos, editable), or just add/remove rows in the table below and type amounts yourself.")
+
+                    # Re-seed the grid whenever the count OR the remaining balance changes (e.g. a check
+                    # in this batch got cancelled/corrected) — otherwise a stale pre-split from before
+                    # that change would silently linger in session_state.
+                    # Default check date = the batch's invoice due date (the earliest one still unpaid if there are several),
+                    # so a check is dated when it is actually due; every date stays editable in the grid.
+                    due_val = q_live("SELECT MIN(due_date) AS d FROM invoices WHERE statement_id = ? AND status IN ('Unpaid', 'Partially Paid')", (int(batch_scope_pick),))["d"][0]
+                    if not has_value(due_val):
+                        due_val = q_live("SELECT MIN(due_date) AS d FROM invoices WHERE statement_id = ? AND status != 'Cancelled'", (int(batch_scope_pick),))["d"][0]
+                    default_check_date = date.fromisoformat(str(due_val)[:10]) if has_value(due_val) else date.today()
+                    signature = (int(num_checks), round(remaining_balance, 2), default_check_date, per_invoice,
+                                 tuple(open_invoices_df["invoice_id"]) if per_invoice else ())
+                    if st.session_state.get(last_signature_key) != signature:
+                        st.session_state[last_signature_key] = signature
+                        st.session_state.pop(grid_key, None)
+                        if not _restoring:
+                            park_bases.pop(_sid, None)
+
+                    if per_invoice:
+                        default_checks_df = pd.DataFrame({
+                            "check_date": [date.fromisoformat(str(d)[:10]) for d in open_invoices_df["due_date"]],
+                            "amount": [round(float(x), 2) for x in open_invoices_df["remaining"]],
+                        })
+                    else:
+                        default_checks_df = pd.DataFrame({
+                            "check_date": [default_check_date] * int(num_checks),
+                            "amount": split_remaining_evenly(remaining_balance, int(num_checks)),
+                        })
+                    computed_default_df = default_checks_df
+                    if st.session_state.get(last_signature_key) is not None and _restoring:
+                        park_bases[_sid] = pd.DataFrame({"check_date": [date.fromisoformat(d) for d, _ in _draft["rows"]], "amount": [x for _, x in _draft["rows"]]})
+                    elif grid_key not in st.session_state:
+                        park_bases.pop(_sid, None)
+                    default_checks_df = park_bases.get(_sid, computed_default_df)
+                    edited_checks_df = st.data_editor(
+                        default_checks_df,
+                        hide_index=True,
+                        num_rows="dynamic",
+                        key=grid_key,
+                        column_config={
+                            "check_date": st.column_config.DateColumn("Check Date", default=default_check_date, format="MMM DD, YYYY"),
+                            "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01, default=0.0),
+                        },
+                    )
+
+                    _typed = [(str(r["check_date"])[:10], round(float(r["amount"]), 2)) for _, r in edited_checks_df.iterrows() if pd.notna(r["amount"]) and float(r["amount"]) > 0]
+                    _computed = [(str(r["check_date"])[:10], round(float(r["amount"]), 2)) for _, r in computed_default_df.iterrows()]
+                    grid_is_edited = bool(_typed) and _typed != _computed
+                    if grid_is_edited:
+                        _now_draft = {"mode": split_mode, "count": int(num_checks), "balance": round(remaining_balance, 2),
+                                      "invoice_ids": tuple(int(i) for i in open_invoices_df["invoice_id"]), "rows": _typed}
+                        if not _draft or any(_draft.get(k) != v for k, v in _now_draft.items()):
+                            save_park_draft(_sid, split_mode, int(num_checks), remaining_balance, list(open_invoices_df["invoice_id"]), _typed)
+                        st.warning(":material/edit_note: These checks are typed in but **not parked yet** — click **Park Metrobank checks** below to save them. "
+                                   "They are remembered — even if you open another order statement or refresh the page — until you park them.")
+                    elif _draft:
+                        clear_park_draft(_sid)
+                    grid_total = float(edited_checks_df["amount"].sum())
+                    grid_diff = remaining_balance - grid_total
+                    grid_matches = abs(grid_diff) <= 0.005
+                    if grid_matches:
+                        st.success(f"Grid total {php(grid_total)} matches the remaining balance.")
+                    else:
+                        st.warning(f"Grid total {php(grid_total)} vs remaining balance {php(remaining_balance)} — off by {php(grid_diff)}. Adjust amounts to match exactly before issuing.")
+
+                    # num_rows="dynamic" always leaves one blank "add a row" affordance in the
+                    # returned data — drop it rather than reject it as "needs an amount".
+                    rows = [r for r in edited_checks_df.to_dict("records") if float(r.get("amount") or 0) > 0]
+
+                    # Same-day-duplicate warning (2026-09-17, per user request): this business
+                    # deliberately avoids ever writing two checks to the same supplier on the same
+                    # day, postdating past the due date instead specifically to prevent it. A
+                    # warning, not a block -- st.warning() doesn't disable the submit button below,
+                    # since there can be a genuine reason to do it anyway and the owner asked to keep
+                    # that override available.
+                    existing_check_dates = get_existing_check_dates_for_creditor(scoped_creditor_id)
+                    grid_dates = [r["check_date"] for r in rows]
+                    same_day_conflicts = sorted({
+                        d for d in grid_dates
+                        if d in existing_check_dates or grid_dates.count(d) > 1
+                    })
+                    if same_day_conflicts:
+                        conflict_list = ", ".join(d.strftime("%b %d, %Y") for d in same_day_conflicts)
+                        st.warning(
+                            f":material/warning: This supplier already has (or would have) more than one check dated {conflict_list} — "
+                            "double-check before parking. Still allowed if that's genuinely intended."
+                        )
+
+                    alloc_ready = False
+                    alloc_grid_key = batch_scoped_key("issue_checks_alloc_editor")
+                    edited_alloc_df = pd.DataFrame(columns=["check_row", "check_date", "invoice_id", "doc_ref", "allocated"])
+
+                    if grid_matches and rows:
+                        st.markdown("##### Allocate to invoices")
+                        if open_invoices_df.empty:
+                            st.error("No open invoices left to allocate these checks to — every invoice in this batch is already fully allocated or Cancelled. Add more invoices, or reduce the check amounts.")
+                        else:
+                            st.caption("Every check must be tied to the specific invoice(s) it pays — auto-filled oldest due date first below; adjust the amounts if a check should be split differently.")
+                            alloc_signature_key = batch_scoped_key("issue_checks_alloc_signature")
+                            alloc_signature = (repr(rows), repr(open_invoices_df["invoice_id"].tolist()), repr(open_invoices_df["remaining"].tolist()))
+                            if st.session_state.get(alloc_signature_key) != alloc_signature:
+                                st.session_state[alloc_signature_key] = alloc_signature
+                                st.session_state.pop(alloc_grid_key, None)
+
+                            preview_df = waterfall_allocate_preview(rows, open_invoices_df)
+                            if preview_df.empty:
+                                st.error("Couldn't auto-allocate — check the amounts above.")
+                            else:
+                                edited_alloc_df = st.data_editor(
+                                    preview_df[["check_row", "check_date", "doc_ref", "allocated"]],
+                                    hide_index=True,
+                                    disabled=["check_row", "check_date", "doc_ref"],
+                                    key=alloc_grid_key,
+                                    column_config={
+                                        "check_row": st.column_config.NumberColumn("Check #"),
+                                        "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
+                                        "doc_ref": st.column_config.TextColumn("Invoice"),
+                                        "allocated": st.column_config.NumberColumn("Allocated", format=MONEY_FORMAT, min_value=0.01, step=0.01),
+                                    },
+                                )
+                                edited_alloc_df = edited_alloc_df.copy()
+                                edited_alloc_df["invoice_id"] = preview_df["invoice_id"].values
+
+                                alloc_ok = True
+                                per_check_totals = edited_alloc_df.groupby("check_row")["allocated"].sum()
+                                for idx, row in enumerate(rows, start=1):
+                                    allocated_for_row = float(per_check_totals.get(idx, 0.0))
+                                    if abs(allocated_for_row - float(row["amount"])) > 0.01:
+                                        alloc_ok = False
+                                        st.warning(f"Check #{idx} ({php(row['amount'])}) has {php(allocated_for_row)} allocated — must match exactly.")
+
+                                per_invoice_totals = edited_alloc_df.groupby("invoice_id")["allocated"].sum()
+                                for _, inv in open_invoices_df.iterrows():
+                                    allocated_for_inv = float(per_invoice_totals.get(inv["invoice_id"], 0.0))
+                                    if allocated_for_inv > float(inv["remaining"]) + 0.01:
+                                        alloc_ok = False
+                                        st.warning(f"Invoice {inv['doc_ref']} only has {php(inv['remaining'])} remaining — {php(allocated_for_inv)} allocated.")
+
+                                alloc_ready = alloc_ok
+
+                    memo_status = get_batch_memo_status(int(batch_scope_pick))
+                    memo_guard_blocking = memo_status["unapplied_count"] > 0 and not memo_status["confirmed"]
+                    if memo_guard_blocking:
+                        st.warning(
+                            f"This batch has {memo_status['unapplied_count']} credit memo(s) totaling {php(memo_status['total_amount'])} "
+                            f"reducing the net total to {php(net_total)} — confirm you've reviewed them, or remove one, before issuing checks."
+                        )
+                        mc1, mc2 = st.columns(2)
+                        with mc1:
+                            if st.button("Confirm", icon=":material/check:", key=batch_scoped_key("confirm_memos_btn")):
+                                confirm_credit_memos(int(batch_scope_pick))
+                                refresh()
+                        with mc2:
+                            remove_toggle_key = batch_scoped_key("show_remove_memo_form")
+                            if st.button("Remove memo", key=batch_scoped_key("remove_memo_toggle_btn")):
+                                st.session_state[remove_toggle_key] = not st.session_state.get(remove_toggle_key, False)
+                        if st.session_state.get(batch_scoped_key("show_remove_memo_form")):
+                            batch_memos_df = q("SELECT credit_memo_id, memo_ref, amount FROM credit_memos WHERE statement_id = ?", (int(batch_scope_pick),))
+                            if batch_memos_df.empty:
+                                st.caption("No credit memos left on this batch.")
+                            else:
+                                memo_options = {
+                                    int(r["credit_memo_id"]): f"{r['memo_ref']} — {php(r['amount'])}"
+                                    for _, r in batch_memos_df.iterrows()
+                                }
+                                memo_pick = st.selectbox(
+                                    "Which memo to remove?", options=list(memo_options), format_func=lambda mid: memo_options[mid],
+                                    key=batch_scoped_key("remove_memo_pick"),
+                                )
+                                if st.button("Confirm removal", key=batch_scoped_key("remove_memo_confirm_btn")):
+                                    ok, msg = delete_credit_memo(int(memo_pick))
+                                    (st.success if ok else st.error)(msg)
+                                    if ok:
+                                        st.session_state.pop(batch_scoped_key("show_remove_memo_form"), None)
+                                        refresh(done=msg)
+
+                    if st.button(
+                        "Park Metrobank checks", icon=":material/payments:", type="primary",
+                        key=batch_scoped_key("issue_checks_submit"), disabled=not grid_matches or not alloc_ready or memo_guard_blocking,
+                    ) or dup_resume("issue_checks_grid"):
+                        if dup_needs_confirm("issue_checks_grid", check_warnings(scoped_creditor_id, [(r["amount"], r["check_date"]) for r in rows])):
+                            pass
+                        else:
+                            # Confirmation first: shows which invoice each check pays and for how much, then parks the checks, ties them to
+                            # their invoices and -- if the batch is still a Draft -- promotes it to Issued (2026-09-26, per user).
+                            _park_lines = []
+                            for _row_no, _row in enumerate(rows, start=1):
+                                _parts = edited_alloc_df[edited_alloc_df["check_row"] == _row_no]
+                                _bits = []
+                                _full = len(_parts) == 1
+                                for _, _p in _parts.iterrows():
+                                    _inv = open_invoices_df[open_invoices_df["invoice_id"] == _p["invoice_id"]].iloc[0]
+                                    _left = round(float(_inv["remaining"]) - float(_p["allocated"]), 2)
+                                    _full = _full and abs(_left) <= 0.005
+                                    _bits.append(f"invoice **{_inv['doc_ref']}** {php(_p['allocated'])}" + ("" if abs(_left) <= 0.005 else f" (of {php(_inv['remaining'])}, {php(_left)} still unpaid)"))
+                                _mark = ":green[:material/check_circle: matches the invoice]" if _full else ":orange[:material/warning: check the split]"
+                                _park_lines.append(f"- {_row['check_date']} · **{php(_row['amount'])}** → " + " + ".join(_bits) + f" — {_mark}")
+                            _is_draft = str(scoped_row["status"]) == "Draft"
+                            _park_summary = (
+                                f"Park **{len(rows)} check(s)** totaling **{php(sum(float(r['amount']) for r in rows))}** for this batch?" + chr(10) + chr(10)
+                                + chr(10).join(_park_lines) + chr(10) + chr(10)
+                                + ("This batch is still a **Draft**: parking promotes it to **Issued** and gives it its permanent OS number." if _is_draft
+                                   else "The batch is already Issued.")
+                            )
+
+                            def _do_park(sid=int(batch_scope_pick), cid=scoped_creditor_id, park_rows=list(rows), alloc_df=edited_alloc_df.copy(), draft=_is_draft):
+                                ok, msg, check_ids = issue_checks_grid(cid, sid, park_rows)
+                                if not ok:
+                                    return False, msg
+                                alloc_by_row: dict[int, list[tuple[int, float]]] = {i + 1: [] for i in range(len(park_rows))}
+                                for _, arow in alloc_df.iterrows():
+                                    alloc_by_row[int(arow["check_row"])].append((int(arow["invoice_id"]), float(arow["allocated"])))
+                                problems = []
+                                for row_num, check_id in enumerate(check_ids, start=1):
+                                    a_ok, a_msg = allocate_check_to_invoices(check_id, alloc_by_row.get(row_num, []))
+                                    if not a_ok:
+                                        problems.append(a_msg)
+                                sync_invoice_payment_status(sid)
+                                promoted = ""
+                                if draft:
+                                    try:
+                                        promoted = f" The batch is now Issued as {promote_draft_statement(sid, 'Issued')}."
+                                    except ValueError as e:
+                                        problems.append(f"the batch could not be promoted ({e})")
+                                st.session_state.pop(grid_key, None)
+                                st.session_state.pop(alloc_grid_key, None)
+                                clear_park_draft(sid)
+                                st.session_state.get("_park_bases", {}).pop(sid, None)
+                                st.session_state["_park_flash"] = msg + promoted + (" Problems: " + "; ".join(problems) if problems else "")
+                                return True, msg
+
+                            confirm_create_dialog(_park_summary, batch_scoped_key("issue_checks_confirm"), _do_park)
+
+            if checks_view == "Checks in this batch":
+                section("Checks already issued against this order statement")
+                if scoped_checks_df.empty:
+                    st.caption("No checks issued against this order statement yet.")
+                else:
+                    display_scoped_checks = scoped_checks_df.copy()
+                    display_scoped_checks["check_number"] = display_scoped_checks["check_number"].fillna("Pending (not yet printed)")
+                    st.dataframe(
+                        display_scoped_checks,
+                        hide_index=True,
+                        column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)},
+                    )
+
+                section("Edit parked checks")
+                if parked_active_df.empty:
+                    st.caption("No check without a number in this batch to edit — once a check has its number it is final (use Correct an active check).")
+                else:
+                    st.caption("Date and amount stay freely editable until a check has its check number — no unlock needed, even if it was already exported to Chrysanth (change it there too). Every change is logged automatically (old → new + timestamp).")
+                    original_parked_df = parked_active_df[["check_id", "check_date", "amount"]].copy()
+                    original_parked_df["check_date"] = pd.to_datetime(original_parked_df["check_date"]).dt.date
+                    edited_parked_df = st.data_editor(
+                        original_parked_df,
+                        hide_index=True,
+                        num_rows="fixed",
+                        disabled=["check_id"],
+                        key=batch_scoped_key("edit_parked_editor"),
+                        column_config={
+                            "check_id": st.column_config.NumberColumn("ID"),
+                            "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
+                            "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
+                        },
+                    )
+                    if st.button("Save parked check edits", icon=":material/save:", key=batch_scoped_key("save_parked_edits")):
+                        original_by_id = original_parked_df.set_index("check_id")
+                        updated, row_errors = 0, []
+                        for _, r in edited_parked_df.iterrows():
+                            chk_id = int(r["check_id"])
+                            orig = original_by_id.loc[chk_id]
+                            if str(r["check_date"]) != str(orig["check_date"]) or abs(float(r["amount"]) - float(orig["amount"])) > 0.001:
+                                ok, msg = edit_parked_check(chk_id, float(r["amount"]), r["check_date"])
+                                if ok:
+                                    updated += 1
+                                else:
+                                    row_errors.append(f"Check {chk_id}: {msg}")
+                        if updated:
+                            st.success(f"{updated} parked check(s) updated.")
+                        for e in row_errors:
+                            st.error(e)
+                        if not updated and not row_errors:
+                            st.info("No changes to save.")
+                        if updated:
+                            refresh()
+
+                section("Un-park checks")
+                unparkable_df = parked_active_df[~parked_active_df["check_number"].apply(has_value)] if not parked_active_df.empty else parked_active_df
+                if batch_is_locked:
+                    st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to un-park checks.")
+                elif unparkable_df.empty:
+                    st.caption("No check to un-park — only checks that have no number yet can be taken back.")
+                else:
+                    st.caption("Took the wrong split, or parked by mistake? Pick parked checks to take back — they are deleted completely (with their invoice links), "
+                               "the balance returns and you can park again. A check that already has its number is final and never touched (cancel or replace it instead). "
+                               "If one was already exported to Chrysanth, remove it there too.")
+                    unpark_labels = {int(r["check_id"]): f"{r['check_date']} — {php(r['amount'])}" for _, r in unparkable_df.iterrows()}
+                    unpark_pick = st.multiselect("Parked checks to take back", options=list(unpark_labels), format_func=lambda cid: unpark_labels[cid],
+                                                 key=batch_scoped_key("unpark_pick"))
+                    if st.button("Un-park selected checks", icon=":material/undo:", disabled=not unpark_pick, key=batch_scoped_key("unpark_btn")):
+                        def _do_unpark(sid=int(batch_scope_pick), picked=list(unpark_pick)):
+                            ok, msg = unpark_checks(sid, picked)
+                            if ok:
+                                st.session_state["_park_flash"] = msg
+                                st.session_state.pop(batch_scoped_key("unpark_pick"), None)
+                            return ok, msg
+                        confirm_create_dialog(
+                            f"Delete **{len(unpark_pick)} parked check(s)** totaling **{php(sum(float(unparkable_df[unparkable_df['check_id'] == c]['amount'].iloc[0]) for c in unpark_pick))}**? "
+                            "They are removed completely, their invoice links are released and the balance is available to park again."
+                            + (" Some were already exported to Chrysanth — remove them there too." if unparkable_df[unparkable_df["check_id"].isin(unpark_pick) & unparkable_df["printed_at"].apply(has_value)].shape[0] else ""),
+                            batch_scoped_key("unpark_confirm"), _do_unpark)
+
+            if checks_view == "Assign numbers":
+                if PRINT_CHECKS_IN_APP:
+                    render_check_print_section(scoped_checks_df, scoped_row["creditor_name"], key_prefix=batch_scoped_key("os_check_print"))
+                render_assign_number_section(scoped_checks_df, key_prefix=batch_scoped_key("os_check_assign"))
+
+            if checks_view == "Corrections":
+                section("Correct an active check")
+                if batch_is_locked:
+                    st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to correct a check.")
+                elif numbered_active_df.empty:
+                    st.caption("No numbered active check in this batch to correct (assign a number first — above — or edit an unprinted check via 'Edit parked checks').")
+                else:
+                    st.caption("Edit Check Number, Check Date, or Amount directly, then Save. Every change is logged automatically (old → new + timestamp). Amount/Date can only be corrected once a check has been printed — otherwise edit it via 'Edit parked checks' above.")
+                    original_active_df = numbered_active_df[["check_id", "check_number", "check_date", "amount"]].copy()
+                    original_active_df["check_date"] = pd.to_datetime(original_active_df["check_date"]).dt.date
+                    edited_active_df = st.data_editor(
+                        original_active_df,
+                        hide_index=True,
+                        num_rows="fixed",
+                        disabled=["check_id"],
+                        key=batch_scoped_key("correct_checks_editor"),
+                        column_config={
+                            "check_id": st.column_config.NumberColumn("ID"),
+                            "check_number": st.column_config.TextColumn("Check Number"),
+                            "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
+                            "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
+                        },
+                    )
+                    if st.button("Save check corrections", icon=":material/save:", key=batch_scoped_key("save_check_corrections")):
+                        original_by_id = original_active_df.set_index("check_id")
+                        updated, row_errors = 0, []
+                        for _, r in edited_active_df.iterrows():
+                            chk_id = int(r["check_id"])
+                            orig = original_by_id.loc[chk_id]
+                            new_number = cell_text(r["check_number"]).strip()
+                            if new_number != str(orig["check_number"]).strip():
+                                ok, msg = apply_check_correction(chk_id, "Check Number", new_number, "")
+                                if ok:
+                                    updated += 1
+                                else:
+                                    row_errors.append(f"Check {chk_id}: {msg}")
+                            if str(r["check_date"]) != str(orig["check_date"]):
+                                ok, msg = apply_check_correction(chk_id, "Check Date", str(r["check_date"]), "")
+                                if ok:
+                                    updated += 1
+                                else:
+                                    row_errors.append(f"Check {chk_id}: {msg}")
+                            if abs(float(r["amount"]) - float(orig["amount"])) > 0.001:
+                                ok, msg = apply_check_correction(chk_id, "Amount", str(float(r["amount"])), "")
+                                if ok:
+                                    updated += 1
+                                else:
+                                    row_errors.append(f"Check {chk_id}: {msg}")
+                        if updated:
+                            st.success(f"{updated} correction(s) saved.")
+                        for e in row_errors:
+                            st.error(e)
+                        if not updated and not row_errors:
+                            st.info("No changes to save.")
+                        if updated:
+                            refresh()
+
+                    with st.expander("Add a note to a check"):
+                        note_pick = st.selectbox(
+                            "Check",
+                            options=active_checks_df["check_id"],
+                            format_func=lambda chid: active_checks_df.set_index("check_id").loc[chid, "check_number"] or "Pending (not yet printed)",
+                            key=batch_scoped_key("note_pick"),
+                        )
+                        note_text = st.text_input("Note", key=batch_scoped_key("note_text"))
+                        if st.button("Add note", icon=":material/sticky_note_2:", key=batch_scoped_key("add_note_btn")):
+                            if note_text.strip():
+                                ok, msg = apply_check_correction(int(note_pick), "Payee Note", note_text.strip(), "")
+                                (st.success if ok else st.error)(msg)
+                                if ok:
+                                    refresh(done=msg)
+                            else:
+                                st.error("Note can't be blank.")
+
+                section("Void a check")
+                if batch_is_locked:
+                    st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to void a check.")
+                elif active_checks_df.empty:
+                    st.caption("No active check in this batch to void.")
+                else:
+                    st.caption("Void just cancels it (money returns to the available balance); tick 'Reissue' to also cut a replacement (parked, no number yet) in one step.")
+                    void_pick = st.selectbox(
                         "Check",
                         options=active_checks_df["check_id"],
-                        format_func=lambda chid: active_checks_df.set_index("check_id").loc[chid, "check_number"] or "Pending (not yet printed)",
-                        key=batch_scoped_key("note_pick"),
+                        format_func=lambda chid: f"{active_checks_df.set_index('check_id').loc[chid, 'check_number'] or 'Pending'} ({php(active_checks_df.set_index('check_id').loc[chid, 'amount'])})",
+                        key=batch_scoped_key("void_pick"),
                     )
-                    note_text = st.text_input("Note", key=batch_scoped_key("note_text"))
-                    if st.button("Add note", icon=":material/sticky_note_2:", key=batch_scoped_key("add_note_btn")):
-                        if note_text.strip():
-                            ok, msg = apply_check_correction(int(note_pick), "Payee Note", note_text.strip(), "")
-                            (st.success if ok else st.error)(msg)
-                            if ok:
-                                refresh(done=msg)
-                        else:
-                            st.error("Note can't be blank.")
-
-            section("Void a check")
-            if batch_is_locked:
-                st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to void a check.")
-            elif active_checks_df.empty:
-                st.caption("No active check in this batch to void.")
-            else:
-                st.caption("Void just cancels it (money returns to the available balance); tick 'Reissue' to also cut a replacement (parked, no number yet) in one step.")
-                void_pick = st.selectbox(
-                    "Check",
-                    options=active_checks_df["check_id"],
-                    format_func=lambda chid: f"{active_checks_df.set_index('check_id').loc[chid, 'check_number'] or 'Pending'} ({php(active_checks_df.set_index('check_id').loc[chid, 'amount'])})",
-                    key=batch_scoped_key("void_pick"),
-                )
-                void_reissue = st.checkbox("Reissue as a new (parked) check", key=batch_scoped_key("void_reissue_toggle"))
-                if void_reissue:
-                    void_new_date = st.date_input("New check date", value=date.today(), key=batch_scoped_key("void_new_date"))
-                void_reason = st.text_input("Reason (optional)", placeholder="e.g. postdated past new due date", key=batch_scoped_key("void_reason"))
-                if st.button("Void & reissue" if void_reissue else "Void check", icon=":material/cancel:", key=batch_scoped_key("void_submit_btn")):
+                    void_reissue = st.checkbox("Reissue as a new (parked) check", key=batch_scoped_key("void_reissue_toggle"))
                     if void_reissue:
-                        ok, msg, new_check_id = replace_check(int(void_pick), void_new_date, void_reason)
-                    else:
-                        ok, msg = cancel_check(int(void_pick))
-                    (st.success if ok else st.error)(msg)
-                    if ok:
-                        refresh(done=msg)
+                        void_new_date = st.date_input("New check date", value=date.today(), key=batch_scoped_key("void_new_date"))
+                    void_reason = st.text_input("Reason (optional)", placeholder="e.g. postdated past new due date", key=batch_scoped_key("void_reason"))
+                    if st.button("Void & reissue" if void_reissue else "Void check", icon=":material/cancel:", key=batch_scoped_key("void_submit_btn")):
+                        if void_reissue:
+                            ok, msg, new_check_id = replace_check(int(void_pick), void_new_date, void_reason)
+                        else:
+                            ok, msg = cancel_check(int(void_pick))
+                        (st.success if ok else st.error)(msg)
+                        if ok:
+                            refresh(done=msg)
+
+    # Rarely used tools, kept together at the bottom so the browser and the open batch sit near the top (2026-09-27).
+    section("More tools")
+    with st.expander("Promote statement status"):
+        st.caption("Informational only — checks can be issued from any status once the batch has a payable balance. Promotion is not required.")
+        promotable = statements_df[statements_df["status"] == "Draft"]
+        with st.form("promote_statement_form", border=False):
+            if promotable.empty:
+                st.caption("No draft statements to promote.")
+                stmt_choice = None
+            else:
+                stmt_choice = st.selectbox(
+                    "Statement",
+                    options=promotable["statement_id"],
+                    format_func=lambda sid: f"{promotable.set_index('statement_id').loc[sid, 'statement_ref']} ({promotable.set_index('statement_id').loc[sid, 'status']})",
+                    index=default_index(promotable["statement_id"], st.session_state.get("selected_statement_id")),
+                    key=batch_scoped_key("stmt_choice"),
+                )
+            if st.form_submit_button("Promote to Issued", icon=":material/arrow_upward:") and stmt_choice is not None:
+                if guard_duplicate_submit("promote_statement", int(stmt_choice)):
+                    try:
+                        new_ref = promote_draft_statement(int(stmt_choice), "Issued")
+                        refresh(done=f"Promoted to Issued as {new_ref}.")
+                    except ValueError as e:
+                        st.error(str(e))
+                else:
+                    st.warning("Duplicate submission ignored — identical to the click just before it.")
 
     with st.expander("Vendor SOA matcher"):
         soa_creditor = selectbox_creditor("Supplier", "SUPPLIER", "soa_creditor")

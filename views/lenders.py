@@ -195,7 +195,7 @@ def render() -> None:
             # past, same "effective_status" convention v_checks_ledger already uses) — a
             # postdated check hasn't actually left the bank yet, so it shouldn't count as paid
             # down until its date arrives.
-            st.markdown(f"**{ln_row['note_ref']}** — {ln_row['creditor_name']}")
+            st.markdown(f"#### {ln_row['note_ref']} — {ln_row['creditor_name']}  " + status_text(ln_row["status"]))
             if ln_row["total_payable"] in (None, ""):
                 # Pending Setup (Phase 8a placeholder) -- no principal/rate on file yet. q()'s
                 # underlying df_query() coerces SQL NULL to '' (fillna('')), not None -- so a

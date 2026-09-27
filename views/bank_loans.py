@@ -322,7 +322,7 @@ def render() -> None:
         bl_row = bank_loans_df.set_index("bank_loan_id").loc[selected_blid]
         st.divider()
         with st.container(border=True):
-            st.subheader(f"{bl_row['loan_ref']} — {bl_row['creditor_name']}")
+            st.markdown(f"#### {bl_row['loan_ref']} — {bl_row['creditor_name']}  " + status_text(bl_row["status"]))
             bl_beneficiary_text = f"{bl_row['beneficiary']} ({bl_row['beneficiary_type']})" if pd.notna(bl_row["beneficiary_id"]) and bl_row["beneficiary_id"] != "" else "not set"
             st.caption(f"Status: {bl_row['status']} · Mode of payment (informational): {bl_row['mode_of_payment']} · Outstanding: {php(bl_row['outstanding'])} · Attributable to: {bl_beneficiary_text}")
             if not bl_beneficiaries_df.empty:

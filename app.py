@@ -468,7 +468,8 @@ with st.sidebar:
                 label = f"{m['check_number']} · {m['creditor_name']} · {php(m['amount'])} · {m['status']}"
                 if st.button(label, key=f"jump_check_{m['check_id']}", width="stretch"):
                     if m["statement_id"] is not None:
-                        _jump("order-statements", selected_statement_id=m["statement_id"], os_mode=OS_BROWSE, os_subtab="Checks")
+                        _jump("order-statements", selected_statement_id=m["statement_id"], os_mode=OS_BROWSE, os_subtab="Checks",
+                              **{f"os_checks_view__{m['statement_id']}": "Checks in this batch"})
                     else:
                         _jump("lenders", selected_loan_note_id=m["loan_note_id"], ln_mode=LN_BROWSE, ln_subtab="Checks")
 

@@ -52,7 +52,8 @@ def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
                 ORDER BY c.check_date DESC, c.check_id DESC LIMIT {limit}""",
             (like, like, like, like, a),
             lambda r: {"label": f"{r[1] or 'no number yet'} \u00b7 {r[5]} \u00b7 {_php(r[2])} \u00b7 {str(r[4])[:10]} \u00b7 {r[3]} \u00b7 {r[8] or ''}",
-                       **({"page": TAB_ORDER_STATEMENT, "state": {"selected_statement_id": r[6], "os_mode": "Browse batches", "os_subtab": "Checks"}} if r[6] is not None
+                       **({"page": TAB_ORDER_STATEMENT, "state": {"selected_statement_id": r[6], "os_mode": "Browse batches", "os_subtab": "Checks",
+                                                                     f"os_checks_view__{r[6]}": "Checks in this batch"}} if r[6] is not None
                           else {"page": TAB_LENDERS, "state": {"selected_loan_note_id": r[7], "ln_mode": "Browse loan notes", "ln_subtab": "Checks"}})})
 
         run("Invoices",

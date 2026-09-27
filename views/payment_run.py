@@ -112,7 +112,8 @@ def render() -> None:
             if ev.selection.rows:
                 r = ck.iloc[ev.selection.rows[0]]
                 if pd.notna(r["statement_id"]):
-                    go_to("order-statements", selected_statement_id=int(r["statement_id"]), os_mode=OS_BROWSE, os_subtab="Checks")
+                    sid = int(r["statement_id"])
+                    go_to("order-statements", selected_statement_id=sid, os_mode=OS_BROWSE, os_subtab="Checks", **{f"os_checks_view__{sid}": "Checks in this batch"})
                 go_to("lenders", selected_loan_note_id=int(r["loan_note_id"]), ln_mode=LN_BROWSE, ln_subtab="Checks")
     with t_7:
         if n7.empty:
@@ -192,7 +193,8 @@ def render() -> None:
         if right.button("Assign numbers", icon=":material/format_list_numbered:", type="primary", key="pr_num_btn", width="stretch"):
             r = num.loc[npick]
             if pd.notna(r["statement_id"]):
-                go_to("order-statements", selected_statement_id=int(r["statement_id"]), os_mode=OS_BROWSE, os_subtab="Checks")
+                sid = int(r["statement_id"])
+                go_to("order-statements", selected_statement_id=sid, os_mode=OS_BROWSE, os_subtab="Checks", **{f"os_checks_view__{sid}": "Assign numbers"})
             go_to("lenders", selected_loan_note_id=int(r["loan_note_id"]), ln_mode=LN_BROWSE, ln_subtab="Checks")
 
     tp = stg["to_print"]
