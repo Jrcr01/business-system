@@ -2,8 +2,10 @@
 
 A batch's statement has versions (statement_versions, migration 048). Each version's A4 PDF is uploaded to Drive ONCE and shared
 anyone-with-link; the slip's QR encodes that link, and a reprint of the same version reuses it. Printing a newer version switches the
-older versions' sharing off (revoke_older_versions) -- their files stay, privately. Deciding WHEN a new version starts (a batch edited
-after an unlock and re-locked -> "Needs reprint") is build step 3; this module keeps the fingerprint (content_hash) it will compare.
+older versions' sharing off (revoke_older_versions) -- their files stay, privately. A new version starts when the statement's content
+changed after it was published or printed (step 3): on re-lock after an unlock (the batch is then flagged "Needs reprint"), and again at
+print time as a safety net. Print types per copy: ORIGINAL (nothing printed yet), REPRINT (this version's copy already printed), REVISED
+(an older version was printed). Viewing -- the preview, the PDFs, the Drive link -- is never recorded as a print.
 
 Any failure here raises, and the caller must abort the print: no slip without a working QR.
 """
@@ -30,7 +32,8 @@ def _conn() -> sqlite3.Connection:
 
 def content_hash(statement_id: int) -> str | None:
     """Fingerprint of what the statement shows (every invoice, credit memo and check with their amounts, dates and statuses). Two
-    moments with the same fingerprint have the same statement; a different one means the content changed."""
+    moments with the same fingerprint have the same statement; a different one means the content changed -- a revision. Check NUMBERS are
+    left out on purpose: numbers are assigned after the checks are printed, which is the normal flow, not a revision of the statement."""
     data = _fetch_batch_data(statement_id, True, True)
     if data is None:
         return None
@@ -39,7 +42,7 @@ def content_hash(statement_id: int) -> str | None:
         "batch": [s["statement_ref"], s["creditor_name"]],
         "invoices": [[i["doc_ref"], i["invoice_date"], i["due_date"], i["amount"], i["status"]] for i in data["invoices"]],
         "memos": [[m["memo_ref"], m["memo_date"], m["amount"], m["reason"]] for m in data["memos"]],
-        "checks": [[c["check_number"], c["check_date"], c["amount"], c["status"]] for c in data["checks"]],
+        "checks": [[c["check_date"], c["amount"], c["status"]] for c in data["checks"]],
     }
     return hashlib.sha256(json.dumps(payload, default=str, sort_keys=True).encode("utf-8")).hexdigest()
 
@@ -97,6 +100,7 @@ def ensure_published(statement_id: int, drive, sandbox: bool = False, today: dat
     and those are never re-opened. A first print of a batch whose expiry has already passed also gets today + 3 months, so a printed QR
     always works. Raises DriveError / DriveNotConnected on any failure -- nothing is recorded as uploaded / re-opened then."""
     today = today or date.today()
+    sync_version(statement_id)                                         # changed since it went out -> the next version is printed
     v = ensure_current_version(statement_id)
     if v["drive_file_id"] and v["drive_public"]:
         return v
@@ -221,3 +225,110 @@ def daily_link_sweep(make_drive, today: date | None = None) -> dict | None:
             conn.execute("INSERT INTO settings (key, value, category, description) VALUES (?, ?, 'thermal_printer', ?)",
                          (SWEEP_KEY, today.isoformat(), "Last day the app switched off expired statement QR links"))
     return result
+
+
+# ---------------------------------------------------------------- step 3: versions, "Needs reprint", ORIGINAL / REPRINT / REVISED
+def version_printed(version_id: int, copy: str | None = None) -> bool:
+    """True if this version (optionally: this copy) was printed successfully. A FAILED attempt never counts."""
+    sql, args = "SELECT 1 FROM statement_prints WHERE version_id = ? AND status = 'SUCCESS'", [int(version_id)]
+    if copy:
+        sql, args = sql + " AND copy_type = ?", args + [copy]
+    with _conn() as conn:
+        return conn.execute(sql + " LIMIT 1", args).fetchone() is not None
+
+
+def batch_ever_printed(statement_id: int) -> bool:
+    with _conn() as conn:
+        return conn.execute("SELECT 1 FROM statement_prints WHERE statement_id = ? AND status = 'SUCCESS' LIMIT 1",
+                            (int(statement_id),)).fetchone() is not None
+
+
+def _needs_new_version(v: dict, current_hash: str | None) -> bool:
+    """The content changed since this version, and this version already went out (its PDF was published or a copy was printed)."""
+    return v["content_hash"] != current_hash and (bool(v["drive_file_id"]) or version_printed(v["version_id"]))
+
+
+def sync_version(statement_id: int) -> dict | None:
+    """Bring the current version up to date with the statement: if the content changed after the current version went out, start the
+    next version (unpublished; its PDF / link are made when it is printed); if the current version never went out, just refresh its
+    fingerprint. Returns the (possibly new) current version, or None if nothing was ever published or printed for the batch."""
+    v = current_version(statement_id)
+    if v is None:
+        return None
+    h = content_hash(statement_id)
+    if v["content_hash"] == h:
+        return v
+    with _conn() as conn:
+        if _needs_new_version(v, h):
+            conn.execute("INSERT INTO statement_versions (statement_id, version_no, content_hash) VALUES (?, ?, ?)",
+                         (int(statement_id), v["version_no"] + 1, h))
+            _audit(conn, "STATEMENT_VERSION_CREATED", statement_id,
+                   f"v{v['version_no'] + 1} started: the statement changed after v{v['version_no']} went out")
+        else:
+            conn.execute("UPDATE statement_versions SET content_hash = ? WHERE version_id = ?", (h, v["version_id"]))
+    return current_version(statement_id)
+
+
+def on_relock(statement_id: int) -> bool:
+    """Called when a batch is locked again (lock_statement): if the statement changed after a printed version, a new version starts and
+    the batch is flagged "Needs reprint" until the revised statement is printed. Returns True when the flag was set."""
+    before = current_version(statement_id)
+    after = sync_version(statement_id)
+    if not before or not after or after["version_no"] == before["version_no"] or not batch_ever_printed(statement_id):
+        return False
+    with _conn() as conn:
+        conn.execute("UPDATE order_statements SET needs_reprint = 1 WHERE statement_id = ?", (int(statement_id),))
+        _audit(conn, "BATCH_NEEDS_REPRINT", statement_id,
+               f"edited after unlock and re-locked: v{after['version_no']} must be printed (supersedes v{before['version_no']})")
+    return True
+
+
+def needs_reprint(statement_id: int) -> bool:
+    with _conn() as conn:
+        row = conn.execute("SELECT needs_reprint FROM order_statements WHERE statement_id = ?", (int(statement_id),)).fetchone()
+    return bool(row and row[0])
+
+
+def print_type_for(statement_id: int, copy: str, version: dict | None = None) -> dict:
+    """ORIGINAL / REPRINT / REVISED for one copy of the current version: REPRINT when this copy of this version was already printed
+    successfully; REVISED when an older version of the batch was printed; else ORIGINAL (a FAILED attempt never counts, so the retry is
+    still the ORIGINAL). Returns {'print_type', 'version_no', 'supersedes'}."""
+    v = version or current_version(statement_id)
+    if v is None:
+        return {"print_type": "ORIGINAL", "version_no": 1, "supersedes": None}
+    if version_printed(v["version_id"], copy):
+        return {"print_type": "REPRINT", "version_no": v["version_no"], "supersedes": None}
+    with _conn() as conn:
+        older = conn.execute("""SELECT MAX(sv.version_no) FROM statement_prints p JOIN statement_versions sv ON sv.version_id = p.version_id
+                                WHERE p.statement_id = ? AND p.status = 'SUCCESS' AND sv.version_no < ?""",
+                             (int(statement_id), v["version_no"])).fetchone()[0]
+    if older:
+        return {"print_type": "REVISED", "version_no": v["version_no"], "supersedes": v["version_no"] - 1}
+    return {"print_type": "ORIGINAL", "version_no": v["version_no"], "supersedes": None}
+
+
+def planned_print(statement_id: int, copy: str) -> dict:
+    """What printing this copy now would be -- read-only, for the preview (mirrors sync_version + print_type_for without writing)."""
+    v = current_version(statement_id)
+    if v is None:
+        return {"print_type": "ORIGINAL", "version_no": 1, "supersedes": None}
+    if _needs_new_version(v, content_hash(statement_id)):
+        revised = batch_ever_printed(statement_id)
+        return {"print_type": "REVISED" if revised else "ORIGINAL", "version_no": v["version_no"] + 1,
+                "supersedes": v["version_no"] if revised else None}
+    return print_type_for(statement_id, copy, v)
+
+
+def record_print(statement_id: int, version: dict, copy: str, print_type: str, backend: str, status: str, error: str | None = None) -> int:
+    """One row in statement_prints for one copy. A SUCCESS of the latest version clears "Needs reprint". (The audit-log entry and the
+    Bluetooth guardrail are step 4.) Returns the print id."""
+    with _conn() as conn:
+        cur = conn.execute("""INSERT INTO statement_prints (statement_id, version_id, copy_type, print_type, backend, status, error, drive_file_id)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                           (int(statement_id), version["version_id"], copy, print_type, backend, status, error, version.get("drive_file_id")))
+        if status == "SUCCESS":
+            latest = conn.execute("SELECT MAX(version_no) FROM statement_versions WHERE statement_id = ?", (int(statement_id),)).fetchone()[0]
+            if version["version_no"] == latest:
+                conn.execute("UPDATE order_statements SET needs_reprint = 0 WHERE statement_id = ?", (int(statement_id),))
+        return cur.lastrowid
+

@@ -363,6 +363,11 @@ def lock_statement(statement_id: int) -> tuple[bool, str]:
             (statement_id, "Batch re-locked"),
         )
         conn.commit()
+    # Thermal statement printing, step 3: edited after an unlock and re-locked -> a new statement version, and "Needs reprint" if an
+    # earlier version was already printed. Imported here (not at the top) to avoid a circular import.
+    from engines.statement_version_service import on_relock
+    if on_relock(statement_id):
+        return True, "Batch locked. The statement changed after it was printed, so it is marked Needs reprint."
     return True, "Batch locked."
 
 

@@ -499,7 +499,7 @@ def render() -> None:
                       (SELECT SUM(amount) FROM checks_issued
                        WHERE statement_id = os.statement_id AND status = 'Active' AND check_date <= DATE('now', 'localtime')), 0
                   ) AS outstanding,
-                  os.status, os.is_locked, datetime(os.created_at, 'localtime') AS created_at,
+                  os.status, os.is_locked, os.needs_reprint, datetime(os.created_at, 'localtime') AS created_at,
                   """ + statement_modified_sql("os") + """ AS last_modified,
                   CASE WHEN os.status = 'Cancelled' THEN 'Cancelled'
                        WHEN EXISTS (SELECT 1 FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' AND k.printed_at IS NOT NULL) THEN 'Issued'
@@ -702,6 +702,7 @@ def render() -> None:
                     "net_total": st.column_config.NumberColumn("Net total (checks cut against this)", format=MONEY_FORMAT),
                     "outstanding": st.column_config.NumberColumn("Outstanding (uncleared)", format=MONEY_FORMAT),
                     "is_locked": st.column_config.CheckboxColumn("Locked"),
+                    "needs_reprint": st.column_config.CheckboxColumn("Needs reprint", help="Changed after its statement was printed -- print it again (REVISED)."),
                 },
             )
             selected_rows = browser_event.selection.rows if browser_event and browser_event.selection else []
@@ -795,7 +796,8 @@ def render() -> None:
             with hc1:
                 # Batch header (2026-09-27): who / status at a glance, the money, and how far the batch is in the payment cycle.
                 st.markdown(f"#### {scoped_row['statement_ref']} — {scoped_row['creditor_name']}  "
-                            + status_text(scoped_row["stage"]) + " " + status_text("Locked" if batch_is_locked else "Unlocked"))
+                            + status_text(scoped_row["stage"]) + " " + status_text("Locked" if batch_is_locked else "Unlocked")
+                            + (" " + status_text("Needs reprint") if int(scoped_row["needs_reprint"] or 0) else ""))
                 _hk = q_live(
                     """SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total,
                               SUM(printed_at IS NOT NULL AND printed_at != '') AS exported,

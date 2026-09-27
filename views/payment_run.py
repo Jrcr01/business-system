@@ -152,6 +152,15 @@ def render() -> None:
     if overdue_links:
         st.warning(f":material/link: {overdue_links} statement QR link(s) are past their date but Google Drive could not be reached to switch them "
                    "off. Double-click **drive_connect.bat** to sign in again; they are switched off the next day.")
+    reprint = _stages().get("needs_reprint")
+    if reprint is not None and not reprint.empty:
+        rp1, rp2 = st.columns([5, 1.6], vertical_alignment="center")
+        rp_opts = {int(r["statement_id"]): f"{r['statement_ref']} · {r['creditor_name']}" for _, r in reprint.iterrows()}
+        rp1.warning(f":material/print: **{len(reprint)} statement(s) need a reprint** — changed after they were printed: "
+                    + ", ".join(rp_opts.values()) + ". The new slip says REVISED; the old QR link is switched off once it is printed.")
+        rp_pick = rp2.selectbox("Batch", list(rp_opts), format_func=rp_opts.get, key="pr_reprint_pick", label_visibility="collapsed")
+        if rp2.button("Open to reprint", icon=":material/print:", key="pr_reprint_btn", width="stretch"):
+            go_to("order-statements", selected_statement_id=int(rp_pick), os_mode=OS_BROWSE, bulk_print_exp=False)
     drafts = list_park_drafts()
     if drafts:
         st.warning(":material/edit_note: **Checks typed but not parked yet:** " + "; ".join(f"{d['label']} ({d['n']} check(s), {php(d['total'])})" for d in drafts)

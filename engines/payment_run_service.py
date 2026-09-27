@@ -158,7 +158,12 @@ def get_run_stages() -> dict:
         + statement_modified_sql("os") + " >= ? ORDER BY os.statement_ref",
         (since,),
     )
-    return {"needs_checks": needs_checks, "parked": parked, "unprinted": unprinted, "to_number": to_number,
+    # Thermal statement printing, step 3: batches changed after their statement was printed (re-locked after an unlock)
+    reprint = _read(
+        """SELECT os.statement_id, os.statement_ref, c.creditor_name FROM order_statements os JOIN creditors c ON c.creditor_id = os.creditor_id
+           WHERE os.needs_reprint = 1 AND os.status != 'Cancelled' ORDER BY os.statement_ref"""
+    )
+    return {"needs_checks": needs_checks, "parked": parked, "unprinted": unprinted, "to_number": to_number, "needs_reprint": reprint,
             "to_print": to_print, "last_print_day": last_day}
 
 
