@@ -8,6 +8,7 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 -->
 
 ## 2026-09-27
+- **Screens respond faster** - the app used to redo all 10 tabs every time you clicked or saved anything, even though you only see one. Now it only works on the tab you have open: switching tabs or clicking takes about a quarter to half a second instead of 2 to 3 seconds, and a save refreshes in well under a second. Nothing about how you use it has changed.
 - **Program history backed up off Google Drive** - the nightly backup now also saves the program's complete version history as one file in C:\AP_Data\code_backups (the laptop's own disk), in case Google Drive's syncing ever damages it.
 - **Library versions locked** - requirements.txt (and the full list in requirements-lock.txt) now pin the exact versions the app is tested with, so an upgrade can't break it by surprise.
 - **Monthly restore test** - double-click restore_test.bat: it rebuilds the newest Google Drive backup on a temporary copy, checks it, starts the app on it and says PASSED or FAILED. Nothing live is touched.

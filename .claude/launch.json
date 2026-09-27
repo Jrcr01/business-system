@@ -8,7 +8,7 @@
       "port": 8501
     },
     {
-      "name": "ap-disbursement-test",
+      "name": "test-copy-8502",
       "runtimeExecutable": "H:\\My Drive\\Claude9OS\\Project_Checke\\run_test_streamlit.bat",
       "runtimeArgs": [],
       "port": 8502
