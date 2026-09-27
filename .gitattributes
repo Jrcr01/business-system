@@ -1,0 +1,16 @@
+# Line endings (2026-09-27): stored as LF in git, checked out per file type, so git never reports a file as changed
+# only because its line endings differ.
+* text=auto
+# Windows scripts must keep CRLF or cmd/PowerShell can misread them
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+# Binary files: never touch
+*.db binary
+*.jpg binary
+*.png binary
+*.pdf binary
+*.xlsx binary
+*.xlsm binary
+*.frm text eol=crlf
+*.bas text eol=crlf

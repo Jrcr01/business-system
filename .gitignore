@@ -31,3 +31,22 @@ streamlit*.log
 # Claude Code local/personal settings -- launch.json (sandbox+live launch config) stays tracked,
 # settings.local.json is machine-specific.
 .claude/settings.local.json
+
+# ---- 2026-09-27 repository assessment: real data and generated files must never be committed ----
+# Every database and database copy, wherever it sits (live data lives in C:\AP_Data, outside this folder)
+data/
+*.db
+*.db.*
+*.db-journal
+# Exports, workbooks and printouts made from real data
+*.csv
+*.xlsx
+*.xlsm
+*.pdf
+# ...except the Excel invoice-entry master, which the app itself needs (only a start sheet + supplier names)
+!excel_invoice_entry/invoice_entry_master.xlsm
+# Machine-specific settings and working notes with real data
+live_db_path.txt
+local_settings.bat
+Cards_to_verify.md
+Claude outputs/

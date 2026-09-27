@@ -1,9 +1,17 @@
-streamlit
-pandas
-pdfplumber
-pytesseract
-pypdf
-reportlab
-pillow
-openpyxl
-pytest
+# Packages the AP Disbursement app uses, pinned to the versions tested on 2026-09-27 (298 tests passing).
+# Pinned on purpose: an unplanned "pip install --upgrade" can break the app. In particular Streamlit has announced
+# that components.v1.html -- used for the print preview, the keyboard shortcuts and the "leave page?" prompt -- will be
+# removed; move those to st.iframe / the new components API BEFORE upgrading Streamlit.
+# Full list including every sub-package: requirements-lock.txt. Tested with Python 3.12.10.
+# Reading invoices from photos/PDFs (pytesseract) also needs the Tesseract OCR program installed on Windows.
+streamlit==1.62.0
+pandas==3.0.5
+altair==6.2.2
+pdfplumber==0.11.10
+pytesseract==0.3.13
+pypdf==6.16.2
+reportlab==5.0.1
+pillow==12.3.0
+openpyxl==3.1.5
+pytest==9.1.1
+xlrd==2.0.2

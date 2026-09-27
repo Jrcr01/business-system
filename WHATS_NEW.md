@@ -8,6 +8,10 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 -->
 
 ## 2026-09-27
+- **Library versions locked** - requirements.txt (and the full list in requirements-lock.txt) now pin the exact versions the app is tested with, so an upgrade can't break it by surprise.
+- **Monthly restore test** - double-click restore_test.bat: it rebuilds the newest Google Drive backup on a temporary copy, checks it, starts the app on it and says PASSED or FAILED. Nothing live is touched.
+- **Only this laptop can open the app** - other devices on the same Wi-Fi can no longer reach it (there is no password, so this closes that gap). Open it as before at http://localhost:8501.
+- **Full credit card numbers removed** - the app only needs a card's last 4 digits; the full numbers are removed from the database, old backups and copies (remove_card_numbers.bat).
 - **Bulk statements: include checks not yet printed - your choice** - a new switch in Print statements in bulk. On (as before) lists every check. Off leaves out checks that are not printed yet, so the statements, the invoice status and the summary page show only printed checks. A check counts as printed once its Chrysanth run is marked printed (Batch run history > Mark as printed); parked checks and checks in a run not marked printed yet (like RUN 005) are left out.
 - **Summary page in bulk statement printing** - the combined PDF now starts with a cover page listing every included order statement (supplier, status, invoices, net total, checks and their total, with grand totals), followed by each statement. The same table shows on screen before you generate; a switch turns the cover page off.
 - **No more near-empty pages in the batch statement** - a statement that overflowed a page by only a row or two used to leave a page holding one row (or just the footer), for each copy. The rows are now tightened just enough to fit on one page when that saves a page, and a leftover space at the end of a copy no longer spills onto a page of its own (bulk statement printing included).
