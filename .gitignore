@@ -50,3 +50,8 @@ live_db_path.txt
 local_settings.bat
 Cards_to_verify.md
 Claude outputs/
+# Google Drive login files for the thermal-statement QR copies (they live in C:\AP_Data\drive; never in git)
+credentials.json
+token.json
+client_secret*.json
+*oauth*.json

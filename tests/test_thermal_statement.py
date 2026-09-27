@@ -113,7 +113,7 @@ def test_send_job_writes_in_chunks():
 
 def test_printer_settings_come_from_the_settings_table_with_defaults(db):
     cfg = get_printer_config()
-    assert cfg["thermal_backend"] == "dummy" and cfg["thermal_bt_line_threshold"] == 60 and cfg["thermal_network_port"] == 9100
+    assert cfg["thermal_backend"] == "dummy" and cfg["thermal_bt_line_threshold"] == 120 and cfg["thermal_network_port"] == 9100
     with sqlite3.connect(db) as conn:
         conn.execute("INSERT INTO settings (key, value, category) VALUES ('thermal_bt_line_threshold', '75', 'thermal_printer')")
     assert get_printer_config()["thermal_bt_line_threshold"] == 75

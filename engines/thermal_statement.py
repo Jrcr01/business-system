@@ -38,7 +38,7 @@ PRINTER_DEFAULTS = {
     "thermal_serial_port": "",             # e.g. COM5 (Bluetooth virtual COM port)
     "thermal_network_host": "",            # printer IP for LAN
     "thermal_network_port": "9100",
-    "thermal_bt_line_threshold": "60",     # Bluetooth guardrail: warn above this many lines
+    "thermal_bt_line_threshold": "120",    # Bluetooth guardrail: warn above this many lines (owner chose 120, 2026-09-27)
     "thermal_chunk_bytes": "1024",
     "thermal_qr_size": "6",
 }

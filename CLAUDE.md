@@ -55,9 +55,11 @@ The system is **live** (cut over Sep 2026) for Slick's Tire Supply, used daily b
 ## Thermal Statement Printing
 
 Gated mini-phase, started 2026-09-27 (owner's spec). Build hardware-independent first; work against the test/dev database only; stop after each
-build step and summarize before continuing. **Status: step 1 done (2026-09-27); step 2 waits for the owner's go-ahead, the schema proposal and the A4 colour answer.**
+build step and summarize before continuing. **Status: steps 1 and 2 done (2026-09-27); step 3 next. Real Drive use needs the owner's one-time drive_connect.bat setup.**
 
 **Step 1 (done):** `engines/thermal_statement.py` -- `build_slip(statement_id, 'FILE'|'SUPPLIER', print_type=, version=, reprint_date=, qr_link=)` (same rows as today's statement via `batch_statement_service._fetch_batch_data`; totals recomputed from the lines by `statement_totals()`; cancelled invoices / non-Active checks listed but not counted; a counted line without an amount makes its totals '—'), `render_text()` (48-col preview), `estimate_lines()`, `build_job()` (python-escpos Dummy: ESC @, Font A, per-line align/bold/double height, native QR centred before the closing lines, `cut(mode='PART', feed=True)` = ESC d 6 + GS V), `send_job(job, printer, chunk_bytes)` for step 5, `get_printer_config()` (settings table keys `thermal_*`, defaults in `PRINTER_DEFAULTS`, backend `dummy`). UI: `views/thermal_print.py` `render_thermal_printer_section()` in Order statements -> open batch -> Export Batch Statement (preview per copy + 'Send to the test printer', which builds the job and offers the .bin). Library: python-escpos 3.1 (pinned). Tests: `tests/test_thermal_statement.py`.
+
+**Step 2 (done):** schema (owner-approved) `migrations/048_thermal_statement_printing.sql` + schema.sql: `statement_versions` (per batch version_no, content_hash, pdf_file_name, drive_file_id, drive_link, drive_public, uploaded_at, revoked_at), `statement_prints` (copy_type FILE/SUPPLIER, print_type ORIGINAL/REPRINT/REVISED, backend, status SUCCESS/FAILED, error, drive_file_id, printed_at), `order_statements.needs_reprint`. Applied to the TEST database only; **the live database gets it through update_database.bat** (backup + add; the app's startup check asks for it once this code is live). `engines/drive_service.py`: `GoogleDrive` (scope `drive.file` -- the app sees only files it created; `create_folder`, `folder_exists`, `upload_pdf` = always a new file, `share_public` = anyone-with-link reader on the FILE, `revoke_public`), `statement_folder_id()` (one folder per database, created by the app, id in settings `drive_statement_folder_id`, "(TEST)" for the sandbox, re-created if deleted), `DriveNotConnected` / `DriveError`. Login files in `db_location.drive_dir()` = C:/AP_Data/drive (credentials.json from Google Cloud + token.json from `drive_connect.bat` / `drive_connect.py`, which prints the Cloud setup steps when credentials.json is missing); .gitignore covers them. `engines/statement_version_service.py`: `content_hash()` (fingerprint of invoices / memos / checks for step 3), `current_version()`, `ensure_current_version()` (v1 on first use), `ensure_published()` (A4 supplier-copy PDF uploaded once per version and shared; recorded only after sharing succeeds; reused on reprint; raises -> the print aborts), `revoke_older_versions()` (old link off, file kept, audited). UI: the test printer publishes first and refuses to build a job without a working QR; the preview shows the Drive status and link. Bluetooth warning default 120 lines (owner). Libraries: google-api-python-client 2.200.0, google-auth-oauthlib 1.4.1 (pinned). Tests: `tests/test_statement_versions_drive.py` (fake Drive).
 
 ### Purpose
 Print batch payment statements on an 80mm thermal printer: one FILE COPY for physical filing and one SUPPLIER COPY for handoff. These are internal
@@ -82,8 +84,8 @@ summary documents, not BIR records; the database remains the system of record.
 * Guard against duplicate prints on Streamlit reruns (single button action + session-state flag).
 
 **QR / digital copy**
-* At print time, generate the A4 statement PDF (ReportLab; reuse the existing statement generator, brand color #1D5A8E -- colour still to be
-  confirmed by the owner, the existing A4 statement uses #1f3a5f), upload it to a dedicated Google Drive folder via the Drive API, set per-file
+* At print time, generate the A4 statement PDF (ReportLab; reuse the existing statement generator, colour: the owner chose to keep today's
+  navy #1f3a5f over the spec's #1D5A8E after seeing samples, 2026-09-27), upload it to a dedicated Google Drive folder via the Drive API, set per-file
   sharing to ANYONE-WITH-LINK, and encode that link in the QR (bottom center).
 * The folder itself is not shared; sharing is set per file only. Store the Drive file ID and link with the print record. PDFs are never overwritten.
 * Upload failure = print aborted (no slip without a valid QR). Drive OAuth credentials and tokens stay out of git (.gitignore).
@@ -97,7 +99,7 @@ summary documents, not BIR records; the database remains the system of record.
 
 **Bluetooth guardrail**
 * Before printing, estimate the rendered line count. If the active backend is Serial (Bluetooth) and the count exceeds the threshold (default 60,
-  configurable), warn with three choices: Switch to USB / Print via Bluetooth anyway / Cancel.
+  configurable -- owner set 120), warn with three choices: Switch to USB / Print via Bluetooth anyway / Cancel.
 * Check that the COM port opens before sending; if not, suggest USB immediately. If a write fails mid-job: stop, tell the user to discard the partial
   slip, connect USB, and retry.
 
@@ -108,6 +110,7 @@ summary documents, not BIR records; the database remains the system of record.
 
 **Owner answers (2026-09-27)**
 * Keep the existing "Thermal Statement (80mm) PDF" (print dialog) alongside direct printing, as a backup.
+* A4 copy colour: keep today's navy #1f3a5f. Bluetooth warning threshold: 120 lines (a normal slip is ~55, ~71 with the QR). Schema proposal approved.
 * The slip lists the same content as today's statement: invoices, credit memos, the checks (number, date, amount) and totals.
 * Slip layout (owner, 2026-09-27: "exclude" the date received; "make it more readable and not confusing"; "remove check issued, dated..."; "if detailed information is needed then that is the use of QR code"): the slip is a SUMMARY -- small tables with column headings (# / date / amount), dates written out (Jan 08, 2027), one line per item, invoices show the date RECEIVED (not the due date -- owner, later the same day), credit memos listed when the batch has any, no status lines, no memo reasons; only what is counted is listed (cancelled invoices and cancelled / replaced checks are left off -- they are in the A4 copy behind the QR), so every amount on the slip adds up to the SUMMARY block (invoices, less credit memos, NET AMOUNT DUE, less checks issued, REMAINING BALANCE); "Scan for the full statement:" above the QR. The thermal PDF and the A4 statement are unchanged.
 

@@ -16,3 +16,5 @@ openpyxl==3.1.5
 pytest==9.1.1
 xlrd==2.0.2
 python-escpos==3.1          # thermal statement printer (ESC/POS), added 2026-09-27
+google-api-python-client==2.200.0   # thermal statement QR: A4 copy on Google Drive, added 2026-09-27
+google-auth-oauthlib==1.4.1        # one-time Drive sign-in (drive_connect.bat)
