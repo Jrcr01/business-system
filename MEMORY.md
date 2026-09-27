@@ -605,3 +605,9 @@ Written 2026-09-27 as a catch-up: this log had stopped at 2026-09-15 while a lot
 **Stay in Python? (Sep 27)**
 * The owner asked whether to migrate to another stack ("it feels slow", "someone advised it"). Verdict: stay on Python + Streamlit — one user, one laptop, a 400 KB database; Python's PDF/Excel/pandas libraries fit the work. The slowness was the app redoing all 10 tabs on every click and save. Fix: only the open tab renders (`tab.open`), and each tab moved to `views/<tab>.py` (app.py split, stage 2). Clicks went from ~1.8–3 s to ~0.25–0.6 s; a save from ~2.3 s to ~0.6 s (timed on a copy of the live data).
 * Migrate only if: several users with logins/roles/approvals, access from phones/other PCs/the internet, or bank/API integrations. Then keep Python + `engines/` + tests, move to PostgreSQL, and replace the `views/` screens gradually.
+
+**Professional UI and workflow (Sep 27)**
+* Owner asked for "a professional and organized UI" and a better workflow. Pain points: going back and forth between tabs, too many tabs, the long Order Statement screen, not knowing what to do next, a plain/inconsistent look. Owner chose a grouped sidebar menu and Slick's brand colours; asked to remove the logo "everywhere in the app" (PDFs keep it); asked for a quick report "like what's due today"; proposed an "Add data" page and chose to pick the batch each time (open Draft suggested).
+* Built: st.navigation menu; Payment run as the first page (quick report + one-page Today PDF + cycle stages; read-only, numbers equal Dashboard/Reports); Add data (forms moved out of their pages into shared functions, so both call the same code); Order statement header card + progress line + Checks split into 4 views; theme, badges, money/date formats, one primary button per screen, toasts after save.
+* Numbering stays one order statement at a time (owner's rule); Payment run marks nothing by itself except "Mark as printed", the same action as on Checks and checkbook.
+
