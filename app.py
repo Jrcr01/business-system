@@ -265,6 +265,7 @@ import views.add_data
 import views.admin
 import views.analytics
 import views.bank_cash
+import views.planner
 import views.bank_loans
 import views.checks
 import views.credit_cards
@@ -407,6 +408,7 @@ PAGES.update({
     "order-statements": st.Page(views.order_statement.render, title="Order statements", icon=":material/description:", url_path="order-statements"),
     "checks": st.Page(views.checks.render, title="Checks and checkbook", icon=":material/receipt_long:", url_path="checks"),
     "bank-cash": st.Page(views.bank_cash.render, title="Bank and cash", icon=":material/account_balance_wallet:", url_path="bank-cash"),
+    "planner": st.Page(views.planner.render, title="Check-date planner", icon=":material/event_available:", url_path="planner"),
     "lenders": st.Page(views.lenders.render, title="Lenders", icon=":material/handshake:", url_path="lenders"),
     "bank-loans": st.Page(views.bank_loans.render, title="Bank loans", icon=":material/account_balance:", url_path="bank-loans"),
     "credit-cards": st.Page(views.credit_cards.render, title="Credit cards", icon=":material/credit_card:", url_path="credit-cards"),
@@ -416,7 +418,7 @@ PAGES.update({
     "admin": st.Page(views.admin.render, title="Admin and audit", icon=":material/admin_panel_settings:", url_path="admin"),
 })
 MENU = {
-    "Daily work": ["payment-run", "add-data", "order-statements", "checks", "bank-cash"],
+    "Daily work": ["payment-run", "add-data", "order-statements", "checks", "bank-cash", "planner"],
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records and reports": ["dashboard", "creditors", "analytics", "reports"],
     "System": ["admin"],
