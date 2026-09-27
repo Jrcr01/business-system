@@ -109,7 +109,7 @@ summary documents, not BIR records; the database remains the system of record.
 **Owner answers (2026-09-27)**
 * Keep the existing "Thermal Statement (80mm) PDF" (print dialog) alongside direct printing, as a backup.
 * The slip lists the same content as today's statement: invoices, credit memos, the checks (number, date, amount) and totals.
-* Slip layout (owner: "exclude" the date received; "make it more readable and not confusing"): no date received on the slip (the thermal PDF and A4 keep it); invoices, credit memos and checks are small tables with column headings (# / date / amount); dates written out (Jan 08, 2027); each invoice's status in words on the line under it ("Check issued, dated ...", "No check yet"); a SUMMARY block: invoices, less credit memos, NET AMOUNT DUE, less checks issued, REMAINING BALANCE.
+* Slip layout (owner: "exclude" the date received; "make it more readable and not confusing"): no date received on the slip (the thermal PDF and A4 keep it); invoices, credit memos and checks are small tables with column headings (# / date / amount); dates written out (Jan 08, 2027); an invoice's status in words on the line under it only when it matters ("No check yet", "Partly covered by checks", "Cancelled - not counted"; a fully covered invoice gets no line -- owner: "remove check issued, dated..."); a SUMMARY block: invoices, less credit memos, NET AMOUNT DUE, less checks issued, REMAINING BALANCE.
 
 ### Data
 Add whatever tables/columns are needed for statement versions, print records, Drive file IDs/links, the "Needs reprint" flag, and printer config.

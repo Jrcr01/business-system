@@ -114,3 +114,9 @@ def test_printer_settings_come_from_the_settings_table_with_defaults(db):
     with sqlite3.connect(db) as conn:
         conn.execute("INSERT INTO settings (key, value, category) VALUES ('thermal_bt_line_threshold', '75', 'thermal_printer')")
     assert get_printer_config()["thermal_bt_line_threshold"] == 75
+
+
+def test_a_fully_covered_invoice_gets_no_status_line_other_statuses_stay():
+    from engines.thermal_statement import status_words
+    assert status_words("Check issued \u00b7 2027-03-09") == ""          # owner: remove "Check issued, dated ..."
+    assert status_words("Unpaid") == "No check yet" and status_words("Cancelled") == "Cancelled - not counted"

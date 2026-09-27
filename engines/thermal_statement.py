@@ -102,11 +102,11 @@ def fmt_date_long(v) -> str:
 
 
 def status_words(status) -> str:
-    """An invoice's status said plainly, for the line under it."""
+    """An invoice's status said plainly, for the line under it ('' = no line). A fully covered invoice gets no line (owner, 2026-09-27:
+    "remove check issued, dated..." -- its checks are listed in the CHECKS table)."""
     s = fmt_text(status)
     if s.startswith("Check issued"):
-        parts = s.split("\u00b7")
-        return "Check issued, dated " + fmt_date_long(parts[1].strip()) if len(parts) > 1 else "Check issued"
+        return ""
     return {"Unpaid": "No check yet", "Partly covered": "Partly covered by checks", "Partly paid": "Partly paid",
             "Paid": "Paid", "Cancelled": "Cancelled - not counted"}.get(s, s)
 
