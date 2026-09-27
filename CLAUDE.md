@@ -267,6 +267,16 @@ Schedule of payments (`sched_show`); the batch and invoice rundowns are "Supplie
 the three master rollups are "Master rollups — aging and exposure" (`rpt_rollup_view`). `OLD_REPORTS` maps the old menu names to the new
 report + view (a tab left open on an old one lands in the right place). Nothing was deleted: every screen function, PDF and query remains.
 
+**Where things live (2026-09-28, owner asked "where should I store my system?").** Live data `C:\AP_Data` (database, `bank\`, `drive\`
+sign-in files) -- stays on the local disk, never in a syncing folder (BitLocker recommended). Daily backups -> Google Drive
+`H:\My Drive\Claude9OS\AP_Backups`, now pinned by `local_settings.bat` (`AP_BACKUP_DIR`, not in git) so they stay off-site even if the
+program folder moves. Program: recommended move from Google Drive to `C:\AP_System` (a git history inside a syncing folder can collide)
+plus a private GitHub copy of the code only -- owner to do the copy, re-point the "AP System Daily Backup" scheduled task and the desktop
+Start / Stop shortcuts (the session's safety rules do not allow Claude to set these up). History audit before any push: no databases,
+statements, CSVs or sign-in files ever committed; `excel_invoice_entry/invoice_entry_master.xlsm` holds the supplier list + terms only;
+docs / tests mention some real supplier names and check numbers (fine for a PRIVATE repository only). The test app
+(`run_test_streamlit.bat`) now listens on 127.0.0.1 like the live one -- the test copy holds real data.
+
 ---
 
 ## Current Priority / Scope
