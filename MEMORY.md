@@ -20,6 +20,7 @@ Format: dated entries, one build session at a time.
 - [2026-09-15 (Phase 8b)](#2026-09-15-phase-8b--production-cutover-live-db-promoted-to-the-real-master-data) — Production cutover: live db promoted to the real master data
 - [2026-09-15 (Phase 8c)](#2026-09-15-phase-8c--reconstructing-real-postdated-checksinstallments-and-bank-loan-beneficiaries) — Reconstructing real postdated checks/installments, and bank loan beneficiaries
 - [2026-09-15 (PDF fix)](#2026-09-15--schedule-of-payments-pdf-long-payee-names-overlapping-the-track-column) — Schedule of Payments PDF: long payee names overlapping the Track column
+- [2026-09-17 to 2026-09-27](#2026-09-17-to-2026-09-27--live-operation-controls-and-clean-up-catch-up-entry) — Live operation: check-number rules, parking/statuses, Chrysanth, credit cards, statements, security hardening, app.py split
 
 ---
 
@@ -558,3 +559,45 @@ Same day, surfaced by a live screenshot: "STONEWELL PHILIPPINES WHEELS &TIRES, I
 **Verified**: generated the actual PDF from the TEST db (`generate_payment_schedule_pdf()`), confirmed via `pypdf` text extraction that `"S&P Enterprises Inc."` round-trips cleanly (would have raised on the parser otherwise), then sent the real PDF file to the user directly for their own visual check of the layout -- this session's PDF-rendering tool has no `pdftoppm`, so a visual render on this end wasn't possible; handing over the actual artifact was the honest substitute rather than claiming a visual confirmation that wasn't actually made.
 
 **A self-inflicted regression, caught immediately from the next screenshot**: the column rebalance above shrank the "Due Date" column from 14% to 10% -- "GRAND TOTAL" lives in that same column as a separate, unspanned cell from the item count next to it (`["GRAND TOTAL", "787 item(s)", ...]`), and at the narrower width it no longer fit, overlapping into "787 item(s)" the exact same way the payee names had. Fixed by combining both into one spanned cell (`"GRAND TOTAL — 787 item(s)"`), matching the pattern the daily-subtotal row already used one row above it -- should have been applied there in the first place when the columns were rebalanced. Strengthened the regression test to assert on the exact combined string via `pypdf` extraction, not just "doesn't crash," so this specific class of overlap (two adjacent unspanned cells, as opposed to one cell overflowing its own boundary) has real coverage now. Full suite 93/93; re-verified against the real TEST db PDF and resent to the user.
+
+
+---
+
+## 2026-09-17 to 2026-09-27 — live operation, controls and clean-up (catch-up entry)
+
+Written 2026-09-27 as a catch-up: this log had stopped at 2026-09-15 while a lot was decided. `CLAUDE.md` → "Current State (2026-09-27)" has the resulting rules; this is the *why*.
+
+**Working rules the owner set (standing)**
+* Never touch the live database from a session: hand over a script with preview + `--apply`, wrapped in a `.bat` (stop app → preview → type YES → backup → apply → restart), always tested on a copy first. Plain language, no jargon. Ask before coding; never narrow or delete on an ambiguous reading.
+
+**Live move and backups (Sep 19–21)**
+* The live database moved out of Google Drive to `C:\AP_Data` (Drive sync and SQLite don't mix); `live_db_path.txt` points to it. Daily 6 PM backup to Google Drive (Task Scheduler). A startup schema check stops the app with plain instructions when the program is newer than the database — added after live crashes ("no such column") when code landed before the database update.
+
+**Check numbers**
+* Check numbers are stored as the full 10-digit number (`399` + 7) — 7-digit legacy numbers were renumbered. A booklet leaf wrongly assigned can be **retracted**; a typed number always wins over the booklet dropdown (it used to be silently ignored — the owner found it with 3 real checks).
+* "No duplicate check number is a hard rule" (owner, Sep 27) → enforced in the database (migration 047), not only on screen, after the owner found the spoiled-check form accepted the same number twice and ignored the booklets. Spoiled leaves now show in the booklet gap audit.
+* "As long as it does not have a check number assigned then it is not final" (owner) → unnumbered checks stay editable / un-parkable even after a Chrysanth export.
+* Bulk numbering: first built across all batches; the owner rejected it — "I want still to check per order statement" — so it lives inside each order statement (one preview + one confirmation per batch).
+
+**Parking and statuses**
+* Park = confirmation with each check → invoice match, and a Draft batch auto-promotes to Issued (owner request). Un-park deletes parked checks completely (owner chose delete over cancel-with-record) and returns an emptied batch to Draft, keeping its OS number (promotion must not burn a new number).
+* Typed-but-not-parked checks are remembered in the database (`park_drafts`), not just the session — the owner lost typed checks when switching batches.
+* Displayed status Draft / Parked / Issued (owner definition: parked = no check printed; issued = printed checks exist).
+* Due dates follow the bank rule (same day of month), per the owner; one check per invoice option because some suppliers want 1 invoice = 1 check.
+
+**Chrysanth (paid version)**
+* The import format was found by trial with the owner: plain MS-DOS text (UTF-16 failed), amounts without `.00`, a cheque number required on every row → stand-in numbers for unnumbered checks, later led by the OS number so "Cheque No Ascending" prints in OS order (the owner first said to disregard, then kept it: "at least I have a way to issue checks according to OS no").
+* Chrysanth reprints everything ticked and does not remember what it printed → Remark = run number only (one filter value per run), "Mark as printed" per run in the app. The owner found that the column filter arrow's select-all still ticks hidden rows — the Remark **search box** must be used.
+
+**Credit cards**
+* The owner only records statements, does not pay the cards → payment entry removed; statement form reduced to total due + payments seen on the statement + finance charge; only the newest statement per card counts as owed (prevents double counting when not paid in full).
+
+**Statements and printing**
+* Invoice status on the printed statement reads "Check issued · date" instead of "Unpaid" (label only; the stored status that payables depend on is unchanged — owner chose PDF only). Bulk printing is limited by default to "since the day checks were last printed" (owner: checks are not issued every day), never locks or marks anything (reprints after revisions are normal), has a summary cover page, and can leave out checks whose run is not marked printed.
+
+**System assessment and hardening (Sep 27)**
+* App bound to 127.0.0.1 (it was reachable by anyone on the same public Wi-Fi, no login).
+* Full card numbers were stored though never used → removed from the database, 52 old copies/backups, two text files and git history (history rewritten; commit IDs changed; no remote existed).
+* Versions pinned; monthly restore test; git bundle of the code history nightly to `C:\AP_Data\code_backups`; machine paths in `settings.bat`; one-time scripts archived; dead code removed (old Excel/CSV exports, credit-card payment engine).
+* `app.py` split, stage 1: pure business rules moved to `engines/*_rules.py` + `engines/common.py`; `conftest.py` finds DB modules automatically. Stage 2 (tab screens into their own files) not started.
+* Data tidy-up agreed: the "38 empty drafts" in the first assessment was wrong — 36 are LEGACY-MS-ACCESS batches carrying migrated checks (kept); only 3 were truly empty. Loan PN8004 7053 5001 8969 belongs to PNB (moved under Philippine National Bank, loan reference kept); "Honda Giorno" renamed "Inhouse Financing". Supplier TINs: not needed (owner). Recommended next build, not yet agreed: bank reconciliation (cleared is still inferred from the check date).
