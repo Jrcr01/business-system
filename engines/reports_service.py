@@ -207,7 +207,9 @@ def get_combined_ap_summary() -> pd.DataFrame:
     Loan and Credit Card both auto-clear by date (no such thing as "overdue" there once that
     convention applies), while Supplier invoices and Lender notes can be genuinely overdue
     (postdated checks not yet covering a due date) -- the concepts don't generalize cleanly
-    enough to force into one column without being misleading for half the tracks."""
+    enough to force into one column without being misleading for half the tracks.
+    **Due today = still owed** (owner, 2026-09-28): a lender check dated today and an installment due today still count as owed -- the same
+    rule as the Schedule of payments and the Dashboard total."""
     with sqlite3.connect(DB_PATH) as conn:
         supplier = conn.execute(
             "SELECT COALESCE(SUM(amount), 0) FROM invoices WHERE status IN ('Unpaid', 'Partially Paid')"
@@ -216,13 +218,13 @@ def get_combined_ap_summary() -> pd.DataFrame:
             """SELECT COALESCE(SUM(
                    total_payable - COALESCE(
                        (SELECT SUM(amount) FROM checks_issued
-                        WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date <= DATE('now', 'localtime')), 0
+                        WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < DATE('now', 'localtime')), 0
                    )
                ), 0)
                FROM loan_notes ln WHERE status IN ('Active', 'Defaulted')"""
         ).fetchone()[0]
         bank_loan = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date > DATE('now', 'localtime') AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)"
+            "SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date >= DATE('now', 'localtime') AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)"
         ).fetchone()[0]
         credit_card = conn.execute(
             f"""SELECT COALESCE(SUM({cc_owed_case('cs')}), 0)

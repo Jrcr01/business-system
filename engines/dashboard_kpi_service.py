@@ -4,8 +4,8 @@ top-suppliers ranking, and a payables trend line switchable between month/quarte
 
 Two of the four original asks didn't map onto anything that exists in this system and were
 clarified via AskUserQuestion before building:
-- "Check returns due to long overdue" -- this app has no bank-return/NSF concept at all (no
-  reconciliation feature). Confirmed with the user this instead means checks that were
+- "Check returns due to long overdue" -- this app had no bank-return/NSF concept at the time (no
+  reconciliation then; bounced deposits now show on Bank and cash). Confirmed with the user this means checks that were
   cancelled/replaced (voided) while already sitting well past their obligation's due date --
   computed purely from stored dates, since there's no manual "reason" field on a plain cancel
   to query directly.
@@ -263,3 +263,27 @@ def get_top_supplier_dependency() -> dict | None:
         "total_outstanding": total,
         "pct": amount / total * 100,
     }
+
+
+def get_total_ap_outstanding() -> float:
+    """Dashboard "Total AP outstanding": Supplier + Lender active checks not yet dated past, bank-loan installments not yet past due,
+    credit-card statements still owed (cc_owed_case). **Due today = still owed** (owner, 2026-09-28): a check dated today or an
+    installment due today has not left the bank yet, so it counts -- the same rule as the Schedule of payments. Queries checks_issued
+    directly (not invoices / loan_notes status) so legacy checks count whichever path wrote them."""
+    from engines.cc_rules import cc_owed_case
+
+    with sqlite3.connect(DB_PATH) as conn:
+        checks = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date >= DATE('now', 'localtime')").fetchone()[0]
+        loans = conn.execute("""SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date >= DATE('now', 'localtime')
+                                AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)""").fetchone()[0]
+        cards = conn.execute(f"SELECT COALESCE(SUM({cc_owed_case('cs')}), 0) FROM cc_statements cs WHERE cs.status NOT IN ('Paid', 'Cancelled')").fetchone()[0]
+    return float(checks) + float(loans) + float(cards)
+
+
+def get_stale_checks(days: int = 180) -> dict:
+    """Active checks dated more than `days` ago that the bank has NOT confirmed cleared (bank_cleared_date empty) -- probably lost or never
+    deposited. A check the imported bank statement shows as cleared is not stale, however old (2026-09-28: was check-date only)."""
+    with sqlite3.connect(DB_PATH) as conn:
+        n, total = conn.execute("""SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND bank_cleared_date IS NULL
+                                   AND check_date < DATE('now', 'localtime', ?)""", (f"-{int(days)} days",)).fetchone()
+    return {"n": int(n), "total": float(total)}

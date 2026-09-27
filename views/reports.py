@@ -19,7 +19,7 @@ from engines.duplicate_scan_service import restore as restore_duplicates
 from engines.duplicate_scan_service import scan_possible_duplicates
 from engines.overview_pdf_service import generate_overview_pdf
 from engines.overview_report_service import PERIOD_KINDS
-from engines.overview_report_service import get_overview
+from engines.overview_report_service import bank_note, bank_rows, get_overview
 from engines.payment_schedule_report_service import generate_parked_checks_pdf
 from engines.payment_schedule_report_service import generate_payment_schedule_pdf
 from engines.reports_service import get_bank_loan_history
@@ -109,6 +109,12 @@ def render() -> None:
             ov_tracks.rename(columns={"track": "Track", "paid": "Paid", "scheduled": "Scheduled"}), hide_index=True,
             column_config={c: st.column_config.NumberColumn(c, format=MONEY_FORMAT) for c in ("Paid", "Scheduled", "Total", "Previous")},
         )
+
+        st.markdown("**Bank and cash**")
+        ov_bank_rows = bank_rows(ov["bank"])
+        if ov_bank_rows:
+            st.dataframe(pd.DataFrame(ov_bank_rows, columns=["Measure", "Figure"]), hide_index=True)
+        st.caption(bank_note(ov["bank"]))
 
         if ov["watch"]:
             st.markdown("**Needs attention**")

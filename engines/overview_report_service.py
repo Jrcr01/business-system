@@ -278,6 +278,54 @@ def _trend(kind: str, start: date, periods: int = 6) -> list[dict]:
     return out
 
 
+def _bank(start: date, end: date, pstart: date, pend: date) -> dict:
+    """Bank and cash for the period (engines/cash_insights_service.period_bank_summary); 'none' on a database without the bank tables."""
+    try:
+        from engines.cash_insights_service import period_bank_summary
+
+        return period_bank_summary(start, end, pstart, pend)
+    except sqlite3.OperationalError:
+        return {"covered": "none", "first": None, "last": None}
+
+
+def _bank_highlight(kind: str, b: dict) -> str | None:
+    if b["covered"] == "none":
+        return None
+    ch = None if b["money_in_prev"] is None else _pct_change(b["money_in"], b["money_in_prev"])
+    trend = "" if ch is None else f" ({abs(ch):.0f}% {'more' if ch >= 0 else 'less'} than the previous {kind.lower()})"
+    text = (f"Bank: {_php(b['money_in'])} came in{trend}; the bank cleared {b['cleared_n']} of your checks ({_php(b['cleared_amount'])}); "
+            f"{b['float_n']} check(s) ({_php(b['float_amount'])}) were still not cleared on {b['as_of']:%b %d}.")
+    if b["bounced_n"]:
+        text += f" {b['bounced_n']} customer check(s) bounced ({_php(b['bounced_amount'])})."
+    if b["covered"] == "part":
+        text += f" (Bank statements cover {b['first']:%b %d} to {b['last']:%b %d, %Y} only.)"
+    return text
+
+
+def bank_rows(b: dict) -> list[list[str]]:
+    """The Bank and cash section as [measure, figure] rows -- the same on screen and in the PDF. Empty when no statement covers the period."""
+    if b["covered"] == "none":
+        return []
+    prev = "" if b["money_in_prev"] is None else f" (previous: {_php(b['money_in_prev'])})"
+    rows = [["Bank balance" + (f" on {b['balance_date']:%b %d, %Y}" if b["balance_date"] else ""), _php(b["balance"]) if b["balance"] is not None else "-"],
+            ["Money in (deposits and transfers)", _php(b["money_in"]) + prev],
+            ["Checks cleared by the bank", f"{b['cleared_n']} · {_php(b['cleared_amount'])}"],
+            ["Checks dated in the period", f"{b['issued_n']} · {_php(b['issued_amount'])}"],
+            [f"Checks not yet cleared on {b['as_of']:%b %d}", f"{b['float_n']} · {_php(b['float_amount'])}"],
+            ["Customer checks bounced", f"{b['bounced_n']} · {_php(b['bounced_amount'])}" if b["bounced_n"] else "None"],
+            ["Bank lines still needing a look", str(b["open_items"])]]
+    return rows
+
+
+def bank_note(b: dict) -> str:
+    """One line under the Bank and cash section: what the statements cover."""
+    if b["covered"] == "none":
+        return ("No imported bank statement covers this period" + (f" (statements on file: {b['first']:%b %d, %Y} to {b['last']:%b %d, %Y})" if b["first"] else "")
+                + ". Import the Metrobank statement on Bank and cash.")
+    part = " -- only part of this period" if b["covered"] == "part" else ""
+    return f"From the imported Metrobank statements ({b['first']:%b %d, %Y} to {b['last']:%b %d, %Y}{part})."
+
+
 def get_overview(kind: str, anchor: date) -> dict:
     start, end, label = period_bounds(kind, anchor)
     pstart, pend, plabel = previous_bounds(kind, start)
@@ -286,9 +334,14 @@ def get_overview(kind: str, anchor: date) -> dict:
     upcoming = _upcoming(kind, end)
     watch = _watch_list()
     outstanding = get_combined_ap_summary()
+    bank = _bank(start, end, pstart, pend)
+    highlights = _highlights(kind, label, cur, prev, upcoming, watch)
+    bank_line = _bank_highlight(kind, bank)
+    if bank_line:
+        highlights.insert(len(highlights) - (1 if watch else 0), bank_line)      # before the watch-list line, which stays last
     return {
         "kind": kind, "label": label, "start": start, "end": end, "prev_label": plabel,
         "current": cur, "previous": prev, "upcoming": upcoming, "watch": watch, "trend": _trend(kind, start),
         "outstanding_today": float(outstanding.loc[outstanding["track"] == "TOTAL", "outstanding"].iloc[0]),
-        "highlights": _highlights(kind, label, cur, prev, upcoming, watch),
+        "highlights": highlights, "bank": bank,
     }

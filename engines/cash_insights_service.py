@@ -217,3 +217,75 @@ def working_capital(today: date | None = None) -> dict:
     return {"balance": pos["balance"], "as_of": pos["as_of"], "windows": pd.DataFrame(rows),
             "days_of_cash": (pos["balance"] / (due30 / 30.0)) if due30 else None, "dpo": get_average_dpo_suppliers(),
             "by_track": out.groupby("track")["amount"].sum().to_dict() if not out.empty else {}}
+
+
+# ------------------------------------------------------------------ summaries for the Dashboard and the overall report (2026-09-28)
+FORECAST_FRESH_DAYS = 14               # an older bank balance is too stale to forecast from
+
+
+def dashboard_bank_summary(today: date | None = None) -> dict | None:
+    """The Dashboard's Bank and cash panel: the latest bank balance and its date; the share of our numbered active checks dated within the
+    imported statements that the bank has confirmed cleared; the checks past their date the bank has not cleared (float); bank lines still
+    needing a look; the lowest forecast balance in 30 days vs the buffer (only while the balance is at most 14 days old). None when no
+    statement is imported."""
+    from engines.bank_statement_service import exceptions, not_yet_cleared, statement_coverage
+
+    today = today or date.today()
+    pos = cash_position()
+    if pos is None:
+        return None
+    first, last = statement_coverage()
+    cov = _read("""SELECT COUNT(*) AS n, COALESCE(SUM(CASE WHEN bank_cleared_date IS NOT NULL THEN 1 ELSE 0 END), 0) AS cleared FROM checks_issued
+                   WHERE status = 'Active' AND check_number IS NOT NULL AND check_number != '' AND check_date BETWEEN ? AND ?""",
+                (first.isoformat(), last.isoformat())).iloc[0]
+    waiting = not_yet_cleared()
+    age = (today - pos["as_of"]).days
+    fc = forecast(30, today) if age <= FORECAST_FRESH_DAYS else {}
+    return {"balance": pos["balance"], "as_of": pos["as_of"], "age_days": age,
+            "checks_in_period": int(cov["n"]), "checks_cleared": int(cov["cleared"]),
+            "pct_cleared": (float(cov["cleared"]) / int(cov["n"]) * 100.0) if int(cov["n"]) else None,
+            "float_count": len(waiting), "float_amount": float(sum(w["amount"] for w in waiting)),
+            "open_items": sum(1 for e in exceptions() if not e["reviewed"]),
+            "lowest": fc["lowest"] if fc else None, "first_below": fc.get("first_below") if fc else None, "buffer": get_buffer()}
+
+
+def period_bank_summary(start: date, end: date, prev_start: date, prev_end: date) -> dict:
+    """Bank and cash for a report period (overall report): whether imported statements cover it (fully / partly / not at all), the bank
+    balance at the period end (the last bank line on or before it), money in vs the previous period, checks the bank cleared in the period
+    vs checks dated in it, the float at the period end (numbered active checks dated on or before it, not cleared by then), bounced deposits,
+    and bank lines still needing a look. When nothing covers the period only 'covered' = 'none' and the coverage dates are returned."""
+    from engines.bank_statement_service import EXCEPTION_STATUSES
+
+    # coverage = the statements' own periods (a statement to Feb 28 covers February even when its last bank line is on Friday the 27th)
+    cov = _read("SELECT MIN(period_from) AS a, MAX(period_to) AS b FROM bank_statement_imports").iloc[0]
+    first = date.fromisoformat(str(cov["a"])[:10]) if cov["a"] else None
+    last = date.fromisoformat(str(cov["b"])[:10]) if cov["b"] else None
+    if first is None or first > end or last < start:
+        return {"covered": "none", "first": first, "last": last}
+    covered = "full" if first <= start and last >= end else "part"
+    as_of = min(end, last)
+    bal = _read("SELECT posting_date, balance FROM bank_transactions WHERE balance IS NOT NULL AND posting_date <= ? ORDER BY posting_date DESC, txn_id DESC LIMIT 1",
+                (as_of.isoformat(),))
+
+    def money_in(a: date, b: date) -> float:
+        return float(_read("SELECT COALESCE(SUM(credit), 0) AS t FROM bank_transactions WHERE kind = 'DEPOSIT' AND posting_date BETWEEN ? AND ?",
+                           (a.isoformat(), b.isoformat()))["t"][0])
+
+    prev_covered = first <= prev_start and last >= prev_end
+    cleared = _read("SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS t FROM checks_issued WHERE bank_cleared_date BETWEEN ? AND ?",
+                    (start.isoformat(), end.isoformat())).iloc[0]
+    issued = _read("SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS t FROM checks_issued WHERE status = 'Active' AND check_date BETWEEN ? AND ?",
+                   (start.isoformat(), end.isoformat())).iloc[0]
+    flt = _read("""SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS t FROM checks_issued
+                   WHERE status = 'Active' AND check_number IS NOT NULL AND check_number != '' AND check_date <= ?
+                     AND (bank_cleared_date IS NULL OR bank_cleared_date > ?)""", (as_of.isoformat(), as_of.isoformat())).iloc[0]
+    bounced = _read("SELECT COUNT(*) AS n, COALESCE(SUM(debit), 0) AS t FROM bank_transactions WHERE kind = 'RETURNED_CHECK' AND posting_date BETWEEN ? AND ?",
+                    (start.isoformat(), end.isoformat())).iloc[0]
+    open_n = int(_read("SELECT COUNT(*) AS n FROM bank_transactions WHERE reviewed = 0 AND posting_date BETWEEN ? AND ? AND match_status IN (%s)"
+                       % ",".join("?" * len(EXCEPTION_STATUSES)), (start.isoformat(), end.isoformat()) + EXCEPTION_STATUSES)["n"][0])
+    return {"covered": covered, "first": first, "last": last, "as_of": as_of,
+            "balance": float(bal["balance"][0]) if not bal.empty else None, "balance_date": date.fromisoformat(bal["posting_date"][0]) if not bal.empty else None,
+            "money_in": money_in(start, as_of), "money_in_prev": money_in(prev_start, prev_end) if prev_covered else None,
+            "cleared_n": int(cleared["n"]), "cleared_amount": float(cleared["t"]), "issued_n": int(issued["n"]), "issued_amount": float(issued["t"]),
+            "float_n": int(flt["n"]), "float_amount": float(flt["t"]), "bounced_n": int(bounced["n"]), "bounced_amount": float(bounced["t"]),
+            "open_items": open_n}

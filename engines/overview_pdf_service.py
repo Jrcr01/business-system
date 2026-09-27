@@ -20,7 +20,7 @@ from reportlab.platypus.flowables import HRFlowable, KeepTogether
 from engines.account_history_pdf_service import (
     ACCENT, ACCENT_LIGHT, CONTENT_WIDTH, GREY, LEFT_MARGIN, MIN_FONT_PT, RIGHT_MARGIN, _section_table,
 )
-from engines.overview_report_service import _pct_change
+from engines.overview_report_service import _pct_change, bank_note, bank_rows
 
 DEEP = colors.HexColor("#12304f")      # cover banner base
 TREAD = colors.HexColor("#1c4a78")     # tread pattern on the banner
@@ -242,8 +242,20 @@ def _styles() -> dict:
     }
 
 
-def _section(title: str, st: dict) -> list:
-    return [Paragraph(title, st["section"]), HRFlowable(width="100%", thickness=0.8, color=GOLD, spaceBefore=1, spaceAfter=6)]
+def _section(title: str, st: dict, toc: str | None = None) -> list:
+    """A section heading; `toc` tags it so the cover's contents can show the page it really lands on."""
+    head = Paragraph(title, st["section"])
+    head._toc_key = toc
+    return [head, HRFlowable(width="100%", thickness=0.8, color=GOLD, spaceBefore=1, spaceAfter=6)]
+
+
+class _TocDoc(SimpleDocTemplate):
+    """Records the page of every tagged section heading (see _section) while building."""
+
+    def afterFlowable(self, flowable):
+        key = getattr(flowable, "_toc_key", None)
+        if key and key not in self.toc_pages:
+            self.toc_pages[key] = self.page
 
 
 def _callout(paragraphs: list) -> Table:
@@ -273,7 +285,10 @@ def _delta_text(now: float, before: float, prev_label: str) -> str:
     return f"vs {prev_label}: n/a" if c is None else f"{'+' if c >= 0 else '-'}{abs(c):.0f}% vs {prev_label}"
 
 
-def _cover(data: dict, short: bool, st: dict) -> list:
+TOC_GUESS = {"highlights": 2, "bank": 3, "charts": 4, "detail": 5}
+
+
+def _cover(data: dict, short: bool, st: dict, pages: dict) -> list:
     cur = data["current"]
     story = [Spacer(1, BANNER_H - 0.5 * inch + 0.25 * inch)]
     if os.path.exists(LOGO_PATH):
@@ -296,26 +311,37 @@ def _cover(data: dict, short: bool, st: dict) -> list:
                              ("TOPPADDING", (0, 0), (-1, 0), 14), ("BOTTOMPADDING", (0, 1), (-1, 1), 12),
                              ("LINEABOVE", (0, 0), (-1, 0), 2.5, GOLD), ("LINEAFTER", (0, 0), (1, -1), 0.5, RULE)]))
     story += [big, Spacer(1, 0.3 * inch)]
-    contents = [["Highlights and key numbers", "2"]]
+    # page numbers come from a first build (generate_overview_pdf builds twice), so they are right however long each section runs
+    contents = [["Highlights and key numbers", str(pages["highlights"])], ["Bank and cash", str(pages["bank"])]]
     if not short:
-        contents += [["Charts", "3"], ["Detail: top payees, financing, behavior, coming up", "4"]]
+        contents += [["Charts", str(pages["charts"])], ["Detail: top payees, financing, behavior, coming up", str(pages["detail"])]]
     story += [_section_table(["Contents", "Page"], contents, [CONTENT_WIDTH * 0.85, CONTENT_WIDTH * 0.15], right_cols=(1,)), PageBreak()]
     return story
 
 
 # ------------------------------------------------------------------ the report
 def generate_overview_pdf(data: dict, short: bool = False) -> bytes:
+    """Built twice: the first pass finds the page each section lands on, the second prints those pages in the cover's contents."""
+    pages = dict(TOC_GUESS)
+    for _ in range(2):
+        buf = io.BytesIO()
+        doc = _TocDoc(buf, pagesize=LETTER, leftMargin=LEFT_MARGIN, rightMargin=RIGHT_MARGIN, topMargin=0.95 * inch, bottomMargin=0.8 * inch,
+                      title=f"{COMPANY} - {data['kind']} overview - {data['label']}", author=COMPANY)
+        doc.toc_pages = {}
+        doc.build(_overview_story(data, short, pages), onFirstPage=_cover_page, onLaterPages=_inner_page(f"{data['kind']} overview - {data['label']}"))
+        pages = {**TOC_GUESS, **doc.toc_pages}
+    return buf.getvalue()
+
+
+def _overview_story(data: dict, short: bool, pages: dict) -> list:
     cur, prev = data["current"], data["previous"]
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=LEFT_MARGIN, rightMargin=RIGHT_MARGIN, topMargin=0.95 * inch, bottomMargin=0.8 * inch,
-                            title=f"{COMPANY} - {data['kind']} overview - {data['label']}", author=COMPANY)
     st = _styles()
-    story = _cover(data, short, st)
+    story = _cover(data, short, st, pages)
     pl = data["prev_label"]
     total = cur["paid"] + cur["scheduled"]
 
     # ---- page 2: highlights and key numbers
-    story += _section("Highlights", st)
+    story += _section("Highlights", st, toc="highlights")
     story.append(_callout([Paragraph(_esc(h), st["bullet"], bulletText="•") for h in data["highlights"]]))
     story.append(Spacer(1, 10))
     story.append(_kpi_cards([
@@ -342,10 +368,20 @@ def generate_overview_pdf(data: dict, short: bool = False) -> bytes:
         story.append(_section_table(["Item", "Count", "Detail"], [[w["item"], str(w["count"]), w["detail"]] for w in data["watch"]],
                                     [CONTENT_WIDTH * w for w in (0.5, 0.1, 0.4)], right_cols=(1,)))
 
+    # ---- bank and cash (2026-09-28): from the imported Metrobank statements, on its own page
+    story.append(PageBreak())
+    story += _section("Bank and cash", st, toc="bank")
+    bank = data.get("bank") or {"covered": "none", "first": None, "last": None}
+    brows = bank_rows(bank)
+    if brows:
+        story.append(_section_table(["Measure", "Figure"], brows, [CONTENT_WIDTH * 0.55, CONTENT_WIDTH * 0.45], right_cols=(1,)))
+        story.append(Spacer(1, 4))
+    story.append(Paragraph(_esc(bank_note(bank)), st["grey"]))
+
     if not short:
         # ---- charts page
         story.append(PageBreak())
-        story += _section("Charts", st)
+        story += _section("Charts", st, toc="charts")
         bt = cur["by_track"]
         story.append(column_chart("Paid vs scheduled by track", list(bt["track"]), {"Paid": list(bt["paid"]), "Scheduled": list(bt["scheduled"])}, height=185))
         story.append(Spacer(1, 10))
@@ -363,7 +399,7 @@ def generate_overview_pdf(data: dict, short: bool = False) -> bytes:
 
         # ---- detail
         story.append(PageBreak())
-        story += _section("Where the money went", st)
+        story += _section("Where the money went", st, toc="detail")
         rows = []
         prev_tracks = prev["by_track"].set_index("track")
         for r in cur["by_track"].itertuples():
@@ -398,6 +434,4 @@ def generate_overview_pdf(data: dict, short: bool = False) -> bytes:
             if up["peak_days"]:
                 story.append(Spacer(1, 6))
                 story.append(Paragraph("Heaviest days: " + "; ".join(f"{d} ({_m(a)})" for d, a in up["peak_days"]), st["body"]))
-
-    doc.build(story, onFirstPage=_cover_page, onLaterPages=_inner_page(f"{data['kind']} overview - {data['label']}"))
-    return buf.getvalue()
+    return story

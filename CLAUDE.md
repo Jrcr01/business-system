@@ -217,6 +217,21 @@ PDF). Schema: migration 051 (bank_transactions.resolution / matched_installment_
 bank_statement_imports.reconciled_at, and `saved_reports` for phase 4) -- test database only so far. Also fixed: text in
 `account_history_pdf_service` table cells is XML-escaped ("S&P" broke PDFs). Tests: `tests/test_bank_recon_v2.py`.
 
+**Phase 2 (done 2026-09-28) -- bank figures on the Dashboard and in the overall report.** Dashboard: a "Bank and cash" panel after the third
+metrics row (`cash_insights_service.dashboard_bank_summary()`: bank balance + date, % of numbered active checks dated within the imported
+statements that the bank cleared, float past their date, open lines, lowest forecast in 30 days vs the buffer -- only while the balance is
+<= 14 days old) + `bank_alerts.all_alerts()`. "Stale checks" = `dashboard_kpi_service.get_stale_checks()` (Active, > 180 days, NOT
+bank-cleared). **Due today = still owed** (owner): `get_total_ap_outstanding()` (Dashboard total, `>= today`) and
+`get_combined_ap_summary()` (lender checks subtracted only when dated before today; bank-loan installments `>= today`). Only these two
+totals changed -- about 30 other places (v_effective_checks' "Cleared", statement / loan-note paid amounts, analytics, bank-loan remaining)
+still treat a check as cleared ON its check date; changing those is the owner's call. Overall report: `overview_report_service._bank()` ->
+`cash_insights_service.period_bank_summary(start, end, prev_start, prev_end)` (coverage from the imports' own periods: full / part / none;
+balance at the period end, money in vs previous (only if the previous period is fully covered), cleared vs dated checks, float at the end,
+bounced deposits, open lines), `bank_rows()` / `bank_note()` shared by screen and PDF, a "Bank:" highlight before the watch-list line. The
+PDF gives Bank and cash its own page and is built twice (`_TocDoc.afterFlowable` records the page of each `_section(..., toc=key)`), so
+the cover's contents show the real page numbers (they were hard-coded and wrong when a section ran long). Tests:
+`tests/test_bank_dashboard_overview.py`.
+
 ---
 
 ## Current Priority / Scope

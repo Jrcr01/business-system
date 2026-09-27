@@ -8,10 +8,11 @@ import streamlit as st
 
 from datetime import date
 from datetime import timedelta
-from engines.cc_rules import cc_owed_case
 from engines.cc_service import get_statement_gap_alerts
 from engines.check_run_service import get_pending_check_run
 from engines.checkbook_service import get_checkbook_alerts
+from engines.bank_alerts import all_alerts
+from engines.cash_insights_service import dashboard_bank_summary
 from engines.common import fix_nullable_int
 from engines.common import php
 from engines.common import prospective_year
@@ -20,9 +21,11 @@ from engines.common import set_blocked_date
 from engines.dashboard_kpi_service import get_average_dpo_suppliers
 from engines.dashboard_kpi_service import get_overdue_cancelled_checks
 from engines.dashboard_kpi_service import get_payables_trend
+from engines.dashboard_kpi_service import get_stale_checks
 from engines.dashboard_kpi_service import get_supplier_concentration
 from engines.dashboard_kpi_service import get_top_supplier_dependency
 from engines.dashboard_kpi_service import get_top_suppliers
+from engines.dashboard_kpi_service import get_total_ap_outstanding
 from engines.dashboard_kpi_service import get_upcoming_cash_obligations
 from engines.interest_service import get_monthly_interest_summary
 from engines.interest_service import get_yearly_interest_trend
@@ -30,9 +33,11 @@ from engines.reports_service import get_payment_schedule_all_tracks
 from engines.reports_service import get_payment_schedule_daily_totals
 from engines.reports_service import get_supplier_ap_aging_report
 
+from views.bank_cash import show_alerts
 from views.shared import (  # noqa: F401
     MONEY_FORMAT,
     date_col,
+    go_to,
     get_blocked_dates_for_month,
     money_col,
     page_header,
@@ -88,38 +93,16 @@ def render() -> None:
             "See Analytics → Supplier concentration (Pareto)."
         )
 
-    ap_outstanding = 0.0
-    # Supplier + Lender: not-yet-cleared checks (same "still owed" convention as
-    # get_uncleared_checks_report() / v_effective_checks -- a check counts as effectively
-    # cleared once its check_date arrives, since this app has no bank reconciliation feature).
-    # invoices.status/loan_notes.status were the original source here, but those only get
-    # populated by the app's own batch/loan-note workflow -- Phase 8c's legacy migration
-    # (Sep 2026) intentionally skipped reconstructing itemized invoices and left every migrated
-    # lender at loan_notes.status='Pending Setup', so both went to 0 despite ~P39.6M of real,
-    # still-outstanding legacy checks sitting in checks_issued. Querying checks_issued directly
-    # counts that money regardless of which path (legacy import or normal workflow) wrote it.
-    supplier_lender_uncleared = q(
-        "SELECT COALESCE(SUM(amount), 0) AS total FROM checks_issued WHERE status = 'Active' AND check_date > DATE('now', 'localtime')"
-    )
-    loan_pending = q("SELECT COALESCE(SUM(amount), 0) AS total FROM bank_loan_installments WHERE due_date > DATE('now', 'localtime') AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)")
-    # unpaid_balance_next-aware (migration 027): a statement carrying a real rolling balance
-    # still counts as outstanding past its due date; a legacy statement (unpaid_balance_next
-    # always 0) falls through to the original due-date-only rule unchanged.
-    cc_unpaid = q(
-        f"""SELECT COALESCE(SUM({cc_owed_case('cs')}), 0) AS total
-           FROM cc_statements cs WHERE cs.status NOT IN ('Paid', 'Cancelled')"""
-    )
-    ap_outstanding = float(supplier_lender_uncleared["total"][0]) + float(loan_pending["total"][0]) + float(cc_unpaid["total"][0])
+    # Supplier + Lender checks not yet past their date, bank-loan installments not yet past due, cards still owed. Due today = still owed
+    # (owner, 2026-09-28). The bank's real cleared dates (Bank and cash) are shown in the Bank and cash panel below, not in this total.
+    ap_outstanding = get_total_ap_outstanding()
 
     active_checks = q("SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM checks_issued WHERE status = 'Active'")
     cc_alerts = q("SELECT * FROM v_cc_due_alerts")
     critical_alerts = cc_alerts[cc_alerts["urgency_status"] == "CRITICAL (0-3 Days)"] if not cc_alerts.empty else cc_alerts
-    # Same 180-day cutoff v_effective_checks (schema.sql) already uses to call a check "Stale" --
-    # still Active, but old enough that it was probably lost, never cashed, or just never marked
-    # Cleared/Cancelled, rather than genuinely still in flight.
-    stale_checks = q(
-        "SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM checks_issued WHERE status = 'Active' AND check_date < DATE('now', '-180 days')"
-    )
+    # Same 180-day cutoff v_effective_checks (schema.sql) uses to call a check "Stale" -- but a check the imported bank statement shows as
+    # cleared is not stale (2026-09-28, reconciliation).
+    stale_checks = get_stale_checks(180)
     pending_checks_df = get_pending_check_run()
     pending_week_df = (
         pending_checks_df[pd.to_datetime(pending_checks_df["check_date"]).dt.date <= (date.today() + timedelta(days=7))]
@@ -156,8 +139,8 @@ def render() -> None:
 
     with st.container(horizontal=True):
         st.metric(
-            "Stale checks", f"{int(stale_checks['n'][0])} · {php(stale_checks['total'][0])}", border=True,
-            help="Still marked Active but dated more than 180 days ago -- same cutoff this app already uses elsewhere to call a check effectively stale. May have been lost, never cashed, or just never marked Cleared/Cancelled.",
+            "Stale checks", f"{stale_checks['n']} · {php(stale_checks['total'])}", border=True,
+            help="Still Active, dated more than 180 days ago, and not shown as cleared on any imported bank statement. May have been lost or never deposited.",
         )
         st.metric(
             "Checks pending print/signature this week",
@@ -165,6 +148,43 @@ def render() -> None:
             border=True,
             help="Already issued but not yet printed, dated within the next 7 days. Full list: Checks and checkbook → Checks to print.",
         )
+
+    # Bank and cash panel (2026-09-28, reconciliation plan phase 2): figures from the imported Metrobank statements
+    # (engines/cash_insights_service.dashboard_bank_summary) and the same alerts as Payment run (engines/bank_alerts.py).
+    try:
+        dash_bank = dashboard_bank_summary()
+        dash_bank_alerts = all_alerts()
+    except Exception:                                   # a database without the bank tables yet
+        dash_bank, dash_bank_alerts = None, []
+    with st.container(border=True):
+        bh1, bh2 = st.columns([5, 1.6], vertical_alignment="center")
+        bh1.subheader("Bank and cash")
+        if bh2.button("Open Bank and cash", icon=":material/account_balance_wallet:", key="dash_bank_btn", width="stretch"):
+            go_to("bank-cash")
+        if dash_bank is None:
+            st.caption("No bank statement imported yet. Drop the Metrobank MBOS statement on Bank and cash to see the bank balance, which checks "
+                       "really cleared and a cash forecast here.")
+        else:
+            if dash_bank["age_days"] > 14:
+                st.caption(f":material/history: The latest bank balance is from {dash_bank['as_of']:%b %d, %Y} ({dash_bank['age_days']} days ago) — "
+                           "import a recent statement for current figures.")
+            with st.container(horizontal=True):
+                st.metric(f"Bank balance ({dash_bank['as_of']:%b %d})", php(dash_bank["balance"]), border=True,
+                          help="The last balance on the imported bank statements.")
+                st.metric("Checks confirmed cleared", f"{dash_bank['pct_cleared']:.0f}%" if dash_bank["pct_cleared"] is not None else "—",
+                          f"{dash_bank['checks_cleared']} of {dash_bank['checks_in_period']}", delta_color="off", delta_arrow="off", border=True,
+                          help="Of our numbered active checks dated within the imported statements, how many the bank shows as cleared.")
+                st.metric("Not yet cleared (past their date)", php(dash_bank["float_amount"]), f"{dash_bank['float_count']} check(s)",
+                          delta_color="off", delta_arrow="off", border=True,
+                          help="Checks dated on or before the last bank date that the bank has not cleared — suppliers have not deposited them yet.")
+                st.metric("Bank lines needing a look", str(dash_bank["open_items"]), border=True,
+                          help="Resolve them on Bank and cash → Reconciliation.")
+                low = dash_bank["lowest"]
+                st.metric("Lowest balance, next 30 days", php(low[1]) if low else "—",
+                          (f"on {low[0]:%b %d} · buffer {php(dash_bank['buffer'])}" if low else "needs a recent statement"),
+                          delta_color="off", delta_arrow="off", border=True,
+                          help="From the cash forecast: bank balance + expected money in − checks not cleared and loan / card dues.")
+        show_alerts(dash_bank_alerts)
 
     # TRIAL C (2026-09-14): calendar heatmap — hover a day to see that day's all-tracks total,
     # instead of picking a date (Trial A) or reading it off the issue-check grid (Trial B). A
