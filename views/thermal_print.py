@@ -1,7 +1,8 @@
 """Thermal printer section of a batch (Thermal Statement Printing, 2026-09-27): the 48-column slip preview for the FILE and SUPPLIER
 copies, the A4 copy on Google Drive behind the QR (step 2), statement versions with ORIGINAL / REPRINT / REVISED and "Needs reprint"
-(step 3), and a "test printer" that builds the exact ESC/POS job without any hardware (python-escpos Dummy). Audit + Bluetooth guardrail
-(step 4) and the real printer backends (step 5) come next. The existing thermal PDF above stays as the backup (owner, 2026-09-27).
+(step 3), printing through engines/thermal_print_service.py with the audit entries and the Bluetooth guardrail (step 4), and the printer
+settings. The real USB / Bluetooth / network connections are finished in step 5, when the printer arrives; until then the "test printer"
+builds the exact ESC/POS job without any hardware (python-escpos Dummy). The existing thermal PDF above stays as the backup (owner).
 
 Viewing is never a print (owner asked, 2026-09-27): the preview, the PDFs and opening the Drive link record nothing. Only a slip sent to a
 printer is recorded -- and a TEST-printer job only in the sandbox database, so that reprints / revisions can be tried now without making
@@ -9,17 +10,19 @@ the first real print on the live system look like a reprint."""
 from __future__ import annotations
 
 import os
+import time
 from datetime import date
 
 import streamlit as st
 
 from engines.common import DB_PATH, php
 from engines.drive_service import DriveError, DriveNotConnected, GoogleDrive, is_connected
-from engines.statement_version_service import (
-    current_version, ensure_published, link_expiry, needs_reprint, planned_print, print_type_for, record_print, revoke_older_versions,
+from engines.statement_version_service import current_version, link_expiry, needs_reprint, planned_print
+from engines.thermal_print_service import BACKEND_LABELS, PrintAborted, needs_bluetooth_warning, print_statement
+from engines.thermal_statement import (
+    COPY_LABELS, QR_LINES_ESTIMATE, build_slip, estimate_lines, get_printer_config, render_text, save_printer_config,
 )
-from engines.thermal_statement import COPY_LABELS, build_job, build_slip, estimate_lines, get_printer_config, render_text
-from views.shared import guard_duplicate_submit, q
+from views.shared import guard_duplicate_submit, q, refresh
 
 COPY_CHOICES = {"Both": ["FILE", "SUPPLIER"], "File copy": ["FILE"], "Supplier copy": ["SUPPLIER"]}
 TYPE_LABELS = {"ORIGINAL": "original", "REPRINT": "REPRINT", "REVISED": "REVISED"}
@@ -40,7 +43,8 @@ def _type_text(p: dict) -> str:
 def render_thermal_printer_section(statement_id: int, include_full_history: bool = True) -> None:
     sid = int(statement_id)
     cfg = get_printer_config()
-    st.markdown("**Thermal printer (direct, 80mm)**  :orange-badge[Test mode · no printer connected]")
+    st.markdown("**Thermal printer (direct, 80mm)**  " + (":orange-badge[Test mode · no printer connected]" if cfg["thermal_backend"] == "dummy"
+                                                          else f":blue-badge[{BACKEND_LABELS.get(cfg['thermal_backend'], cfg['thermal_backend'])}]"))
     st.caption("Preview of the slip exactly as it will print (48 characters wide). The totals are worked out from the lines below, not taken "
                "from the stored batch total. The QR opens the full A4 statement on Google Drive. Viewing this preview or the PDFs is never "
                "recorded as a print — only a slip sent to a printer is.")
@@ -94,52 +98,93 @@ def render_thermal_printer_section(statement_id: int, include_full_history: bool
         with tab:
             st.code(render_text(slip), language=None, width="content")
 
-    sent_key = f"_th_test_job_{sid}"
-    if st.button("Send to the test printer (no paper)", icon=":material/print:", key=f"th_test_btn_{sid}",
-                 help="Makes sure the A4 copy is on Google Drive and shared by link (the QR needs it), then builds the exact printer job with a "
-                      "pretend printer, so everything can be checked before the real printer arrives."):
-        if not guard_duplicate_submit("thermal_test_job", sid, choice):
-            st.warning("Duplicate click ignored — identical to the click just before it.")
+    _printer_settings(cfg)
+    backend = cfg["thermal_backend"]
+    record = backend != "dummy" or _sandbox()           # test-printer jobs count only in the sandbox (see module doc)
+    copies = COPY_CHOICES[choice]
+    longest = max(estimate_lines(sl) + (0 if sl.qr_link else QR_LINES_ESTIMATE) for sl in slips)       # the printed slip always has a QR
+    ask_key, result_key = f"_th_bt_ask_{sid}", f"_th_result_{sid}"
+    if st.button(f"Print {choice.lower()} — {BACKEND_LABELS.get(backend, backend)}", icon=":material/print:", type="primary", key=f"th_print_btn_{sid}",
+                 help="Makes sure the A4 copy is on Google Drive (the QR needs it), then prints each copy. Every copy printed is recorded in the "
+                      "audit log." + ("" if record else " (Test printer on the live system: nothing is recorded.)")):
+        if not guard_duplicate_submit("thermal_print", sid, choice, backend):
+            st.warning("Duplicate click ignored — one click prints once.")
+        elif needs_bluetooth_warning(backend, longest, cfg):
+            st.session_state[ask_key] = True
         else:
-            drive = None
-            try:
-                with st.spinner("Uploading the A4 copy to Google Drive..."):
-                    drive = GoogleDrive()
-                    v = ensure_published(sid, drive, sandbox=_sandbox())           # also starts the next version if the batch changed
-            except (DriveNotConnected, DriveError) as e:
-                st.session_state.pop(sent_key, None)
-                st.error(f"Not printed — the QR copy could not be made, and a slip without a working QR is never printed. {e}")
-            else:
-                v_until = link_expiry(sid, v)
-                types = {c: print_type_for(sid, c, v) for c in COPY_CHOICES[choice]}
-                ready = [build_slip(sid, c, include_full_history=include_full_history, qr_link=v["drive_link"], version=v["version_no"],
-                                    print_type=types[c]["print_type"], reprint_date=today, link_until=v_until) for c in COPY_CHOICES[choice]]
-                job = build_job(ready, cfg["thermal_qr_size"])
-                recorded, revoked = False, []
-                if _sandbox():                                                  # test prints count only in the sandbox (see module doc)
-                    for c in COPY_CHOICES[choice]:
-                        record_print(sid, v, c, types[c]["print_type"], "dummy", "SUCCESS")
-                    recorded = True
-                    if any(t["print_type"] == "REVISED" for t in types.values()):
-                        try:
-                            revoked = revoke_older_versions(sid, v["version_id"], drive)
-                        except DriveError as e:
-                            st.warning(f"The old QR link could not be switched off yet ({e}); it is tried again on the next print.")
-                st.session_state[sent_key] = {"bytes": job, "copies": [s.copy for s in ready], "ref": ready[0].statement_ref,
-                                              "link": v["drive_link"], "version": v["version_no"], "recorded": recorded, "revoked": revoked,
-                                              "types": {c: _type_text(t) for c, t in types.items()}}
+            _do_print(sid, copies, backend, cfg, record, include_full_history, result_key)
+
+    if st.session_state.get(ask_key):
+        with st.container(border=True):
+            st.warning(f":material/bluetooth: **This slip is about {longest} lines** — longer than your Bluetooth limit ({cfg['thermal_bt_line_threshold']} lines). "
+                       "Over Bluetooth a long slip is slow, and if the connection drops you get half a slip. USB is safer.")
+            a1, a2, a3 = st.columns(3)
+            if a1.button("Switch to USB and print", icon=":material/usb:", type="primary", key=f"th_bt_usb_{sid}", width="stretch"):
+                st.session_state.pop(ask_key, None)
+                _do_print(sid, copies, "win32raw", cfg, True, include_full_history, result_key)
+            if a2.button("Print via Bluetooth anyway", icon=":material/bluetooth:", key=f"th_bt_anyway_{sid}", width="stretch"):
+                st.session_state.pop(ask_key, None)
+                _do_print(sid, copies, "serial", cfg, True, include_full_history, result_key)
+            if a3.button("Cancel", icon=":material/close:", key=f"th_bt_cancel_{sid}", width="stretch"):
+                st.session_state.pop(ask_key, None)
                 st.rerun()
-    last = st.session_state.get(sent_key)
-    if last:
-        job = last["bytes"]
-        cuts = job.count(b"\x1dV")                            # GS V = cut
-        st.success(f"Test job built — " + "; ".join(f"{COPY_LABELS[c]} as {t}" for c, t in last["types"].items())
-                   + f": {len(job):,} bytes, starts with ESC @ (initialize), QR to the A4 copy, {cuts} partial cut(s). "
-                   f"Printer setting in use: {cfg['thermal_backend']}.")
-        st.caption(("Recorded as printed (test copy only), so the next print of the same version is a REPRINT." if last["recorded"]
-                    else "Not recorded: test-printer jobs never count as prints on the live system.")
-                   + (f" Old QR link(s) switched off: v{', v'.join(str(n) for n in last['revoked'])}." if last["revoked"] else "")
-                   + f" QR link: {last['link']}")
-        st.download_button("Download the printer job (.bin, for testing with the real printer later)", data=job,
-                           file_name=f"thermal_{last['ref']}_{'_'.join(last['copies']).lower()}.bin".replace(" ", "_"), mime="application/octet-stream",
-                           icon=":material/download:", key=f"th_job_dl_{sid}")
+
+    res = st.session_state.get(result_key)
+    if res:
+        if res.get("error"):
+            (st.warning if res.get("done") else st.error)(("Printed: " + ", ".join(COPY_LABELS[c] for c in res["done"]) + ". " if res.get("done") else "")
+                                                         + "Not printed — " + res["error"])
+        else:
+            st.success(f"Printed {', '.join(COPY_LABELS[c] + ' (' + res['types'][c] + ')' for c in res['done'])} — statement v{res['version_no']} "
+                       f"on {BACKEND_LABELS.get(res['backend'], res['backend'])}.")
+            st.caption(("Recorded in the audit log, one entry per copy." if res["recorded"] else "Not recorded: test-printer jobs never count as prints on the live system.")
+                       + (f" Old QR link(s) switched off: v{', v'.join(str(n) for n in res['revoked'])}." if res.get("revoked") else "")
+                       + (f" The old QR link could not be switched off yet ({res['revoke_error']}); it is tried again next time." if res.get("revoke_error") else ""))
+            if res.get("jobs") and res["backend"] == "dummy":
+                st.download_button("Download the printer job (.bin, for testing with the real printer later)", data=b"".join(res["jobs"].values()),
+                                   file_name=f"thermal_{res['ref']}.bin".replace(" ", "_"), mime="application/octet-stream", icon=":material/download:",
+                                   key=f"th_job_dl_{sid}")
+
+
+def _do_print(sid: int, copies: list, backend: str, cfg: dict, record: bool, include_full_history: bool, result_key: str) -> None:
+    """One print run (one button click): a session flag refuses a second run for the same batch while this one is going (a quick double
+    click, or a click while Streamlit is still working), then the result is shown after a refresh."""
+    run_key = f"_th_running_{sid}"
+    started = st.session_state.get(run_key)
+    if started and time.monotonic() - started < 120:
+        st.warning("A print for this batch is already running — wait for it to finish.")
+        return
+    st.session_state[run_key] = time.monotonic()
+    try:
+        try:
+            with st.spinner("Preparing the QR copy and printing..."):
+                r = print_statement(sid, copies, backend, GoogleDrive(), cfg, sandbox=_sandbox(), record=record, include_full_history=include_full_history)
+        except (DriveNotConnected, DriveError) as e:                   # GoogleDrive() itself could not start
+            raise PrintAborted("drive", f"The QR copy could not be made, and a slip without a working QR is never printed. {e}")
+        st.session_state[result_key] = {"done": r["done"], "types": r["types"], "version_no": r["version"]["version_no"], "backend": backend,
+                                        "recorded": record, "revoked": r["revoked"], "revoke_error": r["revoke_error"], "jobs": r["jobs"],
+                                        "ref": str(sid)}
+    except PrintAborted as e:
+        st.session_state[result_key] = {"error": str(e), "kind": e.kind, "done": e.done, "backend": backend}
+    finally:
+        st.session_state.pop(run_key, None)
+    st.rerun()
+
+
+def _printer_settings(cfg: dict) -> None:
+    with st.expander("Printer settings", icon=":material/settings:"):
+        st.caption("How this laptop reaches the thermal printer. USB and Bluetooth are switched on when the printer arrives (step 5); until then "
+                   "use the test printer.")
+        keys = list(BACKEND_LABELS)
+        backend = st.selectbox("Printer connection", keys, index=keys.index(cfg["thermal_backend"]) if cfg["thermal_backend"] in keys else 0,
+                               format_func=BACKEND_LABELS.get, key="th_cfg_backend")
+        c1, c2 = st.columns(2)
+        win = c1.text_input("Windows printer name (USB)", value=cfg["thermal_win32_printer"], placeholder="e.g. XP-T837L", key="th_cfg_win")
+        port = c2.text_input("Bluetooth COM port", value=cfg["thermal_serial_port"], placeholder="e.g. COM5", key="th_cfg_port")
+        host = c1.text_input("Printer IP address (network)", value=cfg["thermal_network_host"], placeholder="e.g. 192.168.1.50", key="th_cfg_host")
+        thr = c2.number_input("Bluetooth warning above (lines)", min_value=20, max_value=1000, step=10, value=int(cfg["thermal_bt_line_threshold"]),
+                              key="th_cfg_thr")
+        if st.button("Save printer settings", icon=":material/save:", key="th_cfg_save"):
+            save_printer_config({"thermal_backend": backend, "thermal_win32_printer": win.strip(), "thermal_serial_port": port.strip().upper(),
+                                 "thermal_network_host": host.strip(), "thermal_bt_line_threshold": int(thr)})
+            refresh(done="Printer settings saved.")

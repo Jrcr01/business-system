@@ -58,6 +58,18 @@ def get_printer_config() -> dict:
     return cfg
 
 
+def save_printer_config(values: dict) -> None:
+    """Save printer settings (only known keys) in the settings table, category thermal_printer."""
+    with sqlite3.connect(DB_PATH) as conn:
+        for k, v in values.items():
+            if k not in PRINTER_DEFAULTS:
+                continue
+            if conn.execute("SELECT 1 FROM settings WHERE key = ?", (k,)).fetchone():
+                conn.execute("UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?", (str(v), k))
+            else:
+                conn.execute("INSERT INTO settings (key, value, category) VALUES (?, ?, 'thermal_printer')", (k, str(v)))
+
+
 # ------------------------------------------------------------------ formatting (NULL-safe)
 def fmt_text(v) -> str:
     """Any value as text; None / NaN / blank -> '—'. Never the word 'None'."""

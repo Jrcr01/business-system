@@ -320,12 +320,15 @@ def planned_print(statement_id: int, copy: str) -> dict:
 
 
 def record_print(statement_id: int, version: dict, copy: str, print_type: str, backend: str, status: str, error: str | None = None) -> int:
-    """One row in statement_prints for one copy. A SUCCESS of the latest version clears "Needs reprint". (The audit-log entry and the
-    Bluetooth guardrail are step 4.) Returns the print id."""
+    """One row in statement_prints for one copy, plus its audit-log entry (step 4: batch, version, copy, print type, printer, SUCCESS /
+    FAILED, Drive file id; the audit row carries the time). A SUCCESS of the latest version clears "Needs reprint". Returns the print id."""
     with _conn() as conn:
         cur = conn.execute("""INSERT INTO statement_prints (statement_id, version_id, copy_type, print_type, backend, status, error, drive_file_id)
                               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                            (int(statement_id), version["version_id"], copy, print_type, backend, status, error, version.get("drive_file_id")))
+        _audit(conn, "STATEMENT_PRINTED" if status == "SUCCESS" else "STATEMENT_PRINT_FAILED", statement_id,
+               f"print #{cur.lastrowid}: v{version['version_no']} {copy} COPY, {print_type}, printer {backend}, {status}, "
+               f"Drive file {version.get('drive_file_id') or '-'}" + (f"; {error}" if error else ""))
         if status == "SUCCESS":
             latest = conn.execute("SELECT MAX(version_no) FROM statement_versions WHERE statement_id = ?", (int(statement_id),)).fetchone()[0]
             if version["version_no"] == latest:
