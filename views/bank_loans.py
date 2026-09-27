@@ -49,6 +49,215 @@ from views.shared import (  # noqa: F401
 )
 
 
+def render_new_bank_loan_form() -> None:
+    """The beneficiary registry + Create bank loan form. Shared by Bank loans and Add data."""
+    bl_beneficiaries_df = q("SELECT * FROM loan_beneficiaries ORDER BY name")
+    with st.expander("Loan beneficiary registry"):
+        st.caption("Who actually uses/benefits from a loan the company pays for — a person or an affiliate. Reusable across multiple loans.")
+        st.dataframe(bl_beneficiaries_df, hide_index=True)
+        with st.form("new_loan_beneficiary_form", border=False):
+            lb_name = st.text_input("Name")
+            lb_type = st.selectbox("Type", ["Person", "Affiliate"])
+            lb_contact = st.text_input("Contact number (optional)")
+            if st.form_submit_button("Add beneficiary", icon=":material/person_add:"):
+                if lb_name:
+                    if guard_duplicate_submit("add_loan_beneficiary", lb_name, lb_type, lb_contact):
+                        add_loan_beneficiary(lb_name, lb_type, lb_contact)
+                        refresh(done=f"Added {lb_type.lower()} {lb_name}.")
+                    else:
+                        st.warning("Duplicate submission ignored — identical to the click just before it.")
+                else:
+                    st.error("Name is required.")
+
+    with st.form("new_bank_loan_form", border=False):
+        bl_creditor = selectbox_creditor("Bank", "BANK_LOAN", "bl_creditor")
+        bl_ref = st.text_input("Loan reference")
+        bl_account_number = st.text_input("Bank account number (optional)")
+        if bl_beneficiaries_df.empty:
+            st.caption("Add a beneficiary above first, or leave unattributed for now.")
+            bl_beneficiary = None
+        else:
+            bl_beneficiary = st.selectbox(
+                "Attributable to (optional)", options=[None] + list(bl_beneficiaries_df["beneficiary_id"]),
+                format_func=lambda bid: "—" if bid is None else f"{bl_beneficiaries_df.set_index('beneficiary_id').loc[bid, 'name']} ({bl_beneficiaries_df.set_index('beneficiary_id').loc[bid, 'beneficiary_type']})",
+            )
+        c1, c2, c3 = st.columns(3)
+        bl_start = c1.date_input("Start date", value=date.today())
+        bl_maturity = c2.date_input("Maturity date", value=date.today())
+        bl_repricing = c3.date_input("Repricing date (optional)", value=None)
+        bl_principal = st.number_input("Principal amount (original loan amount)", min_value=0.0, step=10000.0)
+        bl_mode_of_payment = st.text_input("Mode of payment (informational only, from the bank's document)", value="ADA")
+        st.caption("Mode of payment is descriptive only — it doesn't drive any settlement logic. This system tracks payment as untracked cash by default regardless of what's entered here.")
+        if st.form_submit_button("Create bank loan", icon=":material/account_balance:", type="primary"):
+            if bl_creditor and bl_ref:
+                err = money_amount_error(bl_principal, "Principal amount")
+                if not err and bl_maturity <= bl_start:
+                    err = "Maturity date must be after the start date."
+                if err:
+                    st.error(err)
+                else:
+                    def _do_create_bank_loan(args=(bl_creditor, bl_ref, bl_account_number, bl_start, bl_maturity, bl_repricing, bl_principal, bl_mode_of_payment, bl_beneficiary)):
+                        try:
+                            new_blid = create_bank_loan(*args)
+                        except sqlite3.IntegrityError:
+                            return False, "This loan reference already exists."
+                        except ValueError as e:
+                            return False, str(e)
+                        st.session_state["selected_bank_loan_id"] = new_blid
+                        st.session_state["_bl_mode_next"] = BL_BROWSE
+                        return True, ""
+                    confirm_create_dialog(
+                        f"Create bank loan **{bl_ref}** with **{selectbox_creditor_label('BANK_LOAN', bl_creditor)}**: "
+                        f"principal **{php(bl_principal)}**, {bl_start:%b %d, %Y} to {bl_maturity:%b %d, %Y}?"
+                        + dup_note(bank_loan_warnings(bl_creditor, bl_account_number, bl_principal, bl_start)),
+                        "create_bank_loan", _do_create_bank_loan,
+                    )
+            else:
+                st.error("Bank and loan reference are required.")
+
+
+def render_bank_loan_schedule(selected_blid: int) -> None:
+    """A bank loan's repayment schedule: spreadsheet import + the editable Due Date / Amount grid. Shared by Bank loans and Add data."""
+    st.subheader("Repayment schedule")
+    st.caption("Due Date and Amount, straight off the bank's document. Interest is optional — fill it in when you know it, straight off the same document, to feed the interest-tracking dashboard; leave it 0 otherwise. A row is treated as Paid automatically once its due date is in the past; add a row with the blank row at the bottom of the table.")
+
+    bl_schedule_df = q(
+        """SELECT installment_id, installment_no, due_date, amount, interest_portion
+           FROM bank_loan_installments WHERE bank_loan_id = ? ORDER BY due_date, installment_id""",
+        (selected_blid,),
+    )
+    if not bl_schedule_df.empty:
+        bl_schedule_df["due_date"] = pd.to_datetime(bl_schedule_df["due_date"]).dt.date
+        bl_schedule_df["status"] = bl_schedule_df["due_date"].apply(lambda d: "Paid" if d <= date.today() else "Pending")
+
+    bl_import_staged_key = f"bl_import_staged_{selected_blid}"
+    bl_import_errors_key = f"bl_import_errors_{selected_blid}"
+    with st.expander("Import schedule from spreadsheet"):
+        st.caption("Upload a .csv or .xlsx with Due Date/Amount columns (any reasonable header variant works). Rows are staged for review below — nothing is saved until you confirm.")
+        st.download_button(
+            "Download CSV template", data=get_bank_loan_template_csv(), file_name="bank_loan_schedule_import_template.csv",
+            mime="text/csv", icon=":material/download:", key=f"bl_import_template_btn_{selected_blid}",
+        )
+        bl_import_file = st.file_uploader("Schedule spreadsheet", type=["csv", "xlsx"], key=f"bl_import_uploader_{selected_blid}")
+        if st.button("Parse schedule file", icon=":material/upload_file:", key=f"bl_import_parse_btn_{selected_blid}"):
+            if not bl_import_file:
+                st.warning("Upload a file first.")
+            else:
+                bl_imported_rows, bl_import_messages = parse_bank_loan_spreadsheet(bl_import_file.getvalue(), bl_import_file.name)
+                st.session_state[bl_import_staged_key] = [{"due_date": r.due_date, "amount": r.amount} for r in bl_imported_rows]
+                st.session_state[bl_import_errors_key] = bl_import_messages
+
+        for m in st.session_state.get(bl_import_errors_key, []):
+            st.warning(m)
+
+        bl_staged_rows = st.session_state.get(bl_import_staged_key, [])
+        if bl_staged_rows:
+            st.caption(f"{len(bl_staged_rows)} row(s) staged — review/correct below, then add.")
+            bl_edited_import_df = st.data_editor(
+                pd.DataFrame(bl_staged_rows),
+                hide_index=True,
+                num_rows="dynamic",
+                key=f"bl_import_staging_editor_{selected_blid}",
+                column_config={
+                    "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+                    "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, step=0.01),
+                },
+            )
+            bl_import_col_add, bl_import_col_discard = st.columns(2)
+            with bl_import_col_add:
+                if st.button("Add these installments", icon=":material/playlist_add:", key=f"bl_import_commit_btn_{selected_blid}") or dup_resume("bl_import_commit"):
+                  if dup_needs_confirm("bl_import_commit", bank_schedule_warnings(selected_blid, [
+                      (r["due_date"], float(r["amount"] or 0)) for _, r in bl_edited_import_df.iterrows() if not pd.isna(r["due_date"])
+                  ])):
+                    pass
+                  elif not guard_duplicate_submit("bl_import_commit", selected_blid, bl_edited_import_df.to_csv(index=False)):
+                    st.warning("Duplicate submission ignored — identical to the click just before it.")
+                  else:
+                    bl_added, bl_import_commit_errors = 0, []
+                    for _, r in bl_edited_import_df.sort_values("due_date").iterrows():
+                        if pd.isna(r["due_date"]):
+                            continue
+                        ok, msg = add_bank_loan_installment(selected_blid, r["due_date"], float(r["amount"] or 0))
+                        if ok:
+                            bl_added += 1
+                        else:
+                            bl_import_commit_errors.append(f"{r['due_date']}: {msg}")
+                    if bl_added:
+                        st.success(f"{bl_added} installment(s) added.")
+                    for e in bl_import_commit_errors:
+                        st.error(e)
+                    st.session_state[bl_import_staged_key] = []
+                    st.session_state[bl_import_errors_key] = []
+                    if bl_added:
+                        refresh(done=f"{bl_added} installment(s) added.")
+            with bl_import_col_discard:
+                if st.button("Discard parsed rows", icon=":material/delete_sweep:", key=f"bl_import_discard_btn_{selected_blid}"):
+                    st.session_state[bl_import_staged_key] = []
+                    st.session_state[bl_import_errors_key] = []
+                    st.rerun()
+
+    bl_editor_template = bl_schedule_df if not bl_schedule_df.empty else pd.DataFrame(columns=["installment_id", "installment_no", "due_date", "amount", "interest_portion", "status"])
+    bl_edited_schedule_df = st.data_editor(
+        bl_editor_template,
+        hide_index=True,
+        num_rows="dynamic",
+        disabled=["installment_id", "installment_no", "status"],
+        key="bl_schedule_editor",
+        column_config={
+            "installment_id": st.column_config.NumberColumn("ID"),
+            "installment_no": st.column_config.NumberColumn("No."),
+            "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+            "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01),
+            "interest_portion": st.column_config.NumberColumn("Interest (optional)", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0),
+            "status": st.column_config.TextColumn("Status (auto)"),
+        },
+    )
+    if (st.button("Save schedule changes", icon=":material/save:", key="bl_save_schedule_btn") or dup_resume("bl_save_schedule")) and not dup_needs_confirm("bl_save_schedule", bank_schedule_warnings(selected_blid, [
+        (r["due_date"], float(r["amount"] or 0)) for _, r in bl_edited_schedule_df.iterrows() if pd.isna(r["installment_id"]) and not pd.isna(r["due_date"])
+    ])):
+        bl_original_by_id = bl_schedule_df.set_index("installment_id") if not bl_schedule_df.empty else pd.DataFrame()
+        bl_seen_ids, bl_added_n, bl_updated_n, bl_deleted_n, bl_sched_errors = set(), 0, 0, 0, []
+        for _, r in bl_edited_schedule_df.iterrows():
+            if pd.isna(r["due_date"]):
+                continue
+            amount = float(r["amount"] or 0)
+            interest_portion = float(r.get("interest_portion") or 0)
+
+            if pd.isna(r["installment_id"]):
+                ok, msg = add_bank_loan_installment(selected_blid, r["due_date"], amount, interest_portion)
+                if ok:
+                    bl_added_n += 1
+                else:
+                    bl_sched_errors.append(msg)
+                continue
+
+            iid = int(r["installment_id"])
+            bl_seen_ids.add(iid)
+            orig = bl_original_by_id.loc[iid]
+            if (str(r["due_date"]) != str(orig["due_date"]) or abs(amount - float(orig["amount"])) > 0.001
+                    or abs(interest_portion - float(orig.get("interest_portion") or 0)) > 0.001):
+                ok, msg = edit_bank_loan_installment(iid, r["due_date"], amount, interest_portion)
+                if ok:
+                    bl_updated_n += 1
+                else:
+                    bl_sched_errors.append(f"Installment {iid}: {msg}")
+
+        if not bl_original_by_id.empty:
+            for removed_id in set(bl_original_by_id.index) - bl_seen_ids:
+                ok, msg = delete_bank_loan_installment(int(removed_id))
+                if ok:
+                    bl_deleted_n += 1
+                else:
+                    bl_sched_errors.append(f"Installment {removed_id}: {msg}")
+
+        if bl_added_n or bl_updated_n or bl_deleted_n:
+            st.success(f"Saved — {bl_added_n} added, {bl_updated_n} updated, {bl_deleted_n} deleted.")
+        for e in bl_sched_errors:
+            st.error(e)
+        if bl_added_n or bl_updated_n or bl_deleted_n:
+            refresh(done=f"Schedule saved — {bl_added_n} added, {bl_updated_n} updated, {bl_deleted_n} deleted.")
+
+
 def render() -> None:
     page_header("Bank loans")
     st.caption("Add or edit lending bank records on the Creditors page. Just Due Date and Amount per installment — no computation, with one optional addition: an interest portion, when you know it, to feed the interest-tracking dashboard. A due date is treated as Paid automatically once it's in the past (same convention as a check's cleared status elsewhere in this app), not a manual flag. Settlement is untracked cash: no check or bank debit is recorded.")
@@ -82,68 +291,7 @@ def render() -> None:
 
     if bl_mode == BL_NEW:
         st.subheader("Create bank loan")
-        with st.expander("Loan beneficiary registry"):
-            st.caption("Who actually uses/benefits from a loan the company pays for — a person or an affiliate. Reusable across multiple loans.")
-            st.dataframe(bl_beneficiaries_df, hide_index=True)
-            with st.form("new_loan_beneficiary_form", border=False):
-                lb_name = st.text_input("Name")
-                lb_type = st.selectbox("Type", ["Person", "Affiliate"])
-                lb_contact = st.text_input("Contact number (optional)")
-                if st.form_submit_button("Add beneficiary", icon=":material/person_add:"):
-                    if lb_name:
-                        if guard_duplicate_submit("add_loan_beneficiary", lb_name, lb_type, lb_contact):
-                            add_loan_beneficiary(lb_name, lb_type, lb_contact)
-                            refresh(done=f"Added {lb_type.lower()} {lb_name}.")
-                        else:
-                            st.warning("Duplicate submission ignored — identical to the click just before it.")
-                    else:
-                        st.error("Name is required.")
-
-        with st.form("new_bank_loan_form", border=False):
-            bl_creditor = selectbox_creditor("Bank", "BANK_LOAN", "bl_creditor")
-            bl_ref = st.text_input("Loan reference")
-            bl_account_number = st.text_input("Bank account number (optional)")
-            if bl_beneficiaries_df.empty:
-                st.caption("Add a beneficiary above first, or leave unattributed for now.")
-                bl_beneficiary = None
-            else:
-                bl_beneficiary = st.selectbox(
-                    "Attributable to (optional)", options=[None] + list(bl_beneficiaries_df["beneficiary_id"]),
-                    format_func=lambda bid: "—" if bid is None else f"{bl_beneficiaries_df.set_index('beneficiary_id').loc[bid, 'name']} ({bl_beneficiaries_df.set_index('beneficiary_id').loc[bid, 'beneficiary_type']})",
-                )
-            c1, c2, c3 = st.columns(3)
-            bl_start = c1.date_input("Start date", value=date.today())
-            bl_maturity = c2.date_input("Maturity date", value=date.today())
-            bl_repricing = c3.date_input("Repricing date (optional)", value=None)
-            bl_principal = st.number_input("Principal amount (original loan amount)", min_value=0.0, step=10000.0)
-            bl_mode_of_payment = st.text_input("Mode of payment (informational only, from the bank's document)", value="ADA")
-            st.caption("Mode of payment is descriptive only — it doesn't drive any settlement logic. This system tracks payment as untracked cash by default regardless of what's entered here.")
-            if st.form_submit_button("Create bank loan", icon=":material/account_balance:", type="primary"):
-                if bl_creditor and bl_ref:
-                    err = money_amount_error(bl_principal, "Principal amount")
-                    if not err and bl_maturity <= bl_start:
-                        err = "Maturity date must be after the start date."
-                    if err:
-                        st.error(err)
-                    else:
-                        def _do_create_bank_loan(args=(bl_creditor, bl_ref, bl_account_number, bl_start, bl_maturity, bl_repricing, bl_principal, bl_mode_of_payment, bl_beneficiary)):
-                            try:
-                                new_blid = create_bank_loan(*args)
-                            except sqlite3.IntegrityError:
-                                return False, "This loan reference already exists."
-                            except ValueError as e:
-                                return False, str(e)
-                            st.session_state["selected_bank_loan_id"] = new_blid
-                            st.session_state["_bl_mode_next"] = BL_BROWSE
-                            return True, ""
-                        confirm_create_dialog(
-                            f"Create bank loan **{bl_ref}** with **{selectbox_creditor_label('BANK_LOAN', bl_creditor)}**: "
-                            f"principal **{php(bl_principal)}**, {bl_start:%b %d, %Y} to {bl_maturity:%b %d, %Y}?"
-                            + dup_note(bank_loan_warnings(bl_creditor, bl_account_number, bl_principal, bl_start)),
-                            "create_bank_loan", _do_create_bank_loan,
-                        )
-                else:
-                    st.error("Bank and loan reference are required.")
+        render_new_bank_loan_form()
     else:
         st.subheader("Bank loans")
         if bank_loans_df.empty:
@@ -214,144 +362,6 @@ def render() -> None:
                             st.session_state["selected_bank_loan_id"] = None
                             refresh(done=msg)
 
-        st.subheader("Repayment schedule")
-        st.caption("Due Date and Amount, straight off the bank's document. Interest is optional — fill it in when you know it, straight off the same document, to feed the interest-tracking dashboard; leave it 0 otherwise. A row is treated as Paid automatically once its due date is in the past; add a row with the blank row at the bottom of the table.")
-
-        bl_schedule_df = q(
-            """SELECT installment_id, installment_no, due_date, amount, interest_portion
-               FROM bank_loan_installments WHERE bank_loan_id = ? ORDER BY due_date, installment_id""",
-            (selected_blid,),
-        )
-        if not bl_schedule_df.empty:
-            bl_schedule_df["due_date"] = pd.to_datetime(bl_schedule_df["due_date"]).dt.date
-            bl_schedule_df["status"] = bl_schedule_df["due_date"].apply(lambda d: "Paid" if d <= date.today() else "Pending")
-
-        bl_import_staged_key = f"bl_import_staged_{selected_blid}"
-        bl_import_errors_key = f"bl_import_errors_{selected_blid}"
-        with st.expander("Import schedule from spreadsheet"):
-            st.caption("Upload a .csv or .xlsx with Due Date/Amount columns (any reasonable header variant works). Rows are staged for review below — nothing is saved until you confirm.")
-            st.download_button(
-                "Download CSV template", data=get_bank_loan_template_csv(), file_name="bank_loan_schedule_import_template.csv",
-                mime="text/csv", icon=":material/download:", key=f"bl_import_template_btn_{selected_blid}",
-            )
-            bl_import_file = st.file_uploader("Schedule spreadsheet", type=["csv", "xlsx"], key=f"bl_import_uploader_{selected_blid}")
-            if st.button("Parse schedule file", icon=":material/upload_file:", key=f"bl_import_parse_btn_{selected_blid}"):
-                if not bl_import_file:
-                    st.warning("Upload a file first.")
-                else:
-                    bl_imported_rows, bl_import_messages = parse_bank_loan_spreadsheet(bl_import_file.getvalue(), bl_import_file.name)
-                    st.session_state[bl_import_staged_key] = [{"due_date": r.due_date, "amount": r.amount} for r in bl_imported_rows]
-                    st.session_state[bl_import_errors_key] = bl_import_messages
-
-            for m in st.session_state.get(bl_import_errors_key, []):
-                st.warning(m)
-
-            bl_staged_rows = st.session_state.get(bl_import_staged_key, [])
-            if bl_staged_rows:
-                st.caption(f"{len(bl_staged_rows)} row(s) staged — review/correct below, then add.")
-                bl_edited_import_df = st.data_editor(
-                    pd.DataFrame(bl_staged_rows),
-                    hide_index=True,
-                    num_rows="dynamic",
-                    key=f"bl_import_staging_editor_{selected_blid}",
-                    column_config={
-                        "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
-                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, step=0.01),
-                    },
-                )
-                bl_import_col_add, bl_import_col_discard = st.columns(2)
-                with bl_import_col_add:
-                    if st.button("Add these installments", icon=":material/playlist_add:", key=f"bl_import_commit_btn_{selected_blid}") or dup_resume("bl_import_commit"):
-                      if dup_needs_confirm("bl_import_commit", bank_schedule_warnings(selected_blid, [
-                          (r["due_date"], float(r["amount"] or 0)) for _, r in bl_edited_import_df.iterrows() if not pd.isna(r["due_date"])
-                      ])):
-                        pass
-                      elif not guard_duplicate_submit("bl_import_commit", selected_blid, bl_edited_import_df.to_csv(index=False)):
-                        st.warning("Duplicate submission ignored — identical to the click just before it.")
-                      else:
-                        bl_added, bl_import_commit_errors = 0, []
-                        for _, r in bl_edited_import_df.sort_values("due_date").iterrows():
-                            if pd.isna(r["due_date"]):
-                                continue
-                            ok, msg = add_bank_loan_installment(selected_blid, r["due_date"], float(r["amount"] or 0))
-                            if ok:
-                                bl_added += 1
-                            else:
-                                bl_import_commit_errors.append(f"{r['due_date']}: {msg}")
-                        if bl_added:
-                            st.success(f"{bl_added} installment(s) added.")
-                        for e in bl_import_commit_errors:
-                            st.error(e)
-                        st.session_state[bl_import_staged_key] = []
-                        st.session_state[bl_import_errors_key] = []
-                        if bl_added:
-                            refresh()
-                with bl_import_col_discard:
-                    if st.button("Discard parsed rows", icon=":material/delete_sweep:", key=f"bl_import_discard_btn_{selected_blid}"):
-                        st.session_state[bl_import_staged_key] = []
-                        st.session_state[bl_import_errors_key] = []
-                        st.rerun()
-
-        bl_editor_template = bl_schedule_df if not bl_schedule_df.empty else pd.DataFrame(columns=["installment_id", "installment_no", "due_date", "amount", "interest_portion", "status"])
-        bl_edited_schedule_df = st.data_editor(
-            bl_editor_template,
-            hide_index=True,
-            num_rows="dynamic",
-            disabled=["installment_id", "installment_no", "status"],
-            key="bl_schedule_editor",
-            column_config={
-                "installment_id": st.column_config.NumberColumn("ID"),
-                "installment_no": st.column_config.NumberColumn("No."),
-                "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
-                "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01),
-                "interest_portion": st.column_config.NumberColumn("Interest (optional)", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0),
-                "status": st.column_config.TextColumn("Status (auto)"),
-            },
-        )
-        if (st.button("Save schedule changes", icon=":material/save:", key="bl_save_schedule_btn") or dup_resume("bl_save_schedule")) and not dup_needs_confirm("bl_save_schedule", bank_schedule_warnings(selected_blid, [
-            (r["due_date"], float(r["amount"] or 0)) for _, r in bl_edited_schedule_df.iterrows() if pd.isna(r["installment_id"]) and not pd.isna(r["due_date"])
-        ])):
-            bl_original_by_id = bl_schedule_df.set_index("installment_id") if not bl_schedule_df.empty else pd.DataFrame()
-            bl_seen_ids, bl_added_n, bl_updated_n, bl_deleted_n, bl_sched_errors = set(), 0, 0, 0, []
-            for _, r in bl_edited_schedule_df.iterrows():
-                if pd.isna(r["due_date"]):
-                    continue
-                amount = float(r["amount"] or 0)
-                interest_portion = float(r.get("interest_portion") or 0)
-
-                if pd.isna(r["installment_id"]):
-                    ok, msg = add_bank_loan_installment(selected_blid, r["due_date"], amount, interest_portion)
-                    if ok:
-                        bl_added_n += 1
-                    else:
-                        bl_sched_errors.append(msg)
-                    continue
-
-                iid = int(r["installment_id"])
-                bl_seen_ids.add(iid)
-                orig = bl_original_by_id.loc[iid]
-                if (str(r["due_date"]) != str(orig["due_date"]) or abs(amount - float(orig["amount"])) > 0.001
-                        or abs(interest_portion - float(orig.get("interest_portion") or 0)) > 0.001):
-                    ok, msg = edit_bank_loan_installment(iid, r["due_date"], amount, interest_portion)
-                    if ok:
-                        bl_updated_n += 1
-                    else:
-                        bl_sched_errors.append(f"Installment {iid}: {msg}")
-
-            if not bl_original_by_id.empty:
-                for removed_id in set(bl_original_by_id.index) - bl_seen_ids:
-                    ok, msg = delete_bank_loan_installment(int(removed_id))
-                    if ok:
-                        bl_deleted_n += 1
-                    else:
-                        bl_sched_errors.append(f"Installment {removed_id}: {msg}")
-
-            if bl_added_n or bl_updated_n or bl_deleted_n:
-                st.success(f"Saved — {bl_added_n} added, {bl_updated_n} updated, {bl_deleted_n} deleted.")
-            for e in bl_sched_errors:
-                st.error(e)
-            if bl_added_n or bl_updated_n or bl_deleted_n:
-                refresh()
-
+        render_bank_loan_schedule(int(selected_blid))
     with st.expander("Bank loan servicing report"):
         st.dataframe(get_bank_loan_servicing_report(), hide_index=True)

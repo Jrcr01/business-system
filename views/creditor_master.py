@@ -31,6 +31,39 @@ from views.shared import (  # noqa: F401
 )
 
 
+def render_new_creditor_form() -> None:
+    """Add one creditor (Add data page). Same save and the same double-recording check as a new row in the grid below."""
+    with st.form("new_creditor_form", border=False, clear_on_submit=True):
+        nc1, nc2 = st.columns([3, 1])
+        nc_name = nc1.text_input("Name")
+        nc_type = nc2.selectbox("Type", ["SUPPLIER", "LENDER", "BANK_LOAN"], format_func=lambda t: t.replace("_", " ").title())
+        nc3, nc4 = st.columns(2)
+        nc_tin = nc3.text_input("TIN (optional)")
+        nc_terms = nc4.selectbox("Terms (suppliers)", SUPPLIER_TERMS_OPTIONS, index=SUPPLIER_TERMS_OPTIONS.index(DEFAULT_SUPPLIER_TERMS) if DEFAULT_SUPPLIER_TERMS in SUPPLIER_TERMS_OPTIONS else 0)
+        nc5, nc6, nc7 = st.columns(3)
+        nc_person = nc5.text_input("Contact person (optional)")
+        nc_number = nc6.text_input("Contact number (optional)")
+        nc_email = nc7.text_input("Email (optional)")
+        nc_submitted = st.form_submit_button("Add creditor", icon=":material/person_add:", type="primary")
+    if nc_submitted:
+        st.session_state["_new_creditor"] = (nc_name.strip(), nc_type, nc_tin, nc_person, nc_number, nc_email, nc_terms if nc_type == "SUPPLIER" else "")
+    # handled outside the form (clear_on_submit empties it): the double-recording pop-up needs its own buttons
+    pending = st.session_state.get("_new_creditor")
+    if (nc_submitted or dup_resume("add_new_creditor")) and pending:
+        name, ctype = pending[0], pending[1]
+        if not name:
+            st.error("Name is required.")
+            st.session_state.pop("_new_creditor", None)
+        elif dup_needs_confirm("add_new_creditor", creditor_warnings(name, ctype)):
+            pass
+        elif guard_duplicate_submit("add_new_creditor", *pending):
+            add_creditor(name, ctype, pending[2], pending[3], pending[4], pending[5], pending[6])
+            st.session_state.pop("_new_creditor", None)
+            refresh(done=f"Added {ctype.replace('_', ' ').lower()} {name}.")
+        else:
+            st.warning("Duplicate submission ignored — identical to the click just before it.")
+
+
 def render() -> None:
     page_header("Creditors")
     st.caption("Master registry of payees tagged supplier, lender, or bank loan. Credit card payees stay in their own track (Credit cards page).")

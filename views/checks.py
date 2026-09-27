@@ -48,6 +48,40 @@ from views.shared import (  # noqa: F401
 )
 
 
+def render_log_spoiled_form() -> None:
+    """Log a spoiled check (misprint / jam), with the same number checks as everywhere else. Shared by Checks and checkbook and Add data."""
+    st.caption("Routed to the internal control payee 'Error Checks Only (for control)' — amount and date are always null since no real transaction occurred. A number logged here is treated as unavailable everywhere else from now on, so it won't show up in a booklet's dropdown.")
+    spoil_booklets_df = get_booklets(PRIMARY_BANK_ACCOUNT_ID, statuses=("Active",))
+    suggested_number = ""
+    if not spoil_booklets_df.empty:
+        sb_options = {int(r["booklet_id"]): (r["booklet_code"] or f"Booklet #{int(r['booklet_id'])}") for _, r in spoil_booklets_df.iterrows()}
+        spoil_booklet_pick = st.selectbox(
+            "Booklet the spoiled leaf came from (optional, for a suggested number)",
+            options=[None] + list(sb_options.keys()), format_func=lambda bid: "(none)" if bid is None else sb_options[bid], key="spoil_booklet_pick",
+        )
+        if spoil_booklet_pick is not None:
+            brow = spoil_booklets_df.set_index("booklet_id").loc[spoil_booklet_pick]
+            suggested_number = str(int(brow["next_available_number"]))
+    with st.form("spoiled_check_form", border=False):
+        spoiled_number = st.text_input("Check number", value=suggested_number, help="Edit if the spoiled leaf's physical number differs from the suggested next number.")
+        spoiled_reason = st.text_input("Reason", placeholder="e.g. printer jam, misaligned print")
+        _spoil_submitted = st.form_submit_button("Log spoiled check", icon=":material/report:", type="primary")
+    # handled outside the form: the "not in any booklet" confirmation pop-up has its own buttons, which a form cannot hold
+    if _spoil_submitted or dup_resume("log_spoiled_check"):
+        _sp_number, _sp_blocking, _sp_warnings = spoiled_check_problems(spoiled_number)
+        if _sp_blocking:
+            st.error(_sp_blocking[0])
+        elif dup_needs_confirm("log_spoiled_check", _sp_warnings):
+            pass
+        elif guard_duplicate_submit("log_spoiled_check", spoiled_number, spoiled_reason):
+            ok, msg = log_spoiled_check(spoiled_number, spoiled_reason)
+            (st.success if ok else st.error)(msg)
+            if ok:
+                refresh(done=msg)
+        else:
+            st.warning("Duplicate submission ignored — identical to the click just before it.")
+
+
 def render() -> None:
     page_header("Checks and checkbook")
 
@@ -281,37 +315,7 @@ def render() -> None:
                         st.warning("Duplicate submission ignored — identical to the click just before it.")
 
     with st.expander("Log a spoiled check (misprint / jam)"):
-        st.caption("Routed to the internal control payee 'Error Checks Only (for control)' — amount and date are always null since no real transaction occurred. A number logged here is treated as unavailable everywhere else from now on, so it won't show up in a booklet's dropdown.")
-        spoil_booklets_df = get_booklets(PRIMARY_BANK_ACCOUNT_ID, statuses=("Active",))
-        suggested_number = ""
-        if not spoil_booklets_df.empty:
-            sb_options = {int(r["booklet_id"]): (r["booklet_code"] or f"Booklet #{int(r['booklet_id'])}") for _, r in spoil_booklets_df.iterrows()}
-            spoil_booklet_pick = st.selectbox(
-                "Booklet the spoiled leaf came from (optional, for a suggested number)",
-                options=[None] + list(sb_options.keys()), format_func=lambda bid: "(none)" if bid is None else sb_options[bid], key="spoil_booklet_pick",
-            )
-            if spoil_booklet_pick is not None:
-                brow = spoil_booklets_df.set_index("booklet_id").loc[spoil_booklet_pick]
-                suggested_number = str(int(brow["next_available_number"]))
-        with st.form("spoiled_check_form", border=False):
-            spoiled_number = st.text_input("Check number", value=suggested_number, help="Edit if the spoiled leaf's physical number differs from the suggested next number.")
-            spoiled_reason = st.text_input("Reason", placeholder="e.g. printer jam, misaligned print")
-            _spoil_submitted = st.form_submit_button("Log spoiled check", icon=":material/report:", type="primary")
-        # handled outside the form: the "not in any booklet" confirmation pop-up has its own buttons, which a form cannot hold
-        if _spoil_submitted or dup_resume("log_spoiled_check"):
-            _sp_number, _sp_blocking, _sp_warnings = spoiled_check_problems(spoiled_number)
-            if _sp_blocking:
-                st.error(_sp_blocking[0])
-            elif dup_needs_confirm("log_spoiled_check", _sp_warnings):
-                pass
-            elif guard_duplicate_submit("log_spoiled_check", spoiled_number, spoiled_reason):
-                ok, msg = log_spoiled_check(spoiled_number, spoiled_reason)
-                (st.success if ok else st.error)(msg)
-                if ok:
-                    refresh(done=msg)
-            else:
-                st.warning("Duplicate submission ignored — identical to the click just before it.")
-
+        render_log_spoiled_form()
     spoiled_df = q("SELECT * FROM spoiled_checks ORDER BY spoiled_id DESC")
     if not spoiled_df.empty:
         st.markdown("**Spoiled checks on file (Error Checks Only, for control)**")

@@ -63,6 +63,62 @@ from views.shared import (  # noqa: F401
 )
 
 
+def render_new_loan_note_form() -> None:
+    """The Create loan note form (with its confirmation). Shared by Lenders and Add data."""
+    with st.form("new_loan_note_form", border=False):
+        ln_creditor = selectbox_creditor("Lender", "LENDER", "ln_creditor")
+        ln_issue_date = st.date_input("Issue date", value=date.today())
+        ln_principal = st.number_input("Principal amount", min_value=0.0, step=1000.0)
+        ln_rate = st.number_input("Monthly interest rate (%)", min_value=0.0, step=0.5, format="%.2f")
+        st.caption("LN No. starts as a draft placeholder — use \"Promote to real LN No.\" below once it's ready to assign the permanent number. Total interest/payable are computed from the repayment schedule, not typed in.")
+        if st.form_submit_button("Create loan note", icon=":material/description:", type="primary"):
+            if ln_creditor:
+                err = money_amount_error(ln_principal, "Principal amount")
+                if err:
+                    st.error(err)
+                else:
+                    def _do_create_loan_note(c=ln_creditor, d=ln_issue_date, p=ln_principal, r=ln_rate):
+                        ok, msg, new_lnid = create_loan_note(c, d, p, r)
+                        if ok:
+                            st.session_state["selected_loan_note_id"] = new_lnid
+                            st.session_state["_ln_mode_next"] = LN_BROWSE
+                        return ok, msg
+                    confirm_create_dialog(
+                        f"Create a loan note for **{selectbox_creditor_label('LENDER', ln_creditor)}** dated "
+                        f"{ln_issue_date:%b %d, %Y}: principal **{php(ln_principal)}** at **{ln_rate:g}% per month**?"
+                        + dup_note(loan_note_warnings(ln_creditor, ln_issue_date, ln_principal)),
+                        "create_loan_note", _do_create_loan_note,
+                    )
+            else:
+                st.error("Lender is required.")
+
+
+def render_add_installment_form(loan_note_id: int) -> None:
+    """Add one installment to a loan note (suggested interest, lump-sum payoff button). Shared by Lenders and Add data."""
+    selected_lnid = int(loan_note_id)
+    ln_row = q("SELECT monthly_interest_rate, principal_amount FROM loan_notes WHERE loan_note_id = ?", (selected_lnid,)).iloc[0]
+    _bal = q("SELECT outstanding_balance FROM loan_installments WHERE loan_note_id = ? ORDER BY due_date, installment_id", (selected_lnid,))
+    current_balance = float(_bal["outstanding_balance"].iloc[-1]) if not _bal.empty else float(ln_row["principal_amount"] or 0.0)
+    add_due_date = st.date_input("Due date", value=date.today(), key="ln_add_due_date")
+    if st.button("Use remaining balance as principal (lump-sum payoff)", icon=":material/payments:", key="ln_lumpsum_btn"):
+        st.session_state["ln_add_principal"] = current_balance
+    add_principal = st.number_input("Principal", min_value=0.0, step=1000.0, key="ln_add_principal")
+    suggested_interest, balance_before = suggest_installment_interest(selected_lnid, add_due_date)
+    st.caption(f"Suggested interest: {php(suggested_interest)} ({(ln_row['monthly_interest_rate'] or 0):g}% × {php(balance_before)} balance × days elapsed ÷ 30) — editable below.")
+    add_interest = st.number_input("Interest", min_value=0.0, step=100.0, value=suggested_interest, key="ln_add_interest")
+    if st.button("Add installment", icon=":material/playlist_add:", type="primary", key="ln_add_installment_btn") or dup_resume("add_loan_installment"):
+        if dup_needs_confirm("add_loan_installment", loan_installment_warnings(selected_lnid, [(add_due_date, add_principal, add_interest)])):
+            pass
+        elif guard_duplicate_submit("add_loan_installment", selected_lnid, add_due_date, add_principal, add_interest):
+            ok, msg = add_loan_installment(selected_lnid, add_due_date, add_principal, add_interest)
+            (st.success if ok else st.error)(msg)
+            if ok:
+                del st.session_state["ln_add_principal"]
+                refresh(done=msg)
+        else:
+            st.warning("Duplicate submission ignored — identical to the click just before it.")
+
+
 def render() -> None:
     page_header("Lenders")
     st.caption("Add or edit lender records on the Creditors page.")
@@ -92,32 +148,7 @@ def render() -> None:
 
     if ln_mode == LN_NEW:
         st.subheader("Create loan note")
-        with st.form("new_loan_note_form", border=False):
-            ln_creditor = selectbox_creditor("Lender", "LENDER", "ln_creditor")
-            ln_issue_date = st.date_input("Issue date", value=date.today())
-            ln_principal = st.number_input("Principal amount", min_value=0.0, step=1000.0)
-            ln_rate = st.number_input("Monthly interest rate (%)", min_value=0.0, step=0.5, format="%.2f")
-            st.caption("LN No. starts as a draft placeholder — use \"Promote to real LN No.\" below once it's ready to assign the permanent number. Total interest/payable are computed from the repayment schedule, not typed in.")
-            if st.form_submit_button("Create loan note", icon=":material/description:", type="primary"):
-                if ln_creditor:
-                    err = money_amount_error(ln_principal, "Principal amount")
-                    if err:
-                        st.error(err)
-                    else:
-                        def _do_create_loan_note(c=ln_creditor, d=ln_issue_date, p=ln_principal, r=ln_rate):
-                            ok, msg, new_lnid = create_loan_note(c, d, p, r)
-                            if ok:
-                                st.session_state["selected_loan_note_id"] = new_lnid
-                                st.session_state["_ln_mode_next"] = LN_BROWSE
-                            return ok, msg
-                        confirm_create_dialog(
-                            f"Create a loan note for **{selectbox_creditor_label('LENDER', ln_creditor)}** dated "
-                            f"{ln_issue_date:%b %d, %Y}: principal **{php(ln_principal)}** at **{ln_rate:g}% per month**?"
-                            + dup_note(loan_note_warnings(ln_creditor, ln_issue_date, ln_principal)),
-                            "create_loan_note", _do_create_loan_note,
-                        )
-                else:
-                    st.error("Lender is required.")
+        render_new_loan_note_form()
     else:
         st.subheader("Loan notes")
         if loan_notes_df.empty:
@@ -271,25 +302,7 @@ def render() -> None:
                 current_balance = float(installments_df["outstanding_balance"].iloc[-1]) if not installments_df.empty else float(ln_row["principal_amount"] or 0.0)
 
                 with st.expander("Add an installment", expanded=installments_df.empty):
-                    add_due_date = st.date_input("Due date", value=date.today(), key="ln_add_due_date")
-                    if st.button("Use remaining balance as principal (lump-sum payoff)", icon=":material/payments:", key="ln_lumpsum_btn"):
-                        st.session_state["ln_add_principal"] = current_balance
-                    add_principal = st.number_input("Principal", min_value=0.0, step=1000.0, key="ln_add_principal")
-                    suggested_interest, balance_before = suggest_installment_interest(selected_lnid, add_due_date)
-                    st.caption(f"Suggested interest: {php(suggested_interest)} ({(ln_row['monthly_interest_rate'] or 0):g}% × {php(balance_before)} balance × days elapsed ÷ 30) — editable below.")
-                    add_interest = st.number_input("Interest", min_value=0.0, step=100.0, value=suggested_interest, key="ln_add_interest")
-                    if st.button("Add installment", icon=":material/playlist_add:", type="primary", key="ln_add_installment_btn") or dup_resume("add_loan_installment"):
-                        if dup_needs_confirm("add_loan_installment", loan_installment_warnings(selected_lnid, [(add_due_date, add_principal, add_interest)])):
-                            pass
-                        elif guard_duplicate_submit("add_loan_installment", selected_lnid, add_due_date, add_principal, add_interest):
-                            ok, msg = add_loan_installment(selected_lnid, add_due_date, add_principal, add_interest)
-                            (st.success if ok else st.error)(msg)
-                            if ok:
-                                del st.session_state["ln_add_principal"]
-                                refresh(done=msg)
-                        else:
-                            st.warning("Duplicate submission ignored — identical to the click just before it.")
-
+                    render_add_installment_form(int(selected_lnid))
                 ln_import_staged_key = f"ln_import_staged_{selected_lnid}"
                 ln_import_errors_key = f"ln_import_errors_{selected_lnid}"
                 with st.expander("Import schedule from spreadsheet"):

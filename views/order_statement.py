@@ -93,6 +93,395 @@ from views.shared import (  # noqa: F401
 )
 
 
+def _batch_context(statement_id: int):
+    """What the Invoices / Credit Memo sections need to know about a batch: (id, row with statement_ref / creditor_name /
+    status / net_total, creditor_id, supplier terms, locked?, cancelled?)."""
+    row = q(
+        """SELECT os.statement_id, os.statement_ref, os.status, os.is_locked, os.creditor_id, c.creditor_name, c.terms, v.net_total
+           FROM order_statements os JOIN creditors c ON c.creditor_id = os.creditor_id
+           JOIN v_batch_net_totals v ON v.statement_id = os.statement_id
+           WHERE os.statement_id = ?""",
+        (int(statement_id),),
+    ).iloc[0]
+    return (int(statement_id), row, int(row["creditor_id"]), row["terms"] if pd.notna(row["terms"]) else "",
+            int(row["is_locked"]) == 1, row["status"] == "Cancelled")
+
+
+def render_batch_invoices(statement_id: int) -> None:
+    """The open batch's Invoices section (grid + photo/PDF/spreadsheet import). Shared by Order statements and Add data."""
+    batch_scope_pick, scoped_row, scoped_creditor_id, supplier_terms, batch_is_locked, batch_is_cancelled = _batch_context(statement_id)
+    scoped_invoices_df = q(
+        """SELECT invoice_id, doc_ref, invoice_date, due_date, gross_amount, trade_discounts, amount, status
+           FROM invoices
+           WHERE statement_id = ?
+           ORDER BY invoice_id""",
+        (int(batch_scope_pick),),
+    )
+    if batch_is_locked:
+        if scoped_invoices_df.empty:
+            st.caption("No invoices linked to this order statement yet.")
+        else:
+            st.dataframe(
+                scoped_invoices_df[["invoice_id", "doc_ref", "invoice_date", "due_date", "gross_amount", "amount", "status"]],
+                hide_index=True,
+                column_config={
+                    "gross_amount": st.column_config.NumberColumn("Gross amount", format=MONEY_FORMAT),
+                    "amount": st.column_config.NumberColumn("Net amount", format=MONEY_FORMAT),
+                },
+            )
+        st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is locked — unlock it above to add, edit, or delete an invoice.")
+    else:
+        st.caption(f"Add, edit, or delete rows below, then Save. A new row needs a Doc Ref and a positive Amount; use the row's menu (or select + Delete) to remove one. Due Date is always recomputed as Date Received + this supplier's Terms ({supplier_terms or 'not set'}) when you Save — it's a computed reference field, not manually edited; whatever you type into it is overwritten on Save. The grid itself won't visibly update Due Date while you're still typing, only after Save. Every change is logged automatically (old → new + timestamp).")
+
+        with st.expander("Add invoices from a photo, PDF, or spreadsheet"):
+            bulk_staged_key = batch_scoped_key("bulk_staged")
+            bulk_errors_key = batch_scoped_key("bulk_errors")
+            ocr_raw_text_key = batch_scoped_key("ocr_raw_text")
+
+            tab_ocr, tab_import = st.tabs(["From images/PDFs (local OCR)", "From spreadsheet (CSV/Excel)"])
+
+            with tab_ocr:
+                st.caption("Upload photos or PDF scans of this supplier's invoices — one file per invoice. Runs fully offline (Tesseract), no external service or cost. Best-effort read of Doc Ref, Date, and Amount — double-check the results below before adding; nothing is saved until you confirm.")
+                ocr_files = st.file_uploader(
+                    "Invoice images or PDFs", type=["png", "jpg", "jpeg", "pdf"],
+                    accept_multiple_files=True, key=batch_scoped_key("ocr_uploader"),
+                )
+                if st.button("Extract fields", icon=":material/document_scanner:", key=batch_scoped_key("ocr_extract_btn")):
+                    if not ocr_files:
+                        st.warning("Upload at least one file first.")
+                    else:
+                        staged, extract_errors, raw_texts = [], [], {}
+                        with st.spinner(f"Extracting {len(ocr_files)} invoice(s)..."):
+                            for f in ocr_files:
+                                fields, message, raw_text = extract_invoice_fields(f.getvalue(), f.name)
+                                if raw_text:
+                                    raw_texts[f.name] = raw_text
+                                if fields:
+                                    staged.append({
+                                        "source_file": f.name,
+                                        "doc_ref": fields.doc_ref,
+                                        "invoice_date": fields.invoice_date,
+                                        "due_date": resolve_due_date(fields.invoice_date, supplier_terms),
+                                        "gross_amount": fields.amount,
+                                        "less_pct": 0.0,
+                                    })
+                                    if message:
+                                        extract_errors.append(("warning", f"{f.name}: {message}"))
+                                else:
+                                    extract_errors.append(("error", f"{f.name}: {message}"))
+                        st.session_state[bulk_staged_key] = staged
+                        st.session_state[bulk_errors_key] = extract_errors
+                        st.session_state[ocr_raw_text_key] = raw_texts
+
+                ocr_raw_texts = st.session_state.get(ocr_raw_text_key, {})
+                if ocr_raw_texts:
+                    with st.expander("Show raw OCR text (for diagnosing a bad read)"):
+                        for fname, rtext in ocr_raw_texts.items():
+                            st.caption(fname)
+                            st.text(rtext)
+
+            with tab_import:
+                st.caption("Upload a .csv or .xlsx with columns like Doc Ref / Date / Amount / Less % (any reasonable header variant works). More reliable than OCR since it's reading real data, not a photo.")
+                st.download_button(
+                    "Download CSV template", data=get_template_csv(),
+                    file_name=re.sub(r"[^A-Za-z0-9._-]+", "_", f"{scoped_row['creditor_name']}_{scoped_row['statement_ref']}_invoice_template").strip("_") + ".csv",
+                    mime="text/csv", icon=":material/download:", key=batch_scoped_key("import_template_btn"),
+                )
+                import_file = st.file_uploader(
+                    "Invoice spreadsheet", type=["csv", "xlsx"],
+                    accept_multiple_files=False, key=batch_scoped_key("import_uploader"),
+                )
+                if st.button("Import rows", icon=":material/upload_file:", key=batch_scoped_key("import_btn")):
+                    if not import_file:
+                        st.warning("Upload a file first.")
+                    else:
+                        imported_rows, import_messages = parse_invoice_spreadsheet(import_file.getvalue(), import_file.name)
+                        staged = [{
+                            "source_file": import_file.name,
+                            "doc_ref": r.doc_ref,
+                            "invoice_date": r.invoice_date,
+                            "due_date": resolve_due_date(r.invoice_date, supplier_terms),
+                            "gross_amount": r.amount,
+                            "less_pct": r.less_pct,
+                        } for r in imported_rows]
+                        st.session_state[bulk_staged_key] = staged
+                        st.session_state[bulk_errors_key] = [("warning", m) for m in import_messages]
+                        st.session_state[ocr_raw_text_key] = {}
+
+            for level, e in st.session_state.get(bulk_errors_key, []):
+                (st.warning if level == "warning" else st.error)(e)
+
+            staged_rows = st.session_state.get(bulk_staged_key, [])
+            if staged_rows:
+                st.caption(f"{len(staged_rows)} invoice(s) staged — review/correct below, then add.")
+                staging_editor_key = batch_scoped_key("bulk_staging_editor")
+                edited_staged_df = st.data_editor(
+                    pd.DataFrame(staged_rows),
+                    hide_index=True,
+                    num_rows="dynamic",
+                    disabled=["source_file", "due_date"],
+                    key=staging_editor_key,
+                    column_config={
+                        "source_file": st.column_config.TextColumn("Source"),
+                        "doc_ref": st.column_config.TextColumn("Doc Ref"),
+                        "invoice_date": st.column_config.DateColumn("Date Received", format="MMM DD, YYYY"),
+                        "due_date": st.column_config.DateColumn("Due Date (computed, recalculated on save)"),
+                        "gross_amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01),
+                        "less_pct": st.column_config.NumberColumn("Less %", format="%.2f%%", min_value=0.0, max_value=100.0, step=1.0),
+                    },
+                )
+                bulk_promote_after = False
+                if scoped_row["status"] == "Draft":
+                    bulk_promote_after = st.checkbox(
+                        "Also promote this batch to Issued once the invoices are added", value=True,
+                        key=batch_scoped_key("bulk_promote_after"),
+                        help="Gives the batch its permanent number (e.g. 2026 - OS 0007) in the same step, so you don't need to open \"Promote statement status\" separately.",
+                    )
+                bulk_col_add, bulk_col_discard = st.columns(2)
+                with bulk_col_add:
+                    if st.button("Add these invoices to the batch", icon=":material/playlist_add:", type="primary", key=batch_scoped_key("bulk_commit_btn")) or dup_resume("bulk_add_invoices"):
+                        if dup_needs_confirm("bulk_add_invoices", invoice_warnings(scoped_creditor_id, [
+                            (cell_text(r["doc_ref"]).strip(), r["invoice_date"], float(r["gross_amount"] or 0))
+                            for _, r in edited_staged_df.iterrows() if cell_text(r["doc_ref"]).strip() and float(r["gross_amount"] or 0) > 0
+                        ])):
+                            pass
+                        elif guard_duplicate_submit("bulk_add_invoices", int(batch_scope_pick), edited_staged_df.to_csv(index=False)):
+                            added, commit_errors = 0, []
+                            for _, r in edited_staged_df.iterrows():
+                                doc_ref = cell_text(r["doc_ref"]).strip()
+                                gross = float(r["gross_amount"] or 0)
+                                if not doc_ref or gross <= 0:
+                                    commit_errors.append(f"Skipped a row missing Doc Ref or a positive Amount ({r.get('source_file', '?')}).")
+                                    continue
+                                resolved_due = resolve_due_date(r["invoice_date"], supplier_terms)
+                                try:
+                                    add_invoice(
+                                        scoped_creditor_id, doc_ref, r["invoice_date"], resolved_due,
+                                        gross, [float(r["less_pct"])] if r["less_pct"] else [], int(batch_scope_pick),
+                                    )
+                                    added += 1
+                                except sqlite3.IntegrityError:
+                                    commit_errors.append(f"'{doc_ref}' already exists for this supplier.")
+                            if added:
+                                st.success(f"{added} invoice(s) added.")
+                                if bulk_promote_after and not commit_errors:
+                                    try:
+                                        st.toast(f"{added} invoice(s) added; batch promoted to Issued as {promote_draft_statement(int(batch_scope_pick), 'Issued')}.")
+                                    except ValueError as e:
+                                        commit_errors.append(f"Invoices were added, but the batch could not be promoted: {e}")
+                            for e in commit_errors:
+                                st.error(e)
+                            st.session_state[bulk_staged_key] = []
+                            st.session_state[bulk_errors_key] = []
+                            if added:
+                                refresh(done=f"{added} invoice(s) added.")
+                        else:
+                            st.warning("Duplicate submission ignored — identical to the click just before it.")
+                with bulk_col_discard:
+                    if st.button("Discard staged rows", icon=":material/delete_sweep:", key=batch_scoped_key("bulk_discard_btn")):
+                        st.session_state[bulk_staged_key] = []
+                        st.session_state[bulk_errors_key] = []
+                        st.rerun()
+
+        original_invoices_df = scoped_invoices_df.copy()
+        original_invoices_df["less_pct"] = original_invoices_df["trade_discounts"].apply(parse_less_pct)
+        editable_display_df = original_invoices_df[
+            ["invoice_id", "doc_ref", "invoice_date", "due_date", "gross_amount", "less_pct", "amount", "status"]
+        ].copy()
+        editable_display_df["invoice_date"] = pd.to_datetime(editable_display_df["invoice_date"]).dt.date
+        editable_display_df["due_date"] = pd.to_datetime(editable_display_df["due_date"]).dt.date
+        invoices_editor_key = batch_scoped_key("edit_invoices_editor")
+        edited_invoices_df = st.data_editor(
+            editable_display_df,
+            hide_index=True,
+            num_rows="dynamic",
+            disabled=["invoice_id", "due_date", "amount", "status"],
+            key=invoices_editor_key,
+            column_config={
+                "invoice_id": st.column_config.NumberColumn("ID"),
+                "doc_ref": st.column_config.TextColumn("Doc Ref", default=""),
+                "invoice_date": st.column_config.DateColumn("Date Received", default=date.today()),
+                "due_date": st.column_config.DateColumn(
+                    "Due Date (computed, recalculated on save)", default=resolve_due_date(date.today(), supplier_terms)
+                ),
+                "gross_amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0),
+                "less_pct": st.column_config.NumberColumn("Less %", format="%.2f%%", min_value=0.0, max_value=100.0, step=1.0, default=0.0),
+                "amount": st.column_config.NumberColumn("Net Amount (recalculated on save)", format=MONEY_FORMAT),
+                "status": st.column_config.TextColumn("Status"),
+            },
+        )
+        if st.button("Save invoice changes", icon=":material/save:", type="primary", key=batch_scoped_key("save_invoice_edits")) or dup_resume("save_invoice_changes"):
+          if dup_needs_confirm("save_invoice_changes", invoice_warnings(scoped_creditor_id, [
+              (cell_text(r["doc_ref"]).strip(), r["invoice_date"], float(r["gross_amount"] or 0))
+              for _, r in edited_invoices_df.iterrows()
+              if pd.isna(r["invoice_id"]) and cell_text(r["doc_ref"]).strip() and float(r["gross_amount"] or 0) > 0
+          ])):
+            pass
+          elif not guard_duplicate_submit("save_invoice_changes", int(batch_scope_pick), edited_invoices_df.to_csv(index=False)):
+            st.warning("Duplicate submission ignored — identical to the click just before it.")
+          else:
+            original_by_id = original_invoices_df.set_index("invoice_id")
+            seen_ids, added, updated, row_errors = set(), 0, 0, []
+            for _, r in edited_invoices_df.iterrows():
+                if pd.isna(r["invoice_id"]):
+                    doc_ref, gross = cell_text(r["doc_ref"]).strip(), float(r["gross_amount"] or 0)
+                    if not doc_ref and gross <= 0:
+                        continue  # untouched blank template row
+                    if not doc_ref or gross <= 0:
+                        row_errors.append("New invoice row needs a Doc Ref and a positive Amount.")
+                        continue
+                    resolved_due = resolve_due_date(r["invoice_date"], supplier_terms)
+                    try:
+                        add_invoice(
+                            scoped_creditor_id, doc_ref, r["invoice_date"], resolved_due,
+                            gross, [float(r["less_pct"])] if r["less_pct"] else [], int(batch_scope_pick),
+                        )
+                        added += 1
+                    except sqlite3.IntegrityError:
+                        row_errors.append(f"'{doc_ref}' already exists for this supplier.")
+                    continue
+
+                inv_id = int(r["invoice_id"])
+                seen_ids.add(inv_id)
+                orig = original_by_id.loc[inv_id]
+                resolved_due = resolve_due_date(r["invoice_date"], supplier_terms)
+                is_changed = (
+                    cell_text(r["doc_ref"]) != cell_text(orig["doc_ref"])
+                    or str(r["invoice_date"]) != str(orig["invoice_date"])
+                    or str(resolved_due) != str(orig["due_date"])
+                    or abs(float(r["gross_amount"]) - float(orig["gross_amount"])) > 0.001
+                    or abs(float(r["less_pct"]) - float(orig["less_pct"])) > 0.001
+                )
+                if not is_changed:
+                    continue
+                ok, msg = edit_invoice(
+                    inv_id, cell_text(r["doc_ref"]), r["invoice_date"], resolved_due,
+                    float(r["gross_amount"]), float(r["less_pct"]),
+                )
+                if ok:
+                    updated += 1
+                else:
+                    row_errors.append(f"Invoice {inv_id}: {msg}")
+
+            deleted = 0
+            for removed_id in set(original_by_id.index) - seen_ids:
+                ok, msg = delete_invoice(int(removed_id))
+                if ok:
+                    deleted += 1
+                else:
+                    row_errors.append(msg)
+
+            summary = [f"{n} {label}" for n, label in [(added, "added"), (updated, "updated"), (deleted, "deleted")] if n]
+            if summary:
+                st.success("Invoices: " + ", ".join(summary) + ".")
+            for e in row_errors:
+                st.error(e)
+            if not summary and not row_errors:
+                st.info("No changes to save.")
+            if summary:
+                refresh(done="Invoices: " + ", ".join(summary) + ".")
+
+
+def render_batch_memos(statement_id: int) -> None:
+    """The open batch's Credit Memo section. Shared by Order statements and Add data."""
+    batch_scope_pick, scoped_row, scoped_creditor_id, supplier_terms, batch_is_locked, batch_is_cancelled = _batch_context(statement_id)
+    st.caption("Applied before checks are issued — reduces the batch's net payable.")
+    scoped_memos_df = q(
+        """SELECT credit_memo_id, memo_ref, memo_date, amount, reason
+           FROM credit_memos WHERE statement_id = ? ORDER BY credit_memo_id""",
+        (int(batch_scope_pick),),
+    )
+    if batch_is_locked:
+        if scoped_memos_df.empty:
+            st.caption("No credit memos applied to this order statement yet.")
+        else:
+            st.dataframe(
+                scoped_memos_df,
+                hide_index=True,
+                column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)},
+            )
+        st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is locked — unlock it above to add, edit, or delete a credit memo.")
+    else:
+        st.caption("Add, edit, or delete rows below, then Save. A new row needs a reference and a positive Amount.")
+        original_memos_df = scoped_memos_df.copy()
+        original_memos_df["memo_date"] = pd.to_datetime(original_memos_df["memo_date"]).dt.date
+        edited_memos_df = st.data_editor(
+            original_memos_df,
+            hide_index=True,
+            num_rows="dynamic",
+            disabled=["credit_memo_id"],
+            key=batch_scoped_key("edit_memos_editor"),
+            column_config={
+                "credit_memo_id": st.column_config.NumberColumn("ID"),
+                "memo_ref": st.column_config.TextColumn("Reference", default=""),
+                "memo_date": st.column_config.DateColumn("Memo Date", default=date.today()),
+                "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0),
+                "reason": st.column_config.TextColumn("Reason", default=""),
+            },
+        )
+        if st.button("Save credit memo changes", icon=":material/save:", key=batch_scoped_key("save_memo_edits")) or dup_resume("save_memo_changes"):
+          if dup_needs_confirm("save_memo_changes", [
+              w for _, r in edited_memos_df.iterrows()
+              if pd.isna(r["credit_memo_id"]) and cell_text(r["memo_ref"]).strip() and float(r["amount"] or 0) > 0
+              for w in credit_memo_warnings(scoped_creditor_id, cell_text(r["memo_ref"]), r["memo_date"], float(r["amount"]))
+          ]):
+            pass
+          elif not guard_duplicate_submit("save_memo_changes", int(batch_scope_pick), edited_memos_df.to_csv(index=False)):
+            st.warning("Duplicate submission ignored — identical to the click just before it.")
+          else:
+            original_by_id = original_memos_df.set_index("credit_memo_id")
+            seen_ids, added, updated, row_errors = set(), 0, 0, []
+            for _, r in edited_memos_df.iterrows():
+                if pd.isna(r["credit_memo_id"]):
+                    memo_ref, amount = cell_text(r["memo_ref"]).strip(), float(r["amount"] or 0)
+                    if not memo_ref and amount <= 0:
+                        continue  # untouched blank template row
+                    if not memo_ref or amount <= 0:
+                        row_errors.append("New credit memo row needs a reference and a positive Amount.")
+                        continue
+                    ok, msg = add_credit_memo(int(batch_scope_pick), memo_ref, r["memo_date"], amount, cell_text(r["reason"]))
+                    if ok:
+                        added += 1
+                    else:
+                        row_errors.append(msg)
+                    continue
+
+                memo_id = int(r["credit_memo_id"])
+                seen_ids.add(memo_id)
+                orig = original_by_id.loc[memo_id]
+                is_changed = (
+                    cell_text(r["memo_ref"]) != cell_text(orig["memo_ref"])
+                    or str(r["memo_date"]) != str(orig["memo_date"])
+                    or abs(float(r["amount"]) - float(orig["amount"])) > 0.001
+                    or cell_text(r["reason"]) != cell_text(orig["reason"])
+                )
+                if not is_changed:
+                    continue
+                ok, msg = edit_credit_memo(memo_id, cell_text(r["memo_ref"]), r["memo_date"], float(r["amount"]), cell_text(r["reason"]))
+                if ok:
+                    updated += 1
+                else:
+                    row_errors.append(f"Credit memo {memo_id}: {msg}")
+
+            deleted = 0
+            for removed_id in set(original_by_id.index) - seen_ids:
+                ok, msg = delete_credit_memo(int(removed_id))
+                if ok:
+                    deleted += 1
+                else:
+                    row_errors.append(msg)
+
+            summary = [f"{n} {label}" for n, label in [(added, "added"), (updated, "updated"), (deleted, "deleted")] if n]
+            if summary:
+                st.success("Credit memos: " + ", ".join(summary) + ".")
+            for e in row_errors:
+                st.error(e)
+            if not summary and not row_errors:
+                st.info("No changes to save.")
+            if summary:
+                refresh(done="Credit memos: " + ", ".join(summary) + ".")
+
+
 def render() -> None:
     page_header("Order statements")
     st.caption("Supplier records are on the Creditors page. Open or create a batch below — Invoices, Credit Memo, and Checks all follow whichever batch is open.")
@@ -522,373 +911,10 @@ def render() -> None:
         )
 
         with tab_invoices_sub:
-            scoped_invoices_df = q(
-                """SELECT invoice_id, doc_ref, invoice_date, due_date, gross_amount, trade_discounts, amount, status
-                   FROM invoices
-                   WHERE statement_id = ?
-                   ORDER BY invoice_id""",
-                (int(batch_scope_pick),),
-            )
-            if batch_is_locked:
-                if scoped_invoices_df.empty:
-                    st.caption("No invoices linked to this order statement yet.")
-                else:
-                    st.dataframe(
-                        scoped_invoices_df[["invoice_id", "doc_ref", "invoice_date", "due_date", "gross_amount", "amount", "status"]],
-                        hide_index=True,
-                        column_config={
-                            "gross_amount": st.column_config.NumberColumn("Gross amount", format=MONEY_FORMAT),
-                            "amount": st.column_config.NumberColumn("Net amount", format=MONEY_FORMAT),
-                        },
-                    )
-                st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is locked — unlock it above to add, edit, or delete an invoice.")
-            else:
-                st.caption(f"Add, edit, or delete rows below, then Save. A new row needs a Doc Ref and a positive Amount; use the row's menu (or select + Delete) to remove one. Due Date is always recomputed as Date Received + this supplier's Terms ({supplier_terms or 'not set'}) when you Save — it's a computed reference field, not manually edited; whatever you type into it is overwritten on Save. The grid itself won't visibly update Due Date while you're still typing, only after Save. Every change is logged automatically (old → new + timestamp).")
-
-                with st.expander("Add invoices from a photo, PDF, or spreadsheet"):
-                    bulk_staged_key = batch_scoped_key("bulk_staged")
-                    bulk_errors_key = batch_scoped_key("bulk_errors")
-                    ocr_raw_text_key = batch_scoped_key("ocr_raw_text")
-
-                    tab_ocr, tab_import = st.tabs(["From images/PDFs (local OCR)", "From spreadsheet (CSV/Excel)"])
-
-                    with tab_ocr:
-                        st.caption("Upload photos or PDF scans of this supplier's invoices — one file per invoice. Runs fully offline (Tesseract), no external service or cost. Best-effort read of Doc Ref, Date, and Amount — double-check the results below before adding; nothing is saved until you confirm.")
-                        ocr_files = st.file_uploader(
-                            "Invoice images or PDFs", type=["png", "jpg", "jpeg", "pdf"],
-                            accept_multiple_files=True, key=batch_scoped_key("ocr_uploader"),
-                        )
-                        if st.button("Extract fields", icon=":material/document_scanner:", key=batch_scoped_key("ocr_extract_btn")):
-                            if not ocr_files:
-                                st.warning("Upload at least one file first.")
-                            else:
-                                staged, extract_errors, raw_texts = [], [], {}
-                                with st.spinner(f"Extracting {len(ocr_files)} invoice(s)..."):
-                                    for f in ocr_files:
-                                        fields, message, raw_text = extract_invoice_fields(f.getvalue(), f.name)
-                                        if raw_text:
-                                            raw_texts[f.name] = raw_text
-                                        if fields:
-                                            staged.append({
-                                                "source_file": f.name,
-                                                "doc_ref": fields.doc_ref,
-                                                "invoice_date": fields.invoice_date,
-                                                "due_date": resolve_due_date(fields.invoice_date, supplier_terms),
-                                                "gross_amount": fields.amount,
-                                                "less_pct": 0.0,
-                                            })
-                                            if message:
-                                                extract_errors.append(("warning", f"{f.name}: {message}"))
-                                        else:
-                                            extract_errors.append(("error", f"{f.name}: {message}"))
-                                st.session_state[bulk_staged_key] = staged
-                                st.session_state[bulk_errors_key] = extract_errors
-                                st.session_state[ocr_raw_text_key] = raw_texts
-
-                        ocr_raw_texts = st.session_state.get(ocr_raw_text_key, {})
-                        if ocr_raw_texts:
-                            with st.expander("Show raw OCR text (for diagnosing a bad read)"):
-                                for fname, rtext in ocr_raw_texts.items():
-                                    st.caption(fname)
-                                    st.text(rtext)
-
-                    with tab_import:
-                        st.caption("Upload a .csv or .xlsx with columns like Doc Ref / Date / Amount / Less % (any reasonable header variant works). More reliable than OCR since it's reading real data, not a photo.")
-                        st.download_button(
-                            "Download CSV template", data=get_template_csv(),
-                            file_name=re.sub(r"[^A-Za-z0-9._-]+", "_", f"{scoped_row['creditor_name']}_{scoped_row['statement_ref']}_invoice_template").strip("_") + ".csv",
-                            mime="text/csv", icon=":material/download:", key=batch_scoped_key("import_template_btn"),
-                        )
-                        import_file = st.file_uploader(
-                            "Invoice spreadsheet", type=["csv", "xlsx"],
-                            accept_multiple_files=False, key=batch_scoped_key("import_uploader"),
-                        )
-                        if st.button("Import rows", icon=":material/upload_file:", key=batch_scoped_key("import_btn")):
-                            if not import_file:
-                                st.warning("Upload a file first.")
-                            else:
-                                imported_rows, import_messages = parse_invoice_spreadsheet(import_file.getvalue(), import_file.name)
-                                staged = [{
-                                    "source_file": import_file.name,
-                                    "doc_ref": r.doc_ref,
-                                    "invoice_date": r.invoice_date,
-                                    "due_date": resolve_due_date(r.invoice_date, supplier_terms),
-                                    "gross_amount": r.amount,
-                                    "less_pct": r.less_pct,
-                                } for r in imported_rows]
-                                st.session_state[bulk_staged_key] = staged
-                                st.session_state[bulk_errors_key] = [("warning", m) for m in import_messages]
-                                st.session_state[ocr_raw_text_key] = {}
-
-                    for level, e in st.session_state.get(bulk_errors_key, []):
-                        (st.warning if level == "warning" else st.error)(e)
-
-                    staged_rows = st.session_state.get(bulk_staged_key, [])
-                    if staged_rows:
-                        st.caption(f"{len(staged_rows)} invoice(s) staged — review/correct below, then add.")
-                        staging_editor_key = batch_scoped_key("bulk_staging_editor")
-                        edited_staged_df = st.data_editor(
-                            pd.DataFrame(staged_rows),
-                            hide_index=True,
-                            num_rows="dynamic",
-                            disabled=["source_file", "due_date"],
-                            key=staging_editor_key,
-                            column_config={
-                                "source_file": st.column_config.TextColumn("Source"),
-                                "doc_ref": st.column_config.TextColumn("Doc Ref"),
-                                "invoice_date": st.column_config.DateColumn("Date Received", format="MMM DD, YYYY"),
-                                "due_date": st.column_config.DateColumn("Due Date (computed, recalculated on save)"),
-                                "gross_amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01),
-                                "less_pct": st.column_config.NumberColumn("Less %", format="%.2f%%", min_value=0.0, max_value=100.0, step=1.0),
-                            },
-                        )
-                        bulk_promote_after = False
-                        if scoped_row["status"] == "Draft":
-                            bulk_promote_after = st.checkbox(
-                                "Also promote this batch to Issued once the invoices are added", value=True,
-                                key=batch_scoped_key("bulk_promote_after"),
-                                help="Gives the batch its permanent number (e.g. 2026 - OS 0007) in the same step, so you don't need to open \"Promote statement status\" separately.",
-                            )
-                        bulk_col_add, bulk_col_discard = st.columns(2)
-                        with bulk_col_add:
-                            if st.button("Add these invoices to the batch", icon=":material/playlist_add:", type="primary", key=batch_scoped_key("bulk_commit_btn")) or dup_resume("bulk_add_invoices"):
-                                if dup_needs_confirm("bulk_add_invoices", invoice_warnings(scoped_creditor_id, [
-                                    (cell_text(r["doc_ref"]).strip(), r["invoice_date"], float(r["gross_amount"] or 0))
-                                    for _, r in edited_staged_df.iterrows() if cell_text(r["doc_ref"]).strip() and float(r["gross_amount"] or 0) > 0
-                                ])):
-                                    pass
-                                elif guard_duplicate_submit("bulk_add_invoices", int(batch_scope_pick), edited_staged_df.to_csv(index=False)):
-                                    added, commit_errors = 0, []
-                                    for _, r in edited_staged_df.iterrows():
-                                        doc_ref = cell_text(r["doc_ref"]).strip()
-                                        gross = float(r["gross_amount"] or 0)
-                                        if not doc_ref or gross <= 0:
-                                            commit_errors.append(f"Skipped a row missing Doc Ref or a positive Amount ({r.get('source_file', '?')}).")
-                                            continue
-                                        resolved_due = resolve_due_date(r["invoice_date"], supplier_terms)
-                                        try:
-                                            add_invoice(
-                                                scoped_creditor_id, doc_ref, r["invoice_date"], resolved_due,
-                                                gross, [float(r["less_pct"])] if r["less_pct"] else [], int(batch_scope_pick),
-                                            )
-                                            added += 1
-                                        except sqlite3.IntegrityError:
-                                            commit_errors.append(f"'{doc_ref}' already exists for this supplier.")
-                                    if added:
-                                        st.success(f"{added} invoice(s) added.")
-                                        if bulk_promote_after and not commit_errors:
-                                            try:
-                                                st.toast(f"{added} invoice(s) added; batch promoted to Issued as {promote_draft_statement(int(batch_scope_pick), 'Issued')}.")
-                                            except ValueError as e:
-                                                commit_errors.append(f"Invoices were added, but the batch could not be promoted: {e}")
-                                    for e in commit_errors:
-                                        st.error(e)
-                                    st.session_state[bulk_staged_key] = []
-                                    st.session_state[bulk_errors_key] = []
-                                    if added:
-                                        refresh()
-                                else:
-                                    st.warning("Duplicate submission ignored — identical to the click just before it.")
-                        with bulk_col_discard:
-                            if st.button("Discard staged rows", icon=":material/delete_sweep:", key=batch_scoped_key("bulk_discard_btn")):
-                                st.session_state[bulk_staged_key] = []
-                                st.session_state[bulk_errors_key] = []
-                                st.rerun()
-
-                original_invoices_df = scoped_invoices_df.copy()
-                original_invoices_df["less_pct"] = original_invoices_df["trade_discounts"].apply(parse_less_pct)
-                editable_display_df = original_invoices_df[
-                    ["invoice_id", "doc_ref", "invoice_date", "due_date", "gross_amount", "less_pct", "amount", "status"]
-                ].copy()
-                editable_display_df["invoice_date"] = pd.to_datetime(editable_display_df["invoice_date"]).dt.date
-                editable_display_df["due_date"] = pd.to_datetime(editable_display_df["due_date"]).dt.date
-                invoices_editor_key = batch_scoped_key("edit_invoices_editor")
-                edited_invoices_df = st.data_editor(
-                    editable_display_df,
-                    hide_index=True,
-                    num_rows="dynamic",
-                    disabled=["invoice_id", "due_date", "amount", "status"],
-                    key=invoices_editor_key,
-                    column_config={
-                        "invoice_id": st.column_config.NumberColumn("ID"),
-                        "doc_ref": st.column_config.TextColumn("Doc Ref", default=""),
-                        "invoice_date": st.column_config.DateColumn("Date Received", default=date.today()),
-                        "due_date": st.column_config.DateColumn(
-                            "Due Date (computed, recalculated on save)", default=resolve_due_date(date.today(), supplier_terms)
-                        ),
-                        "gross_amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0),
-                        "less_pct": st.column_config.NumberColumn("Less %", format="%.2f%%", min_value=0.0, max_value=100.0, step=1.0, default=0.0),
-                        "amount": st.column_config.NumberColumn("Net Amount (recalculated on save)", format=MONEY_FORMAT),
-                        "status": st.column_config.TextColumn("Status"),
-                    },
-                )
-                if st.button("Save invoice changes", icon=":material/save:", type="primary", key=batch_scoped_key("save_invoice_edits")) or dup_resume("save_invoice_changes"):
-                  if dup_needs_confirm("save_invoice_changes", invoice_warnings(scoped_creditor_id, [
-                      (cell_text(r["doc_ref"]).strip(), r["invoice_date"], float(r["gross_amount"] or 0))
-                      for _, r in edited_invoices_df.iterrows()
-                      if pd.isna(r["invoice_id"]) and cell_text(r["doc_ref"]).strip() and float(r["gross_amount"] or 0) > 0
-                  ])):
-                    pass
-                  elif not guard_duplicate_submit("save_invoice_changes", int(batch_scope_pick), edited_invoices_df.to_csv(index=False)):
-                    st.warning("Duplicate submission ignored — identical to the click just before it.")
-                  else:
-                    original_by_id = original_invoices_df.set_index("invoice_id")
-                    seen_ids, added, updated, row_errors = set(), 0, 0, []
-                    for _, r in edited_invoices_df.iterrows():
-                        if pd.isna(r["invoice_id"]):
-                            doc_ref, gross = cell_text(r["doc_ref"]).strip(), float(r["gross_amount"] or 0)
-                            if not doc_ref and gross <= 0:
-                                continue  # untouched blank template row
-                            if not doc_ref or gross <= 0:
-                                row_errors.append("New invoice row needs a Doc Ref and a positive Amount.")
-                                continue
-                            resolved_due = resolve_due_date(r["invoice_date"], supplier_terms)
-                            try:
-                                add_invoice(
-                                    scoped_creditor_id, doc_ref, r["invoice_date"], resolved_due,
-                                    gross, [float(r["less_pct"])] if r["less_pct"] else [], int(batch_scope_pick),
-                                )
-                                added += 1
-                            except sqlite3.IntegrityError:
-                                row_errors.append(f"'{doc_ref}' already exists for this supplier.")
-                            continue
-
-                        inv_id = int(r["invoice_id"])
-                        seen_ids.add(inv_id)
-                        orig = original_by_id.loc[inv_id]
-                        resolved_due = resolve_due_date(r["invoice_date"], supplier_terms)
-                        is_changed = (
-                            cell_text(r["doc_ref"]) != cell_text(orig["doc_ref"])
-                            or str(r["invoice_date"]) != str(orig["invoice_date"])
-                            or str(resolved_due) != str(orig["due_date"])
-                            or abs(float(r["gross_amount"]) - float(orig["gross_amount"])) > 0.001
-                            or abs(float(r["less_pct"]) - float(orig["less_pct"])) > 0.001
-                        )
-                        if not is_changed:
-                            continue
-                        ok, msg = edit_invoice(
-                            inv_id, cell_text(r["doc_ref"]), r["invoice_date"], resolved_due,
-                            float(r["gross_amount"]), float(r["less_pct"]),
-                        )
-                        if ok:
-                            updated += 1
-                        else:
-                            row_errors.append(f"Invoice {inv_id}: {msg}")
-
-                    deleted = 0
-                    for removed_id in set(original_by_id.index) - seen_ids:
-                        ok, msg = delete_invoice(int(removed_id))
-                        if ok:
-                            deleted += 1
-                        else:
-                            row_errors.append(msg)
-
-                    summary = [f"{n} {label}" for n, label in [(added, "added"), (updated, "updated"), (deleted, "deleted")] if n]
-                    if summary:
-                        st.success("Invoices: " + ", ".join(summary) + ".")
-                    for e in row_errors:
-                        st.error(e)
-                    if not summary and not row_errors:
-                        st.info("No changes to save.")
-                    if summary:
-                        refresh()
+            render_batch_invoices(int(batch_scope_pick))
 
         with tab_memo_sub:
-            st.caption("Applied before checks are issued — reduces the batch's net payable.")
-            scoped_memos_df = q(
-                """SELECT credit_memo_id, memo_ref, memo_date, amount, reason
-                   FROM credit_memos WHERE statement_id = ? ORDER BY credit_memo_id""",
-                (int(batch_scope_pick),),
-            )
-            if batch_is_locked:
-                if scoped_memos_df.empty:
-                    st.caption("No credit memos applied to this order statement yet.")
-                else:
-                    st.dataframe(
-                        scoped_memos_df,
-                        hide_index=True,
-                        column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)},
-                    )
-                st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is locked — unlock it above to add, edit, or delete a credit memo.")
-            else:
-                st.caption("Add, edit, or delete rows below, then Save. A new row needs a reference and a positive Amount.")
-                original_memos_df = scoped_memos_df.copy()
-                original_memos_df["memo_date"] = pd.to_datetime(original_memos_df["memo_date"]).dt.date
-                edited_memos_df = st.data_editor(
-                    original_memos_df,
-                    hide_index=True,
-                    num_rows="dynamic",
-                    disabled=["credit_memo_id"],
-                    key=batch_scoped_key("edit_memos_editor"),
-                    column_config={
-                        "credit_memo_id": st.column_config.NumberColumn("ID"),
-                        "memo_ref": st.column_config.TextColumn("Reference", default=""),
-                        "memo_date": st.column_config.DateColumn("Memo Date", default=date.today()),
-                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0),
-                        "reason": st.column_config.TextColumn("Reason", default=""),
-                    },
-                )
-                if st.button("Save credit memo changes", icon=":material/save:", key=batch_scoped_key("save_memo_edits")) or dup_resume("save_memo_changes"):
-                  if dup_needs_confirm("save_memo_changes", [
-                      w for _, r in edited_memos_df.iterrows()
-                      if pd.isna(r["credit_memo_id"]) and cell_text(r["memo_ref"]).strip() and float(r["amount"] or 0) > 0
-                      for w in credit_memo_warnings(scoped_creditor_id, cell_text(r["memo_ref"]), r["memo_date"], float(r["amount"]))
-                  ]):
-                    pass
-                  elif not guard_duplicate_submit("save_memo_changes", int(batch_scope_pick), edited_memos_df.to_csv(index=False)):
-                    st.warning("Duplicate submission ignored — identical to the click just before it.")
-                  else:
-                    original_by_id = original_memos_df.set_index("credit_memo_id")
-                    seen_ids, added, updated, row_errors = set(), 0, 0, []
-                    for _, r in edited_memos_df.iterrows():
-                        if pd.isna(r["credit_memo_id"]):
-                            memo_ref, amount = cell_text(r["memo_ref"]).strip(), float(r["amount"] or 0)
-                            if not memo_ref and amount <= 0:
-                                continue  # untouched blank template row
-                            if not memo_ref or amount <= 0:
-                                row_errors.append("New credit memo row needs a reference and a positive Amount.")
-                                continue
-                            ok, msg = add_credit_memo(int(batch_scope_pick), memo_ref, r["memo_date"], amount, cell_text(r["reason"]))
-                            if ok:
-                                added += 1
-                            else:
-                                row_errors.append(msg)
-                            continue
-
-                        memo_id = int(r["credit_memo_id"])
-                        seen_ids.add(memo_id)
-                        orig = original_by_id.loc[memo_id]
-                        is_changed = (
-                            cell_text(r["memo_ref"]) != cell_text(orig["memo_ref"])
-                            or str(r["memo_date"]) != str(orig["memo_date"])
-                            or abs(float(r["amount"]) - float(orig["amount"])) > 0.001
-                            or cell_text(r["reason"]) != cell_text(orig["reason"])
-                        )
-                        if not is_changed:
-                            continue
-                        ok, msg = edit_credit_memo(memo_id, cell_text(r["memo_ref"]), r["memo_date"], float(r["amount"]), cell_text(r["reason"]))
-                        if ok:
-                            updated += 1
-                        else:
-                            row_errors.append(f"Credit memo {memo_id}: {msg}")
-
-                    deleted = 0
-                    for removed_id in set(original_by_id.index) - seen_ids:
-                        ok, msg = delete_credit_memo(int(removed_id))
-                        if ok:
-                            deleted += 1
-                        else:
-                            row_errors.append(msg)
-
-                    summary = [f"{n} {label}" for n, label in [(added, "added"), (updated, "updated"), (deleted, "deleted")] if n]
-                    if summary:
-                        st.success("Credit memos: " + ", ".join(summary) + ".")
-                    for e in row_errors:
-                        st.error(e)
-                    if not summary and not row_errors:
-                        st.info("No changes to save.")
-                    if summary:
-                        refresh()
+            render_batch_memos(int(batch_scope_pick))
 
         with tab_checks_sub:
             section("Issue a check")

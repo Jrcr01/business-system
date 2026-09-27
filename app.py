@@ -261,6 +261,7 @@ from engines.card_rules import (  # noqa: F401
 )
 # Screens live in views/ (one file per main tab) and the shared screen helpers in views/shared.py (moved out of this file
 # 2026-09-27); imported back so every name still works here and as app.<name>.
+import views.add_data
 import views.admin
 import views.analytics
 import views.bank_loans
@@ -400,6 +401,7 @@ PAGES.clear()
 PAGES.update({
     "payment-run": st.Page(views.payment_run.render, title="Payment run" + (f" · {_n_waiting}" if _n_waiting else ""), icon=":material/checklist:",
                            url_path="payment-run", default=True),
+    "add-data": st.Page(views.add_data.render, title="Add data", icon=":material/add_box:", url_path="add-data"),
     "dashboard": st.Page(views.dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard"),
     "order-statements": st.Page(views.order_statement.render, title="Order statements", icon=":material/description:", url_path="order-statements"),
     "checks": st.Page(views.checks.render, title="Checks and checkbook", icon=":material/receipt_long:", url_path="checks"),
@@ -412,7 +414,7 @@ PAGES.update({
     "admin": st.Page(views.admin.render, title="Admin and audit", icon=":material/admin_panel_settings:", url_path="admin"),
 })
 MENU = {
-    "Daily work": ["payment-run", "order-statements", "checks"],
+    "Daily work": ["payment-run", "add-data", "order-statements", "checks"],
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records and reports": ["dashboard", "creditors", "analytics", "reports"],
     "System": ["admin"],

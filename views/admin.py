@@ -28,6 +28,26 @@ from views.shared import (  # noqa: F401
 )
 
 
+def render_new_booklet_form() -> None:
+    """Register a new check booklet (leaf range). Shared by Admin and audit and Add data."""
+    with st.form("new_booklet_form", border=False):
+        bk_code = st.text_input("Booklet code", value="Booklet A")
+        bk1, bk2 = st.columns(2)
+        bk_start = bk1.number_input("Start check number", min_value=1, step=1, value=1000, help="The full number printed on the first leaf, e.g. 3992554301. It is used exactly as typed.")
+        bk_end = bk2.number_input("End check number", min_value=1, step=1, value=1050, help="The full number printed on the last leaf, e.g. 3992554400.")
+        bk_received = st.date_input("Date received", value=date.today())
+        if st.form_submit_button("Register booklet", icon=":material/menu_book:", type="primary"):
+            if bk_end < bk_start:
+                st.error("End check number must be greater than or equal to start check number.")
+            elif guard_duplicate_submit("create_booklet", bk_code, bk_start, bk_end, bk_received):
+                ok, msg = create_booklet(PRIMARY_BANK_ACCOUNT_ID, bk_code, int(bk_start), int(bk_end), bk_received)
+                (st.success if ok else st.error)(msg)
+                if ok:
+                    refresh(done=msg)
+            else:
+                st.warning("Duplicate submission ignored — identical to the click just before it.")
+
+
 def render() -> None:
     bank_df = q("SELECT * FROM bank_accounts WHERE bank_account_id = ?", (PRIMARY_BANK_ACCOUNT_ID,))
     bank = bank_df.iloc[0] if not bank_df.empty else None
@@ -76,23 +96,7 @@ def render() -> None:
         st.dataframe(booklets_df, hide_index=True)
 
         with st.expander("Register new booklet"):
-            with st.form("new_booklet_form", border=False):
-                bk_code = st.text_input("Booklet code", value="Booklet A")
-                bk1, bk2 = st.columns(2)
-                bk_start = bk1.number_input("Start check number", min_value=1, step=1, value=1000, help="The full number printed on the first leaf, e.g. 3992554301. It is used exactly as typed.")
-                bk_end = bk2.number_input("End check number", min_value=1, step=1, value=1050, help="The full number printed on the last leaf, e.g. 3992554400.")
-                bk_received = st.date_input("Date received", value=date.today())
-                if st.form_submit_button("Register booklet", icon=":material/menu_book:", type="primary"):
-                    if bk_end < bk_start:
-                        st.error("End check number must be greater than or equal to start check number.")
-                    elif guard_duplicate_submit("create_booklet", bk_code, bk_start, bk_end, bk_received):
-                        ok, msg = create_booklet(PRIMARY_BANK_ACCOUNT_ID, bk_code, int(bk_start), int(bk_end), bk_received)
-                        (st.success if ok else st.error)(msg)
-                        if ok:
-                            refresh(done=msg)
-                    else:
-                        st.warning("Duplicate submission ignored — identical to the click just before it.")
-
+            render_new_booklet_form()
         with st.expander("Archive a booklet"):
             archivable_df = booklets_df[booklets_df["status"] != "Archived"] if not booklets_df.empty else booklets_df
             if archivable_df.empty:

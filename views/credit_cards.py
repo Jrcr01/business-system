@@ -59,10 +59,8 @@ def _card_label(cid: int, df: pd.DataFrame) -> str:
     return f"{d['card_name']} - {d['card_number_last4']} ({d['issuer']}){suffix}"
 
 
-def render() -> None:
-    page_header("Credit cards")
-    st.caption("Scoped to what matters: due dates, amounts due, whose card it is, making sure every statement gets recorded, and the annual fee waiver reminder.")
-
+def _card_frames():
+    """Cardholders and cards on file (all, and active only) -- used by this page and by the Add data page."""
     cardholders_df = q("SELECT * FROM cardholders ORDER BY name")
     cardholders_df["is_active"] = pd.to_numeric(cardholders_df["is_active"], errors="coerce").fillna(1).astype(int)
     active_cardholders_df = cardholders_df[cardholders_df["is_active"] == 1]
@@ -82,6 +80,125 @@ def render() -> None:
     cards_df["credit_limit"] = pd.to_numeric(cards_df["credit_limit"], errors="coerce")
     cards_df["is_active"] = pd.to_numeric(cards_df["is_active"], errors="coerce").fillna(1).astype(int)
     active_cards_df = cards_df[cards_df["is_active"] == 1]
+    return cardholders_df, active_cardholders_df, cards_df, active_cards_df
+
+
+def render_add_cc_statement_form() -> None:
+    """The Add statement form (cardholder -> issuer -> card -> month, total due, payments seen, finance charge). Shared by Credit cards and Add data."""
+    cardholders_df, active_cardholders_df, cards_df, active_cards_df = _card_frames()
+    with st.container(border=True):
+        st.markdown("**Add statement**")
+        st.caption("Pick whose card first — one cardholder can have several cards.")
+        if active_cardholders_df.empty:
+            st.caption("Add a cardholder first, in Cards & cardholders.")
+            stmt_holder_cards_df = pd.DataFrame(columns=cards_df.columns)
+        else:
+            stmt_holder = st.selectbox(
+                "Cardholder", options=active_cardholders_df["cardholder_id"],
+                format_func=lambda hid: active_cardholders_df.set_index("cardholder_id").loc[hid, "name"],
+                key="stmt_holder_pick",
+            )
+            stmt_holder_cards_df = active_cards_df[active_cards_df["cardholder_id"] == stmt_holder]
+
+        if stmt_holder_cards_df.empty:
+            st.caption("No cards assigned to this cardholder yet — assign one via \"Edit a card\" in Cards & cardholders.")
+        else:
+            stmt_issuer_names = sorted(stmt_holder_cards_df["issuer"].unique(), key=str.lower)
+            stmt_issuer = st.selectbox("Issuer (bank)", options=stmt_issuer_names, key=f"stmt_issuer_pick_{stmt_holder}")
+            stmt_issuer_cards_df = stmt_holder_cards_df[stmt_holder_cards_df["issuer"] == stmt_issuer].sort_values(
+                ["card_name", "card_number_last4"], key=lambda col: col.astype(str).str.lower()
+            )
+            stmt_card = st.selectbox(
+                "Card", options=stmt_issuer_cards_df["card_id"],
+                format_func=lambda cid: _card_label(cid, stmt_issuer_cards_df),
+                key=f"stmt_card_pick_{stmt_holder}_{stmt_issuer}",
+            )
+            default_year, default_month = get_default_statement_month(int(stmt_card))
+            sm_key = f"{int(stmt_card)}_{default_year}_{default_month}"
+            sm1, sm2 = st.columns([3, 2])
+            stmt_month_num = sm1.selectbox(
+                "Statement month", options=list(range(1, 13)), index=default_month - 1,
+                format_func=lambda m: date(2000, m, 1).strftime("%B"), key=f"stmt_month_{sm_key}",
+                help="Which month this statement is for. Pre-selected to the month after this card's last recorded statement; after December it rolls to January of the next year on its own.",
+            )
+            stmt_year_num = sm2.number_input("Year", min_value=2000, max_value=2100, step=1, value=default_year, key=f"stmt_year_{sm_key}")
+            stmt_due = st.date_input("Due date", value=date.today(), key="stmt_due_date")
+
+            if st.session_state.pop("_clear_stmt_form", False):
+                for _k in [k for k in st.session_state if str(k).startswith(("stmt_total_direct", "stmt_finance_direct", "stmt_payments_"))]:
+                    st.session_state.pop(_k, None)
+
+            # The statement's total already includes everything unpaid before it, so this is all you type:
+            # what is due, what was paid since the last statement (optional), and any finance charge.
+            stmt_last = q_live(
+                """SELECT cc_statement_id AS id, due_date, total_amount_due AS total, paid_confirmed,
+                          """ + cc_owed_case("cs") + """ AS owed
+                   FROM cc_statements cs WHERE card_id = ? AND status != 'Cancelled' ORDER BY due_date DESC, cc_statement_id DESC LIMIT 1""",
+                (int(stmt_card),),
+            )
+            stmt_earlier = stmt_last.iloc[0].to_dict() if not stmt_last.empty and str(stmt_last.iloc[0]["due_date"]) < str(stmt_due) else None
+            stmt_total_direct = st.number_input(
+                "Total amount due (from the statement)", min_value=0.0, step=100.0, key="stmt_total_direct",
+                help="The amount the statement asks you to pay. It already includes any balance carried over, so it is counted once.",
+            )
+            stmt_payments = None
+            if stmt_earlier:
+                stmt_payments = st.number_input(
+                    f"Payments received since the earlier statement (optional) — earlier total on file {php(stmt_earlier['total'])}",
+                    min_value=0.0, step=100.0, value=None, key=f"stmt_payments_{stmt_earlier['id']}",
+                    help="Add up the payment lines on this statement (the ones ending in C). Type 0 if nothing was paid. Leave empty if you don't know — the statement is still recorded and counted once.",
+                )
+            stmt_interest = st.number_input(
+                "Finance charge / interest on this statement (optional)", min_value=0.0, step=10.0, key="stmt_finance_direct",
+                help="The interest / finance charge the statement lists, if any. It is part of the total, and feeds the cost-of-financing figures.",
+            )
+            stmt_total_due = stmt_total_direct
+            stmt_math_ok = True
+            if stmt_earlier and stmt_payments is not None:
+                stmt_carried_calc = max(float(stmt_earlier["total"]) - float(stmt_payments), 0.0)
+                stmt_new_calc = round(stmt_total_direct - stmt_carried_calc - stmt_interest, 2)
+                if stmt_new_calc < -1.0:
+                    stmt_math_ok = False
+                    st.error(f"These don't add up: earlier statement {php(stmt_earlier['total'])} − payments {php(stmt_payments)} + interest {php(stmt_interest)} is already "
+                             f"{php(stmt_carried_calc + stmt_interest)}, more than the total due {php(stmt_total_direct)}. Check the payments, or the earlier statement's amount on file.")
+                    stmt_previous, stmt_new_charges = stmt_carried_calc, 0.0
+                else:
+                    if stmt_new_calc < 0:      # a few centavos of rounding on the bank's side
+                        stmt_carried_calc, stmt_new_calc = max(stmt_total_direct - stmt_interest, 0.0), 0.0
+                    stmt_previous, stmt_new_charges = round(stmt_carried_calc, 2), stmt_new_calc
+                    st.caption(f"Earlier {php(stmt_earlier['total'])} − payments {php(stmt_payments)} = {php(stmt_previous)} carried over · "
+                               f"+ new charges {php(stmt_new_charges)} (worked out) + interest {php(stmt_interest)} = **{php(stmt_total_due)}**")
+            else:
+                stmt_previous, stmt_new_charges = 0.0, max(stmt_total_direct - stmt_interest, 0.0)
+
+            if stmt_total_direct > 0:
+                if stmt_earlier and float(stmt_earlier["owed"]) > 0.005:
+                    st.info(f"Payables for this card after saving: **{php(stmt_total_due)}** — it replaces the earlier {php(stmt_earlier['owed'])} that is counted now, so nothing is counted twice.")
+                else:
+                    st.info(f"Payables for this card after saving: **{php(stmt_total_due)}**.")
+
+            if st.button("Add statement", icon=":material/receipt_long:", type="primary", key="add_cc_statement_btn", disabled=not stmt_math_ok) or dup_resume("add_cc_statement"):
+                stmt_month_text = f"{int(stmt_year_num)}-{int(stmt_month_num):02d}"
+                if dup_needs_confirm("add_cc_statement", cc_statement_warnings(int(stmt_card), stmt_due, stmt_total_due)
+                                     + cc_statement_month_warnings(int(stmt_card), stmt_month_text, stmt_total_due)):
+                    pass
+                elif guard_duplicate_submit("add_cc_statement", stmt_card, stmt_due, stmt_total_due, stmt_interest, stmt_payments):
+                    add_cc_statement(int(stmt_card), stmt_due, stmt_previous, stmt_new_charges, stmt_interest, 0.0,
+                                     statement_month=stmt_month_text, paid_confirmed=0)
+                    if stmt_earlier and stmt_payments is not None and int(stmt_earlier["paid_confirmed"]) == 0:
+                        earlier_paid, earlier_status = confirm_cc_payment_from_next_statement(int(stmt_earlier["id"]), stmt_previous)
+                        st.toast(f"Earlier statement confirmed: {php(earlier_paid)} paid ({earlier_status}).")
+                    st.session_state["_clear_stmt_form"] = True
+                    refresh(done="Statement recorded.")
+                else:
+                    st.warning("Duplicate submission ignored — identical to the click just before it.")
+
+
+def render() -> None:
+    page_header("Credit cards")
+    st.caption("Scoped to what matters: due dates, amounts due, whose card it is, making sure every statement gets recorded, and the annual fee waiver reminder.")
+
+    cardholders_df, active_cardholders_df, cards_df, active_cards_df = _card_frames()
 
     def _blank_to_none_int(v):
         # q() coerces every NULL to '' app-wide (engines/db_engine.py df_query) — nullable
@@ -187,113 +304,7 @@ def render() -> None:
 
         col_new_stmt = st.container()
         with col_new_stmt:
-            with st.container(border=True):
-                st.markdown("**Add statement**")
-                st.caption("Pick whose card first — one cardholder can have several cards.")
-                if active_cardholders_df.empty:
-                    st.caption("Add a cardholder first, in Cards & cardholders.")
-                    stmt_holder_cards_df = pd.DataFrame(columns=cards_df.columns)
-                else:
-                    stmt_holder = st.selectbox(
-                        "Cardholder", options=active_cardholders_df["cardholder_id"],
-                        format_func=lambda hid: active_cardholders_df.set_index("cardholder_id").loc[hid, "name"],
-                        key="stmt_holder_pick",
-                    )
-                    stmt_holder_cards_df = active_cards_df[active_cards_df["cardholder_id"] == stmt_holder]
-
-                if stmt_holder_cards_df.empty:
-                    st.caption("No cards assigned to this cardholder yet — assign one via \"Edit a card\" in Cards & cardholders.")
-                else:
-                    stmt_issuer_names = sorted(stmt_holder_cards_df["issuer"].unique(), key=str.lower)
-                    stmt_issuer = st.selectbox("Issuer (bank)", options=stmt_issuer_names, key=f"stmt_issuer_pick_{stmt_holder}")
-                    stmt_issuer_cards_df = stmt_holder_cards_df[stmt_holder_cards_df["issuer"] == stmt_issuer].sort_values(
-                        ["card_name", "card_number_last4"], key=lambda col: col.astype(str).str.lower()
-                    )
-                    stmt_card = st.selectbox(
-                        "Card", options=stmt_issuer_cards_df["card_id"],
-                        format_func=lambda cid: _card_label(cid, stmt_issuer_cards_df),
-                        key=f"stmt_card_pick_{stmt_holder}_{stmt_issuer}",
-                    )
-                    default_year, default_month = get_default_statement_month(int(stmt_card))
-                    sm_key = f"{int(stmt_card)}_{default_year}_{default_month}"
-                    sm1, sm2 = st.columns([3, 2])
-                    stmt_month_num = sm1.selectbox(
-                        "Statement month", options=list(range(1, 13)), index=default_month - 1,
-                        format_func=lambda m: date(2000, m, 1).strftime("%B"), key=f"stmt_month_{sm_key}",
-                        help="Which month this statement is for. Pre-selected to the month after this card's last recorded statement; after December it rolls to January of the next year on its own.",
-                    )
-                    stmt_year_num = sm2.number_input("Year", min_value=2000, max_value=2100, step=1, value=default_year, key=f"stmt_year_{sm_key}")
-                    stmt_due = st.date_input("Due date", value=date.today(), key="stmt_due_date")
-
-                    if st.session_state.pop("_clear_stmt_form", False):
-                        for _k in [k for k in st.session_state if str(k).startswith(("stmt_total_direct", "stmt_finance_direct", "stmt_payments_"))]:
-                            st.session_state.pop(_k, None)
-
-                    # The statement's total already includes everything unpaid before it, so this is all you type:
-                    # what is due, what was paid since the last statement (optional), and any finance charge.
-                    stmt_last = q_live(
-                        """SELECT cc_statement_id AS id, due_date, total_amount_due AS total, paid_confirmed,
-                                  """ + cc_owed_case("cs") + """ AS owed
-                           FROM cc_statements cs WHERE card_id = ? AND status != 'Cancelled' ORDER BY due_date DESC, cc_statement_id DESC LIMIT 1""",
-                        (int(stmt_card),),
-                    )
-                    stmt_earlier = stmt_last.iloc[0].to_dict() if not stmt_last.empty and str(stmt_last.iloc[0]["due_date"]) < str(stmt_due) else None
-                    stmt_total_direct = st.number_input(
-                        "Total amount due (from the statement)", min_value=0.0, step=100.0, key="stmt_total_direct",
-                        help="The amount the statement asks you to pay. It already includes any balance carried over, so it is counted once.",
-                    )
-                    stmt_payments = None
-                    if stmt_earlier:
-                        stmt_payments = st.number_input(
-                            f"Payments received since the earlier statement (optional) — earlier total on file {php(stmt_earlier['total'])}",
-                            min_value=0.0, step=100.0, value=None, key=f"stmt_payments_{stmt_earlier['id']}",
-                            help="Add up the payment lines on this statement (the ones ending in C). Type 0 if nothing was paid. Leave empty if you don't know — the statement is still recorded and counted once.",
-                        )
-                    stmt_interest = st.number_input(
-                        "Finance charge / interest on this statement (optional)", min_value=0.0, step=10.0, key="stmt_finance_direct",
-                        help="The interest / finance charge the statement lists, if any. It is part of the total, and feeds the cost-of-financing figures.",
-                    )
-                    stmt_total_due = stmt_total_direct
-                    stmt_math_ok = True
-                    if stmt_earlier and stmt_payments is not None:
-                        stmt_carried_calc = max(float(stmt_earlier["total"]) - float(stmt_payments), 0.0)
-                        stmt_new_calc = round(stmt_total_direct - stmt_carried_calc - stmt_interest, 2)
-                        if stmt_new_calc < -1.0:
-                            stmt_math_ok = False
-                            st.error(f"These don't add up: earlier statement {php(stmt_earlier['total'])} − payments {php(stmt_payments)} + interest {php(stmt_interest)} is already "
-                                     f"{php(stmt_carried_calc + stmt_interest)}, more than the total due {php(stmt_total_direct)}. Check the payments, or the earlier statement's amount on file.")
-                            stmt_previous, stmt_new_charges = stmt_carried_calc, 0.0
-                        else:
-                            if stmt_new_calc < 0:      # a few centavos of rounding on the bank's side
-                                stmt_carried_calc, stmt_new_calc = max(stmt_total_direct - stmt_interest, 0.0), 0.0
-                            stmt_previous, stmt_new_charges = round(stmt_carried_calc, 2), stmt_new_calc
-                            st.caption(f"Earlier {php(stmt_earlier['total'])} − payments {php(stmt_payments)} = {php(stmt_previous)} carried over · "
-                                       f"+ new charges {php(stmt_new_charges)} (worked out) + interest {php(stmt_interest)} = **{php(stmt_total_due)}**")
-                    else:
-                        stmt_previous, stmt_new_charges = 0.0, max(stmt_total_direct - stmt_interest, 0.0)
-
-                    if stmt_total_direct > 0:
-                        if stmt_earlier and float(stmt_earlier["owed"]) > 0.005:
-                            st.info(f"Payables for this card after saving: **{php(stmt_total_due)}** — it replaces the earlier {php(stmt_earlier['owed'])} that is counted now, so nothing is counted twice.")
-                        else:
-                            st.info(f"Payables for this card after saving: **{php(stmt_total_due)}**.")
-
-                    if st.button("Add statement", icon=":material/receipt_long:", type="primary", key="add_cc_statement_btn", disabled=not stmt_math_ok) or dup_resume("add_cc_statement"):
-                        stmt_month_text = f"{int(stmt_year_num)}-{int(stmt_month_num):02d}"
-                        if dup_needs_confirm("add_cc_statement", cc_statement_warnings(int(stmt_card), stmt_due, stmt_total_due)
-                                             + cc_statement_month_warnings(int(stmt_card), stmt_month_text, stmt_total_due)):
-                            pass
-                        elif guard_duplicate_submit("add_cc_statement", stmt_card, stmt_due, stmt_total_due, stmt_interest, stmt_payments):
-                            add_cc_statement(int(stmt_card), stmt_due, stmt_previous, stmt_new_charges, stmt_interest, 0.0,
-                                             statement_month=stmt_month_text, paid_confirmed=0)
-                            if stmt_earlier and stmt_payments is not None and int(stmt_earlier["paid_confirmed"]) == 0:
-                                earlier_paid, earlier_status = confirm_cc_payment_from_next_statement(int(stmt_earlier["id"]), stmt_previous)
-                                st.toast(f"Earlier statement confirmed: {php(earlier_paid)} paid ({earlier_status}).")
-                            st.session_state["_clear_stmt_form"] = True
-                            refresh(done="Statement recorded.")
-                        else:
-                            st.warning("Duplicate submission ignored — identical to the click just before it.")
-
+            render_add_cc_statement_form()
         with st.expander("Edit / delete a statement"):
             st.caption("Only the most recent statement for a card can be changed or removed here — an older one already had its balance carried forward into a later statement, so changing it would leave that later one out of sync.")
             if cc_statements_df.empty:
