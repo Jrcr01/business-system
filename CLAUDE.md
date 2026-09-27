@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [Current State (2026-09-27)](#current-state-2026-09-27) — **read this first**: what is live now, where things are, rules added since 2026-09-17
+- [Thermal Statement Printing](#thermal-statement-printing) — gated mini-phase (2026-09-27): spec, locked decisions, build order, acceptance criteria
 - [Current Priority / Scope](#current-priority--scope) — Phased roadmap (Phases 1-6)
 - [Update Protocol](#update-protocol) — How to maintain this file
 - [Core System Configuration](#core-system-configuration) — Bank account, database, branding, core rules
@@ -48,6 +49,85 @@ The system is **live** (cut over Sep 2026) for Slick's Tire Supply, used daily b
 * Batch statement PDF: invoice status label is Unpaid / Partly covered / `Check issued · <last check date>` / Paid (label only, stored status unchanged); section headings never stranded; rows tighten to avoid near-empty overflow pages. Bulk statement printing (since last check print / today / 7 days / all; A4 or thermal; summary cover page; option to leave out checks not yet printed = run not marked printed).
 * UI: "Search everything" pop-up (`/`, filters as you type); hotkeys (Enter/Esc in pop-ups, Alt+1…0 tabs, Alt+P main action, Alt+N new form; list in the sidebar); last-modified column/filter on batch, loan note and bank loan browsers; sidebar mini calendar with month/year pickers, marked days and prospective month choice.
 * "Cleared" is still inferred from the check date — there is **no bank reconciliation yet** (recommended next build: import the Metrobank statement and mark checks actually cleared).
+
+---
+
+## Thermal Statement Printing
+
+Gated mini-phase, started 2026-09-27 (owner's spec). Build hardware-independent first; work against the test/dev database only; stop after each
+build step and summarize before continuing. **Status: step 1 in progress.**
+
+### Purpose
+Print batch payment statements on an 80mm thermal printer: one FILE COPY for physical filing and one SUPPLIER COPY for handoff. These are internal
+summary documents, not BIR records; the database remains the system of record.
+
+### Hardware (not yet purchased -- build hardware-independent first)
+* Preferred: Xprinter XP-T837L (USB + Serial + LAN, optional Bluetooth, 4MB buffer). Fallback: Xprinter XP-80T (USB + LAN).
+* ESC/POS, Font A, 48 columns, native QR, partial auto-cut.
+
+### Decisions (locked)
+**Printing**
+* python-escpos with three configurable backends: Win32Raw (USB through the installed Xprinter Windows driver), Serial (Bluetooth virtual COM port),
+  Network (LAN, port 9100).
+* Printer settings (backend, COM port, IP, line threshold) live in config, never hardcoded.
+* Initialize with ESC @; send in chunks; feed before cut.
+* 48-column layout; currency printed as "PHP 1,234.56" (no ₱ glyph).
+* Header shows the copy label: FILE COPY / SUPPLIER COPY. Signature line ("Received by / Date") on FILE COPY.
+
+**Correctness**
+* The statement total is COMPUTED from the invoice / credit-memo lines at print time, never read from `order_statements.total_amount`.
+* Explicit NULL formatting: never print "None"; never print a NULL amount as 0.00; missing values print as "—".
+* Guard against duplicate prints on Streamlit reruns (single button action + session-state flag).
+
+**QR / digital copy**
+* At print time, generate the A4 statement PDF (ReportLab; reuse the existing statement generator, brand color #1D5A8E -- colour still to be
+  confirmed by the owner, the existing A4 statement uses #1f3a5f), upload it to a dedicated Google Drive folder via the Drive API, set per-file
+  sharing to ANYONE-WITH-LINK, and encode that link in the QR (bottom center).
+* The folder itself is not shared; sharing is set per file only. Store the Drive file ID and link with the print record. PDFs are never overwritten.
+* Upload failure = print aborted (no slip without a valid QR). Drive OAuth credentials and tokens stay out of git (.gitignore).
+
+**Versioning and reprints**
+* REPRINT = same content: reuse the existing PDF and link; header shows "REPRINT" with date.
+* Editing a batch after unlock creates a new statement version; on re-lock the batch is flagged "Needs reprint" until the revised statement is printed.
+* New version = new PDF + new Drive link; header shows "REVISED vN – supersedes vN-1". When a new version is printed, revoke public sharing on the
+  previous version's PDF (keep the file privately for audit history).
+* Reprints always go through the app, never the printer's hardware reprint button.
+
+**Bluetooth guardrail**
+* Before printing, estimate the rendered line count. If the active backend is Serial (Bluetooth) and the count exceeds the threshold (default 60,
+  configurable), warn with three choices: Switch to USB / Print via Bluetooth anyway / Cancel.
+* Check that the COM port opens before sending; if not, suggest USB immediately. If a write fails mid-job: stop, tell the user to discard the partial
+  slip, connect USB, and retry.
+
+**Audit**
+* Log each print in the audit log (`audit_logs`): batch ID, statement version, copy type (FILE/SUPPLIER), print type (ORIGINAL/REPRINT/REVISED),
+  backend, status (SUCCESS/FAILED), Drive file ID, timestamp.
+* A print counts as SUCCESS only after the full job (including cut) is sent. A FAILED attempt does not count; the retry is still the ORIGINAL, not a REPRINT.
+
+**Owner answers (2026-09-27)**
+* Keep the existing "Thermal Statement (80mm) PDF" (print dialog) alongside direct printing, as a backup.
+* The slip lists the same content as today's statement: invoices, credit memos, the checks (number, date, amount) and totals.
+
+### Data
+Add whatever tables/columns are needed for statement versions, print records, Drive file IDs/links, the "Needs reprint" flag, and printer config.
+**Propose the schema changes to the owner before applying them** (migration + preview/--apply script, tested on a copy, as for every schema change).
+Printer config can use the existing `settings` key/value table (category `thermal_printer`) -- no schema change needed for it.
+
+### Build order
+1. Layout and formatting against the python-escpos Dummy printer (no hardware), including a text preview in the UI.
+2. A4 PDF generation + Drive upload + sharing/revocation.
+3. Versioning, "Needs reprint" flag, reprint vs revised logic.
+4. Audit logging and the Bluetooth guardrail.
+5. Real backends (Win32Raw / Serial / Network) -- after the printer arrives.
+
+### Acceptance criteria
+* Printed total always equals the sum of the statement's lines.
+* No "None" or false 0.00 values anywhere on the slip or PDF.
+* QR scans on a phone and opens the matching A4 PDF without sign-in.
+* After a revision, the old QR shows access denied; the new QR works.
+* A batch edited after unlock shows "Needs reprint" until reprinted.
+* One button click produces exactly one print and one audit entry per copy.
+* A long statement over Bluetooth triggers the guardrail warning.
 
 ---
 
