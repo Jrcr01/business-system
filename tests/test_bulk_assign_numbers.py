@@ -5,7 +5,6 @@ import pandas as pd
 
 import app
 from conftest import make_creditor, make_statement, fetchone
-from engines.check_run_service import sort_by_print_order
 
 BANK = 1
 
@@ -74,14 +73,3 @@ def test_bulk_assign_is_all_or_nothing_if_a_leaf_was_taken_after_the_preview(db)
     assert fetchone(db, "SELECT COUNT(*) FROM checks_issued WHERE check_number IS NOT NULL")[0] == 0     # even the first leaf was rolled back
 
 
-def test_print_order_puts_the_lower_order_statement_first():
-    df = pd.DataFrame([
-        {"check_id": 9, "check_number": None, "reference": "2026 - OS 0012", "statement_id": 12, "loan_note_id": None, "print_batch_id": None, "export_placeholder": None},
-        {"check_id": 4, "check_number": None, "reference": "2026 - OS 0003", "statement_id": 3, "loan_note_id": None, "print_batch_id": None, "export_placeholder": None},
-        {"check_id": 2, "check_number": None, "reference": "2026 - LN 0001", "statement_id": None, "loan_note_id": 1, "print_batch_id": None, "export_placeholder": None},
-        {"check_id": 7, "check_number": "3992554301", "reference": "2026 - OS 0099", "statement_id": 99, "loan_note_id": None, "print_batch_id": None, "export_placeholder": None},
-    ])
-
-    ordered = list(sort_by_print_order(df)["check_id"])
-
-    assert ordered == [7, 4, 9, 2]          # already numbered first, then OS 3, OS 12, lender last

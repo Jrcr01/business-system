@@ -55,69 +55,6 @@ def get_pending_check_run() -> pd.DataFrame:
         )
 
 
-def generate_pending_check_run_excel(check_ids: list[int] | None = None) -> bytes:
-    """Excel export of the current pending check run, for batch-printing outside this system
-    (2026-09-17, per user's workflow: park every check here across all batches, export once,
-    import the file into Chrysanth's own batch-print feature, then come back and assign check
-    numbers -- printing itself no longer happens in this app). check_ids optionally narrows the
-    export to a subset of get_pending_check_run()'s rows (e.g. the checkboxes the user picked),
-    matching the same all-selected-by-default pattern the old in-app print picker used.
-
-    Column names/order are a reasonable generic default (Payee Name, Amount, Check Date,
-    Reference), not copied from Chrysanth's own import spec -- adjust here if Chrysanth's import
-    wizard expects specific headers or a specific order."""
-    df = get_pending_check_run()
-    if check_ids is not None:
-        df = df[df["check_id"].isin(check_ids)]
-    export_df = pd.DataFrame({
-        "Payee Name": df["payee_name"],
-        "Amount": df["amount"],
-        "Check Date": pd.to_datetime(df["check_date"]),
-        "Reference": df["reference"],
-    })
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        export_df.to_excel(writer, index=False, sheet_name="Checks to Print")
-    buffer.seek(0)
-    return buffer.getvalue()
-
-
-CHRYSANTH_COLUMNS = ["Date", "Account No", "Payee", "Amount", "Cheque No", "Remark", "A/C Payee Only"]
-
-
-def _chrysanth_csv(df: pd.DataFrame) -> bytes:
-    dates = pd.to_datetime(df["check_date"])
-    export_df = pd.DataFrame({
-        "Date": [f"{d.month}/{d.day}/{d.year}" for d in dates],
-        "Account No": "",
-        "Payee": df["payee_name"].values,
-        "Amount": [f"{float(a):.2f}" for a in df["amount"]],
-        "Cheque No": df["check_number"].fillna("").astype(str).values,
-        "Remark": df["reference"].fillna("").astype(str).values,
-        "A/C Payee Only": "Y",
-    }, columns=CHRYSANTH_COLUMNS)
-    return export_df.to_csv(index=False).encode("utf-8-sig")
-
-
-def generate_pending_check_run_csv(check_ids: list[int] | None = None) -> bytes:
-    """CSV in Chrysanth's own cheque-transaction layout (2026-09-21, from the sample the user shared):
-    Date, Account No, Payee, Amount, Cheque No, Remark, A/C Payee Only. Account No is left empty (Chrysanth
-    uses its default account), Cheque No is only filled when a number has already been assigned (numbers are
-    normally assigned after printing), Remark is the batch / loan-note reference, and every check is
-    crossed "A/C Payee Only" (Y). Dates are month/day/year like the sample; UTF-8 with a BOM so Excel opens it cleanly."""
-    df = get_pending_check_run()
-    if check_ids is not None:
-        df = df[df["check_id"].isin(check_ids)]
-    return _chrysanth_csv(df)
-
-
-def generate_batch_csv(print_batch_id: int) -> bytes:
-    """The same CSV for a batch that was already exported -- so a file that was lost or never downloaded can
-    be produced again from the batch history (the checks stay tagged with their print_batch_id)."""
-    with sqlite3.connect(DB_PATH) as conn:
-        df = pd.read_sql_query(
-            _CHECK_ROW_SELECT + " WHERE c.print_batch_id = ? ORDER BY c.check_date ASC, c.check_id ASC", conn, params=(int(print_batch_id),))
-    return _chrysanth_csv(df)
 
 
 def get_unnumbered_checks() -> pd.DataFrame:
@@ -411,34 +348,6 @@ def _legacy_placeholder(check_id: int) -> str:
     """The first scheme ('9' + the check id, 11 digits) -- what files exported before 2026-09-27 carry, kept for those checks so a
     re-download still matches what Chrysanth already holds."""
     return f"{PLACEHOLDER_NUMBER_PREFIX}{int(check_id):011d}"
-
-
-def stand_in_number_for_row(r) -> str:
-    """The stand-in cheque number an UNNUMBERED check carries (or will carry) in the Chrysanth file -- the number Chrysanth's 'Cheque No
-    Ascending' print order sorts on. Stored one if it was exported under the current scheme, the old id-based one if it was exported
-    before that, otherwise the order-statement-first one it would get now."""
-    stored = r.get("export_placeholder") if hasattr(r, "get") else None
-    if isinstance(stored, str) and stored:
-        return stored
-    pb = r.get("print_batch_id")
-    if pb is not None and not pd.isna(pb):
-        return _legacy_placeholder(int(r["check_id"]))
-    sid, lid = r.get("statement_id"), r.get("loan_note_id")
-    return placeholder_cheque_number(int(r["check_id"]), r.get("reference"), None if sid is None or pd.isna(sid) else int(sid),
-                                     None if lid is None or pd.isna(lid) else int(lid))
-
-
-def sort_by_print_order(df: pd.DataFrame) -> pd.DataFrame:
-    """Checks in the order Chrysanth prints them (order statement number, then check) -- so the first cheque out of the printer is the first
-    row. Numbered checks (which Chrysanth sorts by their real number) come first, by number."""
-    if df.empty:
-        return df
-    out = df.copy()
-    out["_print_key"] = [
-        ("0" + str(r["check_number"]).zfill(18)) if isinstance(r.get("check_number"), str) and r.get("check_number") else ("1" + stand_in_number_for_row(r))
-        for _, r in out.iterrows()
-    ]
-    return out.sort_values("_print_key").drop(columns="_print_key").reset_index(drop=True)
 
 
 def chrysanth_export_problems(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:

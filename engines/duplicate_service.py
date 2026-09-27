@@ -249,11 +249,3 @@ def loan_check_mismatches(loan_note_id: int, proposed: dict | None = None) -> li
     return out
 
 
-def cc_payment_warnings(statement_id: int, payment_date, amount: float) -> list[str]:
-    """The same payment (statement, date, amount) already recorded."""
-    with _conn() as conn:
-        hit = conn.execute(
-            "SELECT payment_id FROM cc_payments WHERE cc_statement_id = ? AND payment_date = ? AND ABS(amount - ?) < 0.005 LIMIT 1",
-            (statement_id, str(payment_date), float(amount)),
-        ).fetchone()
-    return [f"A payment of {_php(amount)} on {payment_date} is already recorded for this statement."] if hit else []

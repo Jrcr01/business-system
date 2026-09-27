@@ -36,7 +36,6 @@ from engines.bank_loan_import_service import parse_bank_loan_spreadsheet, get_te
 from engines.bank_loan_report_service import generate_bank_loan_pdf
 from engines.invoice_ocr_service import extract_invoice_fields
 from engines.bank_names import expand_bank_name
-from engines.cc_payment_service import recorded_total as cc_recorded_total
 from engines.cc_rules import cc_owed_case, superseded_sql
 from engines.schema_check import pending_schema_updates
 from engines.name_case import smart_proper_case
@@ -61,10 +60,9 @@ from engines.check_engine import (
     DEFAULT_BRANCH_CODE,
     DEFAULT_CHECK_WIDTH_MM,
     DEFAULT_CHECK_HEIGHT_MM,
-    format_metrobank_check_number,
     generate_metrobank_check_pdf,
 )
-from engines.cc_service import settle_cc_statement_via_cash, get_statement_gap_alerts, get_annual_fee_alerts, get_statement_coverage
+from engines.cc_service import get_statement_gap_alerts, get_annual_fee_alerts, get_statement_coverage
 from engines.checkbook_service import audit_booklet_gaps, get_checkbook_alerts
 from engines.last_modified_sql import statement_modified_sql, loan_note_modified_sql, bank_loan_modified_sql
 from engines.global_search_service import search_everything
@@ -75,10 +73,7 @@ from engines.check_run_service import (
     mark_checks_printed,
     generate_check_run_pdf,
     generate_check_run_summary_pdf,
-    generate_batch_csv,
-    generate_pending_check_run_csv,
     generate_batch_txt,
-    sort_by_print_order,
     generate_pending_check_run_txt,
     print_batch_tag,
     file_name_for_checks,
@@ -88,7 +83,6 @@ from engines.check_run_service import (
     get_chrysanth_settings,
     save_chrysanth_settings,
     CHRYSANTH_CROSSING_OPTIONS,
-    create_check_print_batch,
     get_check_print_batches,
     get_check_print_batch_detail,
 )
