@@ -261,6 +261,12 @@ criteria widgets live under `mr_*` keys; `_persist()` keeps them alive while hid
 drawn (Save, Duplicate, the Dashboard's Open). Export helpers take `kinds` (money / number / count / date / datetime). Tests:
 `tests/test_report_builder.py`.
 
+**Standard reports combined, 13 -> 9 (owner, 2026-09-28: "clean redundant standard reports ... if it can be integrated or combined to a
+similar report then do so"; take them off the menu, keep the code).** Parked checks is now the "Checks not yet printed (parked)" view of
+Schedule of payments (`sched_show`); the batch and invoice rundowns are "Supplier — rundown" with By batch / By invoice (`rpt_rundown_view`);
+the three master rollups are "Master rollups — aging and exposure" (`rpt_rollup_view`). `OLD_REPORTS` maps the old menu names to the new
+report + view (a tab left open on an old one lands in the right place). Nothing was deleted: every screen function, PDF and query remains.
+
 ---
 
 ## Current Priority / Scope

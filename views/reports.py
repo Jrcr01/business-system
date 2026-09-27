@@ -81,22 +81,38 @@ c_lender_master = _cached(get_private_lender_master_report)
 c_bank_loan_master = _cached(get_bank_loan_servicing_report)
 c_duplicates = _cached(scan_possible_duplicates)
 
+# 13 reports became 9 (owner, 2026-09-28: "clean redundant standard reports ... if it can be integrated or combined to a similar report then
+# do so"; taken off the menu, nothing deleted): Parked checks is a view of the Schedule of payments, the batch and invoice rundowns are one
+# report with a By batch / By invoice switch, and the three master rollups are one report with a switch.
 REPORT_OPTIONS = [
     "Overview — highlights & insights",
     "Possible duplicates — check everything on file",
     "Schedule of payments — all tracks",
-    "Parked checks (not yet printed)",
     "Supplier — invoice & check history",
-    "Supplier — batch rundown (paid / partial / pending)",
-    "Supplier — invoice rundown (paid / partial / pending)",
+    "Supplier — rundown (paid / partial / pending)",
     "Private lender — loan note & check history",
     "Bank loan — installment history",
     "Credit card — statement history",
-    "Master rollup — supplier AP aging",
-    "Master rollup — private lender exposure",
-    "Master rollup — bank loan servicing",
+    "Master rollups — aging and exposure",
 ]
+# the old menu names (a browser tab left open on one of them) -> (new report, sub-view state to set)
+OLD_REPORTS = {
+    "Parked checks (not yet printed)": ("Schedule of payments — all tracks", {"sched_show": "Checks not yet printed (parked)"}),
+    "Supplier — batch rundown (paid / partial / pending)": ("Supplier — rundown (paid / partial / pending)", {"rpt_rundown_view": "By batch"}),
+    "Supplier — invoice rundown (paid / partial / pending)": ("Supplier — rundown (paid / partial / pending)", {"rpt_rundown_view": "By invoice"}),
+    "Master rollup — supplier AP aging": ("Master rollups — aging and exposure", {"rpt_rollup_view": "Supplier AP aging"}),
+    "Master rollup — private lender exposure": ("Master rollups — aging and exposure", {"rpt_rollup_view": "Private lender exposure"}),
+    "Master rollup — bank loan servicing": ("Master rollups — aging and exposure", {"rpt_rollup_view": "Bank loan servicing"}),
+}
+SCHEDULE_VIEWS = ["Everything still owed", "Checks not yet printed (parked)"]
+RUNDOWN_VIEWS = ["By batch", "By invoice"]
+ROLLUP_VIEWS = ["Supplier AP aging", "Private lender exposure", "Bank loan servicing"]
 STATUS_ORDER = ["Paid", "Partially Paid", "Pending"]
+
+
+def _default(key: str, value) -> dict:
+    """default= for a switch only when nothing preset it (a redirect from an old report name sets it; giving both makes Streamlit warn)."""
+    return {} if key in st.session_state else {"default": value}
 
 
 def _slug(text: str) -> str:
@@ -283,6 +299,11 @@ def _duplicates() -> None:
 
 def _schedule() -> None:
     st.subheader("Schedule of payments — all tracks")
+    show = st.segmented_control("Show", SCHEDULE_VIEWS, required=True, key="sched_show",
+                                **_default("sched_show", SCHEDULE_VIEWS[0]))
+    if show == SCHEDULE_VIEWS[1]:
+        _parked()
+        return
     st.caption("Everything still owed, across all 4 tracks combined. Grouped by actual payment date — a due date falling on a weekend is paid the next banking day (Monday), so \"Due date\" (as originally scheduled) and \"Payment date\" (when it's actually paid/needs funding) can differ. \"Reference\" holds whichever identifier applies to that track (check number for Supplier/Lender, loan ref for Bank Loan, card name for Credit Card).")
     detail = c_schedule()
     if detail.empty:
@@ -324,7 +345,6 @@ def _schedule() -> None:
 
 
 def _parked() -> None:
-    st.subheader("Parked checks (not yet printed)")
     st.caption("Every check already recorded but still waiting on a check number — a number is assigned at PRINT time, not issue time. "
                "Grouped by check date (the Checks and checkbook page's Current check run is the live, same-scope view for actually printing these).")
     detail = c_parked()
@@ -403,8 +423,14 @@ def _supplier_history() -> None:
         )
 
 
+def _rundown() -> None:
+    st.subheader("Supplier — rundown (paid / partial / pending)")
+    view = st.segmented_control("View", RUNDOWN_VIEWS, required=True, key="rpt_rundown_view",
+                                **_default("rpt_rundown_view", RUNDOWN_VIEWS[0]))
+    (_batch_rundown if view == "By batch" else _invoice_rundown)()
+
+
 def _batch_rundown() -> None:
-    st.subheader("Supplier — batch rundown")
     st.caption("Every issued batch (order statement) with how much is paid, how much is covered by post-dated checks, and what is still open. Paid = checks whose date has arrived. Pick one supplier or all of them.")
     rd_options = creditor_options_all("SUPPLIER")
     rd_choice = st.selectbox("Supplier", options=[None] + list(rd_options), format_func=lambda cid: "All suppliers" if cid is None else rd_options[cid], key="rpt_rundown_pick")
@@ -451,7 +477,6 @@ def _batch_rundown() -> None:
 
 
 def _invoice_rundown() -> None:
-    st.subheader("Supplier — invoice rundown")
     st.caption("Every invoice with its status — Paid, Partially Paid or Pending. Pick one supplier or all of them, and narrow by invoice date. For payments per batch, use the batch rundown.")
     ir_options = creditor_options_all("SUPPLIER")
     ir_choice = st.selectbox("Supplier", options=[None] + list(ir_options), format_func=lambda cid: "All suppliers" if cid is None else ir_options[cid], key="rpt_inv_rundown_pick")
@@ -643,8 +668,14 @@ def _card_history() -> None:
         )
 
 
+def _rollups() -> None:
+    st.subheader("Master rollups — aging and exposure")
+    view = st.segmented_control("View", ROLLUP_VIEWS, required=True, key="rpt_rollup_view",
+                                **_default("rpt_rollup_view", ROLLUP_VIEWS[0]))
+    {"Supplier AP aging": _aging, "Private lender exposure": _lender_master, "Bank loan servicing": _bank_loan_master}[view]()
+
+
 def _aging() -> None:
-    st.subheader("Master rollup — supplier AP aging")
     st.caption("Every supplier's open invoices, bucketed by how overdue they are, across the whole company.")
     aging_df = c_aging()
     if aging_df.empty:
@@ -665,7 +696,6 @@ def _aging() -> None:
 
 
 def _lender_master() -> None:
-    st.subheader("Master rollup — private lender exposure")
     st.caption("Every private lender's loan notes and current uncleared exposure, across the whole company.")
     df = c_lender_master()
     if df.empty:
@@ -686,7 +716,6 @@ def _lender_master() -> None:
 
 
 def _bank_loan_master() -> None:
-    st.subheader("Master rollup — bank loan servicing")
     st.caption("Every bank loan and its current outstanding balance, across the whole company.")
     df = c_bank_loan_master()
     if df.empty:
@@ -706,8 +735,8 @@ def _bank_loan_master() -> None:
         )
 
 
-REPORTS = dict(zip(REPORT_OPTIONS, [_overview, _duplicates, _schedule, _parked, _supplier_history, _batch_rundown, _invoice_rundown,
-                                    _lender_history, _bank_loan_history, _card_history, _aging, _lender_master, _bank_loan_master]))
+REPORTS = dict(zip(REPORT_OPTIONS, [_overview, _duplicates, _schedule, _supplier_history, _rundown, _lender_history, _bank_loan_history,
+                                    _card_history, _rollups]))
 
 
 def render() -> None:
@@ -720,6 +749,13 @@ def render() -> None:
         render_my_reports()
         return
     st.caption("Pick a report — its filters, tables, and exports appear below, one report at a time.")
+    old = st.session_state.get("report_type_picker")
+    if old in OLD_REPORTS:                            # a report that is now part of another one
+        new, sub = OLD_REPORTS[old]
+        st.session_state["report_type_picker"] = new
+        st.session_state.update(sub)
+    elif old is not None and old not in REPORT_OPTIONS:
+        st.session_state["report_type_picker"] = REPORT_OPTIONS[0]
     report_choice = st.selectbox("Report", REPORT_OPTIONS, key="report_type_picker")
     st.divider()
     REPORTS[report_choice]()
