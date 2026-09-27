@@ -60,6 +60,7 @@ from engines.statement_rules import split_remaining_evenly
 from engines.statement_rules import sync_invoice_payment_status
 from engines.statement_rules import waterfall_allocate_preview
 
+from views.thermal_print import render_thermal_printer_section
 from views.shared import (  # noqa: F401
     MONEY_FORMAT,
     OS_BROWSE,
@@ -915,6 +916,9 @@ def render() -> None:
                         )
                     else:
                         st.error("Could not generate the thermal statement PDF.")
+
+                st.divider()
+                render_thermal_printer_section(int(selected_sid), export_full_history)
 
         tab_invoices_sub, tab_memo_sub, tab_checks_sub = st.tabs(
             ["Invoices", "Credit Memo", "Checks"], key="os_subtab", default="Invoices", on_change="rerun",

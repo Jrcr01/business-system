@@ -1,11 +1,10 @@
 # EXACT versions of every package the app needs, as installed on the live laptop and tested on 2026-09-27 (298 tests passing).
 # To rebuild the same setup on another PC:   python -m pip install -r requirements-lock.txt
 # Do not upgrade packages on the live laptop without testing first -- see requirements.txt.
-Jinja2==3.1.6
-MarkupSafe==3.0.3
-Pygments==2.21.0
 altair==6.2.2
 anyio==4.14.2
+appdirs==1.4.4
+argcomplete==3.7.2
 attrs==26.1.0
 blinker==1.9.0
 certifi==2026.7.22
@@ -18,10 +17,13 @@ et_xmlfile==2.0.0
 h11==0.16.0
 httptools==0.8.0
 idna==3.19
+importlib_resources==7.1.0
 iniconfig==2.3.0
 itsdangerous==2.2.0
-jsonschema-specifications==2025.9.1
+Jinja2==3.1.6
 jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+MarkupSafe==3.0.3
 narwhals==2.25.0
 numpy==2.5.2
 openpyxl==3.1.5
@@ -35,16 +37,22 @@ protobuf==7.36.0
 pyarrow==25.0.1
 pycparser==3.0
 pydeck==0.9.3
+Pygments==2.21.0
 pypdf==6.16.2
 pypdfium2==5.13.0
 pytesseract==0.3.13
 pytest==9.1.1
+python-barcode==0.16.1
 python-dateutil==2.9.0.post0
+python-escpos==3.1
 python-multipart==0.0.32
+PyYAML==6.0.3
+qrcode==8.2
 referencing==0.37.0
 reportlab==5.0.1
 requests==2.34.2
 rpds-py==2026.6.3
+setuptools==84.0.0
 six==1.17.0
 starlette==1.6.0
 streamlit==1.62.0

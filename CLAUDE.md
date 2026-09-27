@@ -55,7 +55,9 @@ The system is **live** (cut over Sep 2026) for Slick's Tire Supply, used daily b
 ## Thermal Statement Printing
 
 Gated mini-phase, started 2026-09-27 (owner's spec). Build hardware-independent first; work against the test/dev database only; stop after each
-build step and summarize before continuing. **Status: step 1 in progress.**
+build step and summarize before continuing. **Status: step 1 done (2026-09-27); step 2 waits for the owner's go-ahead, the schema proposal and the A4 colour answer.**
+
+**Step 1 (done):** `engines/thermal_statement.py` -- `build_slip(statement_id, 'FILE'|'SUPPLIER', print_type=, version=, reprint_date=, qr_link=)` (same rows as today's statement via `batch_statement_service._fetch_batch_data`; totals recomputed from the lines by `statement_totals()`; cancelled invoices / non-Active checks listed but not counted; a counted line without an amount makes its totals '—'), `render_text()` (48-col preview), `estimate_lines()`, `build_job()` (python-escpos Dummy: ESC @, Font A, per-line align/bold/double height, native QR centred before the closing lines, `cut(mode='PART', feed=True)` = ESC d 6 + GS V), `send_job(job, printer, chunk_bytes)` for step 5, `get_printer_config()` (settings table keys `thermal_*`, defaults in `PRINTER_DEFAULTS`, backend `dummy`). UI: `views/thermal_print.py` `render_thermal_printer_section()` in Order statements -> open batch -> Export Batch Statement (preview per copy + 'Send to the test printer', which builds the job and offers the .bin). Library: python-escpos 3.1 (pinned). Tests: `tests/test_thermal_statement.py`.
 
 ### Purpose
 Print batch payment statements on an 80mm thermal printer: one FILE COPY for physical filing and one SUPPLIER COPY for handoff. These are internal
