@@ -69,7 +69,7 @@ def _title_band(entity_label: str, entity_name: str) -> Table:
     title_style = ParagraphStyle("BandTitle", parent=styles["Normal"], textColor=colors.white, fontSize=16, leading=19, fontName="Helvetica-Bold")
     sub_style = ParagraphStyle("BandSub", parent=styles["Normal"], textColor=colors.white, fontSize=9, leading=12, alignment=2)
     band = Table(
-        [[Paragraph("STATEMENT OF ACCOUNT", title_style), Paragraph(f"{entity_label.upper()}: {entity_name}", sub_style)]],
+        [[Paragraph("STATEMENT OF ACCOUNT", title_style), Paragraph(_esc(f"{entity_label.upper()}: {entity_name}"), sub_style)]],
         colWidths=[CONTENT_WIDTH * 0.55, CONTENT_WIDTH * 0.45],
     )
     band.setStyle(TableStyle([
@@ -196,7 +196,7 @@ def generate_supplier_statement_pdf(supplier_name: str, statements_df, invoices_
     if group_by_batch and not statements_df.empty:
         for batch in statements_df.itertuples():
             ref = batch.statement_ref
-            story.append(Paragraph(f"Batch {ref} — {batch.status}", st["section"]))
+            story.append(Paragraph(_esc(f"Batch {ref} — {batch.status}"), st["section"]))
             b_inv = invoices_df[invoices_df["statement_ref"] == ref] if not invoices_df.empty else invoices_df
             b_chk = checks_df[checks_df["statement_ref"] == ref] if not checks_df.empty else checks_df
             story.append(Paragraph("Invoices", ParagraphStyle("Sub", fontSize=9, fontName="Helvetica-Bold", spaceAfter=3)))
@@ -241,7 +241,7 @@ def generate_lender_statement_pdf(lender_name: str, notes_df, checks_df, date_fr
     if group_by_note and not notes_df.empty:
         for note in notes_df.itertuples():
             ref = note.note_ref
-            story.append(Paragraph(f"Loan Note {ref} — {note.status}", st["section"]))
+            story.append(Paragraph(_esc(f"Loan Note {ref} — {note.status}"), st["section"]))
             n_chk = checks_df[checks_df["note_ref"] == ref] if not checks_df.empty else checks_df
             story.append(_section_table(
                 ["Issue Date", "Principal", "Interest", "Total Payable", "Outstanding"],
@@ -356,7 +356,7 @@ def generate_cardholder_statement_pdf(holder_name: str, cards_df, statements_df,
 
     if group_by_card and not cards_df.empty:
         for card in cards_df.itertuples():
-            story.append(Paragraph(f"{card.card_name} - {card.card_number_last4}", st["section"]))
+            story.append(Paragraph(_esc(f"{card.card_name} - {card.card_number_last4}"), st["section"]))
             c_stmts = statements_df[statements_df["card_number_last4"] == card.card_number_last4] if not statements_df.empty else statements_df
             if c_stmts.empty:
                 story.append(Paragraph("No statements in this period.", st["empty"]))
@@ -390,8 +390,10 @@ def generate_cardholder_statement_pdf(holder_name: str, cards_df, statements_df,
 
 def generate_rundown_pdf(title: str, scope: str, headers: list, rows: list, widths: list, right_cols: list, summary: list, period: str) -> bytes:
     """Landscape 'rundown' report used by the Reports tab's batch and invoice rundowns: a title
-    band, a Paid / Partially Paid / Pending summary, then one table (widths are fractions of the
-    page width; right_cols are the column indexes holding money)."""
+    band, a Paid / Partially Paid / Pending summary, then one table (right_cols are the column
+    indexes holding money). Columns are sized to their content; when the table is too wide for the
+    page, numbers and dates keep their width and the text columns share what is left in proportion
+    to `widths` (fractions of the page, one per column) -- 2026-09-28: `widths` used to be ignored."""
     from reportlab.lib.pagesizes import landscape
     page = landscape(LETTER)
     width = page[0] - LEFT_MARGIN - RIGHT_MARGIN
@@ -400,8 +402,8 @@ def generate_rundown_pdf(title: str, scope: str, headers: list, rows: list, widt
     st = _styles()
     styles = getSampleStyleSheet()
     band = Table(
-        [[Paragraph(title.upper(), ParagraphStyle("RdTitle", parent=styles["Normal"], textColor=colors.white, fontSize=16, leading=19, fontName="Helvetica-Bold")),
-          Paragraph(scope, ParagraphStyle("RdSub", parent=styles["Normal"], textColor=colors.white, fontSize=9, leading=12, alignment=2))]],
+        [[Paragraph(_esc(title.upper()), ParagraphStyle("RdTitle", parent=styles["Normal"], textColor=colors.white, fontSize=16, leading=19, fontName="Helvetica-Bold")),
+          Paragraph(_esc(scope), ParagraphStyle("RdSub", parent=styles["Normal"], textColor=colors.white, fontSize=9, leading=12, alignment=2))]],
         colWidths=[width * 0.55, width * 0.45],
     )
     band.setStyle(TableStyle([
@@ -409,7 +411,7 @@ def generate_rundown_pdf(title: str, scope: str, headers: list, rows: list, widt
         ("LEFTPADDING", (0, 0), (-1, -1), 14), ("RIGHTPADDING", (0, 0), (-1, -1), 14),
         ("TOPPADDING", (0, 0), (-1, -1), 12), ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
     ]))
-    story = [band, Spacer(1, 6), Paragraph(period, st["grey"]), Spacer(1, 8)]
+    story = [band, Spacer(1, 6), Paragraph(_esc(period), st["grey"]), Spacer(1, 8)]
     if summary:
         srows = [[label, count, f"PHP {_money(amount)}"] for label, count, amount in summary]
         sumt = Table([["Status", "Count", "Amount"]] + srows, colWidths=[width * 0.25, width * 0.15, width * 0.25], hAlign="LEFT")
@@ -433,9 +435,10 @@ def generate_rundown_pdf(title: str, scope: str, headers: list, rows: list, widt
             # Only long text columns wrap; short words like a status ("Pending") stay on one line.
             is_text = [any(any(ch.isalpha() for ch in str(r[c])) for r in rows) and need[c] > 130 for c in range(len(headers))]
             fixed = sum(n for n, t_ in zip(need, is_text) if not t_)
-            flex = sum(n for n, t_ in zip(need, is_text) if t_) or 1
+            weight = [float(widths[c]) if widths and c < len(widths) and widths[c] else need[c] for c in range(len(headers))]
+            flex = sum(w for w, t_ in zip(weight, is_text) if t_) or 1
             room = max(width - fixed, 60)
-            col_w = [n if not t_ else n * room / flex for n, t_ in zip(need, is_text)]
+            col_w = [n if not t_ else w * room / flex for n, w, t_ in zip(need, weight, is_text)]
             cell_style = ParagraphStyle("RdCell", parent=styles["Normal"], fontSize=size, leading=size + 1.5)
             data = [headers] + [[Paragraph(_esc(str(x)), cell_style) if is_text[c] else x for c, x in enumerate(r)] for r in rows]   # escaped: 'S&P' must not break the PDF
         t = Table(data, colWidths=col_w, repeatRows=1)

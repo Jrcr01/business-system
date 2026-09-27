@@ -125,6 +125,42 @@ def date_col(label: str, **kwargs):
     return st.column_config.DateColumn(label, format="MMM DD, YYYY", **kwargs)
 
 
+def table_config(df: pd.DataFrame, labels: dict | None = None) -> dict:
+    """column_config for st.dataframe from the shared column list (engines/export_service.py): friendly names, ₱ money, MMM DD, YYYY dates."""
+    from engines.export_service import kind_of, label
+
+    cfg = {}
+    for c in df.columns:
+        name, k = label(c, labels), kind_of(c)
+        cfg[c] = (money_col(name) if k == "money" else date_col(name) if k == "date"
+                  else st.column_config.DatetimeColumn(name, format="MMM DD, YYYY h:mm A") if k == "datetime" else name)
+    return cfg
+
+
+def show_table(df: pd.DataFrame, labels: dict | None = None, hide: list | None = None, **kwargs) -> None:
+    """A report table with friendly column names and the one money / date format (2026-09-28, Reports review). `hide`: columns kept in
+    the data (and exports) but not shown."""
+    from engines.export_service import with_real_dates
+
+    view = with_real_dates(df.drop(columns=[c for c in (hide or []) if c in df.columns]))
+    st.dataframe(view, hide_index=True, column_config=table_config(view, labels), **kwargs)
+
+
+def export_buttons(df: pd.DataFrame | dict, name: str, key: str, labels: dict | None = None, container=None, what: str = "") -> None:
+    """CSV + Excel download buttons side by side, with friendly column names (engines/export_service.py). `df` may be a dict of tables:
+    the CSV then holds the first one and the Excel file has one sheet each."""
+    from engines.export_service import csv_bytes, excel_bytes
+
+    first = next(iter(df.values())) if isinstance(df, dict) else df
+    c1, c2 = (container or st).columns(2)
+    suffix = f" {what}" if what else ""
+    # the files are built only when a button is clicked (a callable), not on every redraw
+    c1.download_button(f"Download{suffix} CSV", data=lambda: csv_bytes(first, labels), file_name=f"{name}.csv", mime="text/csv", key=f"{key}_csv",
+                       icon=":material/download:", width="stretch")
+    c2.download_button(f"Download{suffix} Excel", data=lambda: excel_bytes(df, labels), file_name=f"{name}.xlsx", key=f"{key}_xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/table_view:", width="stretch")
+
+
 # Browse / New switches on Order Statement, Lenders and Bank loans: plain values (the search jumps set them), icons on screen.
 OS_BROWSE, OS_NEW = "Browse batches", "New batch"
 LN_BROWSE, LN_NEW = "Browse loan notes", "New loan note"

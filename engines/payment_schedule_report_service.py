@@ -44,7 +44,7 @@ def _title_band(title: str, subtitle: str, styles) -> Table:
     title_style = ParagraphStyle("BandTitle", parent=styles["Normal"], textColor=colors.white, fontSize=18, leading=21.4, fontName="Helvetica-Bold")
     sub_style = ParagraphStyle("BandSub", parent=styles["Normal"], textColor=colors.white, fontSize=10, leading=13.5, alignment=2)
     band = Table(
-        [[Paragraph(title, title_style), Paragraph(subtitle, sub_style)]],
+        [[Paragraph(_xml_escape(title), title_style), Paragraph(_xml_escape(subtitle), sub_style)]],
         colWidths=[CONTENT_WIDTH * 0.5, CONTENT_WIDTH * 0.5],
     )
     band.setStyle(TableStyle([
@@ -210,21 +210,30 @@ def generate_parked_checks_pdf(month: str | None = None) -> bytes:
     return _build_due_date_schedule_pdf("PARKED CHECKS (NOT YET PRINTED)", subtitle, df, "Reference")
 
 
-def generate_payment_schedule_pdf(tracks: list[str] | None = None, month: str | None = None) -> bytes:
+def generate_payment_schedule_pdf(tracks: list[str] | None = None, month: str | None = None, date_from: date | None = None,
+                                  date_to: date | None = None, payees: list[str] | None = None) -> bytes:
     """tracks: optional subset (e.g. just ["Bank Loan"]) to print a single track's schedule
     instead of all four. month: optional "YYYY-MM" to print just one month's payments (the usual
-    monthly export) instead of the whole future schedule. Both mirror whatever's currently
-    filtered on screen, so the PDF/CSV exports show exactly what's displayed, not always
-    everything."""
-    df = get_payment_schedule_all_tracks()
-    if tracks:
-        df = df[df["track"].isin(tracks)]
+    monthly export) instead of the whole future schedule; date_from / date_to (2026-09-28) any
+    payment-date range; payees: only these payees. All mirror whatever's currently filtered on
+    screen (reports_service.filter_schedule), so the PDF/CSV exports show exactly what's displayed."""
+    from calendar import monthrange
+
+    from engines.reports_service import filter_schedule
+
     if month:
-        df = df[df["actual_payment_date"].astype(str).str.startswith(month)]
+        y, m = int(month[:4]), int(month[5:7])
+        date_from, date_to = date(y, m, 1), date(y, m, monthrange(y, m)[1])
+    df = filter_schedule(get_payment_schedule_all_tracks(), tracks, date_from, date_to, payees)
     subtitle_bits = []
     if tracks:
         subtitle_bits.append(", ".join(tracks).upper())
     if month:
         subtitle_bits.append(date.fromisoformat(month + "-01").strftime("%B %Y").upper())
+    elif date_from or date_to:
+        subtitle_bits.append(f"{date_from:%b %d, %Y}".upper() + " TO " + f"{date_to:%b %d, %Y}".upper() if date_from and date_to
+                             else (f"FROM {date_from:%b %d, %Y}" if date_from else f"UNTIL {date_to:%b %d, %Y}").upper())
+    if payees:
+        subtitle_bits.append((", ".join(payees) if len(payees) <= 3 else f"{len(payees)} PAYEES").upper())
     subtitle = f"{' — '.join(subtitle_bits)} — BY PAYMENT DATE" if subtitle_bits else "ALL TRACKS — BY PAYMENT DATE"
     return _build_due_date_schedule_pdf("SCHEDULE OF PAYMENTS", subtitle, df, "Reference")

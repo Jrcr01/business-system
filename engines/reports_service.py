@@ -343,20 +343,45 @@ def get_payables_rundown(creditor_id: int | None = None, date_from=None, date_to
     """
     with sqlite3.connect(DB_PATH) as conn:
         df = pd.read_sql_query(query, conn, params=(creditor_id, creditor_id))
-    if date_from is not None or date_to is not None:
-        lo = str(date_from) if date_from else "0000-01-01"
-        hi = str(date_to) if date_to else "9999-12-31"
-        has_checks = df["first_check"].notna()
-        in_window = (df["last_check"].fillna("") >= lo) & (df["first_check"].fillna("9999") <= hi)
-        created_in = (df["created"].fillna("") >= lo) & (df["created"].fillna("") <= hi)
-        df = df[(has_checks & in_window) | (~has_checks & created_in)].copy()
     df["open"] = (df["net_total"] - df["paid"] - df["scheduled"]).round(2)
     df["balance"] = (df["net_total"] - df["paid"]).round(2)
     df["status"] = df.apply(
         lambda r: "Paid" if r["net_total"] > 0 and r["balance"] <= 0.005 else ("Partially Paid" if r["paid"] > 0.005 else "Pending"),
         axis=1,
-    )
-    return df
+    ) if not df.empty else pd.Series(dtype=str)
+    return filter_rundown(df, date_from, date_to)
+
+
+def filter_rundown(df: pd.DataFrame, date_from=None, date_to=None) -> pd.DataFrame:
+    """Batches with a check dated inside the window (a batch with no checks yet: on its created date). Split out of get_payables_rundown
+    (2026-09-28) so the Reports screen reads the batches once and narrows them in memory."""
+    if df.empty or (date_from is None and date_to is None):
+        return df
+    lo = str(date_from) if date_from else "0000-01-01"
+    hi = str(date_to) if date_to else "9999-12-31"
+    has_checks = df["first_check"].notna()
+    in_window = (df["last_check"].fillna("") >= lo) & (df["first_check"].fillna("9999") <= hi)
+    created_in = (df["created"].fillna("") >= lo) & (df["created"].fillna("") <= hi)
+    return df[(has_checks & in_window) | (~has_checks & created_in)].copy()
+
+
+def filter_schedule(df: pd.DataFrame, tracks: list | None = None, date_from=None, date_to=None, payees: list | None = None) -> pd.DataFrame:
+    """The schedule of payments narrowed the way the Reports screen shows it (2026-09-28: date range and payee filters added): tracks,
+    payment dates (actual_payment_date, inclusive) and payees. The screen, the CSV / Excel and the PDF all use this, so they match."""
+    if df.empty:
+        return df
+    out = df
+    if tracks:
+        out = out[out["track"].isin(tracks)]
+    days = out["actual_payment_date"].astype(str).str[:10]
+    if date_from:
+        out = out[days >= str(date_from)]
+        days = out["actual_payment_date"].astype(str).str[:10]
+    if date_to:
+        out = out[days <= str(date_to)]
+    if payees:
+        out = out[out["payee_name"].isin(payees)]
+    return out
 
 
 def get_invoice_rundown(creditor_id: int | None = None, date_from=None, date_to=None) -> pd.DataFrame:

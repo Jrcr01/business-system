@@ -232,6 +232,19 @@ PDF gives Bank and cash its own page and is built twice (`_TocDoc.afterFlowable`
 the cover's contents show the real page numbers (they were hard-coded and wrong when a section ran long). Tests:
 `tests/test_bank_dashboard_overview.py`.
 
+**Phase 3 (done 2026-09-28) -- Reports quick wins.** `engines/export_service.py`: one list of friendly column names (`COLUMN_LABELS`,
+`label()`), money / date / date-time columns by name (`MONEY_COLUMNS`, `DATE_COLUMNS`, `DATETIME_COLUMNS`, `kind_of()`), `csv_bytes()`
+(friendly headers, money 2 decimals, ISO dates, UTF-8 BOM) and `excel_bytes()` (one sheet per table, #,##0.00, Mmm dd, yyyy, frozen header).
+`views/shared.py`: `show_table(df, labels, hide)` (friendly names + ₱ + MMM DD, YYYY on screen), `table_config()`, `export_buttons(df or
+{sheet: df}, name, key)` (CSV + Excel side by side; the files are built only when clicked -- `download_button(data=callable)`). `views/reports.py`
+rewritten as one function per report (`REPORTS` dict, same widget keys) using them everywhere; heavy queries cached 60 s (`c_*` wrappers,
+cleared by refresh()); `_daily_view()` shared by Schedule / Parked, `_status_pivot()` by both rundowns; the batch rundown reads once and
+narrows with `reports_service.filter_rundown()`. Schedule of payments: Track / Payment date (All dates, each month, Custom range) / Payee
+filters via `reports_service.filter_schedule()`, also used by `generate_payment_schedule_pdf(tracks, month, date_from, date_to, payees)` so
+screen, files and PDF match (widget key `sched_period_filter`). Overview shows the trend chart and check activity on screen. PDFs:
+names in title bands / section headings / subtitles are escaped ("S&P"); `generate_rundown_pdf` now uses `widths` to share the room
+between text columns when the table is too wide. Tests: `tests/test_reports_quickwins.py`.
+
 ---
 
 ## Current Priority / Scope
