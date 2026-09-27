@@ -77,7 +77,10 @@ def fmt_money(v, sign: str = "") -> str:
     if v is None or fmt_text(v) == DASH:
         return DASH
     try:
-        return f"{sign}PHP {float(v):,.2f}"
+        x = float(v)
+        if x < 0:                                          # a negative amount reads "-PHP 1,500.00", like the "less" lines
+            return f"{'' if sign == '-' else '-'}PHP {abs(x):,.2f}"
+        return f"{sign}PHP {x:,.2f}"
     except (TypeError, ValueError):
         return DASH
 
@@ -233,8 +236,8 @@ def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: b
             add(Line(row3(first, second, amount)))
 
     invoices, checks = counted_invoices(data), counted_checks(data)
-    table(f"INVOICES ({len(invoices)})", ("Invoice #", "Due date", "Amount"),
-          [(fmt_text(i["doc_ref"]), fmt_date_long(i["due_date"]), fmt_money(i["amount"])) for i in invoices])   # no date received (owner)
+    table(f"INVOICES ({len(invoices)})", ("Invoice #", "Received", "Amount"),
+          [(fmt_text(i["doc_ref"]), fmt_date_long(i["invoice_date"]), fmt_money(i["amount"])) for i in invoices])   # date received, not due date (owner)
     if data["memos"]:
         table(f"CREDIT MEMOS ({len(data['memos'])})", ("Memo #", "Date", "Amount"),
               [(fmt_text(m["memo_ref"]), fmt_date_long(m["memo_date"]), fmt_money(m["amount"], sign="-")) for m in data["memos"]])

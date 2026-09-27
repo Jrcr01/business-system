@@ -51,7 +51,7 @@ def test_reprint_and_revised_headers(db):
 def test_missing_values_print_a_dash_never_none_or_a_false_zero(monkeypatch):
     data = {
         "statement": {"statement_ref": "OS 0001", "creditor_name": None, "status": "Draft"},
-        "invoices": [{"doc_ref": "INV-9", "invoice_date": "2026-09-01", "due_date": None, "amount": None, "status": "Unpaid", "display_status": "Unpaid"},
+        "invoices": [{"doc_ref": "INV-9", "invoice_date": None, "due_date": "2027-02-01", "amount": None, "status": "Unpaid", "display_status": "Unpaid"},
                      {"doc_ref": "INV-10", "invoice_date": "2026-09-01", "due_date": "2026-10-01", "amount": 500.0, "status": "Unpaid", "display_status": "Unpaid"}],
         "memos": [], "checks": [], "payment_ledger": [],
     }
@@ -63,8 +63,9 @@ def test_missing_values_print_a_dash_never_none_or_a_false_zero(monkeypatch):
     inv9 = next(line for line in text.split("\n") if line.startswith("INV-9"))
     assert inv9.rstrip().endswith(DASH) and "0.00" not in inv9                        # the missing amount is a dash, not 0.00
     assert next(line for line in text.split("\n") if line.startswith("NET AMOUNT DUE")).rstrip().endswith(DASH)
-    assert "Supplier: " + DASH in text and inv9.split()[1] == DASH                              # missing due date -> dash
-    assert "2026-09-01" not in text and "Sep 01, 2026" not in text                              # no received date on the slip
+    assert "Supplier: " + DASH in text and inv9.split()[1] == DASH                              # missing date received -> dash
+    assert "Sep 01, 2026" in text                                                              # INV-10's date received is shown
+    assert "2027-02-01" not in text and "Feb 01, 2027" not in text and "Oct 01, 2026" not in text  # due dates are not on the slip
     assert fmt_text(None) == fmt_text("") == fmt_text(float("nan")) == DASH and fmt_money(None) == DASH and fmt_money(0) == "PHP 0.00"
 
 
@@ -126,3 +127,13 @@ def test_the_slip_is_one_line_per_item_with_no_status_lines_and_points_to_the_qr
         assert word not in text
     lines = [line.strip() for line in text.splitlines()]
     assert lines.index("Scan for the full statement:") < lines.index("[ QR ]")
+
+
+def test_negative_amounts_read_minus_php():
+    assert fmt_money(-1500) == "-PHP 1,500.00" and fmt_money(1500, sign="-") == "-PHP 1,500.00" and fmt_money(0) == "PHP 0.00"
+
+
+def test_credit_memos_are_listed_when_the_batch_has_them(db):
+    sid = _batch(db)
+    text = render_text(build_slip(sid, "FILE"))
+    assert "CREDIT MEMOS (1)" in text and "-PHP 200.00" in text and "Received" in text
