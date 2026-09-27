@@ -302,8 +302,10 @@ sign-in files) -- stays on the local disk, never in a syncing folder (BitLocker 
 program folder moves. **Program: MOVED to `C:\AP_System` on 2026-09-28** (from `H:\My Drive\Claude9OS\Project_Checke`, now retired --
 a git history inside a syncing folder can collide); the owner copied it and re-pointed the "AP System Daily Backup" task (daily 18:00,
 runs only while signed in, no password) and the desktop Start / Stop shortcuts; update_database.bat was then run from here (migrations
-050-052 live). `.claude/launch.json` points here. Still to do: a private GitHub copy of the code only (owner creates the repo and signs
-in; Claude adds the remote and pushes). Card numbers: every live / copy / backup database was checked on 2026-09-28 -- no full card
+050-052 live). `.claude/launch.json` points here. **Private GitHub copy (code only) since 2026-09-28:** `origin` =
+https://github.com/Jrcr01/slicks-ap-system (PRIVATE -- keep it that way: notes mention real supplier names and check numbers); the branch
+was renamed `master` -> `main` to match GitHub Desktop. Sign-in is the owner's (Git Credential Manager / GitHub Desktop). After each
+commit, `git push` (or Push in GitHub Desktop) keeps the off-site copy current. Data never goes there (.gitignore). Card numbers: every live / copy / backup database was checked on 2026-09-28 -- no full card
 number anywhere (the 2026-09-27 clean-up covered them all). History audit before any push: no databases,
 statements, CSVs or sign-in files ever committed; `excel_invoice_entry/invoice_entry_master.xlsm` holds the supplier list + terms only;
 docs / tests mention some real supplier names and check numbers (fine for a PRIVATE repository only). The test app
