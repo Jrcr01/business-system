@@ -18,6 +18,8 @@ credentials.json is not there yet. One-time setup (about 10 minutes, in the brow
  3. APIs & Services > Library > search "Google Drive API" > Enable.
  4. APIs & Services > OAuth consent screen (Google Auth Platform): app name "Slicks AP", your email as support/contact
     email, audience "External", and under Test users add the same Google account. Save.
+    Then under Audience click "Publish app" (status "In production"). Otherwise Google signs the app out every 7 days.
+    No Google review is needed: the app only asks for access to the files it creates itself.
  5. APIs & Services > Credentials > Create credentials > OAuth client ID > Application type "Desktop app" > Create.
  6. Click "Download JSON", then rename the downloaded file to credentials.json and move it into:
        {folder}
