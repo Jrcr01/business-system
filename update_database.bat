@@ -2,10 +2,10 @@
 REM Brings the LIVE database up to date with the program (adds any new tables/columns), then restarts the app.
 REM Safe to run any time: it backs the database up first and does nothing if everything is already current.
 cd /d "%~dp0"
-set PY="C:\Users\Rhodora\AppData\Local\Programs\Python\Python312\python.exe"
+call "%~dp0settings.bat"
 
 echo Turning the live app off...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$c = Get-NetTCPConnection -LocalPort 8501 -State Listen -ErrorAction SilentlyContinue; if ($c) { Stop-Process -Id $c.OwningProcess -Force; Write-Host 'Live app stopped.' } else { Write-Host 'Live app was not running.' }"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0stop_live.ps1"
 timeout /t 2 /nobreak >nul
 
 echo.

@@ -6,7 +6,7 @@
 # apply_pending_migrations.py. Not needed for data entered through the app itself -- that's live
 # immediately, no restart involved.
 
-$ProjectRoot = "H:\My Drive\Claude9OS\Project_Checke"
+$ProjectRoot = $PSScriptRoot   # the folder this script sits in
 $Port = 8501
 
 $existing = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue

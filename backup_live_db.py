@@ -14,9 +14,9 @@ import sqlite3
 import sys
 from datetime import datetime
 
-from db_location import live_db_path
+from db_location import backup_dir, live_db_path
 
-DEFAULT_DEST = r"H:\My Drive\Claude9OS\AP_Backups"
+DEFAULT_DEST = backup_dir()   # db_location.py: the AP_Backups folder next to the project (Google Drive)
 PREFIX = "ap_disbursement_backup_"
 
 

@@ -21,10 +21,10 @@ from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from db_location import live_db_path  # noqa: E402
+from db_location import backup_dir, live_db_path  # noqa: E402
 from engines.schema_check import pending_schema_updates  # noqa: E402
 
-BACKUP_DIR = os.path.join(os.path.dirname(HERE), "AP_Backups")
+BACKUP_DIR = backup_dir()
 TABLES = ["creditors", "order_statements", "invoices", "credit_memos", "checks_issued", "spoiled_checks", "loan_notes", "loan_installments",
           "bank_loans", "bank_loan_installments", "credit_cards", "cc_statements", "check_booklets", "check_print_batches", "audit_logs"]
 

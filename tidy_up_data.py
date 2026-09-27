@@ -18,7 +18,9 @@ import sys
 from datetime import datetime
 
 args = sys.argv[1:]
-db = args[args.index("--db") + 1] if "--db" in args else r"C:\AP_Data\ap_disbursement.db"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from db_location import live_db_path  # noqa: E402
+db = args[args.index("--db") + 1] if "--db" in args else live_db_path()
 apply = "--apply" in args
 EMELITA_NOTE_REF = "PENDING-126"
 PN_LENDER, PNB_LENDER = "PN8004 7053 5001 8969", "Philippine National Bank"

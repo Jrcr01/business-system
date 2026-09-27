@@ -4,11 +4,10 @@ REM schedule of loan note PENDING-126 (Emelita Roxas) from its check, moves loan
 REM renames Honda Giorno to Inhouse Financing. Turns the live app off, shows a preview, asks
 REM before changing anything, backs up first, then restarts the app.
 cd /d "%~dp0"
-set PY="C:\Users\Rhodora\AppData\Local\Programs\Python\Python312\python.exe"
-set PYTHONIOENCODING=utf-8
+call "%~dp0settings.bat"
 
 echo Turning the live app off...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$c = Get-NetTCPConnection -LocalPort 8501 -State Listen -ErrorAction SilentlyContinue; if ($c) { Stop-Process -Id $c.OwningProcess -Force; Write-Host 'Live app stopped.' } else { Write-Host 'Live app was not running.' }"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0stop_live.ps1"
 timeout /t 2 /nobreak >nul
 
 echo.
