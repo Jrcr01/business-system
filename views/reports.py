@@ -1,4 +1,4 @@
-"""Reports screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this tab is open."""
+"""Reports screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this page is open."""
 from __future__ import annotations
 
 import pandas as pd
@@ -36,19 +36,26 @@ from engines.reports_service import get_supplier_ap_aging_report
 from engines.reports_service import get_supplier_history
 
 from views.shared import (  # noqa: F401
+    MONEY_FORMAT,
     bank_loan_options,
     cardholder_options_with_cards,
     credit_card_options_for_holder,
     creditor_options_all,
+    date_col,
     filter_by_status,
     history_date_range,
+    money_col,
+    page_header,
     pdf_preview_and_download,
     refresh,
+    section,
+    status_badge,
+    status_text,
 )
 
 
 def render() -> None:
-    st.header("Reports")
+    page_header("Reports")
     st.caption("Pick a report — its filters, tables, and exports appear below, one report at a time.")
 
     REPORT_OPTIONS = [
@@ -100,7 +107,7 @@ def render() -> None:
         ov_tracks["Previous"] = [float(ov_prev_tracks.loc[t, "paid"] + ov_prev_tracks.loc[t, "scheduled"]) for t in ov_tracks["track"]]
         st.dataframe(
             ov_tracks.rename(columns={"track": "Track", "paid": "Paid", "scheduled": "Scheduled"}), hide_index=True,
-            column_config={c: st.column_config.NumberColumn(c, format="₱ %.2f") for c in ("Paid", "Scheduled", "Total", "Previous")},
+            column_config={c: st.column_config.NumberColumn(c, format=MONEY_FORMAT) for c in ("Paid", "Scheduled", "Total", "Previous")},
         )
 
         if ov["watch"]:
@@ -112,14 +119,14 @@ def render() -> None:
                 st.markdown("**Top payees**")
                 st.dataframe(
                     ov_cur["payees"].head(10).rename(columns={"payee": "Payee", "track": "Track", "paid": "Paid", "scheduled": "Scheduled", "total": "Total"}), hide_index=True,
-                    column_config={c: st.column_config.NumberColumn(c, format="₱ %.2f") for c in ("Paid", "Scheduled", "Total")},
+                    column_config={c: st.column_config.NumberColumn(c, format=MONEY_FORMAT) for c in ("Paid", "Scheduled", "Total")},
                 )
             st.markdown("**Cost of financing**")
             if ov_cur["interest"].empty:
                 st.caption("No interest recorded in this period.")
             else:
                 st.dataframe(ov_cur["interest"].head(8).rename(columns={"source": "Source", "name": "Facility", "interest": "Interest"}), hide_index=True,
-                             column_config={"Interest": st.column_config.NumberColumn("Interest", format="₱ %.2f")})
+                             column_config={"Interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT)})
             st.markdown("**Payment behavior**")
             ov_b = ov_cur["behavior"]
             if not ov_b["count"]:
@@ -134,9 +141,9 @@ def render() -> None:
                 st.write(f"{php(ov_up['total'])} falls due. " + ("Heaviest days: " + "; ".join(f"{d} ({php(a)})" for d, a in ov_up["peak_days"]) if ov_up["peak_days"] else ""))
                 uc1, uc2 = st.columns(2)
                 uc1.dataframe(pd.DataFrame([{"Track": k, "Amount due": v} for k, v in ov_up["by_track"].items()]), hide_index=True,
-                              column_config={"Amount due": st.column_config.NumberColumn("Amount due", format="₱ %.2f")})
+                              column_config={"Amount due": st.column_config.NumberColumn("Amount due", format=MONEY_FORMAT)})
                 uc2.dataframe(pd.DataFrame([{"Week starting": w, "Amount due": a} for w, a in ov_up["by_week"]]), hide_index=True,
-                              column_config={"Amount due": st.column_config.NumberColumn("Amount due", format="₱ %.2f")})
+                              column_config={"Amount due": st.column_config.NumberColumn("Amount due", format=MONEY_FORMAT)})
 
         if st.button("Generate PDF", icon=":material/picture_as_pdf:", key="ov_pdf_btn"):
             pdf_preview_and_download(
@@ -166,7 +173,7 @@ def render() -> None:
                 disabled=["kind", "supplier", "detail", "amount", "where_found", "count", "dismissed"],
                 column_config={
                     "select": st.column_config.CheckboxColumn("Select"), "kind": "What matched", "supplier": "Supplier", "detail": "Details",
-                    "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f"), "where_found": "Batches", "count": "Items", "dismissed": "Dismissed",
+                    "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT), "where_found": "Batches", "count": "Items", "dismissed": "Dismissed",
                 },
             )
             chosen_keys = [dup_view.loc[i, "dup_key"] for i in dup_edited.index[dup_edited["select"]]]
@@ -220,9 +227,9 @@ def render() -> None:
                 st.dataframe(
                     sched_daily, hide_index=True,
                     column_config={
-                        "actual_payment_date": st.column_config.DateColumn("Payment Date"),
+                        "actual_payment_date": st.column_config.DateColumn("Payment Date", format="MMM DD, YYYY"),
                         "num_items": st.column_config.NumberColumn("# Items"),
-                        "total_amount": st.column_config.NumberColumn("Total", format="₱ %.2f"),
+                        "total_amount": st.column_config.NumberColumn("Total", format=MONEY_FORMAT),
                     },
                 )
                 s1, s2 = st.columns(2)
@@ -233,9 +240,9 @@ def render() -> None:
                 st.dataframe(
                     display_sched, hide_index=True,
                     column_config={
-                        "due_date": st.column_config.DateColumn("Due Date"),
-                        "actual_payment_date": st.column_config.DateColumn("Payment Date"),
-                        "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f"),
+                        "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+                        "actual_payment_date": st.column_config.DateColumn("Payment Date", format="MMM DD, YYYY"),
+                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
                     },
                 )
 
@@ -254,7 +261,7 @@ def render() -> None:
         st.caption(
             "Every check already recorded but still waiting on a check number — Phase 6 Redux "
             "assigns a number at PRINT time, not issue time. Grouped by check date (the "
-            "Checks & checkbook tab's Current check run is the live, same-scope view for actually "
+            "Checks and checkbook page's Current check run is the live, same-scope view for actually "
             "printing these)."
         )
         parked_detail = get_parked_checks_report()
@@ -281,9 +288,9 @@ def render() -> None:
                 st.dataframe(
                     parked_daily, hide_index=True,
                     column_config={
-                        "actual_payment_date": st.column_config.DateColumn("Check Date"),
+                        "actual_payment_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
                         "num_checks": st.column_config.NumberColumn("# Checks"),
-                        "total_amount": st.column_config.NumberColumn("Total", format="₱ %.2f"),
+                        "total_amount": st.column_config.NumberColumn("Total", format=MONEY_FORMAT),
                     },
                 )
                 p1, p2 = st.columns(2)
@@ -294,9 +301,9 @@ def render() -> None:
                 st.dataframe(
                     display_parked, hide_index=True,
                     column_config={
-                        "due_date": st.column_config.DateColumn("Check Date"),
-                        "actual_payment_date": st.column_config.DateColumn("Payment Date"),
-                        "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f"),
+                        "due_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
+                        "actual_payment_date": st.column_config.DateColumn("Payment Date", format="MMM DD, YYYY"),
+                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
                     },
                 )
 
@@ -346,8 +353,8 @@ def render() -> None:
                 st.dataframe(
                     sup_statements_shown, hide_index=True,
                     column_config={
-                        "total_amount": st.column_config.NumberColumn("Total", format="₱ %.2f"),
-                        "created_at": st.column_config.DatetimeColumn("Created"),
+                        "total_amount": st.column_config.NumberColumn("Total", format=MONEY_FORMAT),
+                        "created_at": st.column_config.DatetimeColumn("Created", format="MMM DD, YYYY h:mm A"),
                     },
                 )
 
@@ -359,10 +366,10 @@ def render() -> None:
                 st.dataframe(
                     sup_invoices_shown, hide_index=True,
                     column_config={
-                        "invoice_date": st.column_config.DateColumn("Invoice Date"),
-                        "due_date": st.column_config.DateColumn("Due Date"),
-                        "gross_amount": st.column_config.NumberColumn("Gross", format="₱ %.2f"),
-                        "amount": st.column_config.NumberColumn("Net Amount", format="₱ %.2f"),
+                        "invoice_date": st.column_config.DateColumn("Invoice Date", format="MMM DD, YYYY"),
+                        "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+                        "gross_amount": st.column_config.NumberColumn("Gross", format=MONEY_FORMAT),
+                        "amount": st.column_config.NumberColumn("Net Amount", format=MONEY_FORMAT),
                     },
                 )
 
@@ -374,8 +381,8 @@ def render() -> None:
                 st.dataframe(
                     sup_checks_shown, hide_index=True,
                     column_config={
-                        "check_date": st.column_config.DateColumn("Check Date"),
-                        "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f"),
+                        "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
+                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
                     },
                 )
 
@@ -423,8 +430,8 @@ def render() -> None:
             rd_picked = st.multiselect("Show", options=rd_status_order, default=rd_status_order, key="rpt_rundown_status")
             rd_view = rd_df[rd_df["status"].isin(rd_picked)].copy()
             rd_view["running_balance"] = rd_view["balance"].groupby(rd_view["supplier"]).cumsum()
-            rd_money = {"first_check": st.column_config.DateColumn("First check"), "last_check": st.column_config.DateColumn("Last check")}
-            rd_money.update({c: st.column_config.NumberColumn(label, format="₱ %.2f") for c, label in
+            rd_money = {"first_check": st.column_config.DateColumn("First check", format="MMM DD, YYYY"), "last_check": st.column_config.DateColumn("Last check", format="MMM DD, YYYY")}
+            rd_money.update({c: st.column_config.NumberColumn(label, format=MONEY_FORMAT) for c, label in
                         [("net_total", "Net total"), ("paid", "Paid"), ("scheduled", "Post-dated"), ("open", "Not yet covered"), ("balance", "Still owed"), ("running_balance", "Running balance")]})
             if rd_choice is None:
                 st.markdown("**Per supplier**")
@@ -434,7 +441,7 @@ def render() -> None:
                         rd_sum[name] = 0.0
                 rd_sum = rd_sum[rd_status_order].reset_index()
                 rd_sum["Total"] = rd_sum[rd_status_order].sum(axis=1)
-                st.dataframe(rd_sum, hide_index=True, column_config={n: st.column_config.NumberColumn(n, format="₱ %.2f") for n in rd_status_order + ["Total"]})
+                st.dataframe(rd_sum, hide_index=True, column_config={n: st.column_config.NumberColumn(n, format=MONEY_FORMAT) for n in rd_status_order + ["Total"]})
             st.markdown("**Batches**")
             st.dataframe(
                 rd_view[["supplier", "batch", "status", "first_check", "last_check", "net_total", "paid", "scheduled", "open", "balance", "running_balance"]],
@@ -484,15 +491,15 @@ def render() -> None:
                         ir_sum[name] = 0.0
                 ir_sum = ir_sum[ir_order].reset_index()
                 ir_sum["Total"] = ir_sum[ir_order].sum(axis=1)
-                st.dataframe(ir_sum, hide_index=True, column_config={n: st.column_config.NumberColumn(n, format="₱ %.2f") for n in ir_order + ["Total"]})
+                st.dataframe(ir_sum, hide_index=True, column_config={n: st.column_config.NumberColumn(n, format=MONEY_FORMAT) for n in ir_order + ["Total"]})
             st.markdown("**Invoices**")
             st.dataframe(
                 ir_view, hide_index=True,
                 column_config={
-                    "invoice_date": st.column_config.DateColumn("Invoice Date"),
-                    "due_date": st.column_config.DateColumn("Due Date"),
-                    "amount": st.column_config.NumberColumn("Net Amount", format="₱ %.2f"),
-                    "running_balance": st.column_config.NumberColumn("Running Balance", format="₱ %.2f"),
+                    "invoice_date": st.column_config.DateColumn("Invoice Date", format="MMM DD, YYYY"),
+                    "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+                    "amount": st.column_config.NumberColumn("Net Amount", format=MONEY_FORMAT),
+                    "running_balance": st.column_config.NumberColumn("Running Balance", format=MONEY_FORMAT),
                 },
             )
             st.download_button("Download invoice rundown CSV", data=ir_view.to_csv(index=False), file_name="invoice_rundown.csv", mime="text/csv", key="dl_inv_rundown")
@@ -542,11 +549,11 @@ def render() -> None:
                 st.dataframe(
                     ln_notes_shown.drop(columns=["loan_note_id"]), hide_index=True,
                     column_config={
-                        "issue_date": st.column_config.DateColumn("Issue Date"),
-                        "principal_amount": st.column_config.NumberColumn("Principal", format="₱ %.2f"),
-                        "total_interest": st.column_config.NumberColumn("Interest", format="₱ %.2f"),
-                        "total_payable": st.column_config.NumberColumn("Total Payable", format="₱ %.2f"),
-                        "outstanding_uncleared": st.column_config.NumberColumn("Outstanding", format="₱ %.2f"),
+                        "issue_date": st.column_config.DateColumn("Issue Date", format="MMM DD, YYYY"),
+                        "principal_amount": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT),
+                        "total_interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT),
+                        "total_payable": st.column_config.NumberColumn("Total Payable", format=MONEY_FORMAT),
+                        "outstanding_uncleared": st.column_config.NumberColumn("Outstanding", format=MONEY_FORMAT),
                     },
                 )
 
@@ -558,8 +565,8 @@ def render() -> None:
                 st.dataframe(
                     ln_checks_shown, hide_index=True,
                     column_config={
-                        "check_date": st.column_config.DateColumn("Check Date"),
-                        "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f"),
+                        "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
+                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
                     },
                 )
 
@@ -611,8 +618,8 @@ def render() -> None:
                 st.dataframe(
                     bl_installments_shown, hide_index=True,
                     column_config={
-                        "due_date": st.column_config.DateColumn("Due Date"),
-                        "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f"),
+                        "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
                     },
                 )
                 st.download_button("Download installments CSV", data=bl_installments_shown.to_csv(index=False), file_name=f"bank_loan_{bl_row['loan_ref']}_installments.csv", mime="text/csv", key="dl_bl_installments")
@@ -663,7 +670,7 @@ def render() -> None:
                 else:
                     st.dataframe(
                         cc_cards_info.drop(columns=["card_id"]), hide_index=True,
-                        column_config={"credit_limit": st.column_config.NumberColumn("Credit Limit", format="₱ %.2f")},
+                        column_config={"credit_limit": st.column_config.NumberColumn("Credit Limit", format=MONEY_FORMAT)},
                     )
 
                 st.markdown("**Statements (all cards)**")
@@ -676,9 +683,9 @@ def render() -> None:
                         column_config={
                             "card_name": "Card",
                             "card_number_last4": "Last 4",
-                            "due_date": st.column_config.DateColumn("Due Date"),
-                            "total_amount_due": st.column_config.NumberColumn("Amount Due", format="₱ %.2f"),
-                            "payment_date": st.column_config.DateColumn("Payment Date"),
+                            "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+                            "total_amount_due": st.column_config.NumberColumn("Amount Due", format=MONEY_FORMAT),
+                            "payment_date": st.column_config.DateColumn("Payment Date", format="MMM DD, YYYY"),
                         },
                     )
                     st.download_button("Download statements CSV", data=cc_statements_shown.to_csv(index=False), file_name=f"cardholder_{cc_holder_slug}_all_cards_statements.csv", mime="text/csv", key="dl_cc_all_statements")
@@ -717,9 +724,9 @@ def render() -> None:
                     st.dataframe(
                         cc_statements_shown, hide_index=True,
                         column_config={
-                            "due_date": st.column_config.DateColumn("Due Date"),
-                            "total_amount_due": st.column_config.NumberColumn("Amount Due", format="₱ %.2f"),
-                            "payment_date": st.column_config.DateColumn("Payment Date"),
+                            "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+                            "total_amount_due": st.column_config.NumberColumn("Amount Due", format=MONEY_FORMAT),
+                            "payment_date": st.column_config.DateColumn("Payment Date", format="MMM DD, YYYY"),
                         },
                     )
                     st.download_button("Download statements CSV", data=cc_statements_shown.to_csv(index=False), file_name=f"card_{cc_row['card_name']}_{cc_row['card_number_last4']}_statements.csv", mime="text/csv", key="dl_cc_statements")
@@ -742,11 +749,11 @@ def render() -> None:
             st.dataframe(
                 aging_df, hide_index=True,
                 column_config={
-                    "total_unpaid": st.column_config.NumberColumn("Total Unpaid", format="₱ %.2f"),
-                    "current_due": st.column_config.NumberColumn("Current", format="₱ %.2f"),
-                    "days_1_30": st.column_config.NumberColumn("1-30 Days", format="₱ %.2f"),
-                    "days_31_60": st.column_config.NumberColumn("31-60 Days", format="₱ %.2f"),
-                    "days_over_60": st.column_config.NumberColumn("60+ Days", format="₱ %.2f"),
+                    "total_unpaid": st.column_config.NumberColumn("Total Unpaid", format=MONEY_FORMAT),
+                    "current_due": st.column_config.NumberColumn("Current", format=MONEY_FORMAT),
+                    "days_1_30": st.column_config.NumberColumn("1-30 Days", format=MONEY_FORMAT),
+                    "days_31_60": st.column_config.NumberColumn("31-60 Days", format=MONEY_FORMAT),
+                    "days_over_60": st.column_config.NumberColumn("60+ Days", format=MONEY_FORMAT),
                 },
             )
             st.download_button("Download CSV", data=aging_df.to_csv(index=False), file_name="supplier_ap_aging.csv", mime="text/csv", key="dl_aging")
@@ -771,11 +778,11 @@ def render() -> None:
             st.dataframe(
                 lender_master_df, hide_index=True,
                 column_config={
-                    "issue_date": st.column_config.DateColumn("Issue Date"),
-                    "principal_amount": st.column_config.NumberColumn("Principal", format="₱ %.2f"),
-                    "total_interest": st.column_config.NumberColumn("Interest", format="₱ %.2f"),
-                    "total_payable": st.column_config.NumberColumn("Total Payable", format="₱ %.2f"),
-                    "outstanding_uncleared": st.column_config.NumberColumn("Outstanding", format="₱ %.2f"),
+                    "issue_date": st.column_config.DateColumn("Issue Date", format="MMM DD, YYYY"),
+                    "principal_amount": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT),
+                    "total_interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT),
+                    "total_payable": st.column_config.NumberColumn("Total Payable", format=MONEY_FORMAT),
+                    "outstanding_uncleared": st.column_config.NumberColumn("Outstanding", format=MONEY_FORMAT),
                 },
             )
             st.download_button("Download CSV", data=lender_master_df.to_csv(index=False), file_name="private_lender_exposure.csv", mime="text/csv", key="dl_lender_master")
@@ -800,10 +807,10 @@ def render() -> None:
             st.dataframe(
                 bl_master_df, hide_index=True,
                 column_config={
-                    "start_date": st.column_config.DateColumn("Start Date"),
-                    "maturity_date": st.column_config.DateColumn("Maturity Date"),
-                    "principal_amount": st.column_config.NumberColumn("Principal", format="₱ %.2f"),
-                    "outstanding": st.column_config.NumberColumn("Outstanding", format="₱ %.2f"),
+                    "start_date": st.column_config.DateColumn("Start Date", format="MMM DD, YYYY"),
+                    "maturity_date": st.column_config.DateColumn("Maturity Date", format="MMM DD, YYYY"),
+                    "principal_amount": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT),
+                    "outstanding": st.column_config.NumberColumn("Outstanding", format=MONEY_FORMAT),
                 },
             )
             st.download_button("Download CSV", data=bl_master_df.to_csv(index=False), file_name="bank_loan_servicing.csv", mime="text/csv", key="dl_bl_master")

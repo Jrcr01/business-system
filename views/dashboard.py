@@ -1,4 +1,4 @@
-"""Dashboard screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this tab is open."""
+"""Dashboard screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this page is open."""
 from __future__ import annotations
 
 import altair as alt
@@ -31,14 +31,21 @@ from engines.reports_service import get_payment_schedule_daily_totals
 from engines.reports_service import get_supplier_ap_aging_report
 
 from views.shared import (  # noqa: F401
+    MONEY_FORMAT,
+    date_col,
     get_blocked_dates_for_month,
+    money_col,
+    page_header,
     q,
     refresh,
+    section,
+    status_badge,
+    status_text,
 )
 
 
 def render() -> None:
-    st.header("Overview")
+    page_header("Dashboard")
 
     # "No statement on file yet" (a card with zero statement history, typically not in active use)
     # is routine, not urgent -- a legacy import can leave 40+ of these, which used to fire this
@@ -51,10 +58,10 @@ def render() -> None:
         st.error(
             f":material/report: {len(dash_missing_recent_df)} credit card statement(s) may have been overlooked — "
             + "; ".join(f"{r['card_name']} ({r['alert'].lower()})" for _, r in dash_missing_recent_df.iterrows())
-            + ". Check the Credit cards tab."
+            + ". Check the Credit cards page."
         )
     if not dash_never_had_df.empty:
-        st.caption(f":material/info: {len(dash_never_had_df)} card(s) have never had a statement recorded — routine for cards not yet in active use. See Credit cards tab.")
+        st.caption(f":material/info: {len(dash_never_had_df)} card(s) have never had a statement recorded — routine for cards not yet in active use. See the Credit cards page.")
 
     dash_checkbook_alerts_df = get_checkbook_alerts()
     if not dash_checkbook_alerts_df.empty:
@@ -64,7 +71,7 @@ def render() -> None:
                 f"{r['booklet_code']} ({r['missing_gaps_count']} skipped, {r['duplicate_numbers_count']} duplicate)"
                 for _, r in dash_checkbook_alerts_df.iterrows()
             )
-            + ". Check the Admin & audit tab (Check booklets)."
+            + ". Check Admin and audit (Check booklets)."
         )
 
     # Supplier concentration alert (2026-09-17, per user request): names the single largest
@@ -156,7 +163,7 @@ def render() -> None:
             "Checks pending print/signature this week",
             f"{len(pending_week_df)} · {php(pending_week_df['amount'].sum() if not pending_week_df.empty else 0.0)}",
             border=True,
-            help="Already issued but not yet printed, dated within the next 7 days. Full list: Checks & checkbook → Checks to print.",
+            help="Already issued but not yet printed, dated within the next 7 days. Full list: Checks and checkbook → Checks to print.",
         )
 
     # TRIAL C (2026-09-14): calendar heatmap — hover a day to see that day's all-tracks total,
@@ -305,7 +312,7 @@ def render() -> None:
                     st.dataframe(
                         cal_day_items[["track", "payee_name", "reference", "amount", "due_date"]],
                         hide_index=True,
-                        column_config={"amount": st.column_config.NumberColumn("Amount", format="₱ %.2f")},
+                        column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)},
                     )
 
                 cal_existing_block = cal_blocked.get(cal_picked_date)
@@ -336,7 +343,7 @@ def render() -> None:
                 cc_alerts,
                 hide_index=True,
                 column_config={
-                    "total_amount_due": st.column_config.NumberColumn("Amount due", format="₱ %.2f"),
+                    "total_amount_due": st.column_config.NumberColumn("Amount due", format=MONEY_FORMAT),
                     "days_until_due": st.column_config.NumberColumn("Days until due"),
                 },
             )
@@ -393,7 +400,7 @@ def render() -> None:
                 overdue_cancelled_df[["check_number", "creditor_name", "check_date", "amount", "status", "lag_days"]],
                 hide_index=True,
                 column_config={
-                    "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f"),
+                    "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
                     "lag_days": st.column_config.NumberColumn("Days overdue when voided", format="%.0f"),
                 },
             )

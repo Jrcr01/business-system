@@ -54,9 +54,84 @@ def q(sql: str, params: tuple = ()) -> pd.DataFrame:
     return df_query(sql, params)
 
 
-def refresh() -> None:
+def refresh(done: str | None = None) -> None:
+    """Reload the data and redraw the page. `done` = a short 'Saved ...' message shown as a toast after the redraw (a plain
+    st.success() right before a refresh is wiped by the redraw before anyone can read it)."""
+    if done:
+        flash(done)
     st.cache_data.clear()
     st.rerun()
+
+
+# ---- Look and feel building blocks (2026-09-27, per user: "a professional and organized UI"). Every screen uses these so
+# headings, status colours, money and dates look the same everywhere. ----
+
+def flash(msg: str, icon: str = ":material/check_circle:") -> None:
+    """Queue a toast that survives the next st.rerun() (shown by show_flashes(), called once near the top of app.py)."""
+    st.session_state.setdefault("_flash", []).append((msg, icon))
+
+
+def show_flashes() -> None:
+    for msg, icon in st.session_state.pop("_flash", []):
+        st.toast(msg, icon=icon)
+
+
+def page_header(title: str, subtitle: str | None = None) -> None:
+    """The same heading on every page: the page's menu name with a brand-blue rule, and one short line under it."""
+    st.header(title, divider="blue")
+    if subtitle:
+        st.caption(subtitle)
+
+
+def section(title: str, help: str | None = None) -> None:
+    """A section heading inside a page (one style everywhere, replacing ##### / #### / bold-text headings)."""
+    st.subheader(title, help=help)
+
+
+# Status colours: Draft grey, Parked orange, Issued blue, Paid/Cleared/Settled green, Cancelled/Voided red.
+STATUS_STYLE = {
+    "draft": ("gray", ":material/edit_note:"), "parked": ("orange", ":material/local_parking:"),
+    "issued": ("blue", ":material/send:"), "exported": ("blue", ":material/upload_file:"), "printed": ("blue", ":material/print:"),
+    "active": ("blue", ":material/radio_button_checked:"), "open": ("blue", ":material/radio_button_checked:"),
+    "outstanding": ("orange", ":material/schedule:"), "unpaid": ("orange", ":material/schedule:"), "partly covered": ("orange", ":material/timelapse:"),
+    "paid": ("green", ":material/check_circle:"), "cleared": ("green", ":material/check_circle:"), "settled": ("green", ":material/check_circle:"),
+    "locked": ("gray", ":material/lock:"), "unlocked": ("gray", ":material/lock_open:"),
+    "cancelled": ("red", ":material/cancel:"), "voided": ("red", ":material/block:"), "replaced": ("gray", ":material/swap_horiz:"),
+    "stale": ("red", ":material/warning:"), "overdue": ("red", ":material/warning:"),
+}
+
+
+def status_badge(status: str, container=None) -> None:
+    """A coloured status pill (st.badge) -- same colour for the same status on every screen."""
+    color, icon = STATUS_STYLE.get(str(status).strip().lower(), ("gray", None))
+    (container or st).badge(str(status), color=color, icon=icon)
+
+
+def status_text(status: str) -> str:
+    """The same coloured pill as status_badge(), for use inside markdown text (st.markdown / captions)."""
+    color, _icon = STATUS_STYLE.get(str(status).strip().lower(), ("gray", None))
+    return f":{color}-badge[{status}]"
+
+
+MONEY_FORMAT = "₱%,.2f"       # tables: ₱1,234,567.89 -- the same as php() everywhere else
+
+
+def money_col(label: str, **kwargs):
+    return st.column_config.NumberColumn(label, format=MONEY_FORMAT, **kwargs)
+
+
+def date_col(label: str, **kwargs):
+    return st.column_config.DateColumn(label, format="MMM DD, YYYY", **kwargs)
+
+
+# Browse / New switches on Order Statement, Lenders and Bank loans: plain values (the search jumps set them), icons on screen.
+OS_BROWSE, OS_NEW = "Browse batches", "New batch"
+LN_BROWSE, LN_NEW = "Browse loan notes", "New loan note"
+BL_BROWSE, BL_NEW = "Browse bank loans", "New bank loan"
+
+
+def mode_label(option: str) -> str:
+    return (":material/search: " if option.startswith("Browse") else ":material/add: ") + option
 
 
 def guard_duplicate_submit(action_key: str, *values, cooldown_seconds: float = 3.0) -> bool:
@@ -211,7 +286,7 @@ def render_check_print_section(checks_df: pd.DataFrame, payee_name: str, key_pre
     pick or assign here. Any parked check can be printed with no booklet/number involved at all;
     an already-printed check just reprints. Use 'Assign a check number' separately (below) to
     give a check its number, whenever that's actually known — before, during, or after this."""
-    st.markdown("##### Print a check")
+    section("Print a check")
     active_df = checks_df[checks_df["status"] == "Active"] if not checks_df.empty else checks_df
     if active_df.empty:
         st.caption("No active check here to print.")
@@ -265,7 +340,7 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
     tracking) for no real benefit over just picking a number. The dropdown already lists every
     open leaf, including ones below the booklet's "suggested next" cursor, so manual selection
     covers backfill too; a plain typed-in fallback remains for a check with no booklet on file."""
-    st.markdown("##### Assign a check number")
+    section("Assign a check number")
     if st.session_state.pop(f"_clear_{key_prefix}_assign_manual_number", False):
         st.session_state[f"{key_prefix}_assign_manual_number"] = ""   # a typed number never lingers into the next assignment
     active_df = checks_df[checks_df["status"] == "Active"] if not checks_df.empty else checks_df
@@ -283,7 +358,7 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
     booklets_df = get_booklets(bank_account_id)
     booklet_id, chosen_number, manual_number = None, None, None
     if booklets_df.empty:
-        st.caption("No Active booklet on file for this bank account — register one in Admin & audit, or type the number directly below.")
+        st.caption("No Active booklet on file for this bank account — register one in Admin and audit, or type the number directly below.")
         manual_number = st.text_input("Check number (typed exactly as physically written)", key=f"{key_prefix}_assign_manual_number")
     else:
         b_options = {
@@ -347,7 +422,7 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
                 seq_view.insert(0, "check_number", [str(seq_leaf[int(c)]) for c in seq_view["check_id"]])
                 seq_view.insert(0, "no", range(1, len(seq_view) + 1))
                 st.dataframe(seq_view.drop(columns="check_id"), hide_index=True, column_config={
-                    "no": "#", "check_number": "Check number", "check_date": "Check date", "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f")})
+                    "no": "#", "check_number": "Check number", "check_date": "Check date", "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)})
                 if seq_skipped:
                     st.caption(f"Skipping {len(seq_skipped)} leaf/leaves already used or spoiled: {', '.join(str(n) for n in seq_skipped[:12])}{' …' if len(seq_skipped) > 12 else ''}")
                 seq_first, seq_last = seq_plan[0][1], seq_plan[-1][1]
@@ -601,7 +676,7 @@ WHATS_NEW_PATH = "WHATS_NEW.md"
 
 def _read_whats_new() -> str:
     """Full changelog text, HTML-comment header stripped -- backs the permanent Changelog
-    section in Admin & audit. Missing file (e.g. a fresh checkout without it yet) degrades to a
+    section in Admin and audit. Missing file (e.g. a fresh checkout without it yet) degrades to a
     plain message instead of crashing the page."""
     if not os.path.exists(WHATS_NEW_PATH):
         return "No changelog yet."
@@ -630,15 +705,23 @@ def _whats_new_popup_tracker() -> dict:
     return {"shown": False}
 
 
-def _jump(tab_label: str, **state) -> None:
-    """Sets the session_state that drives the sidebar quick-search's "single match auto-jumps"
-    behavior. Runs from inside the sidebar block, which executes before the tab/sub-tab widgets
-    it targets are instantiated later in this same script pass -- so plain assignment here is
-    enough (this is the "set session_state before the widget renders" case, not the "set after
-    instantiation" case that needs the _os_mode_next-style staging trick elsewhere in this app)."""
-    st.session_state["main_tab"] = tab_label
+# Pages of the sidebar menu, by id (filled by app.py on every run, before anything can jump).
+PAGES: dict = {}
+
+
+def _jump(page_id: str, **state) -> None:
+    """Open another page with some state pre-set (which batch / loan is open, which sub-tab). The state is set before the
+    target page draws its widgets, so plain assignment works. Switching to a page restarts the script there."""
     for k, v in state.items():
         st.session_state[k] = v
+    st.switch_page(PAGES[page_id])
+
+
+def go_to(page_id: str, **state) -> None:
+    """For buttons inside a page: open another page (or the same one) with some state pre-set -- used by the Payment run
+    and Add data pages. Uses the same path as the search pop-up, which applies the state before any page draws."""
+    st.session_state["_global_jump"] = {"page": page_id, "state": state}
+    st.rerun()
 
 
 @st.dialog("Search everything", width="large")
@@ -655,5 +738,5 @@ def global_search_dialog() -> None:
         st.markdown(f"**{g['title']}** ({g['total']}){more}")
         for ri, r in enumerate(g["rows"]):
             if st.button(r["label"], key=f"gs_{gi}_{ri}", width="stretch"):
-                st.session_state["_global_jump"] = {"tab": r["tab"], "state": r["state"]}
+                st.session_state["_global_jump"] = {"page": r["page"], "state": r["state"]}
                 st.rerun()

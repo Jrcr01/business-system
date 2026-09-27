@@ -1,4 +1,4 @@
-"""Analytics screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this tab is open."""
+"""Analytics screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this page is open."""
 from __future__ import annotations
 
 import altair as alt
@@ -22,9 +22,19 @@ from engines.dashboard_kpi_service import get_average_dpo_suppliers
 from engines.dashboard_kpi_service import get_overdue_cancelled_checks
 from engines.dashboard_kpi_service import get_supplier_concentration
 
+from views.shared import (  # noqa: F401
+    page_header,
+    section,
+    status_badge,
+    status_text,
+    money_col,
+    date_col,
+    MONEY_FORMAT,
+)
+
 
 def render() -> None:
-    st.header("Analytics")
+    page_header("Analytics")
     st.caption(
         "AP composition, payment behavior, and cost-of-debt analysis. This system tracks the AP side only "
         "(no revenue, general ledger, or balance sheet), so ratios like current ratio or DSO aren't offered here "
@@ -197,7 +207,7 @@ def render() -> None:
                     "rank": "Rank",
                     "name": "Name",
                     "track": "Track",
-                    "value": st.column_config.NumberColumn("Outstanding", format="₱ %.2f"),
+                    "value": st.column_config.NumberColumn("Outstanding", format=MONEY_FORMAT),
                     "cumulative_pct": st.column_config.NumberColumn("Cumulative %", format="%.1f%%"),
                 },
             )
@@ -262,7 +272,7 @@ def render() -> None:
                     an_overdue_df[["check_number", "creditor_name", "check_date", "amount", "status", "lag_days"]],
                     hide_index=True,
                     column_config={
-                        "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f"),
+                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
                         "lag_days": st.column_config.NumberColumn("Days overdue when voided", format="%.0f"),
                     },
                 )
@@ -306,7 +316,7 @@ def render() -> None:
         st.caption(
             "Real money outstanding on these, but no interest rate/principal entered -- ranked by exposure, so entering "
             "real terms starts with whichever one would move the comparison above the most. Edit a facility's terms from "
-            "the Lenders tab (loan note) or Bank loans tab."
+            "the Lenders page (loan note) or the Bank loans page."
         )
         an_missing_df = get_missing_debt_terms(limit=10)
         if an_missing_df.empty:
@@ -315,5 +325,5 @@ def render() -> None:
             st.dataframe(
                 an_missing_df[["source", "name", "reference", "outstanding"]],
                 hide_index=True,
-                column_config={"outstanding": st.column_config.NumberColumn("Outstanding", format="₱ %.2f")},
+                column_config={"outstanding": st.column_config.NumberColumn("Outstanding", format=MONEY_FORMAT)},
             )

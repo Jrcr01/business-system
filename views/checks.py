@@ -1,4 +1,4 @@
-"""Checks & checkbook screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this tab is open."""
+"""Checks & checkbook screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this page is open."""
 from __future__ import annotations
 
 import pandas as pd
@@ -31,18 +31,25 @@ from engines.common import has_value
 from engines.common import php
 
 from views.shared import (  # noqa: F401
+    MONEY_FORMAT,
     PRINT_CHECKS_IN_APP,
+    date_col,
     dup_needs_confirm,
     dup_resume,
     guard_duplicate_submit,
+    money_col,
+    page_header,
     pdf_preview_and_download,
     q,
     refresh,
+    section,
+    status_badge,
+    status_text,
 )
 
 
 def render() -> None:
-    st.header("Checks & checkbook")
+    page_header("Checks and checkbook")
 
     with st.container(border=True):
         st.subheader("Checks to print")
@@ -111,7 +118,7 @@ def render() -> None:
                         ok, msg = save_chrysanth_settings(_cs_acct, _cs_cross)
                         (st.success if ok else st.error)(msg)
                         if ok:
-                            refresh()
+                            refresh(done=msg)
                 _n_unnumbered = int(sum(1 for _, r in pending_df.iterrows() if not has_value(r["check_number"])))
                 if _n_unnumbered:
                     st.info(f"{_n_unnumbered} pending check(s) have no check number yet. Chrysanth's file needs one on every row, so those get a temporary placeholder number (starting with 9) "
@@ -120,7 +127,7 @@ def render() -> None:
                     st.info("Save the Chrysanth account number above to enable the export.")
                 # Generating the file IS the "sent for printing" moment: it logs a batch (Batch run history, below)
                 # and stamps printed_at, as the old in-app print button did.
-                if st.button("Generate Chrysanth file (.txt)", icon=":material/download:", disabled=not print_picked_ids or not _cs["account_no"], key="check_export_excel_btn"):
+                if st.button("Generate Chrysanth file (.txt)", icon=":material/download:", type="primary", disabled=not print_picked_ids or not _cs["account_no"], key="check_export_excel_btn"):
                     if guard_duplicate_submit("create_check_print_batch", tuple(sorted(print_picked_ids))):
                         txt_bytes, txt_problems, txt_ids = generate_pending_check_run_txt(print_picked_ids, log_batch=True)
                         if not txt_ids:
@@ -181,14 +188,14 @@ def render() -> None:
                     ok, msg = mark_batch_printed(int(batch_pick), False)
                     (st.success if ok else st.error)(msg)
                     if ok:
-                        refresh()
+                        refresh(done=msg)
             else:
                 _pk2.caption(f"{print_batch_tag(int(batch_pick))} is exported but not marked printed. Once you have printed it in Chrysanth, mark it here.")
                 if _pk1.button("Mark as printed", icon=":material/print:", type="primary", key=f"mark_printed_{int(batch_pick)}"):
                     ok, msg = mark_batch_printed(int(batch_pick), True)
                     (st.success if ok else st.error)(msg)
                     if ok:
-                        refresh()
+                        refresh(done=msg)
             _bx_bytes, _bx_problems = generate_batch_txt(int(batch_pick))
             st.download_button("Download this batch's Chrysanth file (.txt)", data=_bx_bytes, disabled=not get_chrysanth_settings()["account_no"],
                                file_name=file_name_for_batch(int(batch_pick)), mime="text/plain", icon=":material/download:", key=f"batch_txt_dl_{int(batch_pick)}")
@@ -217,7 +224,7 @@ def render() -> None:
             "already found/written from an older or exhausted booklet). For the normal one-at-a-"
             "time case, use the \"Assign a check number\" section in Order Statement/Lenders "
             "instead — it offers a dropdown of a booklet's available numbers. Booklets are "
-            "registered and managed in Admin & audit."
+            "registered and managed in Admin and audit."
         )
         unnumbered_df = get_unnumbered_checks()
         if unnumbered_df.empty:
@@ -289,7 +296,7 @@ def render() -> None:
         with st.form("spoiled_check_form", border=False):
             spoiled_number = st.text_input("Check number", value=suggested_number, help="Edit if the spoiled leaf's physical number differs from the suggested next number.")
             spoiled_reason = st.text_input("Reason", placeholder="e.g. printer jam, misaligned print")
-            _spoil_submitted = st.form_submit_button("Log spoiled check", icon=":material/report:")
+            _spoil_submitted = st.form_submit_button("Log spoiled check", icon=":material/report:", type="primary")
         # handled outside the form: the "not in any booklet" confirmation pop-up has its own buttons, which a form cannot hold
         if _spoil_submitted or dup_resume("log_spoiled_check"):
             _sp_number, _sp_blocking, _sp_warnings = spoiled_check_problems(spoiled_number)
@@ -301,7 +308,7 @@ def render() -> None:
                 ok, msg = log_spoiled_check(spoiled_number, spoiled_reason)
                 (st.success if ok else st.error)(msg)
                 if ok:
-                    refresh()
+                    refresh(done=msg)
             else:
                 st.warning("Duplicate submission ignored — identical to the click just before it.")
 

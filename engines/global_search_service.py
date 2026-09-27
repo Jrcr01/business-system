@@ -1,6 +1,6 @@
 """Search everything (2026-09-27): one box, every kind of record -- checks, invoices, order statements, loan notes, bank loans, creditors,
 credit cards and spoiled checks -- by number, reference, name, TIN/contact, or an exact amount. Read-only. Each result carries where to go:
-{'tab': <main tab index>, 'state': {...session values that open that record}}."""
+{'page': <page id of the sidebar menu>, 'state': {...session values that open that record}}."""
 from __future__ import annotations
 
 import os
@@ -8,8 +8,9 @@ import sqlite3
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
-# main tab positions (same order as tab_labels in app.py)
-TAB_CREDITOR_MASTER, TAB_ORDER_STATEMENT, TAB_LENDERS, TAB_BANK_LOANS, TAB_CREDIT_CARDS, TAB_CHECKS = 2, 3, 4, 5, 6, 7
+# page ids of the sidebar menu (the url_path of each st.Page in app.py)
+TAB_CREDITOR_MASTER, TAB_ORDER_STATEMENT, TAB_LENDERS, TAB_BANK_LOANS, TAB_CREDIT_CARDS, TAB_CHECKS = (
+    "creditors", "order-statements", "lenders", "bank-loans", "credit-cards", "checks")
 LIMIT = 8
 
 
@@ -26,7 +27,7 @@ def _php(v) -> str:
 
 
 def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
-    """[{'title': 'Checks', 'total': 14, 'rows': [{'label': ..., 'tab': int, 'state': {...}}]}] -- only groups that matched."""
+    """[{'title': 'Checks', 'total': 14, 'rows': [{'label': ..., 'page': str, 'state': {...}}]}] -- only groups that matched."""
     t = (term or "").strip()
     if len(t) < 2:
         return []
@@ -51,8 +52,8 @@ def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
                 ORDER BY c.check_date DESC, c.check_id DESC LIMIT {limit}""",
             (like, like, like, like, a),
             lambda r: {"label": f"{r[1] or 'no number yet'} \u00b7 {r[5]} \u00b7 {_php(r[2])} \u00b7 {str(r[4])[:10]} \u00b7 {r[3]} \u00b7 {r[8] or ''}",
-                       **({"tab": TAB_ORDER_STATEMENT, "state": {"selected_statement_id": r[6], "os_mode": "\U0001f50d Browse Batches", "os_subtab": "Checks"}} if r[6] is not None
-                          else {"tab": TAB_LENDERS, "state": {"selected_loan_note_id": r[7], "ln_mode": "\U0001f50d Browse Loan Notes", "ln_subtab": "Checks"}})})
+                       **({"page": TAB_ORDER_STATEMENT, "state": {"selected_statement_id": r[6], "os_mode": "Browse batches", "os_subtab": "Checks"}} if r[6] is not None
+                          else {"page": TAB_LENDERS, "state": {"selected_loan_note_id": r[7], "ln_mode": "Browse loan notes", "ln_subtab": "Checks"}})})
 
         run("Invoices",
             f"""SELECT i.invoice_id, i.doc_ref, cr.creditor_name, i.amount, i.status, os.statement_ref, i.statement_id
@@ -60,9 +61,9 @@ def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
                 WHERE i.doc_ref LIKE ? OR cr.creditor_name LIKE ? OR ABS(i.amount - ?) < 0.005
                 ORDER BY i.invoice_id DESC LIMIT {limit}""",
             (like, like, a),
-            lambda r: {"label": f"{r[1]} \u00b7 {r[2]} \u00b7 {_php(r[3])} \u00b7 {r[4]} \u00b7 {r[5] or 'no batch'}", "tab": TAB_ORDER_STATEMENT,
-                       "state": {"selected_statement_id": r[6], "os_mode": "\U0001f50d Browse Batches", "os_subtab": "Invoices"}} if r[6] is not None
-            else {"label": f"{r[1]} \u00b7 {r[2]} \u00b7 {_php(r[3])} \u00b7 no batch", "tab": TAB_ORDER_STATEMENT, "state": {}})
+            lambda r: {"label": f"{r[1]} \u00b7 {r[2]} \u00b7 {_php(r[3])} \u00b7 {r[4]} \u00b7 {r[5] or 'no batch'}", "page": TAB_ORDER_STATEMENT,
+                       "state": {"selected_statement_id": r[6], "os_mode": "Browse batches", "os_subtab": "Invoices"}} if r[6] is not None
+            else {"label": f"{r[1]} \u00b7 {r[2]} \u00b7 {_php(r[3])} \u00b7 no batch", "page": TAB_ORDER_STATEMENT, "state": {}})
 
         run("Order statements",
             f"""SELECT os.statement_id, os.statement_ref, cr.creditor_name, os.total_amount, os.status
@@ -70,8 +71,8 @@ def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
                 WHERE os.statement_ref LIKE ? OR cr.creditor_name LIKE ? OR ABS(os.total_amount - ?) < 0.005
                 ORDER BY os.statement_id DESC LIMIT {limit}""",
             (like, like, a),
-            lambda r: {"label": f"{r[1]} \u00b7 {r[2]} \u00b7 {_php(r[3])} \u00b7 {r[4]}", "tab": TAB_ORDER_STATEMENT,
-                       "state": {"selected_statement_id": r[0], "os_mode": "\U0001f50d Browse Batches"}})
+            lambda r: {"label": f"{r[1]} \u00b7 {r[2]} \u00b7 {_php(r[3])} \u00b7 {r[4]}", "page": TAB_ORDER_STATEMENT,
+                       "state": {"selected_statement_id": r[0], "os_mode": "Browse batches"}})
 
         run("Loan notes",
             f"""SELECT ln.loan_note_id, ln.note_ref, cr.creditor_name, ln.principal_amount, ln.status
@@ -79,8 +80,8 @@ def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
                 WHERE ln.note_ref LIKE ? OR cr.creditor_name LIKE ? OR ABS(COALESCE(ln.principal_amount, -1) - ?) < 0.005 OR ABS(COALESCE(ln.total_payable, -1) - ?) < 0.005
                 ORDER BY ln.loan_note_id DESC LIMIT {limit}""",
             (like, like, a, a),
-            lambda r: {"label": f"{r[1]} \u00b7 {r[2]} \u00b7 principal {_php(r[3]) if r[3] is not None else 'not set'} \u00b7 {r[4]}", "tab": TAB_LENDERS,
-                       "state": {"selected_loan_note_id": r[0], "ln_mode": "\U0001f50d Browse Loan Notes"}})
+            lambda r: {"label": f"{r[1]} \u00b7 {r[2]} \u00b7 principal {_php(r[3]) if r[3] is not None else 'not set'} \u00b7 {r[4]}", "page": TAB_LENDERS,
+                       "state": {"selected_loan_note_id": r[0], "ln_mode": "Browse loan notes"}})
 
         run("Bank loans",
             f"""SELECT bl.bank_loan_id, bl.loan_ref, cr.creditor_name, bl.account_number, lb.name
@@ -88,15 +89,15 @@ def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
                 WHERE bl.loan_ref LIKE ? OR cr.creditor_name LIKE ? OR bl.account_number LIKE ? OR lb.name LIKE ?
                 ORDER BY bl.bank_loan_id DESC LIMIT {limit}""",
             (like, like, like, like),
-            lambda r: {"label": f"{r[1]} \u00b7 {r[2]}" + (f" \u00b7 acct {r[3]}" if r[3] else "") + (f" \u00b7 {r[4]}" if r[4] else ""), "tab": TAB_BANK_LOANS,
-                       "state": {"selected_bank_loan_id": r[0], "bl_mode": "\U0001f50d Browse Bank Loans"}})
+            lambda r: {"label": f"{r[1]} \u00b7 {r[2]}" + (f" \u00b7 acct {r[3]}" if r[3] else "") + (f" \u00b7 {r[4]}" if r[4] else ""), "page": TAB_BANK_LOANS,
+                       "state": {"selected_bank_loan_id": r[0], "bl_mode": "Browse bank loans"}})
 
         run("Creditors",
             f"""SELECT creditor_id, creditor_name, creditor_type, is_active FROM creditors
                 WHERE creditor_name LIKE ? OR tin LIKE ? OR contact_person LIKE ? OR contact_number LIKE ? OR email LIKE ?
                 ORDER BY creditor_name LIMIT {limit}""",
             (like, like, like, like, like),
-            lambda r: {"label": f"{r[1]} \u00b7 {str(r[2]).replace('_', ' ').title()}" + ("" if r[3] else " \u00b7 inactive"), "tab": TAB_CREDITOR_MASTER,
+            lambda r: {"label": f"{r[1]} \u00b7 {str(r[2]).replace('_', ' ').title()}" + ("" if r[3] else " \u00b7 inactive"), "page": TAB_CREDITOR_MASTER,
                        "state": {"creditor_master_search": r[1]}})
 
         run("Credit cards",
@@ -105,12 +106,12 @@ def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
                 WHERE cc.card_name LIKE ? OR cc.card_number_last4 LIKE ? OR ch.name LIKE ? OR iss.creditor_name LIKE ?
                 ORDER BY cc.card_id DESC LIMIT {limit}""",
             (like, like, like, like),
-            lambda r: {"label": f"{r[1]} \u00b7 {r[2] or ''} \u00b7 {r[3] or 'no cardholder'} \u00b7 {r[4]}", "tab": TAB_CREDIT_CARDS,
+            lambda r: {"label": f"{r[1]} \u00b7 {r[2] or ''} \u00b7 {r[3] or 'no cardholder'} \u00b7 {r[4]}", "page": TAB_CREDIT_CARDS,
                        "state": {"stmt_search": r[2] or r[1]}})
 
         run("Spoiled checks (error checks)",
             f"""SELECT spoiled_id, check_number, reason, logged_at FROM spoiled_checks WHERE check_number LIKE ? OR reason LIKE ?
                 ORDER BY spoiled_id DESC LIMIT {limit}""",
             (like, like),
-            lambda r: {"label": f"{r[1]} \u00b7 logged {str(r[3])[:16]}" + (f" \u00b7 {r[2]}" if r[2] else ""), "tab": TAB_CHECKS, "state": {}})
+            lambda r: {"label": f"{r[1]} \u00b7 logged {str(r[3])[:16]}" + (f" \u00b7 {r[2]}" if r[2] else ""), "page": TAB_CHECKS, "state": {}})
     return groups

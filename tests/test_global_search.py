@@ -23,7 +23,7 @@ def test_a_name_finds_every_kind_of_record_it_appears_in(db):
     _seed(db)
     found = _titles("Tire Asia")
     assert {"Checks", "Invoices", "Order statements", "Creditors"} <= set(found)
-    assert found["Invoices"]["rows"][0]["tab"] == 3 and "selected_statement_id" in found["Invoices"]["rows"][0]["state"]
+    assert found["Invoices"]["rows"][0]["page"] == "order-statements" and "selected_statement_id" in found["Invoices"]["rows"][0]["state"]
 
 
 def test_an_invoice_number_an_exact_amount_and_a_spoiled_number_are_found(db):
@@ -31,7 +31,7 @@ def test_an_invoice_number_an_exact_amount_and_a_spoiled_number_are_found(db):
     assert "Invoices" in _titles("69055")
     by_amount = _titles("29,751.50")
     assert "Invoices" in by_amount and "Checks" in by_amount                       # commas and decimals are understood
-    assert _titles("3992554303")["Spoiled checks (error checks)"]["rows"][0]["tab"] == 7
+    assert _titles("3992554303")["Spoiled checks (error checks)"]["rows"][0]["page"] == "checks"
 
 
 def test_too_short_or_unknown_terms_find_nothing(db):

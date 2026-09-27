@@ -1,4 +1,4 @@
-"""Admin & audit screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this tab is open."""
+"""Admin & audit screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this page is open."""
 from __future__ import annotations
 
 import streamlit as st
@@ -14,17 +14,24 @@ from engines.common import fix_nullable_int
 from engines.common import get_conn
 
 from views.shared import (  # noqa: F401
+    MONEY_FORMAT,
     _read_whats_new,
+    date_col,
     guard_duplicate_submit,
+    money_col,
+    page_header,
     q,
     refresh,
+    section,
+    status_badge,
+    status_text,
 )
 
 
 def render() -> None:
     bank_df = q("SELECT * FROM bank_accounts WHERE bank_account_id = ?", (PRIMARY_BANK_ACCOUNT_ID,))
     bank = bank_df.iloc[0] if not bank_df.empty else None
-    st.header("Admin & audit")
+    page_header("Admin and audit")
 
     with st.container(border=True):
         st.subheader("Metrobank Account 1")
@@ -53,8 +60,7 @@ def render() -> None:
                             (new_width_mm, new_height_mm, new_offset_x_mm, new_offset_y_mm, PRIMARY_BANK_ACCOUNT_ID),
                         )
                         conn.commit()
-                    st.success("Calibration saved.")
-                    refresh()
+                    refresh(done="Calibration saved.")
 
     with st.container(border=True):
         st.subheader("Check booklets")
@@ -76,14 +82,14 @@ def render() -> None:
                 bk_start = bk1.number_input("Start check number", min_value=1, step=1, value=1000, help="The full number printed on the first leaf, e.g. 3992554301. It is used exactly as typed.")
                 bk_end = bk2.number_input("End check number", min_value=1, step=1, value=1050, help="The full number printed on the last leaf, e.g. 3992554400.")
                 bk_received = st.date_input("Date received", value=date.today())
-                if st.form_submit_button("Register booklet", icon=":material/menu_book:"):
+                if st.form_submit_button("Register booklet", icon=":material/menu_book:", type="primary"):
                     if bk_end < bk_start:
                         st.error("End check number must be greater than or equal to start check number.")
                     elif guard_duplicate_submit("create_booklet", bk_code, bk_start, bk_end, bk_received):
                         ok, msg = create_booklet(PRIMARY_BANK_ACCOUNT_ID, bk_code, int(bk_start), int(bk_end), bk_received)
                         (st.success if ok else st.error)(msg)
                         if ok:
-                            refresh()
+                            refresh(done=msg)
                     else:
                         st.warning("Duplicate submission ignored — identical to the click just before it.")
 
@@ -98,7 +104,7 @@ def render() -> None:
                     ok, msg = archive_booklet(int(arch_pick))
                     (st.success if ok else st.error)(msg)
                     if ok:
-                        refresh()
+                        refresh(done=msg)
 
         with st.expander("Booklet gap audit"):
             st.caption("Every assignment is manual (Phase 6 Redux v2) — a normal one shouldn't leave a gap, since the dropdown only ever offers open leaves. A real gap here usually means a leaf was assigned outside this app (pre-Redux historical data), or a spoiled leaf logged after the fact.")
@@ -157,7 +163,7 @@ def render() -> None:
                     ok, msg = restore_database_from_bytes(restore_file.getvalue())
                     (st.success if ok else st.error)(msg)
                     if ok:
-                        refresh()
+                        refresh(done=msg)
 
     with st.container(border=True):
         st.subheader("Audit log")

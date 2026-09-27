@@ -1,4 +1,4 @@
-"""Bank loans screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this tab is open."""
+"""Bank loans screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this page is open."""
 from __future__ import annotations
 
 import pandas as pd
@@ -24,24 +24,34 @@ from engines.reports_service import get_bank_loan_servicing_report
 from engines.validators import money_amount_error
 
 from views.shared import (  # noqa: F401
+    BL_BROWSE,
+    BL_NEW,
+    MONEY_FORMAT,
     confirm_cancel_bank_loan_dialog,
     confirm_create_dialog,
+    date_col,
     date_preset_filter,
     dup_needs_confirm,
     dup_note,
     dup_resume,
     guard_duplicate_submit,
+    mode_label,
+    money_col,
+    page_header,
     pdf_preview_and_download,
     q,
     refresh,
+    section,
     selectbox_creditor,
     selectbox_creditor_label,
+    status_badge,
+    status_text,
 )
 
 
 def render() -> None:
-    st.header("Bank loans")
-    st.caption("Add or edit lending bank records in the Creditor Master tab. Just Due Date and Amount per installment — no computation, with one optional addition: an interest portion, when you know it, to feed the interest-tracking dashboard. A due date is treated as Paid automatically once it's in the past (same convention as a check's cleared status elsewhere in this app), not a manual flag. Settlement is untracked cash: no check or bank debit is recorded.")
+    page_header("Bank loans")
+    st.caption("Add or edit lending bank records on the Creditors page. Just Due Date and Amount per installment — no computation, with one optional addition: an interest portion, when you know it, to feed the interest-tracking dashboard. A due date is treated as Paid automatically once it's in the past (same convention as a check's cleared status elsewhere in this app), not a manual flag. Settlement is untracked cash: no check or bank debit is recorded.")
 
     if "_bl_mode_next" in st.session_state:
         st.session_state["bl_mode"] = st.session_state.pop("_bl_mode_next")
@@ -64,12 +74,13 @@ def render() -> None:
 
     bl_mode = st.segmented_control(
         "What do you want to do?",
-        options=["🔍 Browse Bank Loans", "➕ New Bank Loan"],
-        default="🔍 Browse Bank Loans",
+        options=[BL_BROWSE, BL_NEW],
+        default=BL_BROWSE,
+        format_func=mode_label,
         key="bl_mode",
     )
 
-    if bl_mode == "➕ New Bank Loan":
+    if bl_mode == BL_NEW:
         st.subheader("Create bank loan")
         with st.expander("Loan beneficiary registry"):
             st.caption("Who actually uses/benefits from a loan the company pays for — a person or an affiliate. Reusable across multiple loans.")
@@ -82,8 +93,7 @@ def render() -> None:
                     if lb_name:
                         if guard_duplicate_submit("add_loan_beneficiary", lb_name, lb_type, lb_contact):
                             add_loan_beneficiary(lb_name, lb_type, lb_contact)
-                            st.success(f"Added {lb_type.lower()} {lb_name}.")
-                            refresh()
+                            refresh(done=f"Added {lb_type.lower()} {lb_name}.")
                         else:
                             st.warning("Duplicate submission ignored — identical to the click just before it.")
                     else:
@@ -108,7 +118,7 @@ def render() -> None:
             bl_principal = st.number_input("Principal amount (original loan amount)", min_value=0.0, step=10000.0)
             bl_mode_of_payment = st.text_input("Mode of payment (informational only, from the bank's document)", value="ADA")
             st.caption("Mode of payment is descriptive only — it doesn't drive any settlement logic. This system tracks payment as untracked cash by default regardless of what's entered here.")
-            if st.form_submit_button("Create bank loan", icon=":material/account_balance:"):
+            if st.form_submit_button("Create bank loan", icon=":material/account_balance:", type="primary"):
                 if bl_creditor and bl_ref:
                     err = money_amount_error(bl_principal, "Principal amount")
                     if not err and bl_maturity <= bl_start:
@@ -124,7 +134,7 @@ def render() -> None:
                             except ValueError as e:
                                 return False, str(e)
                             st.session_state["selected_bank_loan_id"] = new_blid
-                            st.session_state["_bl_mode_next"] = "🔍 Browse Bank Loans"
+                            st.session_state["_bl_mode_next"] = BL_BROWSE
                             return True, ""
                         confirm_create_dialog(
                             f"Create bank loan **{bl_ref}** with **{selectbox_creditor_label('BANK_LOAN', bl_creditor)}**: "
@@ -148,8 +158,8 @@ def render() -> None:
                 selection_mode="single-row",
                 key="bl_browser_df",
                 column_config={
-                    "principal_amount": st.column_config.NumberColumn("Principal", format="₱ %.2f"),
-                    "outstanding": st.column_config.NumberColumn("Outstanding", format="₱ %.2f"),
+                    "principal_amount": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT),
+                    "outstanding": st.column_config.NumberColumn("Outstanding", format=MONEY_FORMAT),
                     "beneficiary": st.column_config.TextColumn("Attributable To"),
                     "beneficiary_type": st.column_config.TextColumn("Type"),
                 },
@@ -179,8 +189,7 @@ def render() -> None:
                         )
                         if st.form_submit_button("Save", icon=":material/save:"):
                             edit_bank_loan_beneficiary(selected_blid, new_beneficiary)
-                            st.success("Updated.")
-                            refresh()
+                            refresh(done="Updated.")
             bl_installment_count = int(q("SELECT COUNT(*) AS n FROM bank_loan_installments WHERE bank_loan_id = ?", (selected_blid,))["n"][0])
             bl_col_export, bl_col_delete = st.columns(2)
             with bl_col_export:
@@ -203,7 +212,7 @@ def render() -> None:
                         (st.success if ok else st.error)(msg)
                         if ok:
                             st.session_state["selected_bank_loan_id"] = None
-                            refresh()
+                            refresh(done=msg)
 
         st.subheader("Repayment schedule")
         st.caption("Due Date and Amount, straight off the bank's document. Interest is optional — fill it in when you know it, straight off the same document, to feed the interest-tracking dashboard; leave it 0 otherwise. A row is treated as Paid automatically once its due date is in the past; add a row with the blank row at the bottom of the table.")
@@ -246,8 +255,8 @@ def render() -> None:
                     num_rows="dynamic",
                     key=f"bl_import_staging_editor_{selected_blid}",
                     column_config={
-                        "due_date": st.column_config.DateColumn("Due Date"),
-                        "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", step=0.01),
+                        "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, step=0.01),
                     },
                 )
                 bl_import_col_add, bl_import_col_discard = st.columns(2)
@@ -293,9 +302,9 @@ def render() -> None:
             column_config={
                 "installment_id": st.column_config.NumberColumn("ID"),
                 "installment_no": st.column_config.NumberColumn("No."),
-                "due_date": st.column_config.DateColumn("Due Date"),
-                "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.0, step=0.01),
-                "interest_portion": st.column_config.NumberColumn("Interest (optional)", format="₱ %.2f", min_value=0.0, step=0.01, default=0.0),
+                "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+                "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01),
+                "interest_portion": st.column_config.NumberColumn("Interest (optional)", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0),
                 "status": st.column_config.TextColumn("Status (auto)"),
             },
         )

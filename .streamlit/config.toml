@@ -1,12 +1,41 @@
+[client]
+# Hides Streamlit's own "Deploy" button and developer menu items -- this is a private office app.
+toolbarMode = "minimal"
+
 [theme]
-# Slick's Tire Supply brand colors, sampled directly from assets/slicks_logo.jpg:
-# background blue #015088, accent yellow #EDEB02, wordmark white #FFFFFF.
-# backgroundColor/textColor kept light/dark-neutral (not brand blue) since this
-# app is dense financial tables — readability wins over a fully "branded" dark
-# background; the blue and yellow show up in the sidebar logo, primary accents,
-# and widget backgrounds instead.
+# Slick's Tire Supply brand colors (from assets/slicks_logo.jpg): blue #015088, yellow #EDEB02.
+# Pages stay white with dark text (dense financial tables -- readability first); the sidebar is
+# brand blue. Yellow is only an accent on the dark sidebar (white/yellow on yellow is unreadable).
+base = "light"
 primaryColor = "#015088"
 backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#EAF2F8"
+secondaryBackgroundColor = "#F2F6FA"
 textColor = "#0B2545"
-font = "sans serif"
+linkColor = "#015088"
+linkUnderline = false
+borderColor = "#D6E0EA"
+showWidgetBorder = true
+showSidebarBorder = false
+baseRadius = "8px"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+baseFontSize = 15
+headingFontSizes = ["28px", "21px", "17px", "15px", "14px", "13px"]
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+dataframeHeaderBackgroundColor = "#EAF1F7"
+dataframeBorderColor = "#D6E0EA"
+# status colors (badges, alerts): Draft grey, Parked orange, Issued blue, Paid green, Cancelled red
+blueColor = "#015088"
+greenColor = "#1A7F37"
+orangeColor = "#C26A00"
+redColor = "#C62828"
+grayColor = "#5B6B7B"
+chartCategoricalColors = ["#015088", "#E0A800", "#1A7F37", "#C62828", "#6A4C93", "#0F8B8D", "#5B6B7B"]
+
+[theme.sidebar]
+backgroundColor = "#013B63"
+secondaryBackgroundColor = "#02497A"
+textColor = "#FFFFFF"
+borderColor = "#1E5F8C"
+primaryColor = "#EDEB02"
+linkColor = "#EDEB02"
+dataframeHeaderBackgroundColor = "#02497A"

@@ -1,4 +1,4 @@
-"""Lenders (loan notes) screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this tab is open."""
+"""Lenders (loan notes) screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this page is open."""
 from __future__ import annotations
 
 import pandas as pd
@@ -34,28 +34,38 @@ from engines.loan_schedule_service import unlinked_loan_checks
 from engines.validators import money_amount_error
 
 from views.shared import (  # noqa: F401
+    LN_BROWSE,
+    LN_NEW,
+    MONEY_FORMAT,
     PRINT_CHECKS_IN_APP,
     confirm_cancel_loan_note_dialog,
     confirm_create_dialog,
     confirm_delete_loan_note_dialog,
+    date_col,
     date_preset_filter,
     dup_needs_confirm,
     dup_note,
     dup_resume,
     guard_duplicate_submit,
+    mode_label,
+    money_col,
+    page_header,
     pdf_preview_and_download,
     q,
     refresh,
     render_assign_number_section,
     render_check_print_section,
+    section,
     selectbox_creditor,
     selectbox_creditor_label,
+    status_badge,
+    status_text,
 )
 
 
 def render() -> None:
-    st.header("Private lenders")
-    st.caption("Add or edit lender records in the Creditor Master tab.")
+    page_header("Lenders")
+    st.caption("Add or edit lender records on the Creditors page.")
 
     if "_ln_mode_next" in st.session_state:
         st.session_state["ln_mode"] = st.session_state.pop("_ln_mode_next")
@@ -74,12 +84,13 @@ def render() -> None:
 
     ln_mode = st.segmented_control(
         "What do you want to do?",
-        options=["🔍 Browse Loan Notes", "➕ New Loan Note"],
-        default="🔍 Browse Loan Notes",
+        options=[LN_BROWSE, LN_NEW],
+        default=LN_BROWSE,
+        format_func=mode_label,
         key="ln_mode",
     )
 
-    if ln_mode == "➕ New Loan Note":
+    if ln_mode == LN_NEW:
         st.subheader("Create loan note")
         with st.form("new_loan_note_form", border=False):
             ln_creditor = selectbox_creditor("Lender", "LENDER", "ln_creditor")
@@ -87,7 +98,7 @@ def render() -> None:
             ln_principal = st.number_input("Principal amount", min_value=0.0, step=1000.0)
             ln_rate = st.number_input("Monthly interest rate (%)", min_value=0.0, step=0.5, format="%.2f")
             st.caption("LN No. starts as a draft placeholder — use \"Promote to real LN No.\" below once it's ready to assign the permanent number. Total interest/payable are computed from the repayment schedule, not typed in.")
-            if st.form_submit_button("Create loan note", icon=":material/description:"):
+            if st.form_submit_button("Create loan note", icon=":material/description:", type="primary"):
                 if ln_creditor:
                     err = money_amount_error(ln_principal, "Principal amount")
                     if err:
@@ -97,7 +108,7 @@ def render() -> None:
                             ok, msg, new_lnid = create_loan_note(c, d, p, r)
                             if ok:
                                 st.session_state["selected_loan_note_id"] = new_lnid
-                                st.session_state["_ln_mode_next"] = "🔍 Browse Loan Notes"
+                                st.session_state["_ln_mode_next"] = LN_BROWSE
                             return ok, msg
                         confirm_create_dialog(
                             f"Create a loan note for **{selectbox_creditor_label('LENDER', ln_creditor)}** dated "
@@ -129,11 +140,11 @@ def render() -> None:
                 selection_mode="single-row",
                 key="ln_browser_df",
                 column_config={
-                    "principal_amount": st.column_config.NumberColumn("Principal", format="₱ %.2f"),
+                    "principal_amount": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT),
                     "monthly_interest_rate": st.column_config.NumberColumn("Monthly rate", format="%.2f%%"),
-                    "total_interest": st.column_config.NumberColumn("Interest", format="₱ %.2f"),
-                    "total_payable": st.column_config.NumberColumn("Total payable", format="₱ %.2f"),
-                    "outstanding": st.column_config.NumberColumn("Outstanding (uncleared)", format="₱ %.2f"),
+                    "total_interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT),
+                    "total_payable": st.column_config.NumberColumn("Total payable", format=MONEY_FORMAT),
+                    "outstanding": st.column_config.NumberColumn("Outstanding (uncleared)", format=MONEY_FORMAT),
                 },
             )
             ln_selected_rows = ln_browser_event.selection.rows if ln_browser_event and ln_browser_event.selection else []
@@ -173,8 +184,7 @@ def render() -> None:
                 if str(ln_row["note_ref"]).startswith("DRAFT-"):
                     if st.button("Promote to real LN No.", icon=":material/arrow_upward:", key="ln_promote_btn"):
                         new_ref = promote_draft_loan_note(selected_lnid)
-                        st.success(f"Promoted to {new_ref}.")
-                        refresh()
+                        refresh(done=f"Promoted to {new_ref}.")
                 else:
                     st.caption("LN No. is permanent.")
             with ln_col_status:
@@ -194,7 +204,7 @@ def render() -> None:
                             ok, msg = update_loan_note_status(selected_lnid, override_status)
                             (st.success if ok else st.error)(msg)
                             if ok:
-                                refresh()
+                                refresh(done=msg)
             with ln_col_export:
                 with st.expander("Export Loan Note PDF"):
                     if st.button("Generate Loan Note PDF", icon=":material/picture_as_pdf:", key="ln_export_btn"):
@@ -231,7 +241,7 @@ def render() -> None:
                         ok, msg = edit_loan_note_terms(selected_lnid, edit_principal, edit_rate)
                         (st.success if ok else st.error)(msg)
                         if ok:
-                            refresh()
+                            refresh(done=msg)
 
         tab_schedule, tab_ln_checks = st.tabs(
             ["Repayment Schedule", "Checks"], key="ln_subtab", default="Repayment Schedule", on_change="rerun",
@@ -251,9 +261,9 @@ def render() -> None:
                     installments_df,
                     hide_index=True,
                     column_config={
-                        "principal": st.column_config.NumberColumn("Principal", format="₱ %.2f"),
-                        "interest": st.column_config.NumberColumn("Interest", format="₱ %.2f"),
-                        "outstanding_balance": st.column_config.NumberColumn("Outstanding Balance", format="₱ %.2f"),
+                        "principal": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT),
+                        "interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT),
+                        "outstanding_balance": st.column_config.NumberColumn("Outstanding Balance", format=MONEY_FORMAT),
                     },
                 )
             else:
@@ -268,7 +278,7 @@ def render() -> None:
                     suggested_interest, balance_before = suggest_installment_interest(selected_lnid, add_due_date)
                     st.caption(f"Suggested interest: {php(suggested_interest)} ({(ln_row['monthly_interest_rate'] or 0):g}% × {php(balance_before)} balance × days elapsed ÷ 30) — editable below.")
                     add_interest = st.number_input("Interest", min_value=0.0, step=100.0, value=suggested_interest, key="ln_add_interest")
-                    if st.button("Add installment", icon=":material/playlist_add:", key="ln_add_installment_btn") or dup_resume("add_loan_installment"):
+                    if st.button("Add installment", icon=":material/playlist_add:", type="primary", key="ln_add_installment_btn") or dup_resume("add_loan_installment"):
                         if dup_needs_confirm("add_loan_installment", loan_installment_warnings(selected_lnid, [(add_due_date, add_principal, add_interest)])):
                             pass
                         elif guard_duplicate_submit("add_loan_installment", selected_lnid, add_due_date, add_principal, add_interest):
@@ -276,7 +286,7 @@ def render() -> None:
                             (st.success if ok else st.error)(msg)
                             if ok:
                                 del st.session_state["ln_add_principal"]
-                                refresh()
+                                refresh(done=msg)
                         else:
                             st.warning("Duplicate submission ignored — identical to the click just before it.")
 
@@ -314,10 +324,10 @@ def render() -> None:
                             disabled=["sheet_balance"],
                             key=f"ln_import_staging_editor_{selected_lnid}",
                             column_config={
-                                "due_date": st.column_config.DateColumn("Due Date"),
-                                "principal": st.column_config.NumberColumn("Principal", format="₱ %.2f", min_value=0.0, step=0.01),
-                                "interest": st.column_config.NumberColumn("Interest", format="₱ %.2f", min_value=0.0, step=0.01),
-                                "sheet_balance": st.column_config.NumberColumn("Sheet Balance", format="₱ %.2f"),
+                                "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+                                "principal": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT, min_value=0.0, step=0.01),
+                                "interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT, min_value=0.0, step=0.01),
+                                "sheet_balance": st.column_config.NumberColumn("Sheet Balance", format=MONEY_FORMAT),
                             },
                         )
                         ln_import_col_add, ln_import_col_discard = st.columns(2)
@@ -364,10 +374,10 @@ def render() -> None:
                         column_config={
                             "installment_id": st.column_config.NumberColumn("ID"),
                             "installment_no": st.column_config.NumberColumn("No."),
-                            "due_date": st.column_config.DateColumn("Due Date"),
-                            "principal": st.column_config.NumberColumn("Principal", format="₱ %.2f", min_value=0.0, step=0.01),
-                            "interest": st.column_config.NumberColumn("Interest", format="₱ %.2f", min_value=0.0, step=0.01),
-                            "outstanding_balance": st.column_config.NumberColumn("Outstanding Balance", format="₱ %.2f"),
+                            "due_date": st.column_config.DateColumn("Due Date", format="MMM DD, YYYY"),
+                            "principal": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT, min_value=0.0, step=0.01),
+                            "interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT, min_value=0.0, step=0.01),
+                            "outstanding_balance": st.column_config.NumberColumn("Outstanding Balance", format=MONEY_FORMAT),
                             "status": st.column_config.TextColumn("Status"),
                         },
                     )
@@ -428,8 +438,7 @@ def render() -> None:
                         elif guard_duplicate_submit("issue_pdc", int(pending_pick), pdc_amount, pdc_date):
                             ok, msg, check_id = issue_check(ln_creditor_id, pdc_amount, pdc_date, loan_note_id=selected_lnid, installment_id=int(pending_pick))
                             if ok:
-                                st.success(msg)
-                                refresh()
+                                refresh(done=msg)
                             else:
                                 st.error(msg)
                         else:
@@ -444,7 +453,7 @@ def render() -> None:
                     st.caption("Gives each of these checks its own schedule row: due date = check date, principal = check amount, interest = 0 "
                                "(a check can't say how much of it is interest — edit a row later if you know). Nothing is saved if the checks add up to more than the loan's principal.")
                     st.dataframe(pd.DataFrame(ln_unlinked, columns=["check_id", "check_number", "check_date", "amount"]), hide_index=True,
-                                 column_config={"amount": st.column_config.NumberColumn("Amount", format="₱ %.2f")})
+                                 column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)})
                     st.caption(f"Total of these checks: {php(sum(float(c[3]) for c in ln_unlinked))} · Loan principal: {php(ln_row['principal_amount'])}")
                     if st.button("Create schedule rows from these checks", icon=":material/playlist_add_check:", key="ln_sched_from_checks_btn"):
                         def _do_sched(lnid=selected_lnid):
@@ -464,7 +473,7 @@ def render() -> None:
             display_ln_checks = ln_checks_df.copy()
             if not display_ln_checks.empty:
                 display_ln_checks["check_number"] = display_ln_checks["check_number"].fillna("Pending (not yet printed)")
-            st.dataframe(display_ln_checks, hide_index=True, column_config={"amount": st.column_config.NumberColumn("Amount", format="₱ %.2f")})
+            st.dataframe(display_ln_checks, hide_index=True, column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)})
 
             if PRINT_CHECKS_IN_APP:
                 render_check_print_section(ln_checks_df, ln_row["creditor_name"], key_prefix=f"ln_check_print__{selected_lnid}")
@@ -480,8 +489,8 @@ def render() -> None:
                         original_ln_parked, hide_index=True, num_rows="fixed", disabled=["check_id"], key="ln_edit_parked_editor",
                         column_config={
                             "check_id": st.column_config.NumberColumn("ID"),
-                            "check_date": st.column_config.DateColumn("Check Date"),
-                            "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.01, step=0.01),
+                            "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
+                            "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
                         },
                     )
                     if (st.button("Save parked check edits", icon=":material/save:", key="ln_save_parked_edits") or dup_resume("ln_save_parked_edits")) and not dup_needs_confirm(
@@ -522,8 +531,8 @@ def render() -> None:
                         column_config={
                             "check_id": st.column_config.NumberColumn("ID"),
                             "check_number": st.column_config.TextColumn("Check Number"),
-                            "check_date": st.column_config.DateColumn("Check Date"),
-                            "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.01, step=0.01),
+                            "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
+                            "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
                         },
                     )
                     corr_by_id = original_ln_corr.set_index("check_id")
@@ -577,11 +586,11 @@ def render() -> None:
                             ok, msg = cancel_check(int(cr_pick))
                             (st.success if ok else st.error)(msg)
                             if ok:
-                                refresh()
+                                refresh(done=msg)
                     with cr_col_replace:
                         new_date = st.date_input("New check date", value=date.today(), key="ln_replace_date")
                         if st.button("Replace this check (new one parked)", icon=":material/sync_alt:", key="ln_replace_btn"):
                             ok, msg, *_ = replace_check(int(cr_pick), new_date, "")
                             (st.success if ok else st.error)(msg)
                             if ok:
-                                refresh()
+                                refresh(done=msg)

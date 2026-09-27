@@ -1,4 +1,4 @@
-"""Creditor Master screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this tab is open."""
+"""Creditor Master screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this page is open."""
 from __future__ import annotations
 
 import pandas as pd
@@ -15,18 +15,25 @@ from engines.duplicate_service import creditor_warnings
 from engines.statement_rules import DEFAULT_SUPPLIER_TERMS
 
 from views.shared import (  # noqa: F401
+    MONEY_FORMAT,
     SUPPLIER_TERMS_OPTIONS,
+    date_col,
     dup_needs_confirm,
     dup_resume,
     guard_duplicate_submit,
+    money_col,
+    page_header,
     q,
     refresh,
+    section,
+    status_badge,
+    status_text,
 )
 
 
 def render() -> None:
-    st.header("Creditor Master")
-    st.caption("Master registry of payees tagged supplier, lender, or bank loan. Credit card payees stay in their own track (Credit cards tab).")
+    page_header("Creditors")
+    st.caption("Master registry of payees tagged supplier, lender, or bank loan. Credit card payees stay in their own track (Credit cards page).")
 
     creditor_master_df = q(
         "SELECT creditor_id, creditor_name, creditor_type, tin, contact_person, contact_number, email, terms, is_active, datetime(created_at, 'localtime') AS created_at "
@@ -83,7 +90,7 @@ def render() -> None:
         },
     )
 
-    if st.button("Save creditor changes", icon=":material/save:", key="save_creditor_master_edits") or dup_resume("save_creditor_master"):
+    if st.button("Save creditor changes", icon=":material/save:", type="primary", key="save_creditor_master_edits") or dup_resume("save_creditor_master"):
         if dup_needs_confirm("save_creditor_master", [
             w for _, r in edited_master_df.iterrows()
             if pd.isna(r["creditor_id"]) and cell_text(r["creditor_name"]).strip()

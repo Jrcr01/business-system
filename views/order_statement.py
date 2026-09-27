@@ -1,4 +1,4 @@
-"""Order Statement (batches, invoices, credit memos, checks) screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this tab is open."""
+"""Order Statement (batches, invoices, credit memos, checks) screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this page is open."""
 from __future__ import annotations
 
 import io
@@ -61,6 +61,9 @@ from engines.statement_rules import sync_invoice_payment_status
 from engines.statement_rules import waterfall_allocate_preview
 
 from views.shared import (  # noqa: F401
+    MONEY_FORMAT,
+    OS_BROWSE,
+    OS_NEW,
     PRINT_CHECKS_IN_APP,
     PdfReader,
     PdfWriter,
@@ -69,23 +72,30 @@ from views.shared import (  # noqa: F401
     confirm_create_dialog,
     confirm_unlock_dialog,
     creditor_options,
+    date_col,
     date_preset_filter,
     default_index,
     dup_needs_confirm,
     dup_resume,
     guard_duplicate_submit,
+    mode_label,
+    money_col,
+    page_header,
     pdf_preview_and_download,
     q,
     refresh,
     render_assign_number_section,
     render_check_print_section,
+    section,
     selectbox_creditor,
+    status_badge,
+    status_text,
 )
 
 
 def render() -> None:
-    st.header("Order Statement")
-    st.caption("Supplier records now live in Creditor Master. Open or create a batch below — Invoices, Credit Memo, and Checks all follow whichever batch is open.")
+    page_header("Order statements")
+    st.caption("Supplier records are on the Creditors page. Open or create a batch below — Invoices, Credit Memo, and Checks all follow whichever batch is open.")
 
     statements_df = q(
         """SELECT os.statement_id, os.statement_ref, c.creditor_name, os.total_amount,
@@ -116,23 +126,23 @@ def render() -> None:
 
     os_mode = st.segmented_control(
         "What do you want to do?",
-        options=["🔍 Browse Batches", "➕ New Batch"],
-        default="🔍 Browse Batches",
+        options=[OS_BROWSE, OS_NEW],
+        default=OS_BROWSE,
+        format_func=mode_label,
         key="os_mode",
     )
 
-    if os_mode == "➕ New Batch":
+    if os_mode == OS_NEW:
         st.subheader("Create order statement")
         st.caption("Total starts at ₱0.00 and is never typed in — it recalculates automatically as invoice lines are added to the batch.")
         with st.form("new_statement_form", border=False):
             os_creditor = selectbox_creditor("Supplier", "SUPPLIER", "os_creditor")
-            if st.form_submit_button("Create draft", icon=":material/note_add:") and os_creditor:
+            if st.form_submit_button("Create draft", icon=":material/note_add:", type="primary") and os_creditor:
                 if guard_duplicate_submit("create_order_statement", os_creditor):
                     new_sid = create_order_statement(os_creditor)
                     st.session_state["selected_statement_id"] = new_sid
-                    st.session_state["_os_mode_next"] = "🔍 Browse Batches"
-                    st.success("Draft order statement created — opened below.")
-                    refresh()
+                    st.session_state["_os_mode_next"] = OS_BROWSE
+                    refresh(done="Draft order statement created — opened below.")
                 else:
                     st.warning("Duplicate submission ignored — identical to the click just before it.")
 
@@ -286,10 +296,10 @@ def render() -> None:
                 selection_mode="single-row",
                 key="batch_browser_df",
                 column_config={
-                    "total_amount": st.column_config.NumberColumn("Gross total", format="₱ %.2f"),
-                    "credit_memo_total": st.column_config.NumberColumn("Credit memos", format="₱ %.2f"),
-                    "net_total": st.column_config.NumberColumn("Net total (checks cut against this)", format="₱ %.2f"),
-                    "outstanding": st.column_config.NumberColumn("Outstanding (uncleared)", format="₱ %.2f"),
+                    "total_amount": st.column_config.NumberColumn("Gross total", format=MONEY_FORMAT),
+                    "credit_memo_total": st.column_config.NumberColumn("Credit memos", format=MONEY_FORMAT),
+                    "net_total": st.column_config.NumberColumn("Net total (checks cut against this)", format=MONEY_FORMAT),
+                    "outstanding": st.column_config.NumberColumn("Outstanding (uncleared)", format=MONEY_FORMAT),
                     "is_locked": st.column_config.CheckboxColumn("Locked"),
                 },
             )
@@ -330,7 +340,7 @@ def render() -> None:
                     if bp_summary:
                         st.dataframe(pd.DataFrame(bp_summary).drop(columns=["statement_id"]).rename(columns={
                             "ref": "Order statement", "supplier": "Supplier", "stage": "Status", "invoices": "Invoices", "net_total": "Net total", "checks": "Checks", "checks_total": "Checks total"}),
-                            hide_index=True, column_config={"Net total": st.column_config.NumberColumn(format="₱ %.2f"), "Checks total": st.column_config.NumberColumn(format="₱ %.2f")})
+                            hide_index=True, column_config={"Net total": st.column_config.NumberColumn(format=MONEY_FORMAT), "Checks total": st.column_config.NumberColumn(format=MONEY_FORMAT)})
                         st.caption(f"{len(bp_summary)} order statement(s) · net total {php(sum(r['net_total'] for r in bp_summary))} · {sum(r['checks'] for r in bp_summary)} check(s) {php(sum(r['checks_total'] for r in bp_summary))}")
                     bp_copies = "both"
                     bp_apply = False
@@ -384,8 +394,7 @@ def render() -> None:
                         if guard_duplicate_submit("promote_statement", int(stmt_choice)):
                             try:
                                 new_ref = promote_draft_statement(int(stmt_choice), "Issued")
-                                st.success(f"Promoted to Issued as {new_ref}.")
-                                refresh()
+                                refresh(done=f"Promoted to Issued as {new_ref}.")
                             except ValueError as e:
                                 st.error(str(e))
                         else:
@@ -527,8 +536,8 @@ def render() -> None:
                         scoped_invoices_df[["invoice_id", "doc_ref", "invoice_date", "due_date", "gross_amount", "amount", "status"]],
                         hide_index=True,
                         column_config={
-                            "gross_amount": st.column_config.NumberColumn("Gross amount", format="₱ %.2f"),
-                            "amount": st.column_config.NumberColumn("Net amount", format="₱ %.2f"),
+                            "gross_amount": st.column_config.NumberColumn("Gross amount", format=MONEY_FORMAT),
+                            "amount": st.column_config.NumberColumn("Net amount", format=MONEY_FORMAT),
                         },
                     )
                 st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is locked — unlock it above to add, edit, or delete an invoice.")
@@ -626,9 +635,9 @@ def render() -> None:
                             column_config={
                                 "source_file": st.column_config.TextColumn("Source"),
                                 "doc_ref": st.column_config.TextColumn("Doc Ref"),
-                                "invoice_date": st.column_config.DateColumn("Date Received"),
+                                "invoice_date": st.column_config.DateColumn("Date Received", format="MMM DD, YYYY"),
                                 "due_date": st.column_config.DateColumn("Due Date (computed, recalculated on save)"),
-                                "gross_amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.0, step=0.01),
+                                "gross_amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01),
                                 "less_pct": st.column_config.NumberColumn("Less %", format="%.2f%%", min_value=0.0, max_value=100.0, step=1.0),
                             },
                         )
@@ -641,7 +650,7 @@ def render() -> None:
                             )
                         bulk_col_add, bulk_col_discard = st.columns(2)
                         with bulk_col_add:
-                            if st.button("Add these invoices to the batch", icon=":material/playlist_add:", key=batch_scoped_key("bulk_commit_btn")) or dup_resume("bulk_add_invoices"):
+                            if st.button("Add these invoices to the batch", icon=":material/playlist_add:", type="primary", key=batch_scoped_key("bulk_commit_btn")) or dup_resume("bulk_add_invoices"):
                                 if dup_needs_confirm("bulk_add_invoices", invoice_warnings(scoped_creditor_id, [
                                     (cell_text(r["doc_ref"]).strip(), r["invoice_date"], float(r["gross_amount"] or 0))
                                     for _, r in edited_staged_df.iterrows() if cell_text(r["doc_ref"]).strip() and float(r["gross_amount"] or 0) > 0
@@ -706,13 +715,13 @@ def render() -> None:
                         "due_date": st.column_config.DateColumn(
                             "Due Date (computed, recalculated on save)", default=resolve_due_date(date.today(), supplier_terms)
                         ),
-                        "gross_amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.0, step=0.01, default=0.0),
+                        "gross_amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0),
                         "less_pct": st.column_config.NumberColumn("Less %", format="%.2f%%", min_value=0.0, max_value=100.0, step=1.0, default=0.0),
-                        "amount": st.column_config.NumberColumn("Net Amount (recalculated on save)", format="₱ %.2f"),
+                        "amount": st.column_config.NumberColumn("Net Amount (recalculated on save)", format=MONEY_FORMAT),
                         "status": st.column_config.TextColumn("Status"),
                     },
                 )
-                if st.button("Save invoice changes", icon=":material/save:", key=batch_scoped_key("save_invoice_edits")) or dup_resume("save_invoice_changes"):
+                if st.button("Save invoice changes", icon=":material/save:", type="primary", key=batch_scoped_key("save_invoice_edits")) or dup_resume("save_invoice_changes"):
                   if dup_needs_confirm("save_invoice_changes", invoice_warnings(scoped_creditor_id, [
                       (cell_text(r["doc_ref"]).strip(), r["invoice_date"], float(r["gross_amount"] or 0))
                       for _, r in edited_invoices_df.iterrows()
@@ -797,7 +806,7 @@ def render() -> None:
                     st.dataframe(
                         scoped_memos_df,
                         hide_index=True,
-                        column_config={"amount": st.column_config.NumberColumn("Amount", format="₱ %.2f")},
+                        column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)},
                     )
                 st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is locked — unlock it above to add, edit, or delete a credit memo.")
             else:
@@ -814,7 +823,7 @@ def render() -> None:
                         "credit_memo_id": st.column_config.NumberColumn("ID"),
                         "memo_ref": st.column_config.TextColumn("Reference", default=""),
                         "memo_date": st.column_config.DateColumn("Memo Date", default=date.today()),
-                        "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.0, step=0.01, default=0.0),
+                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0),
                         "reason": st.column_config.TextColumn("Reason", default=""),
                     },
                 )
@@ -881,7 +890,7 @@ def render() -> None:
                         refresh()
 
         with tab_checks_sub:
-            st.markdown("##### Issue a check")
+            section("Issue a check")
             _park_flash = st.session_state.pop("_park_flash", None)
             if _park_flash:
                 st.success(_park_flash)
@@ -994,8 +1003,8 @@ def render() -> None:
                     num_rows="dynamic",
                     key=grid_key,
                     column_config={
-                        "check_date": st.column_config.DateColumn("Check Date", default=default_check_date),
-                        "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.01, step=0.01, default=0.0),
+                        "check_date": st.column_config.DateColumn("Check Date", default=default_check_date, format="MMM DD, YYYY"),
+                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01, default=0.0),
                     },
                 )
 
@@ -1069,9 +1078,9 @@ def render() -> None:
                                 key=alloc_grid_key,
                                 column_config={
                                     "check_row": st.column_config.NumberColumn("Check #"),
-                                    "check_date": st.column_config.DateColumn("Check Date"),
+                                    "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
                                     "doc_ref": st.column_config.TextColumn("Invoice"),
-                                    "allocated": st.column_config.NumberColumn("Allocated", format="₱ %.2f", min_value=0.01, step=0.01),
+                                    "allocated": st.column_config.NumberColumn("Allocated", format=MONEY_FORMAT, min_value=0.01, step=0.01),
                                 },
                             )
                             edited_alloc_df = edited_alloc_df.copy()
@@ -1103,7 +1112,7 @@ def render() -> None:
                     )
                     mc1, mc2 = st.columns(2)
                     with mc1:
-                        if st.button("✓ Confirm", key=batch_scoped_key("confirm_memos_btn")):
+                        if st.button("Confirm", icon=":material/check:", key=batch_scoped_key("confirm_memos_btn")):
                             confirm_credit_memos(int(batch_scope_pick))
                             refresh()
                     with mc2:
@@ -1128,10 +1137,10 @@ def render() -> None:
                                 (st.success if ok else st.error)(msg)
                                 if ok:
                                     st.session_state.pop(batch_scoped_key("show_remove_memo_form"), None)
-                                    refresh()
+                                    refresh(done=msg)
 
                 if st.button(
-                    "Park Metrobank checks", icon=":material/payments:",
+                    "Park Metrobank checks", icon=":material/payments:", type="primary",
                     key=batch_scoped_key("issue_checks_submit"), disabled=not grid_matches or not alloc_ready or memo_guard_blocking,
                 ) or dup_resume("issue_checks_grid"):
                     if dup_needs_confirm("issue_checks_grid", check_warnings(scoped_creditor_id, [(r["amount"], r["check_date"]) for r in rows])):
@@ -1149,7 +1158,7 @@ def render() -> None:
                                 _left = round(float(_inv["remaining"]) - float(_p["allocated"]), 2)
                                 _full = _full and abs(_left) <= 0.005
                                 _bits.append(f"invoice **{_inv['doc_ref']}** {php(_p['allocated'])}" + ("" if abs(_left) <= 0.005 else f" (of {php(_inv['remaining'])}, {php(_left)} still unpaid)"))
-                            _mark = "✓ matches the invoice" if _full else "⚠ check the split"
+                            _mark = ":green[:material/check_circle: matches the invoice]" if _full else ":orange[:material/warning: check the split]"
                             _park_lines.append(f"- {_row['check_date']} · **{php(_row['amount'])}** → " + " + ".join(_bits) + f" — {_mark}")
                         _is_draft = str(scoped_row["status"]) == "Draft"
                         _park_summary = (
@@ -1187,7 +1196,7 @@ def render() -> None:
 
                         confirm_create_dialog(_park_summary, batch_scoped_key("issue_checks_confirm"), _do_park)
 
-            st.markdown("##### Checks already issued against this order statement")
+            section("Checks already issued against this order statement")
             scoped_checks_df = q(
                 "SELECT check_id, check_number, check_date, amount, status, datetime(printed_at, 'localtime') AS printed_at FROM checks_issued WHERE statement_id = ? ORDER BY check_id",
                 (int(batch_scope_pick),),
@@ -1200,7 +1209,7 @@ def render() -> None:
                 st.dataframe(
                     display_scoped_checks,
                     hide_index=True,
-                    column_config={"amount": st.column_config.NumberColumn("Amount", format="₱ %.2f")},
+                    column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)},
                 )
 
             active_checks_df = scoped_checks_df[scoped_checks_df["status"] == "Active"].copy() if not scoped_checks_df.empty else scoped_checks_df
@@ -1211,7 +1220,7 @@ def render() -> None:
                 render_check_print_section(scoped_checks_df, scoped_row["creditor_name"], key_prefix=batch_scoped_key("os_check_print"))
             render_assign_number_section(scoped_checks_df, key_prefix=batch_scoped_key("os_check_assign"))
 
-            st.markdown("##### Edit parked checks")
+            section("Edit parked checks")
             if parked_active_df.empty:
                 st.caption("No check without a number in this batch to edit — once a check has its number it is final (use Correct an active check).")
             else:
@@ -1226,8 +1235,8 @@ def render() -> None:
                     key=batch_scoped_key("edit_parked_editor"),
                     column_config={
                         "check_id": st.column_config.NumberColumn("ID"),
-                        "check_date": st.column_config.DateColumn("Check Date"),
-                        "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.01, step=0.01),
+                        "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
+                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
                     },
                 )
                 if st.button("Save parked check edits", icon=":material/save:", key=batch_scoped_key("save_parked_edits")):
@@ -1251,7 +1260,7 @@ def render() -> None:
                     if updated:
                         refresh()
 
-            st.markdown("##### Un-park checks")
+            section("Un-park checks")
             unparkable_df = parked_active_df[~parked_active_df["check_number"].apply(has_value)] if not parked_active_df.empty else parked_active_df
             if batch_is_locked:
                 st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to un-park checks.")
@@ -1277,7 +1286,7 @@ def render() -> None:
                         + (" Some were already exported to Chrysanth — remove them there too." if unparkable_df[unparkable_df["check_id"].isin(unpark_pick) & unparkable_df["printed_at"].apply(has_value)].shape[0] else ""),
                         batch_scoped_key("unpark_confirm"), _do_unpark)
 
-            st.markdown("##### Correct an active check")
+            section("Correct an active check")
             if batch_is_locked:
                 st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to correct a check.")
             elif numbered_active_df.empty:
@@ -1295,8 +1304,8 @@ def render() -> None:
                     column_config={
                         "check_id": st.column_config.NumberColumn("ID"),
                         "check_number": st.column_config.TextColumn("Check Number"),
-                        "check_date": st.column_config.DateColumn("Check Date"),
-                        "amount": st.column_config.NumberColumn("Amount", format="₱ %.2f", min_value=0.01, step=0.01),
+                        "check_date": st.column_config.DateColumn("Check Date", format="MMM DD, YYYY"),
+                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
                     },
                 )
                 if st.button("Save check corrections", icon=":material/save:", key=batch_scoped_key("save_check_corrections")):
@@ -1346,11 +1355,11 @@ def render() -> None:
                             ok, msg = apply_check_correction(int(note_pick), "Payee Note", note_text.strip(), "")
                             (st.success if ok else st.error)(msg)
                             if ok:
-                                refresh()
+                                refresh(done=msg)
                         else:
                             st.error("Note can't be blank.")
 
-            st.markdown("##### Void a check")
+            section("Void a check")
             if batch_is_locked:
                 st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to void a check.")
             elif active_checks_df.empty:
@@ -1374,7 +1383,7 @@ def render() -> None:
                         ok, msg = cancel_check(int(void_pick))
                     (st.success if ok else st.error)(msg)
                     if ok:
-                        refresh()
+                        refresh(done=msg)
 
     with st.expander("Vendor SOA matcher"):
         soa_creditor = selectbox_creditor("Supplier", "SUPPLIER", "soa_creditor")

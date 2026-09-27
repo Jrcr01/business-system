@@ -1,4 +1,4 @@
-"""Credit cards screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this tab is open."""
+"""Credit cards screen (moved out of app.py unchanged, 2026-09-27). app.py calls render() only while this page is open."""
 from __future__ import annotations
 
 import io
@@ -34,14 +34,21 @@ from engines.duplicate_service import credit_card_warnings
 from engines.validators import money_amount_error
 
 from views.shared import (  # noqa: F401
+    MONEY_FORMAT,
     confirm_create_dialog,
     creditor_options,
+    date_col,
     dup_needs_confirm,
     dup_note,
     dup_resume,
     guard_duplicate_submit,
+    money_col,
+    page_header,
     q,
     refresh,
+    section,
+    status_badge,
+    status_text,
 )
 
 
@@ -53,7 +60,7 @@ def _card_label(cid: int, df: pd.DataFrame) -> str:
 
 
 def render() -> None:
-    st.header("Credit cards")
+    page_header("Credit cards")
     st.caption("Scoped to what matters: due dates, amounts due, whose card it is, making sure every statement gets recorded, and the annual fee waiver reminder.")
 
     cardholders_df = q("SELECT * FROM cardholders ORDER BY name")
@@ -168,13 +175,13 @@ def render() -> None:
             shown_statements_df.drop(columns=["card_id"]),
             hide_index=True,
             column_config={
-                "still_owed": st.column_config.NumberColumn("Still owed", format="₱ %.2f"),
-                "total_amount_due": st.column_config.NumberColumn("Amount due", format="₱ %.2f"),
-                "previous_balance": st.column_config.NumberColumn("Previous balance", format="₱ %.2f"),
-                "new_charges": st.column_config.NumberColumn("New charges", format="₱ %.2f"),
-                "interest_charged": st.column_config.NumberColumn("Interest", format="₱ %.2f"),
-                "amount_paid": st.column_config.NumberColumn("Paid", format="₱ %.2f"),
-                "unpaid_balance_next": st.column_config.NumberColumn("Unpaid → next", format="₱ %.2f"),
+                "still_owed": st.column_config.NumberColumn("Still owed", format=MONEY_FORMAT),
+                "total_amount_due": st.column_config.NumberColumn("Amount due", format=MONEY_FORMAT),
+                "previous_balance": st.column_config.NumberColumn("Previous balance", format=MONEY_FORMAT),
+                "new_charges": st.column_config.NumberColumn("New charges", format=MONEY_FORMAT),
+                "interest_charged": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT),
+                "amount_paid": st.column_config.NumberColumn("Paid", format=MONEY_FORMAT),
+                "unpaid_balance_next": st.column_config.NumberColumn("Unpaid → next", format=MONEY_FORMAT),
             },
         )
 
@@ -271,7 +278,7 @@ def render() -> None:
                         else:
                             st.info(f"Payables for this card after saving: **{php(stmt_total_due)}**.")
 
-                    if st.button("Add statement", icon=":material/receipt_long:", key="add_cc_statement_btn", disabled=not stmt_math_ok) or dup_resume("add_cc_statement"):
+                    if st.button("Add statement", icon=":material/receipt_long:", type="primary", key="add_cc_statement_btn", disabled=not stmt_math_ok) or dup_resume("add_cc_statement"):
                         stmt_month_text = f"{int(stmt_year_num)}-{int(stmt_month_num):02d}"
                         if dup_needs_confirm("add_cc_statement", cc_statement_warnings(int(stmt_card), stmt_due, stmt_total_due)
                                              + cc_statement_month_warnings(int(stmt_card), stmt_month_text, stmt_total_due)):
@@ -283,8 +290,7 @@ def render() -> None:
                                 earlier_paid, earlier_status = confirm_cc_payment_from_next_statement(int(stmt_earlier["id"]), stmt_previous)
                                 st.toast(f"Earlier statement confirmed: {php(earlier_paid)} paid ({earlier_status}).")
                             st.session_state["_clear_stmt_form"] = True
-                            st.success("Statement recorded.")
-                            refresh()
+                            refresh(done="Statement recorded.")
                         else:
                             st.warning("Duplicate submission ignored — identical to the click just before it.")
 
@@ -348,14 +354,14 @@ def render() -> None:
                         ok, msg = edit_cc_statement(int(edit_stmt_id), edit_stmt_due, edit_stmt_prev, edit_stmt_new, edit_stmt_int, edit_stmt_paid)
                         (st.success if ok else st.error)(msg)
                         if ok:
-                            refresh()
+                            refresh(done=msg)
                 with ec2:
                     confirm_delete_stmt = st.checkbox("Yes, delete this statement", key=f"confirm_delete_stmt_{edit_stmt_id}")
                     if st.button("Delete this statement", icon=":material/delete:", key=f"delete_stmt_{edit_stmt_id}", disabled=not confirm_delete_stmt):
                         ok, msg = delete_cc_statement(int(edit_stmt_id))
                         (st.success if ok else st.error)(msg)
                         if ok:
-                            refresh()
+                            refresh(done=msg)
 
     # ----------------------------------------------------------------------
     with sub_cards:
@@ -364,7 +370,7 @@ def render() -> None:
             cards_df.drop(columns=["cardholder_id", "creditor_id"]),
             hide_index=True,
             column_config={
-                "credit_limit": st.column_config.NumberColumn("Credit limit", format="₱ %.2f"),
+                "credit_limit": st.column_config.NumberColumn("Credit limit", format=MONEY_FORMAT),
                 "annual_fee_due_month": st.column_config.NumberColumn("Annual fee month"),
                 "statement_day": st.column_config.NumberColumn("Statement day"),
                 "is_active": st.column_config.CheckboxColumn("Active"),
@@ -463,19 +469,17 @@ def render() -> None:
                             ok, msg = edit_credit_card(int(edit_card_id), edit_card_name, get_or_create_card_issuer(edit_issuer), edit_holder, edit_limit, edit_af_month, edit_statement_day or None)
                             (st.success if ok else st.error)(msg)
                             if ok:
-                                refresh()
+                                refresh(done=msg)
 
                     if int(current["is_active"]):
                         if st.button("Deactivate this card", icon=":material/block:", key=f"deactivate_card_{edit_card_id}"):
                             deactivate_credit_card(int(edit_card_id))
-                            st.success("Card deactivated — its statement history stays intact, but it won't appear when adding a new statement.")
-                            refresh()
+                            refresh(done="Card deactivated — its statement history stays intact, but it won't appear when adding a new statement.")
                     else:
                         st.caption("This card is currently inactive.")
                         if st.button("Reactivate this card", icon=":material/refresh:", key=f"reactivate_card_{edit_card_id}"):
                             reactivate_credit_card(int(edit_card_id))
-                            st.success("Card reactivated.")
-                            refresh()
+                            refresh(done="Card reactivated.")
 
         with st.expander("Add a new card"):
             with st.form("new_cc_card_form", border=False, clear_on_submit=True):
@@ -531,8 +535,7 @@ def render() -> None:
                     if ch_name:
                         if guard_duplicate_submit("add_cardholder", ch_name, ch_dept, ch_contact):
                             add_cardholder(ch_name, ch_dept, ch_contact)
-                            st.success(f"Added cardholder {ch_name}.")
-                            refresh()
+                            refresh(done=f"Added cardholder {ch_name}.")
                         else:
                             st.warning("Duplicate submission ignored — identical to the click just before it.")
                     else:
@@ -560,19 +563,17 @@ def render() -> None:
                             ok, msg = edit_cardholder(int(edit_holder_id), edit_holder_name, edit_holder_dept, edit_holder_contact)
                             (st.success if ok else st.error)(msg)
                             if ok:
-                                refresh()
+                                refresh(done=msg)
 
                     if int(current_holder_row["is_active"]):
                         if st.button("Deactivate this cardholder", icon=":material/block:", key=f"deactivate_holder_{edit_holder_id}"):
                             deactivate_cardholder(int(edit_holder_id))
-                            st.success("Cardholder deactivated — their card/statement history stays intact, but they won't appear when adding a new card or statement.")
-                            refresh()
+                            refresh(done="Cardholder deactivated — their card/statement history stays intact, but they won't appear when adding a new card or statement.")
                     else:
                         st.caption("This cardholder is currently inactive.")
                         if st.button("Reactivate this cardholder", icon=":material/refresh:", key=f"reactivate_holder_{edit_holder_id}"):
                             reactivate_cardholder(int(edit_holder_id))
-                            st.success("Cardholder reactivated.")
-                            refresh()
+                            refresh(done="Cardholder reactivated.")
 
     # ----------------------------------------------------------------------
     with sub_check:
@@ -607,8 +608,8 @@ def render() -> None:
             st.dataframe(
                 report_df, hide_index=True,
                 column_config={
-                    f"{cov_prev} amount": st.column_config.NumberColumn(format="₱ %.2f"),
-                    f"{cov_this} amount": st.column_config.NumberColumn(format="₱ %.2f"),
+                    f"{cov_prev} amount": st.column_config.NumberColumn(format=MONEY_FORMAT),
+                    f"{cov_this} amount": st.column_config.NumberColumn(format=MONEY_FORMAT),
                 },
             )
             if report_df.empty:
