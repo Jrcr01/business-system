@@ -13,6 +13,7 @@ existing pattern here.
 """
 import io
 from datetime import datetime
+from xml.sax.saxutils import escape as _esc
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import LETTER
@@ -121,7 +122,7 @@ def _section_table(headers: list, rows: list, col_widths: list, right_cols: tupl
         room = max(total - fixed, 60)
         widths = [n if not t_ else n * room / flex for n, t_ in zip(need, is_text)]
         cs = ParagraphStyle("SecCell", parent=getSampleStyleSheet()["Normal"], fontSize=size, leading=size + 1.5)
-        data = [headers] + [[Paragraph(str(x), cs) if is_text[c] else x for c, x in enumerate(r)] for r in rows]
+        data = [headers] + [[Paragraph(_esc(str(x)), cs) if is_text[c] else x for c, x in enumerate(r)] for r in rows]   # escaped: 'S&P' must not break the PDF
     t = Table(data, colWidths=widths, repeatRows=1)
     t.setStyle(TableStyle(SECTION_TABLE_STYLE + [("FONTSIZE", (0, 0), (-1, -1), size)] + [("ALIGN", (c, 0), (c, -1), "RIGHT") for c in right_cols]))
     return t
@@ -436,7 +437,7 @@ def generate_rundown_pdf(title: str, scope: str, headers: list, rows: list, widt
             room = max(width - fixed, 60)
             col_w = [n if not t_ else n * room / flex for n, t_ in zip(need, is_text)]
             cell_style = ParagraphStyle("RdCell", parent=styles["Normal"], fontSize=size, leading=size + 1.5)
-            data = [headers] + [[Paragraph(str(x), cell_style) if is_text[c] else x for c, x in enumerate(r)] for r in rows]
+            data = [headers] + [[Paragraph(_esc(str(x)), cell_style) if is_text[c] else x for c, x in enumerate(r)] for r in rows]   # escaped: 'S&P' must not break the PDF
         t = Table(data, colWidths=col_w, repeatRows=1)
         t.setStyle(TableStyle(SECTION_TABLE_STYLE + [("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4)] + [("ALIGN", (c, 0), (c, -1), "RIGHT") for c in right_cols]))
         story.append(t)

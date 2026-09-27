@@ -701,6 +701,7 @@ CREATE TABLE IF NOT EXISTS bank_statement_imports (
     new_lines INTEGER,
     balance_ok INTEGER NOT NULL DEFAULT 1,
     imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    reconciled_at DATETIME,
     FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id)
 );
 
@@ -727,8 +728,27 @@ CREATE TABLE IF NOT EXISTS bank_transactions (
     reviewed INTEGER NOT NULL DEFAULT 0,
     note TEXT,
     line_key TEXT NOT NULL UNIQUE,
+    -- reconciliation v2 (migration 051): how it was resolved, non-check matches, rejected suggestions
+    resolution TEXT,
+    matched_installment_id INTEGER,
+    matched_cc_statement_id INTEGER,
+    rejected_check_ids TEXT,
     FOREIGN KEY (import_id) REFERENCES bank_statement_imports(import_id),
     FOREIGN KEY (matched_check_id) REFERENCES checks_issued(check_id)
 );
 CREATE INDEX IF NOT EXISTS idx_bank_transactions_date ON bank_transactions(posting_date);
 CREATE INDEX IF NOT EXISTS idx_bank_transactions_check ON bank_transactions(check_number);
+
+-- SAVED REPORTS (migration 051, 2026-09-28)
+-- "My reports": saved report criteria (a JSON spec checked against engines/report_builder.py's fixed list of datasets and fields -- never
+-- free SQL), optionally pinned to the Dashboard and / or included in the overall report.
+CREATE TABLE IF NOT EXISTS saved_reports (
+    report_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    spec_json TEXT NOT NULL,
+    pin_dashboard INTEGER NOT NULL DEFAULT 0,
+    include_in_overview INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_run_at DATETIME
+);

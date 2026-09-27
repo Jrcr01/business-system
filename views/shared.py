@@ -98,7 +98,7 @@ STATUS_STYLE = {
     "locked": ("gray", ":material/lock:"), "unlocked": ("gray", ":material/lock_open:"),
     "cancelled": ("red", ":material/cancel:"), "voided": ("red", ":material/block:"), "replaced": ("gray", ":material/swap_horiz:"),
     "stale": ("red", ":material/warning:"), "overdue": ("red", ":material/warning:"),
-    "needs reprint": ("orange", ":material/print:"),
+    "needs reprint": ("orange", ":material/print:"), "reconciled": ("green", ":material/task_alt:"),
 }
 
 

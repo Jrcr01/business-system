@@ -302,7 +302,7 @@ def import_statement(data: bytes, filename: str, bank_account_id: int = 1, keep_
     'already_imported'}. The same file (by content) is never imported twice."""
     file_hash = hashlib.sha256(data).hexdigest()
     with _conn() as conn:
-        prev = conn.execute("SELECT import_id, imported_at FROM bank_statement_imports WHERE file_hash = ?", (file_hash,)).fetchone()
+        prev = conn.execute("SELECT import_id, datetime(imported_at, 'localtime') AS imported_at FROM bank_statement_imports WHERE file_hash = ?", (file_hash,)).fetchone()
     if prev:
         return {"already_imported": True, "import_id": prev["import_id"], "imported_at": prev["imported_at"], "new_lines": 0,
                 "duplicate_lines": 0, "matched": 0, "exceptions": 0, "messages": [f"This exact file was already imported on {prev['imported_at'][:16]}."]}
@@ -343,15 +343,19 @@ def import_statement(data: bytes, filename: str, bank_account_id: int = 1, keep_
 
 
 def match_checks() -> dict:
-    """Match every not-yet-matched CHECK line to our checks (number + amount). Idempotent: safe to run again at any time.
-    match_status: matched / amount_mismatch / cancelled_check_cleared / not_in_system."""
+    """Match every still-open CHECK line to our checks (number + amount), then the other debits (bank-loan installments, credit-card
+    statements), then set lines from before the system started aside. Idempotent: safe to run again at any time; a line already matched or
+    resolved by the owner is never touched again.
+    match_status: matched / amount_mismatch / cancelled_check_cleared / not_in_system (checks); matched_loan / matched_card /
+    unmatched_debit (other debits); returned_check."""
     matched = exceptions = 0
     with _conn() as conn:
         ours = {}
         for r in conn.execute("SELECT check_id, check_number, amount, status FROM checks_issued WHERE check_number IS NOT NULL AND check_number != ''"):
             ours.setdefault(norm_check_number(r["check_number"]), []).append(dict(r))
         pending = conn.execute("""SELECT txn_id, check_number, debit, posting_date FROM bank_transactions
-                                  WHERE kind = 'CHECK' AND (match_status IS NULL OR match_status != 'matched')""").fetchall()
+                                  WHERE kind = 'CHECK' AND reviewed = 0
+                                    AND (match_status IS NULL OR match_status IN ('amount_mismatch', 'not_in_system'))""").fetchall()
         for t in pending:
             cands = ours.get(norm_check_number(t["check_number"]), [])
             same_amount = [c for c in cands if abs(float(c["amount"]) - float(t["debit"])) < 0.005]
@@ -370,19 +374,94 @@ def match_checks() -> dict:
                              (cands[0]["check_id"] if cands else None, status, t["txn_id"]))
                 exceptions += 1
         conn.execute("UPDATE bank_transactions SET match_status = 'returned_check' WHERE kind = 'RETURNED_CHECK' AND match_status IS NULL")
+        matched += _match_other_debits(conn)
+        _set_aside_before_system(conn)
+    update_reconciled()
     return {"matched": matched, "exceptions": exceptions}
 
 
-def exceptions() -> list[dict]:
-    """Bank lines that need the owner's eye (everything that is not a clean match / a normal deposit / a known debit)."""
+def _match_other_debits(conn) -> int:
+    """Bank debits that are not our checks: a debit memo of exactly a bank-loan installment's amount within 5 days of its due date is that
+    installment (ADA); a bills payment of exactly a credit-card statement's amount due within 10 days of its due date is that card payment.
+    Anything else stays 'unmatched_debit' for the owner to tag."""
+    n = 0
+    rows = conn.execute("""SELECT txn_id, kind, debit, posting_date FROM bank_transactions
+                           WHERE kind IN ('DEBIT_MEMO', 'BILLS_PAYMENT', 'OTHER') AND debit > 0 AND reviewed = 0
+                             AND (match_status IS NULL OR match_status = 'unmatched_debit')""").fetchall()
+    for t in rows:
+        hit = None
+        if t["kind"] == "DEBIT_MEMO":
+            hit = conn.execute("""SELECT i.installment_id FROM bank_loan_installments i JOIN bank_loans bl ON bl.bank_loan_id = i.bank_loan_id
+                                  WHERE bl.is_cancelled = 0 AND ABS(i.amount - ?) < 0.005 AND ABS(JULIANDAY(i.due_date) - JULIANDAY(?)) <= 5
+                                    AND i.installment_id NOT IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)
+                                  ORDER BY ABS(JULIANDAY(i.due_date) - JULIANDAY(?)) LIMIT 1""", (t["debit"], t["posting_date"], t["posting_date"])).fetchone()
+            if hit:
+                conn.execute("UPDATE bank_transactions SET match_status = 'matched_loan', matched_installment_id = ? WHERE txn_id = ?", (hit[0], t["txn_id"]))
+        if not hit and t["kind"] in ("BILLS_PAYMENT", "DEBIT_MEMO"):
+            hit = conn.execute("""SELECT cc_statement_id FROM cc_statements
+                                  WHERE status != 'Cancelled' AND ABS(JULIANDAY(due_date) - JULIANDAY(?)) <= 10
+                                    AND (ABS(total_amount_due - ?) < 0.005 OR ABS(COALESCE(unpaid_balance_next, -1) - ?) < 0.005)
+                                    AND cc_statement_id NOT IN (SELECT matched_cc_statement_id FROM bank_transactions WHERE matched_cc_statement_id IS NOT NULL)
+                                  ORDER BY ABS(JULIANDAY(due_date) - JULIANDAY(?)) LIMIT 1""",
+                               (t["posting_date"], t["debit"], t["debit"], t["posting_date"])).fetchone()
+            if hit:
+                conn.execute("UPDATE bank_transactions SET match_status = 'matched_card', matched_cc_statement_id = ? WHERE txn_id = ?", (hit[0], t["txn_id"]))
+        if hit:
+            n += 1
+        else:
+            conn.execute("UPDATE bank_transactions SET match_status = 'unmatched_debit' WHERE txn_id = ?", (t["txn_id"],))
+    return n
+
+
+def system_start() -> date | None:
+    """The earliest check date in the system (checks before it were never recorded here)."""
+    with _conn() as conn:
+        v = conn.execute("SELECT MIN(check_date) FROM checks_issued").fetchone()[0]
+    return date.fromisoformat(str(v)[:10]) if v else None
+
+
+def _set_aside_before_system(conn) -> None:
+    """A cleared check the system does not know, dated on the bank before the system's first check, is resolved automatically as
+    'Before the system' -- it was written before this system was used, so there is nothing to do."""
+    v = conn.execute("SELECT MIN(check_date) FROM checks_issued").fetchone()[0]
+    if not v:
+        return
+    conn.execute("""UPDATE bank_transactions SET reviewed = 1, resolution = 'Before the system',
+                        note = COALESCE(note, 'Cleared before the system started (' || ? || ')')
+                    WHERE match_status = 'not_in_system' AND reviewed = 0 AND posting_date < ?""", (str(v)[:10], str(v)[:10]))
+
+
+EXCEPTION_STATUSES = ("amount_mismatch", "cancelled_check_cleared", "returned_check", "not_in_system", "unmatched_debit")
+RESOLUTIONS = ["Linked by hand", "Bank error", "Legacy record", "Customer bounced check", "Expected bank debit", "Before the system", "Other"]
+
+
+def exceptions(import_id: int | None = None) -> list[dict]:
+    """Bank lines that need the owner's eye: checks that did not match cleanly, returned deposits, and bank debits that are not our checks
+    and matched nothing (optionally for one imported statement). 'reviewed' = resolved."""
     with _conn() as conn:
         return [dict(r) for r in conn.execute(
-            """SELECT t.txn_id, t.posting_date, t.check_number, t.description, t.debit, t.credit, t.kind, t.match_status, t.reviewed,
-                      c.check_number AS our_number, c.amount AS our_amount, c.status AS our_status, cr.creditor_name
+            """SELECT t.txn_id, t.import_id, t.posting_date, t.check_number, t.description, t.debit, t.credit, t.kind, t.match_status, t.reviewed,
+                      t.resolution, t.note, t.matched_check_id, c.check_number AS our_number, c.amount AS our_amount, c.status AS our_status,
+                      c.statement_id, c.loan_note_id, cr.creditor_name
                FROM bank_transactions t LEFT JOIN checks_issued c ON c.check_id = t.matched_check_id
                LEFT JOIN creditors cr ON cr.creditor_id = c.creditor_id
-               WHERE t.match_status IN ('amount_mismatch', 'cancelled_check_cleared', 'returned_check', 'not_in_system')
-               ORDER BY t.posting_date DESC, t.txn_id DESC""").fetchall()]
+               WHERE t.match_status IN (%s) %s
+               ORDER BY t.posting_date DESC, t.txn_id DESC""" % (",".join("?" * len(EXCEPTION_STATUSES)), "AND t.import_id = ?" if import_id else ""),
+            EXCEPTION_STATUSES + ((int(import_id),) if import_id else ())).fetchall()]
+
+
+def resolved_lines(import_id: int | None = None) -> list[dict]:
+    """Lines the owner (or the app) resolved: tagged exceptions and hand-linked checks -- listed so a wrong one can be reopened. The owner's
+    own come first; the ones the app set aside as 'Before the system' last."""
+    with _conn() as conn:
+        return [dict(r) for r in conn.execute(
+            """SELECT t.txn_id, t.import_id, t.posting_date, t.check_number, t.description, t.debit, t.credit, t.kind, t.match_status,
+                      t.resolution, t.note, c.check_number AS our_number, cr.creditor_name
+               FROM bank_transactions t LEFT JOIN checks_issued c ON c.check_id = t.matched_check_id
+               LEFT JOIN creditors cr ON cr.creditor_id = c.creditor_id
+               WHERE t.reviewed = 1 AND (t.match_status IN (%s) OR t.match_status = 'matched_manual') %s
+               ORDER BY COALESCE(t.resolution, '') = 'Before the system', t.posting_date DESC, t.txn_id DESC""" % (",".join("?" * len(EXCEPTION_STATUSES)), "AND t.import_id = ?" if import_id else ""),
+            EXCEPTION_STATUSES + ((int(import_id),) if import_id else ())).fetchall()]
 
 
 def statement_coverage() -> tuple[date | None, date | None]:
@@ -410,15 +489,147 @@ def not_yet_cleared(as_of: date | None = None) -> list[dict]:
     return [dict(r, days_waiting=(as_of - date.fromisoformat(str(r["check_date"])[:10])).days) for r in rows]
 
 
+def local_times(conn, row) -> dict:
+    """An import row with imported_at / reconciled_at in local (Philippine) time -- SQLite's CURRENT_TIMESTAMP stores UTC, 8 hours behind,
+    which made "imported N days ago" off by a day just after midnight."""
+    d = dict(row)
+    for k in ("imported_at", "reconciled_at"):
+        if d.get(k):
+            d[k] = conn.execute("SELECT datetime(?, 'localtime')", (d[k],)).fetchone()[0]
+    return d
+
+
 def last_import() -> dict | None:
     with _conn() as conn:
         r = conn.execute("SELECT * FROM bank_statement_imports ORDER BY import_id DESC LIMIT 1").fetchone()
-    return dict(r) if r else None
+        return local_times(conn, r) if r else None
 
 
-def mark_reviewed(txn_id: int, note: str = "") -> None:
+def resolve(txn_id: int, resolution: str, note: str = "") -> None:
+    """The owner has dealt with a line needing a look: record why (RESOLUTIONS) and an optional note. Audited."""
     with _conn() as conn:
-        conn.execute("UPDATE bank_transactions SET reviewed = 1, note = ? WHERE txn_id = ?", (note or None, int(txn_id)))
+        conn.execute("UPDATE bank_transactions SET reviewed = 1, resolution = ?, note = ? WHERE txn_id = ?", (resolution, note or None, int(txn_id)))
+        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BANK_LINE_RESOLVED', 'bank_transactions', ?, ?)",
+                     (int(txn_id), resolution + (f": {note}" if note else "")))
+    update_reconciled()
+
+
+def mark_reviewed(txn_id: int, note: str = "") -> None:        # kept for older callers
+    resolve(txn_id, "Other", note)
+
+
+def link_to_check(txn_id: int, check_id: int, how: str = "Linked by hand") -> tuple[bool, str]:
+    """The owner says this bank line IS that check (a typo in the number, a check the matcher could not pair). Marks the check cleared by
+    the bank on the line's date. Refused when the check is already cleared by another bank line."""
+    with _conn() as conn:
+        t = conn.execute("SELECT txn_id, posting_date, debit FROM bank_transactions WHERE txn_id = ?", (int(txn_id),)).fetchone()
+        c = conn.execute("SELECT check_id, check_number, amount, bank_txn_id FROM checks_issued WHERE check_id = ?", (int(check_id),)).fetchone()
+        if not t or not c:
+            return False, "Bank line or check not found."
+        if c["bank_txn_id"] and int(c["bank_txn_id"]) != int(txn_id):
+            return False, f"Check {c['check_number'] or c['check_id']} is already cleared by another bank line."
+        conn.execute("UPDATE bank_transactions SET matched_check_id = ?, match_status = 'matched_manual', reviewed = 1, resolution = ? WHERE txn_id = ?",
+                     (c["check_id"], how, t["txn_id"]))
+        conn.execute("UPDATE checks_issued SET bank_cleared_date = ?, bank_txn_id = ? WHERE check_id = ?", (t["posting_date"], t["txn_id"], c["check_id"]))
+        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BANK_LINE_LINKED', 'bank_transactions', ?, ?)",
+                     (t["txn_id"], f"{how}: check {c['check_number'] or c['check_id']} (PHP {c['amount']:,.2f}) cleared {t['posting_date']} for PHP {t['debit']:,.2f}"))
+    update_reconciled()
+    return True, f"Linked: check {c['check_number'] or c['check_id']} is cleared by the bank on {t['posting_date']}."
+
+
+def reopen(txn_id: int) -> None:
+    """Undo a resolution (a wrong tag or a wrong hand link): the line goes back to needing a look and is matched afresh. A check linked to it
+    by hand is no longer cleared by the bank. Audited."""
+    with _conn() as conn:
+        t = conn.execute("SELECT txn_id, resolution FROM bank_transactions WHERE txn_id = ?", (int(txn_id),)).fetchone()
+        if not t:
+            return
+        conn.execute("UPDATE checks_issued SET bank_cleared_date = NULL, bank_txn_id = NULL WHERE bank_txn_id = ? AND check_id IN "
+                     "(SELECT matched_check_id FROM bank_transactions WHERE txn_id = ? AND match_status = 'matched_manual')", (t["txn_id"], t["txn_id"]))
+        conn.execute("""UPDATE bank_transactions SET reviewed = 0, resolution = NULL, note = NULL, matched_check_id = NULL, matched_installment_id = NULL,
+                            matched_cc_statement_id = NULL, match_status = NULL WHERE txn_id = ?""", (t["txn_id"],))
+        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('BANK_LINE_REOPENED', 'bank_transactions', ?, ?)",
+                     (t["txn_id"], t["resolution"]))
+    match_checks()
+
+
+def link_candidates(txn_id: int, limit: int = 60) -> list[dict]:
+    """Our active checks the bank has not cleared, for linking a bank line by hand: same amount first, then the nearest check date."""
+    with _conn() as conn:
+        t = conn.execute("SELECT posting_date, debit FROM bank_transactions WHERE txn_id = ?", (int(txn_id),)).fetchone()
+        if not t:
+            return []
+        return [dict(r) for r in conn.execute(
+            """SELECT c.check_id, c.check_number, c.check_date, c.amount, cr.creditor_name, ABS(c.amount - ?) < 0.005 AS same_amount
+               FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
+               WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL
+               ORDER BY same_amount DESC, ABS(JULIANDAY(c.check_date) - JULIANDAY(?)) LIMIT ?""", (t["debit"], t["posting_date"], int(limit))).fetchall()]
+
+
+def _one_digit_apart(a: str, b: str) -> bool:
+    """Same length and either exactly one digit different, or two neighbouring digits swapped."""
+    if len(a) != len(b) or a == b:
+        return False
+    diff = [i for i in range(len(a)) if a[i] != b[i]]
+    return len(diff) == 1 or (len(diff) == 2 and diff[1] == diff[0] + 1 and a[diff[0]] == b[diff[1]] and a[diff[1]] == b[diff[0]])
+
+
+def suggestions() -> list[dict]:
+    """Suggested (never automatic) matches for unmatched check lines: one of our active checks not cleared yet with the SAME amount and a
+    number one digit off / two digits swapped, or with no number yet and a check date within 7 days of the bank date. Rejected pairs are
+    not suggested again."""
+    with _conn() as conn:
+        lines = conn.execute("""SELECT txn_id, posting_date, check_number, debit, rejected_check_ids FROM bank_transactions
+                                WHERE kind = 'CHECK' AND reviewed = 0 AND match_status IN ('amount_mismatch', 'not_in_system')""").fetchall()
+        ours = conn.execute("""SELECT c.check_id, c.check_number, c.check_date, c.amount, cr.creditor_name FROM checks_issued c
+                               JOIN creditors cr ON cr.creditor_id = c.creditor_id WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL""").fetchall()
+    out = []
+    for t in lines:
+        rejected = {x for x in (t["rejected_check_ids"] or "").split(",") if x}
+        tnum = norm_check_number(t["check_number"])
+        for c in ours:
+            if str(c["check_id"]) in rejected or abs(float(c["amount"]) - float(t["debit"])) >= 0.005:
+                continue
+            cnum = norm_check_number(c["check_number"])
+            if cnum and _one_digit_apart(tnum, cnum):
+                reason = "same amount, check number one digit off"
+            elif not cnum and abs((date.fromisoformat(str(c["check_date"])[:10]) - date.fromisoformat(t["posting_date"])).days) <= 7:
+                reason = "same amount, our check has no number yet, dated within 7 days"
+            else:
+                continue
+            out.append({"txn_id": t["txn_id"], "posting_date": t["posting_date"], "bank_check_number": t["check_number"], "amount": t["debit"],
+                        "check_id": c["check_id"], "our_number": c["check_number"], "check_date": c["check_date"], "payee": c["creditor_name"], "reason": reason})
+    return out
+
+
+def reject_suggestion(txn_id: int, check_id: int) -> None:
+    with _conn() as conn:
+        row = conn.execute("SELECT rejected_check_ids FROM bank_transactions WHERE txn_id = ?", (int(txn_id),)).fetchone()
+        ids = [x for x in ((row[0] or "").split(",") if row else []) if x] + [str(int(check_id))]
+        conn.execute("UPDATE bank_transactions SET rejected_check_ids = ? WHERE txn_id = ?", (",".join(ids), int(txn_id)))
+
+
+def update_reconciled() -> None:
+    """An imported statement is Reconciled once none of its lines needing a look is open (and back to Open if one reopens)."""
+    with _conn() as conn:
+        for imp in conn.execute("SELECT import_id, reconciled_at FROM bank_statement_imports").fetchall():
+            open_n = conn.execute("SELECT COUNT(*) FROM bank_transactions WHERE import_id = ? AND reviewed = 0 AND match_status IN (%s)"
+                                  % ",".join("?" * len(EXCEPTION_STATUSES)), (imp["import_id"],) + EXCEPTION_STATUSES).fetchone()[0]
+            if open_n == 0 and not imp["reconciled_at"]:
+                conn.execute("UPDATE bank_statement_imports SET reconciled_at = CURRENT_TIMESTAMP WHERE import_id = ?", (imp["import_id"],))
+            elif open_n and imp["reconciled_at"]:
+                conn.execute("UPDATE bank_statement_imports SET reconciled_at = NULL WHERE import_id = ?", (imp["import_id"],))
+
+
+def imports_status() -> list[dict]:
+    """Every imported statement with its period, lines, closing balance, open items and Open / Reconciled status."""
+    with _conn() as conn:
+        rows = [local_times(conn, r) for r in conn.execute("SELECT * FROM bank_statement_imports ORDER BY period_to DESC, import_id DESC").fetchall()]
+        for r in rows:
+            r["open_items"] = conn.execute("SELECT COUNT(*) FROM bank_transactions WHERE import_id = ? AND reviewed = 0 AND match_status IN (%s)"
+                                           % ",".join("?" * len(EXCEPTION_STATUSES)), (r["import_id"],) + EXCEPTION_STATUSES).fetchone()[0]
+            r["status"] = "Reconciled" if r["reconciled_at"] else "Open"
+    return rows
 
 
 def preview_matches(parsed: ParsedStatement) -> dict:

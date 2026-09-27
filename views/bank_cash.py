@@ -13,14 +13,19 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from engines.bank_alerts import all_alerts, debit_factor, set_alert_settings, stale_days
+from engines.bank_recon_report import generate_recon_pdf, recon_statement
 from engines.bank_statement_service import (
-    exceptions, import_statement, last_import, mark_reviewed, not_yet_cleared, parse_statement, preview_matches, statement_coverage,
+    RESOLUTIONS, exceptions, import_statement, imports_status, last_import, link_candidates, link_to_check, not_yet_cleared, parse_statement,
+    preview_matches, reject_suggestion, reopen, resolve, resolved_lines, statement_coverage, suggestions,
 )
 from engines.cash_insights_service import (
     cash_position, float_summary, forecast, get_buffer, inflow_trends, set_buffer, unusual_items, working_capital,
 )
 from engines.common import php
-from views.shared import date_col, guard_duplicate_submit, money_col, page_header, q, refresh, section
+from views.shared import (
+    LN_BROWSE, OS_BROWSE, date_col, go_to, guard_duplicate_submit, money_col, page_header, pdf_preview_and_download, q, refresh, section,
+)
 
 KIND_LABELS = {"CHECK": "Our checks clearing", "DEPOSIT": "Money in (deposits, transfers)", "RETURNED_CHECK": "Returned (bounced) deposited checks",
                "BILLS_PAYMENT": "Bills payments", "DEBIT_MEMO": "Bank debit memos (loan debits, charges)", "OTHER": "Other"}
@@ -28,8 +33,22 @@ EXCEPTION_LABELS = {
     "cancelled_check_cleared": "A check we cancelled / replaced was cleared by the bank",
     "amount_mismatch": "Cleared amount differs from our check",
     "returned_check": "A deposited check was returned (bounced)",
-    "not_in_system": "Check not in the system (older than the system, or never recorded)",
+    "not_in_system": "Check not in the system (never recorded, or a typo in the number)",
+    "unmatched_debit": "Bank debit that is not our check and matched nothing (loan debit, bills payment, charge)",
 }
+SHORT_LABELS = {"cancelled_check_cleared": "cancelled check cleared", "amount_mismatch": "amount differs", "returned_check": "bounced deposit",
+                "not_in_system": "check not in the system", "unmatched_debit": "bank debit", "matched_manual": "linked to our check"}
+DEFAULT_REASON = {"returned_check": "Customer bounced check", "unmatched_debit": "Expected bank debit", "not_in_system": "Legacy record",
+                  "amount_mismatch": "Bank error", "cancelled_check_cleared": "Other"}
+ALERT_BOX = {"error": st.error, "warning": st.warning, "info": st.info}
+ALERT_ICON = {"low_cash": ":material/trending_down:", "large_debit": ":material/report:", "stale_deposit": ":material/hourglass_top:",
+              "old_statement": ":material/account_balance:"}
+
+
+def show_alerts(alerts: list[dict]) -> None:
+    """The bank and cash alerts (engines/bank_alerts.py) as coloured boxes -- also used by Payment run."""
+    for a in alerts:
+        ALERT_BOX[a["level"]](a["message"], icon=ALERT_ICON.get(a["key"]))
 
 
 def _import_tab() -> None:
@@ -78,47 +97,143 @@ def _import_tab() -> None:
                 + f": {res['matched']} check(s) confirmed cleared, {res['exceptions']} to look at.")
 
 
+def _open_check(e: dict) -> None:
+    if e.get("statement_id"):
+        sid = int(e["statement_id"])
+        go_to("order-statements", selected_statement_id=sid, os_mode=OS_BROWSE, os_subtab="Checks", **{f"os_checks_view__{sid}": "Corrections"})
+    elif e.get("loan_note_id"):
+        go_to("lenders", selected_loan_note_id=int(e["loan_note_id"]), ln_mode=LN_BROWSE, ln_subtab="Checks")
+
+
+def _suggestions_section() -> None:
+    sugg = suggestions()
+    if not sugg:
+        return
+    section(f"Suggested matches ({len(sugg)})", help="The app never applies these by itself. Accept if the bank line IS that check (it is marked "
+            "cleared by the bank); reject if not (it is not suggested again).")
+    for s_ in sugg:
+        c1, c2, c3 = st.columns([6, 1.2, 1.2], vertical_alignment="center")
+        c1.markdown(f"Bank {s_['posting_date']} · check # {s_['bank_check_number'] or '—'} · **{php(s_['amount'])}** → our check "
+                    f"**{s_['our_number'] or 'no number yet'}** dated {s_['check_date']} to {s_['payee']}  \n:gray[{s_['reason']}]")
+        k = f"{s_['txn_id']}_{s_['check_id']}"
+        if c2.button("Accept", icon=":material/check:", key=f"bank_sg_ok_{k}", width="stretch"):
+            ok, msg = link_to_check(s_["txn_id"], s_["check_id"], how="Suggested match accepted")
+            if ok:
+                refresh(done=msg + ("" if s_["our_number"] else " Our check has no number yet — assign it on the batch's Assign numbers screen."))
+            st.error(msg)
+        if c3.button("Reject", icon=":material/close:", key=f"bank_sg_no_{k}", width="stretch"):
+            reject_suggestion(s_["txn_id"], s_["check_id"])
+            refresh(done="Rejected — it won't be suggested again.")
+
+
+def _deal_with(shown: list[dict]) -> None:
+    """The action panel for one open line: link it to our check, open our check, or tag the reason."""
+    opts = {e["txn_id"]: f"{e['posting_date']} · {php(e['debit'] or e['credit'])} · {e['check_number'] or e['description']} — "
+                         f"{SHORT_LABELS.get(e['match_status'], e['match_status'])}" for e in shown}
+    pick = st.selectbox("Deal with", list(opts), format_func=opts.get, key="bank_exc_pick")
+    e = next(x for x in shown if x["txn_id"] == pick)
+    with st.container(border=True):
+        st.markdown(f"**{EXCEPTION_LABELS.get(e['match_status'], e['match_status'])}**  \nBank: {e['description']} · {e['posting_date']} · "
+                    f"{php(e['debit'] or e['credit'])}" + (f"  \nOur check {e['our_number']} · {php(e['our_amount'])} · {e['our_status']} · {e['creditor_name']}"
+                                                          if e.get("our_number") else ""))
+        a1, a2 = st.columns(2, gap="large")
+        with a1:
+            if e["kind"] == "CHECK":
+                st.markdown("**Link to one of our checks**")
+                cands = link_candidates(pick)
+                if not cands:
+                    st.caption("No active check is waiting to clear.")
+                else:
+                    copts = {c["check_id"]: f"{'= ' if c['same_amount'] else ''}{c['check_number'] or 'no number'} · {c['check_date']} · "
+                                            f"{php(c['amount'])} · {c['creditor_name']}" for c in cands}
+                    cpick = st.selectbox("Our check", list(copts), format_func=copts.get, key=f"bank_link_pick_{pick}",
+                                         help="Checks the bank has not cleared yet. Same amount first (marked =), then the nearest check date.")
+                    if st.button("Link", icon=":material/link:", key=f"bank_link_btn_{pick}"):
+                        ok, msg = link_to_check(pick, cpick)
+                        if ok:
+                            refresh(done=msg)
+                        st.error(msg)
+            else:
+                st.caption("This is not one of our checks, so there is nothing to link — tag the reason.")
+            if e.get("statement_id") or e.get("loan_note_id"):
+                if st.button("Open our check", icon=":material/open_in_new:", key=f"bank_open_chk_{pick}",
+                             help="Opens the batch's Corrections screen (or the loan note's checks) to fix the number or amount."):
+                    _open_check(e)
+        with a2:
+            st.markdown("**Or tag the reason**")
+            reasons = [r for r in RESOLUTIONS if r != "Linked by hand"]
+            default = DEFAULT_REASON.get(e["match_status"], "Other")
+            reason = st.selectbox("Reason", reasons, index=reasons.index(default), key=f"bank_reason_{pick}")
+            note = st.text_input("Note (optional)", key=f"bank_note_{pick}", placeholder="e.g. corrected with Metrobank, customer paid in cash")
+            if st.button("Resolve", icon=":material/check:", type="primary", key=f"bank_resolve_btn_{pick}"):
+                resolve(pick, reason, note)
+                refresh(done=f"Resolved: {reason}.")
+
+
 def _reconcile_tab() -> None:
     first, last = statement_coverage()
     if last is None:
         st.info("No bank statement imported yet. Use the Import tab.")
         return
+    stmts = imports_status()
     waiting = not_yet_cleared()
-    exc = [e for e in exceptions() if not e["reviewed"]]
-    serious = [e for e in exc if e["match_status"] != "not_in_system"]
+    open_exc = [e for e in exceptions() if not e["reviewed"]]
     confirmed = q("SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS t FROM checks_issued WHERE bank_cleared_date IS NOT NULL")
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("Confirmed cleared by the bank", f"{int(confirmed['n'][0])}", php(confirmed["t"][0]), delta_color="off", delta_arrow="off", border=True)
     m2.metric("Not yet cleared (past their date)", f"{len(waiting)}", php(sum(w["amount"] for w in waiting)), delta_color="off", delta_arrow="off",
               border=True, help=f"Our numbered checks dated on or before {last:%b %d, %Y} (the last imported bank date) that the bank has not cleared.")
-    m3.metric("Need a look", f"{len(serious)}", border=True)
+    m3.metric("Need a look", f"{len(open_exc)}", border=True)
+    m4.metric("Statements reconciled", f"{sum(x['status'] == 'Reconciled' for x in stmts)} of {len(stmts)}", border=True,
+              help="A statement is Reconciled once every line on it that needs a look is linked or tagged.")
     st.caption(f"Bank lines on file: {first:%b %d, %Y} to {last:%b %d, %Y}.")
 
-    section("Need a look")
-    if not serious:
-        st.caption("Nothing — every check the bank cleared matches ours.")
+    section("Statements")
+    sdf = pd.DataFrame(stmts)
+    st.dataframe(sdf.assign(period_from=pd.to_datetime(sdf["period_from"]), period_to=pd.to_datetime(sdf["period_to"]),
+                            status=[("✅ " if x == "Reconciled" else "🟠 ") + x for x in sdf["status"]])[
+        ["period_from", "period_to", "line_count", "closing_balance", "open_items", "status"]], hide_index=True,
+        column_config={"period_from": date_col("From"), "period_to": date_col("To"), "line_count": "Lines", "closing_balance": money_col("Closing balance"),
+                       "open_items": "Need a look", "status": "Status"})
+
+    _suggestions_section()
+
+    section(f"Need a look ({len(open_exc)})", help="Bank lines the app could not pair by itself. Link each one to our check, or tag why it is fine.")
+    if not open_exc:
+        st.caption("Nothing open — every line on the imported statements is matched or resolved.")
     else:
-        df = pd.DataFrame(serious)
-        df["what"] = df["match_status"].map(EXCEPTION_LABELS)
+        shown = open_exc
+        if len(stmts) > 1:
+            iopts = {0: "All statements", **{x["import_id"]: f"{x['period_from']} to {x['period_to']} ({x['open_items']} open)" for x in stmts}}
+            which = st.selectbox("Statement", list(iopts), format_func=iopts.get, key="bank_exc_imp")
+            shown = [e for e in open_exc if not which or e["import_id"] == which] or open_exc
+        df = pd.DataFrame(shown)
+        df["what"] = df["match_status"].map(SHORT_LABELS)
         st.dataframe(df.assign(posting_date=pd.to_datetime(df["posting_date"]))[
-            ["what", "posting_date", "check_number", "description", "debit", "credit", "our_amount", "our_status", "creditor_name"]],
-            hide_index=True, column_config={"what": "What", "posting_date": date_col("Bank date"), "check_number": "Check #", "description": "Bank description",
-                                            "debit": money_col("Out"), "credit": money_col("In"), "our_amount": money_col("Our amount"),
-                                            "our_status": "Our status", "creditor_name": "Payee"})
-        opts = {e["txn_id"]: f"{e['posting_date']} · {EXCEPTION_LABELS[e['match_status']]} · {e['check_number'] or e['description']}" for e in serious}
-        r1, r2, r3 = st.columns([3, 3, 1.4], vertical_alignment="bottom")
-        pick = r1.selectbox("Mark as looked at", list(opts), format_func=opts.get, key="bank_review_pick")
-        note = r2.text_input("Note (optional)", key="bank_review_note", placeholder="e.g. bank error, corrected with Metrobank")
-        if r3.button("Done", icon=":material/check:", key="bank_review_btn", width="stretch"):
-            mark_reviewed(int(pick), note)
-            refresh(done="Marked as looked at.")
-    older = [e for e in exc if e["match_status"] == "not_in_system"]
-    if older:
-        with st.expander(f"{len(older)} cleared check(s) not in the system"):
-            st.caption("Usually checks written before this system was used (it starts Sep 20, 2026) — nothing to do. If a recent one appears here, "
-                       "it may be a check that was never recorded.")
-            st.dataframe(pd.DataFrame(older)[["posting_date", "check_number", "debit"]], hide_index=True,
-                         column_config={"posting_date": "Bank date", "check_number": "Check #", "debit": money_col("Amount")})
+            ["posting_date", "what", "check_number", "description", "debit", "credit", "our_number", "our_amount", "our_status", "creditor_name"]],
+            hide_index=True, column_config={"what": "What", "posting_date": date_col("Bank date"), "check_number": "Bank check #",
+                                            "description": "Bank description", "debit": money_col("Out"), "credit": money_col("In"),
+                                            "our_number": "Our check #", "our_amount": money_col("Our amount"), "our_status": "Our status",
+                                            "creditor_name": "Payee"})
+        _deal_with(shown)
+
+    done = resolved_lines()
+    if done:
+        with st.expander(f"Resolved ({len(done)})", icon=":material/task_alt:"):
+            ddf = pd.DataFrame(done)
+            ddf["what"] = ddf["match_status"].map(SHORT_LABELS)
+            ddf["amount"] = ddf["debit"] + ddf["credit"]
+            st.dataframe(ddf.assign(posting_date=pd.to_datetime(ddf["posting_date"]))[
+                ["posting_date", "what", "check_number", "description", "amount", "resolution", "note", "our_number"]], hide_index=True,
+                column_config={"posting_date": date_col("Bank date"), "what": "What", "check_number": "Bank check #", "description": "Bank description",
+                               "amount": money_col("Amount"), "resolution": "How", "note": "Note", "our_number": "Our check #"})
+            r1, r2 = st.columns([5, 1.4], vertical_alignment="bottom")
+            ropts = {d["txn_id"]: f"{d['posting_date']} · {php(d['debit'] + d['credit'])} · {d['check_number'] or d['description']} — {d['resolution']}" for d in done}
+            rpick = r1.selectbox("Made a mistake? Reopen a line", list(ropts), format_func=ropts.get, key="bank_reopen_pick",
+                                 help="The line goes back to Need a look and is matched again; a check linked by hand is no longer marked cleared.")
+            if r2.button("Reopen", icon=":material/undo:", key="bank_reopen_btn", width="stretch"):
+                reopen(int(rpick))
+                refresh(done="Reopened — it is back under Need a look (or matched again).")
 
     section("Checks not yet cleared", help="Checks we issued, dated on or before the last imported bank date, that the bank has not cleared yet.")
     if not waiting:
@@ -128,6 +243,58 @@ def _reconcile_tab() -> None:
         st.dataframe(w.assign(check_date=pd.to_datetime(w["check_date"]))[["check_number", "check_date", "days_waiting", "creditor_name", "reference", "amount"]],
                      hide_index=True, column_config={"check_number": "Check #", "check_date": date_col("Check date"), "days_waiting": "Days waiting",
                                                      "creditor_name": "Payee", "reference": "Batch / loan note", "amount": money_col("Amount")})
+
+    with st.expander("Alert settings", icon=":material/tune:"):
+        s1, s2 = st.columns(2)
+        days = s1.number_input("Warn when a check is not cleared this many days after its check date", min_value=1, max_value=90, value=stale_days(),
+                               key="bank_alert_days", help="Default 7, to match a weekly bank statement upload.")
+        fac = s2.number_input("Warn when an unexplained bank debit is this many times its usual size", min_value=2.0, max_value=50.0,
+                              value=float(debit_factor()), step=0.5, key="bank_alert_factor", help="Default 5 (compared with the usual size of that kind of debit).")
+        if st.button("Save alert settings", icon=":material/save:", key="bank_alert_save"):
+            set_alert_settings(int(days), float(fac))
+            refresh(done="Alert settings saved.")
+
+
+def _statement_tab() -> None:
+    stmts = imports_status()
+    if not stmts:
+        st.info("Import a bank statement first.")
+        return
+    opts = {x["import_id"]: f"{x['period_from']} to {x['period_to']} · {x['status']}" for x in stmts}
+    pick = st.selectbox("Statement", list(opts), format_func=opts.get, key="bank_recon_imp")
+    r = recon_statement(int(pick))
+    st.caption("Bank vs the checks we issued: the bank balance, less our checks the bank has not cleared yet, is the cash really available. "
+               "(The system keeps no cash book, so this is not a full book-vs-bank reconciliation.)")
+    m1, m2, m3 = st.columns(3)
+    m1.metric(f"Balance per bank ({r['as_of']:%b %d, %Y})", php(r["bank_balance"]), border=True)
+    m2.metric("Less: outstanding checks", php(r["outstanding_total"]), f"{len(r['outstanding'])} check(s)", delta_color="off", delta_arrow="off", border=True)
+    m3.metric("Available after outstanding checks", php(r["available"]), border=True)
+    if r["open_items"]:
+        st.warning(f"{r['open_items']} line(s) on this statement still need a look (Reconciliation tab) — it is not reconciled yet.", icon=":material/rule:")
+    else:
+        st.success("Every line on this statement is matched or resolved — reconciled.", icon=":material/task_alt:")
+    st.markdown(f"**Outstanding checks** — issued, dated on or before {r['as_of']:%b %d, %Y}, not yet cleared by the bank")
+    if r["outstanding"].empty:
+        st.caption("None.")
+    else:
+        o = r["outstanding"]
+        st.dataframe(o.assign(check_date=pd.to_datetime(o["check_date"])), hide_index=True,
+                     column_config={"check_number": "Check #", "check_date": date_col("Check date"), "payee": "Payee", "reference": "Batch / loan note",
+                                    "amount": money_col("Amount")})
+    st.markdown("**Bank items not in the system** — debits that are not our checks")
+    if r["bank_items"].empty:
+        st.caption("None.")
+    else:
+        b = r["bank_items"]
+        st.dataframe(b.assign(posting_date=pd.to_datetime(b["posting_date"]))[["posting_date", "description", "how", "debit"]], hide_index=True,
+                     column_config={"posting_date": date_col("Bank date"), "description": "Bank description", "how": "How it was resolved",
+                                    "debit": money_col("Amount")})
+    st.caption(f"Money in during the statement: {php(r['money_in'])} · checks cleared and matched: {r['checks_cleared']}.")
+    if st.button("Make the PDF", icon=":material/picture_as_pdf:", key="bank_recon_pdf_btn"):
+        st.session_state["_bank_recon_pdf"] = (int(pick), generate_recon_pdf(r))
+    cached = st.session_state.get("_bank_recon_pdf")
+    if cached and cached[0] == int(pick):
+        pdf_preview_and_download(cached[1], f"bank_reconciliation_{r['as_of']:%Y%m%d}.pdf", key="bank_recon_pdf_dl", label="Reconciliation PDF")
 
 
 def _stale_note(pos) -> None:
@@ -268,10 +435,12 @@ def render() -> None:
     li = last_import()
     if li:
         st.caption(f"Last statement imported {str(li['imported_at'])[:16]} · covers {li['period_from']} to {li['period_to']}.")
-    tabs = st.tabs([":material/upload_file: Import a statement", ":material/rule: Reconciliation", ":material/trending_up: Cash forecast",
+    show_alerts(all_alerts())
+    tabs = st.tabs([":material/upload_file: Import a statement", ":material/rule: Reconciliation", ":material/description: Reconciliation statement",
+                    ":material/trending_up: Cash forecast",
                     ":material/hourglass_top: Checks not yet cleared", ":material/savings: Money in", ":material/report: Unusual items",
                     ":material/balance: Working capital"], key="bank_cash_tab", on_change="rerun")
-    for tab, fn in zip(tabs, (_import_tab, _reconcile_tab, _forecast_tab, _float_tab, _inflow_tab, _unusual_tab, _working_capital_tab)):
+    for tab, fn in zip(tabs, (_import_tab, _reconcile_tab, _statement_tab, _forecast_tab, _float_tab, _inflow_tab, _unusual_tab, _working_capital_tab)):
         if tab.open:                                      # only the open tab is worked out
             with tab:
                 fn()

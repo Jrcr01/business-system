@@ -4,7 +4,7 @@
 
 - [Current State (2026-09-27)](#current-state-2026-09-27) — **read this first**: what is live now, where things are, rules added since 2026-09-17
 - [Thermal Statement Printing](#thermal-statement-printing) — gated mini-phase (2026-09-27): spec, locked decisions, build order, acceptance criteria
-- [Bank Statement Import and Cash Insights](#bank-statement-import-and-cash-insights) — MBOS statement import, automatic check matching, cash insights (2026-09-27)
+- [Bank Statement Import and Cash Insights](#bank-statement-import-and-cash-insights) — MBOS statement import, automatic check matching, cash insights (2026-09-27), reconciliation v2 + alerts (2026-09-28)
 - [Current Priority / Scope](#current-priority--scope) — Phased roadmap (Phases 1-6)
 - [Update Protocol](#update-protocol) — How to maintain this file
 - [Core System Configuration](#core-system-configuration) — Bank account, database, branding, core rules
@@ -49,7 +49,7 @@ The system is **live** (cut over Sep 2026) for Slick's Tire Supply, used daily b
 * Credit cards: the owner only **records** statements (does not pay the cards). Add statement = total due + optional payments received since the earlier statement + optional finance charge; new charges are derived; only the newest statement per card counts as owed (`cc_rules`). Statements list: Outstanding-only switch + search.
 * Batch statement PDF: invoice status label is Unpaid / Partly covered / `Check issued · <last check date>` / Paid (label only, stored status unchanged); section headings never stranded; rows tighten to avoid near-empty overflow pages. Bulk statement printing (since last check print / today / 7 days / all; A4 or thermal; summary cover page; option to leave out checks not yet printed = run not marked printed).
 * UI: "Search everything" pop-up (`/`, filters as you type); hotkeys (Enter/Esc in pop-ups, Alt+1…0 tabs, Alt+P main action, Alt+N new form; list in the sidebar); last-modified column/filter on batch, loan note and bank loan browsers; sidebar mini calendar with month/year pickers, marked days and prospective month choice.
-* "Cleared" is still inferred from the check date — there is **no bank reconciliation yet** (recommended next build: import the Metrobank statement and mark checks actually cleared).
+* "Cleared" is still inferred from the check date in the totals (owner: show both); the bank's real cleared date comes from the imported Metrobank statement (Bank and cash page, reconciliation since 2026-09-27/28) and is shown beside it.
 
 ---
 
@@ -192,6 +192,31 @@ balance is over 14 days old. Tests: `tests/test_cash_insights.py` (hand-worked f
 `alt.when` on boolean fields failed here -- use a category column + `alt.Color(scale=domain/range)`. Restart the test app after editing views
 (it does not always reload them).
 
+**Reconciliation v2 (done 2026-09-28, plan phase 1 of 4 -- next: Dashboard panel + Overview bank section, Reports quick wins, "My
+reports" builder).** `match_checks()` only touches still-open lines (`reviewed = 0` and status NULL / amount_mismatch / not_in_system -- a
+re-import never undoes a hand link), then `_match_other_debits()` (DEBIT_MEMO = a `bank_loan_installments` amount within +/-5 days of its due
+date -> `matched_loan` + `matched_installment_id`; BILLS_PAYMENT / DEBIT_MEMO = a `cc_statements` total_amount_due or unpaid_balance_next
+within +/-10 days -> `matched_card` + `matched_cc_statement_id`; else `unmatched_debit`) and `_set_aside_before_system()` (not_in_system
+lines dated before MIN(check_date) -> resolved "Before the system"). Resolving: `resolve(txn_id, reason, note)` (RESOLUTIONS list; audit
+`BANK_LINE_RESOLVED`), `link_to_check(txn_id, check_id)` (`matched_manual`, sets bank_cleared_date; refused if the check is cleared by
+another line; audit `BANK_LINE_LINKED`), `reopen(txn_id)` (undo: un-clears a hand-linked check, re-matches; audit `BANK_LINE_REOPENED`),
+`link_candidates()`, `resolved_lines()` (owner's first, "Before the system" last). `suggestions()` = same amount AND (number one digit off
+or two neighbouring digits swapped -- `_one_digit_apart` -- or our check has no number and is dated within 7 days); never automatic;
+`reject_suggestion()` stores `rejected_check_ids`. Per statement: `update_reconciled()` / `imports_status()` -> Open / Reconciled
+(`reconciled_at`). Import times are stored UTC by CURRENT_TIMESTAMP -- read them through `local_times()` / `datetime(x, 'localtime')`.
+`engines/bank_recon_report.py`: `recon_statement(import_id)` = bank balance at the last bank date - outstanding checks (Active, numbered or
+printed, dated on or before it, not bank-cleared by then) = available; plus the bank items not in the system with how each was resolved;
+`generate_recon_pdf()`. It is **bank vs issued checks** (owner's choice: the system keeps no cash book). `engines/bank_alerts.py`
+(`all_alerts()`, shown on Bank and cash and Payment run, which no longer has its own old-statement reminder): low cash under the buffer
+within 7 days (only when the bank balance is at most 14 days old), large unexplained debits (> `recon_debit_alert_factor` x the median of
+that kind, default 5), checks not cleared `stale_deposit_days` after their check date (default **7** -- owner first said 1, then 7 because
+the statement is uploaded weekly), last import over 7 days old. Settings via `engines/settings_store.py`. UI: Reconciliation tab
+(statements with status, suggested matches Accept / Reject, Need a look + "Deal with" panel: link / open our check (batch Corrections or
+loan note Checks) / tag reason + note, Resolved expander with Reopen, alert settings) and a new "Reconciliation statement" tab (screen +
+PDF). Schema: migration 051 (bank_transactions.resolution / matched_installment_id / matched_cc_statement_id / rejected_check_ids,
+bank_statement_imports.reconciled_at, and `saved_reports` for phase 4) -- test database only so far. Also fixed: text in
+`account_history_pdf_service` table cells is XML-escaped ("S&P" broke PDFs). Tests: `tests/test_bank_recon_v2.py`.
+
 ---
 
 ## Current Priority / Scope
@@ -243,7 +268,7 @@ Phased roadmap — work **one phase at a time**, and **ignore the code of other 
 * One-off checks with no real invoice (not Encashment — Encashment is specifically for withdrawing cash from the bank to fund a cash settlement on another track, e.g. Bank Loan/Credit Card; a one-off check is a real payment to a real payee, just undocumented): still goes through the normal batch flow, no exception. Create a batch under that payee, add one invoice line with a placeholder Doc Ref (e.g. "One-off — reason") for the amount, then issue the check — `invoices.doc_ref` is a plain `TEXT` field with no uniqueness constraint and only non-blocking anomaly warnings, so this already works with zero code changes. Confirmed 2026-09-06 rather than building a separate lighter path.
 * Spoiled checks (misprints, jams, etc.): recorded against an internal control payee — "Error Checks Only (for control)" — rather than discarded untracked, so the check number sequence stays accounted for. Amount and date are always null (no real transaction occurred). Not tied to any supplier or batch; this is a check-number-sequence control, separate from batch-level cancel/replace.
 * Check history: every check ever tied to a batch is kept on record with its status (issued, cancelled/voided, replaced), forming a full audit trail per batch — not just the current/active checks. Spoiled checks are logged separately under the internal control payee (see above), not as part of a supplier batch's history.
-* Check "cleared" status: not a stored field. Implied automatically once the check's date is in the past relative to today — no manual flag, no reconciliation step in this system. (Legacy Access had a manual `Cleared?` checkbox; intentionally dropped as a mistake to correct, not something to replicate.) **2026-09-27 assessment:** this is the system's main accounting-control gap (a bounced or unpresented check still reads as paid) — a Metrobank-statement reconciliation is the recommended next build, not yet agreed.
+* Check "cleared" status: not a stored field. Implied automatically once the check's date is in the past relative to today — no manual flag, no reconciliation step in this system. (Legacy Access had a manual `Cleared?` checkbox; intentionally dropped as a mistake to correct, not something to replicate.) **2026-09-27 assessment:** this is the system's main accounting-control gap (a bounced or unpresented check still reads as paid) — a Metrobank-statement reconciliation is the recommended next build, not yet agreed. **Built 2026-09-27/28** (Bank Statement Import section): `checks_issued.bank_cleared_date` holds the bank's date; totals still use the check date (show-both rule).
 * **Invoice Paid/Partially Paid/Unpaid status requires the covering check(s) to have actually cleared** (`check_date <= today`), not merely been issued — a postdated check doesn't mark an invoice Paid just because it exists. This is deliberately separate from the batch lock/export decision, which stays issuance-based (checks handed to the supplier to collect is what "balanced" means for locking purposes, regardless of clearance) — only the invoice-level status display switched to a clearance basis.
 * Batch Statement (aka "Order Statement"): printable record of a batch listing its invoices and checks; printed in two copies — one for internal filing, one for the supplier upon collection.
 * Batch total = sum of invoice amounts, less any pre-issuance credit memos applied to that batch. Checks are issued against this net total; corrections and replacements are handled at/after issuance. **Total amount is never a manual input field** — it's always calculated from the invoice lines added to the batch, never typed in directly on the Order Statement creation form.

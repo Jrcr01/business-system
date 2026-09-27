@@ -8,7 +8,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from engines.bank_statement_service import last_import
+from engines.bank_alerts import all_alerts
 from engines.cc_service import get_statement_gap_alerts
 from engines.check_run_service import mark_batch_printed
 from engines.common import php
@@ -18,6 +18,7 @@ from engines.statement_version_service import daily_link_sweep, expired_public_v
 from engines.payment_run_service import get_quick_report, get_run_stages
 from engines.today_report_pdf import generate_today_report_pdf
 
+from views.bank_cash import show_alerts
 from views.shared import (  # noqa: F401
     LN_BROWSE,
     OS_BROWSE,
@@ -153,19 +154,18 @@ def render() -> None:
     if overdue_links:
         st.warning(f":material/link: {overdue_links} statement QR link(s) are past their date but Google Drive could not be reached to switch them "
                    "off. Double-click **drive_connect.bat** to sign in again; they are switched off the next day.")
+    # Bank and cash alerts (engines/bank_alerts.py): low cash ahead, large unexplained bank debits, checks not deposited N days after their
+    # date, an old bank statement. Same list as the Bank and cash page.
     try:
-        li = last_import()
+        bank_alerts = all_alerts()
     except Exception:                                   # database without the bank tables yet
-        li = None
-    if li:
-        from datetime import date as _date
-        age = (_date.today() - _date.fromisoformat(str(li["imported_at"])[:10])).days
-        if age > 7:
-            b1, b2 = st.columns([5, 1.6], vertical_alignment="center")
-            b1.info(f":material/account_balance: The last bank statement was imported {age} days ago (covers up to {li['period_to']}). "
-                    "Download the latest one from MBOS so cleared checks and your cash position stay current.")
-            if b2.button("Open Bank and cash", icon=":material/account_balance_wallet:", key="pr_bank_btn", width="stretch"):
-                go_to("bank-cash")
+        bank_alerts = []
+    if bank_alerts:
+        b1, b2 = st.columns([5, 1.6], vertical_alignment="center")
+        with b1:
+            show_alerts(bank_alerts)
+        if b2.button("Open Bank and cash", icon=":material/account_balance_wallet:", key="pr_bank_btn", width="stretch"):
+            go_to("bank-cash")
     reprint = _stages().get("needs_reprint")
     if reprint is not None and not reprint.empty:
         rp1, rp2 = st.columns([5, 1.6], vertical_alignment="center")
