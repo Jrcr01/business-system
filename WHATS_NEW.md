@@ -8,6 +8,7 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 -->
 
 ## 2026-09-27
+- **Program history backed up off Google Drive** - the nightly backup now also saves the program's complete version history as one file in C:\AP_Data\code_backups (the laptop's own disk), in case Google Drive's syncing ever damages it.
 - **Library versions locked** - requirements.txt (and the full list in requirements-lock.txt) now pin the exact versions the app is tested with, so an upgrade can't break it by surprise.
 - **Monthly restore test** - double-click restore_test.bat: it rebuilds the newest Google Drive backup on a temporary copy, checks it, starts the app on it and says PASSED or FAILED. Nothing live is touched.
 - **Only this laptop can open the app** - other devices on the same Wi-Fi can no longer reach it (there is no password, so this closes that gap). Open it as before at http://localhost:8501.

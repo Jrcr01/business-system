@@ -47,3 +47,19 @@ def test_live_db_path_prefers_env_then_pointer_file_then_default(tmp_path, monke
 
     monkeypatch.setenv("AP_DB_PATH", "D:\other.db")
     assert db_location.live_db_path() == "D:\other.db"
+
+
+def test_backup_also_saves_the_code_history_next_to_the_database(tmp_path, monkeypatch):
+    """2026-09-27: the git history is saved as one verified bundle file beside the backed-up database (off Google Drive)."""
+    import shutil
+    import subprocess
+    if not shutil.which("git"):
+        import pytest
+        pytest.skip("git not installed")
+    src = str(tmp_path / "live.db")
+    _make_db(src)
+    monkeypatch.setattr(sys, "argv", ["x", "--db", src, "--dest", str(tmp_path / "backups")])
+    assert backup_live_db.main() == 0
+    bundles = glob.glob(str(tmp_path / "code_backups" / "ap_code_*.bundle"))
+    assert len(bundles) == 1
+    assert subprocess.run(["git", "bundle", "verify", bundles[0]], capture_output=True).returncode == 0
