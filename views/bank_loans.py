@@ -71,7 +71,7 @@ def render_new_bank_loan_form() -> None:
 
     with st.form("new_bank_loan_form", border=False):
         bl_creditor = selectbox_creditor("Bank", "BANK_LOAN", "bl_creditor")
-        bl_ref = st.text_input("Loan reference")
+        bl_ref = st.text_input("Loan reference", help="The loan / promissory-note number on the bank's document — each loan needs its own.")
         bl_account_number = st.text_input("Bank account number (optional)")
         if bl_beneficiaries_df.empty:
             st.caption("Add a beneficiary above first, or leave unattributed for now.")
@@ -80,12 +80,13 @@ def render_new_bank_loan_form() -> None:
             bl_beneficiary = st.selectbox(
                 "Attributable to (optional)", options=[None] + list(bl_beneficiaries_df["beneficiary_id"]),
                 format_func=lambda bid: "—" if bid is None else f"{bl_beneficiaries_df.set_index('beneficiary_id').loc[bid, 'name']} ({bl_beneficiaries_df.set_index('beneficiary_id').loc[bid, 'beneficiary_type']})",
+                help='Whose loan this is in practice (a person or company). Shown with the loan in reports; optional.',
             )
         c1, c2, c3 = st.columns(3)
         bl_start = c1.date_input("Start date", value=date.today())
         bl_maturity = c2.date_input("Maturity date", value=date.today())
-        bl_repricing = c3.date_input("Repricing date (optional)", value=None)
-        bl_principal = st.number_input("Principal amount (original loan amount)", min_value=0.0, step=10000.0)
+        bl_repricing = c3.date_input("Repricing date (optional)", value=None, help='When the bank may change the interest rate (from the loan document) — for your reference.')
+        bl_principal = st.number_input("Principal amount (original loan amount)", min_value=0.0, step=10000.0, help='The original amount borrowed. The monthly dues come from the schedule you enter or import, not from this.')
         bl_mode_of_payment = st.text_input("Mode of payment (informational only, from the bank's document)", value="ADA")
         st.caption("Mode of payment is descriptive only — it doesn't drive any settlement logic. This system tracks payment as untracked cash by default regardless of what's entered here.")
         if st.form_submit_button("Create bank loan", icon=":material/account_balance:", type="primary"):
@@ -138,7 +139,7 @@ def render_bank_loan_schedule(selected_blid: int) -> None:
             "Download CSV template", data=get_bank_loan_template_csv(), file_name="bank_loan_schedule_import_template.csv",
             mime="text/csv", icon=":material/download:", key=f"bl_import_template_btn_{selected_blid}",
         )
-        bl_import_file = st.file_uploader("Schedule spreadsheet", type=["csv", "xlsx"], key=f"bl_import_uploader_{selected_blid}")
+        bl_import_file = st.file_uploader("Schedule spreadsheet", type=["csv", "xlsx"], key=f"bl_import_uploader_{selected_blid}", help="The bank's schedule as .csv or .xlsx with Due Date and Amount columns — rows are shown for review before anything is saved. A template is above.")
         if st.button("Parse schedule file", icon=":material/upload_file:", key=f"bl_import_parse_btn_{selected_blid}"):
             if not bl_import_file:
                 st.warning("Upload a file first.")

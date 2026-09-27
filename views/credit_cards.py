@@ -122,7 +122,7 @@ def render_add_cc_statement_form() -> None:
                 help="Which month this statement is for. Pre-selected to the month after this card's last recorded statement; after December it rolls to January of the next year on its own.",
             )
             stmt_year_num = sm2.number_input("Year", min_value=2000, max_value=2100, step=1, value=default_year, key=f"stmt_year_{sm_key}")
-            stmt_due = st.date_input("Due date", value=date.today(), key="stmt_due_date")
+            stmt_due = st.date_input("Due date", value=date.today(), key="stmt_due_date", help='The payment due date printed on the statement.')
 
             if st.session_state.pop("_clear_stmt_form", False):
                 for _k in [k for k in st.session_state if str(k).startswith(("stmt_total_direct", "stmt_finance_direct", "stmt_payments_"))]:
@@ -348,12 +348,12 @@ def render() -> None:
                 edit_stmt_due = st.date_input("Due date", value=date.fromisoformat(cur_stmt["due_date"]), key=f"edit_stmt_due_{edit_stmt_id}")
                 es1, es2, es3 = st.columns(3)
                 with es1:
-                    edit_stmt_prev = st.number_input("Previous balance", min_value=0.0, step=100.0, value=stored_prev, key=f"edit_stmt_prev_{edit_stmt_id}")
+                    edit_stmt_prev = st.number_input("Previous balance", min_value=0.0, step=100.0, value=stored_prev, key=f"edit_stmt_prev_{edit_stmt_id}", help='The balance carried over from the last statement, as printed.')
                 with es2:
-                    edit_stmt_new = st.number_input("New charges", min_value=0.0, step=100.0, value=default_new, key=f"edit_stmt_new_{edit_stmt_id}")
+                    edit_stmt_new = st.number_input("New charges", min_value=0.0, step=100.0, value=default_new, key=f"edit_stmt_new_{edit_stmt_id}", help='Purchases and fees on this statement.')
                 with es3:
-                    edit_stmt_int = st.number_input("Interest charged", min_value=0.0, step=10.0, value=stored_int, key=f"edit_stmt_int_{edit_stmt_id}")
-                edit_stmt_paid = st.number_input("Amount paid", min_value=0.0, step=100.0, value=float(cur_stmt["amount_paid"]), key=f"edit_stmt_paid_{edit_stmt_id}")
+                    edit_stmt_int = st.number_input("Interest charged", min_value=0.0, step=10.0, value=stored_int, key=f"edit_stmt_int_{edit_stmt_id}", help='Finance charges on this statement — also counted in the interest reports.')
+                edit_stmt_paid = st.number_input("Amount paid", min_value=0.0, step=100.0, value=float(cur_stmt["amount_paid"]), key=f"edit_stmt_paid_{edit_stmt_id}", help="What was paid against this statement. If you don't know yet, the next statement's previous balance confirms it.")
                 st.metric(
                     "Total amount due (computed)", php(round(edit_stmt_prev + edit_stmt_new + edit_stmt_int, 2)),
                     help="This is what Save will actually record — check it matches the real statement total before saving.",
@@ -470,6 +470,7 @@ def render() -> None:
                             index=month_options.index(current_month) if current_month in month_options else 0,
                             format_func=lambda m: "—" if m is None else date(2000, m, 1).strftime("%B"),
                             key=f"edit_card_af_month_{edit_card_id}",
+                            help='The month the annual fee is charged — you are reminded up to 2 months ahead, to ask the bank for a waiver.',
                         )
                         edit_statement_day = st.number_input(
                             "Statement day", min_value=0, max_value=31, step=1,
@@ -506,8 +507,8 @@ def render() -> None:
                 else:
                     cc_holder = st.selectbox("Cardholder", options=active_cardholders_df["cardholder_id"], format_func=lambda hid: active_cardholders_df.set_index("cardholder_id").loc[hid, "name"])
                 cc_name = st.text_input("Card name")
-                cc_last4 = st.text_input("Last 4 digits", max_chars=4)
-                cc_limit = st.number_input("Credit limit", min_value=0.0, step=10000.0)
+                cc_last4 = st.text_input("Last 4 digits", max_chars=4, help='Only the last 4 digits are kept — never type the full card number.')
+                cc_limit = st.number_input("Credit limit", min_value=0.0, step=10000.0, help="The card's credit limit, from the bank.")
                 cc_af_month = st.selectbox(
                     "Annual fee due — month (optional)", options=[None] + list(range(1, 13)),
                     format_func=lambda m: "—" if m is None else date(2000, m, 1).strftime("%B"),
@@ -604,7 +605,7 @@ def render() -> None:
             with st.container(horizontal=True):
                 st.metric("Missing this month", int(counts.get("Missing this month", 0)), border=True, help=f"Had a statement in {cov_prev}, none recorded for {cov_this}.")
                 st.metric("Missing both months", int(counts.get("Missing both months", 0)), border=True, help=f"Older history, but nothing in {cov_prev} or {cov_this}.")
-                st.metric("No statement ever", int(counts.get("No statement ever", 0)), border=True)
+                st.metric("No statement ever", int(counts.get("No statement ever", 0)), border=True, help='Active cards with no statement recorded at all — often cards not in use yet.')
                 st.metric("Not yet expected", int(counts.get("Not yet expected", 0)), border=True, help="Had one last month, but this card's statement isn't due to arrive yet this month (based on its Statement day, or last month's due day).")
                 st.metric("OK", int(counts.get("OK", 0)), border=True, help=f"A statement is recorded for {cov_this}.")
             only_problems = st.toggle("Show only cards that need attention", value=True, key="cov_only_problems")

@@ -398,7 +398,7 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
     booklet_id, chosen_number, manual_number = None, None, None
     if booklets_df.empty:
         st.caption("No Active booklet on file for this bank account — register one in Admin and audit, or type the number directly below.")
-        manual_number = st.text_input("Check number (typed exactly as physically written)", key=f"{key_prefix}_assign_manual_number")
+        manual_number = st.text_input("Check number (typed exactly as physically written)", key=f"{key_prefix}_assign_manual_number", help='Exactly as printed on the leaf, all digits — it is matched against the bank statement later.')
     else:
         b_options = {
             int(r["booklet_id"]): f"{r['booklet_code'] or ('Booklet #' + str(int(r['booklet_id'])))} ({r['start_number']}-{r['end_number']})"
@@ -406,6 +406,7 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
         }
         booklet_id = st.selectbox(
             "Booklet", options=list(b_options.keys()), format_func=lambda bid: b_options[bid], key=f"{key_prefix}_assign_booklet",
+            help='Pick the booklet the leaf comes from; only its unused leaves are offered.',
         )
         booklet_row = booklets_df.set_index("booklet_id").loc[int(booklet_id)]
         available_numbers = get_available_booklet_numbers(bank_account_id, booklet_row)
@@ -420,7 +421,7 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
             st.caption(f"{len(available_numbers)} leaf/leaves still available in this booklet.")
         with st.expander("No booklet, or need to type a number directly?"):
             st.caption("If you type a number here, it is used instead of the booklet number above.")
-            manual_number = st.text_input("Check number (typed exactly as physically written)", key=f"{key_prefix}_assign_manual_number") or None
+            manual_number = st.text_input("Check number (typed exactly as physically written)", key=f"{key_prefix}_assign_manual_number", help='Exactly as printed on the leaf, all digits — it is matched against the bank statement later.') or None
 
     if st.button("Assign check number", icon=":material/tag:", key=f"{key_prefix}_assign_btn"):
         source, value = pick_number_source(booklet_id, chosen_number, manual_number)
@@ -451,7 +452,7 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
             seq_bid = st.selectbox("Booklet", options=list(b_options.keys()), format_func=lambda bid: b_options[bid], key=f"{key_prefix}_seq_booklet")
             seq_free = get_available_booklet_numbers(bank_account_id, booklets_df.set_index("booklet_id").loc[int(seq_bid)])
             seq_default = int(seq_free[0]) if seq_free else int(booklets_df.set_index("booklet_id").loc[int(seq_bid)]["start_number"])
-            seq_start = st.number_input("Start at leaf (first free one is pre-filled)", value=seq_default, step=1, format="%d", key=f"{key_prefix}_seq_start_{seq_bid}_{seq_default}")
+            seq_start = st.number_input("Start at leaf (first free one is pre-filled)", value=seq_default, step=1, format="%d", key=f"{key_prefix}_seq_start_{seq_bid}_{seq_default}", help='The first leaf number to use; used or spoiled leaves after it are skipped by themselves.')
             seq_plan, seq_skipped, seq_err = plan_sequential_numbers(int(seq_bid), int(seq_start), [int(x) for x in seq_batch_rows["check_id"]])
             if seq_err:
                 st.error(seq_err)

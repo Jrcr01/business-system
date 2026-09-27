@@ -36,10 +36,10 @@ def render_new_creditor_form() -> None:
     with st.form("new_creditor_form", border=False, clear_on_submit=True):
         nc1, nc2 = st.columns([3, 1])
         nc_name = nc1.text_input("Name")
-        nc_type = nc2.selectbox("Type", ["SUPPLIER", "LENDER", "BANK_LOAN"], format_func=lambda t: t.replace("_", " ").title())
+        nc_type = nc2.selectbox("Type", ["SUPPLIER", "LENDER", "BANK_LOAN"], format_func=lambda t: t.replace("_", " ").title(), help='Supplier = invoices and order statements · Lender = private loan notes · Bank loan = bank dues. Credit-card issuers are added under Credit cards.')
         nc3, nc4 = st.columns(2)
-        nc_tin = nc3.text_input("TIN (optional)")
-        nc_terms = nc4.selectbox("Terms (suppliers)", SUPPLIER_TERMS_OPTIONS, index=SUPPLIER_TERMS_OPTIONS.index(DEFAULT_SUPPLIER_TERMS) if DEFAULT_SUPPLIER_TERMS in SUPPLIER_TERMS_OPTIONS else 0)
+        nc_tin = nc3.text_input("TIN (optional)", help='Tax Identification Number — for your records; optional.')
+        nc_terms = nc4.selectbox("Terms (suppliers)", SUPPLIER_TERMS_OPTIONS, index=SUPPLIER_TERMS_OPTIONS.index(DEFAULT_SUPPLIER_TERMS) if DEFAULT_SUPPLIER_TERMS in SUPPLIER_TERMS_OPTIONS else 0, help="Agreed days to pay. Each invoice's due date is its received date plus these terms; whole months (30/60/90/120/150) land on the same day of the month (month-end if that day doesn't exist).")
         nc5, nc6, nc7 = st.columns(3)
         nc_person = nc5.text_input("Contact person (optional)")
         nc_number = nc6.text_input("Contact number (optional)")

@@ -68,7 +68,7 @@ def render_thermal_printer_section(statement_id: int, include_full_history: bool
     else:
         st.caption(":material/cloud_upload: Google Drive connected. The A4 copy is uploaded and shared by link when you print.")
 
-    choice = st.segmented_control("Copies", list(COPY_CHOICES), default="Both", required=True, key=f"th_copies_{sid}", label_visibility="collapsed")
+    choice = st.segmented_control("Copies", list(COPY_CHOICES), default="Both", required=True, key=f"th_copies_{sid}", label_visibility="collapsed", help="Which slips to print: the supplier's copy to hand over, the filing copy to keep, or both.")
     planned = {c: planned_print(sid, c) for c in COPY_CHOICES[choice]}
     today = date.today().isoformat()
     slips = []
@@ -177,13 +177,13 @@ def _printer_settings(cfg: dict) -> None:
                    "use the test printer.")
         keys = list(BACKEND_LABELS)
         backend = st.selectbox("Printer connection", keys, index=keys.index(cfg["thermal_backend"]) if cfg["thermal_backend"] in keys else 0,
-                               format_func=BACKEND_LABELS.get, key="th_cfg_backend")
+                               format_func=BACKEND_LABELS.get, key="th_cfg_backend", help='How this laptop reaches the thermal printer: USB (Windows printer), Bluetooth (COM port), network (IP address), or the test printer.')
         c1, c2 = st.columns(2)
-        win = c1.text_input("Windows printer name (USB)", value=cfg["thermal_win32_printer"], placeholder="e.g. XP-T837L", key="th_cfg_win")
-        port = c2.text_input("Bluetooth COM port", value=cfg["thermal_serial_port"], placeholder="e.g. COM5", key="th_cfg_port")
-        host = c1.text_input("Printer IP address (network)", value=cfg["thermal_network_host"], placeholder="e.g. 192.168.1.50", key="th_cfg_host")
+        win = c1.text_input("Windows printer name (USB)", value=cfg["thermal_win32_printer"], placeholder="e.g. XP-T837L", key="th_cfg_win", help='Exactly as shown in Windows Settings → Bluetooth & devices → Printers & scanners.')
+        port = c2.text_input("Bluetooth COM port", value=cfg["thermal_serial_port"], placeholder="e.g. COM5", key="th_cfg_port", help='The outgoing COM port Windows gave the paired printer (Bluetooth settings → More Bluetooth settings → COM Ports).')
+        host = c1.text_input("Printer IP address (network)", value=cfg["thermal_network_host"], placeholder="e.g. 192.168.1.50", key="th_cfg_host", help="The printer's address on the office network — print the printer's self-test page to see it.")
         thr = c2.number_input("Bluetooth warning above (lines)", min_value=20, max_value=1000, step=10, value=int(cfg["thermal_bt_line_threshold"]),
-                              key="th_cfg_thr")
+                              key="th_cfg_thr", help='Printing a long slip over Bluetooth is slow; above this many lines you are asked first (default 120).')
         if st.button("Save printer settings", icon=":material/save:", key="th_cfg_save"):
             save_printer_config({"thermal_backend": backend, "thermal_win32_printer": win.strip(), "thermal_serial_port": port.strip().upper(),
                                  "thermal_network_host": host.strip(), "thermal_bt_line_threshold": int(thr)})

@@ -275,6 +275,27 @@ rundown / lender master / servicing, dashboard KPIs (DPO too), analytics, overvi
 views/lenders. Also fixed: the AP aging used JULIANDAY('now') (UTC time of day), so an invoice due today fell in no bucket -- now
 `JULIANDAY(DATE('now','localtime'))`, due today = Current. Tests: `tests/test_due_today_rule.py`. Keep this rule for anything new.
 
+**Check-date planner (2026-09-28, the owner's long-term goal; rules agreed that day).** Page "Check-date planner" (Daily work, after Bank
+and cash; `views/planner.py`, `engines/check_date_planner.py`). Scope: invoices with NO check yet (`open_items()`: batches not cancelled /
+locked whose net total isn't covered by active checks; the uncovered amount spread over open invoices, any shortfall -- credit memos,
+older unlinked checks -- taken off the OLDEST invoices, so rows always add up to the batch's remaining). Rules (settings
+`planner_max_days_late` default 7, `planner_daily_limit`, `planner_daily_max_checks` (0 = none), `planner_priority_suppliers` (ids),
+cash buffer = the forecast's `cash_buffer`, 0 until the owner sets one): never before the due date; bank days only (no weekends, no
+`calendar_blocked_dates`); forecast balance >= buffer from that day on; daily limits count what is already going out; never two checks to
+one supplier on one day (house rule) -- a batch's invoices on the same day become ONE check; priority suppliers first, then due date, then
+older batch. Short cash -> moved later up to max_days_late; else "Doesn't fit" on the last allowed day with the shortfall.
+`summary["already_short"]` = the day existing checks / dues alone go under the buffer. Cash: the bank balance if <= 14 days old
+(`cash_insights_service.scheduled_outflows`), else the owner types today's cash (then outflows = the payment schedule from today). Money
+in: average per weekday from the statements, or a typed amount per bank day. Output: per invoice (date, days late, status, reason in
+words), per check, per day. `send_to_batch()` writes the batch's checks into its Issue-checks grid as a park draft ("By number of
+checks", audited PLANNER_DATES_SENT) -- nothing is parked; the page then clears that batch's grid widgets and opens it. Tests:
+`tests/test_check_date_planner.py`. Next step of the goal: the AI layer (plain-language explanation / what-ifs on top of this engine).
+
+**Hover help ("?") on the relevant fields (2026-09-28, owner: "not all, just the relevant ones").** 72 `help=` texts on entry fields,
+settings and computed figures across admin, analytics, dashboard, bank and cash, bank loans, checks, credit cards, creditors, lenders,
+order statements, shared check-number widgets and thermal printing. Plain labels (Supplier, From / To ...) were left alone. New fields:
+add a help text when the field has a rule, a catch or a computed meaning.
+
 **Where things live (2026-09-28, owner asked "where should I store my system?").** Live data `C:\AP_Data` (database, `bank\`, `drive\`
 sign-in files) -- stays on the local disk, never in a syncing folder (BitLocker recommended). Daily backups -> Google Drive
 `H:\My Drive\Claude9OS\AP_Backups`, now pinned by `local_settings.bat` (`AP_BACKUP_DIR`, not in git) so they stay off-site even if the

@@ -67,9 +67,9 @@ def render_new_loan_note_form() -> None:
     """The Create loan note form (with its confirmation). Shared by Lenders and Add data."""
     with st.form("new_loan_note_form", border=False):
         ln_creditor = selectbox_creditor("Lender", "LENDER", "ln_creditor")
-        ln_issue_date = st.date_input("Issue date", value=date.today())
+        ln_issue_date = st.date_input("Issue date", value=date.today(), help="The date the money was lent — the first installment's interest is counted from here.")
         ln_principal = st.number_input("Principal amount", min_value=0.0, step=1000.0)
-        ln_rate = st.number_input("Monthly interest rate (%)", min_value=0.0, step=0.5, format="%.2f")
+        ln_rate = st.number_input("Monthly interest rate (%)", min_value=0.0, step=0.5, format="%.2f", help="Per month, e.g. 2 for 2%. Used to suggest each installment's interest (rate × balance × days ÷ 30); you can change the suggestion.")
         st.caption("LN No. starts as a draft placeholder — use \"Promote to real LN No.\" below once it's ready to assign the permanent number. Total interest/payable are computed from the repayment schedule, not typed in.")
         if st.form_submit_button("Create loan note", icon=":material/description:", type="primary"):
             if ln_creditor:
@@ -99,13 +99,13 @@ def render_add_installment_form(loan_note_id: int) -> None:
     ln_row = q("SELECT monthly_interest_rate, principal_amount FROM loan_notes WHERE loan_note_id = ?", (selected_lnid,)).iloc[0]
     _bal = q("SELECT outstanding_balance FROM loan_installments WHERE loan_note_id = ? ORDER BY due_date, installment_id", (selected_lnid,))
     current_balance = float(_bal["outstanding_balance"].iloc[-1]) if not _bal.empty else float(ln_row["principal_amount"] or 0.0)
-    add_due_date = st.date_input("Due date", value=date.today(), key="ln_add_due_date")
+    add_due_date = st.date_input("Due date", value=date.today(), key="ln_add_due_date", help='When this installment is due. Its interest is suggested for the days since the previous installment.')
     if st.button("Use remaining balance as principal (lump-sum payoff)", icon=":material/payments:", key="ln_lumpsum_btn"):
         st.session_state["ln_add_principal"] = current_balance
-    add_principal = st.number_input("Principal", min_value=0.0, step=1000.0, key="ln_add_principal")
+    add_principal = st.number_input("Principal", min_value=0.0, step=1000.0, key="ln_add_principal", help='The part of this payment that reduces the loan balance.')
     suggested_interest, balance_before = suggest_installment_interest(selected_lnid, add_due_date)
     st.caption(f"Suggested interest: {php(suggested_interest)} ({(ln_row['monthly_interest_rate'] or 0):g}% × {php(balance_before)} balance × days elapsed ÷ 30) — editable below.")
-    add_interest = st.number_input("Interest", min_value=0.0, step=100.0, value=suggested_interest, key="ln_add_interest")
+    add_interest = st.number_input("Interest", min_value=0.0, step=100.0, value=suggested_interest, key="ln_add_interest", help='Pre-filled with the suggestion above — change it to what the lender actually charges.')
     if st.button("Add installment", icon=":material/playlist_add:", type="primary", key="ln_add_installment_btn") or dup_resume("add_loan_installment"):
         if dup_needs_confirm("add_loan_installment", loan_installment_warnings(selected_lnid, [(add_due_date, add_principal, add_interest)])):
             pass
@@ -230,7 +230,7 @@ def render() -> None:
                 else:
                     with st.expander("Override status"):
                         st.caption("Settled fires automatically once Outstanding (uncleared) hits ₱0 — every check issued must also have actually passed its date, not just been written. Use this only to force Defaulted, or to correct a mistake.")
-                        override_status = st.selectbox("Status", ["Active", "Settled", "Defaulted"], index=["Active", "Settled", "Defaulted"].index(ln_row["status"]), key="ln_status_override")
+                        override_status = st.selectbox("Status", ["Active", "Settled", "Defaulted"], index=["Active", "Settled", "Defaulted"].index(ln_row["status"]), key="ln_status_override", help='Settled happens by itself once everything is paid. Use this only to mark Defaulted or to fix a mistake.')
                         if st.button("Save status", icon=":material/update:", key="ln_status_save_btn"):
                             ok, msg = update_loan_note_status(selected_lnid, override_status)
                             (st.success if ok else st.error)(msg)
@@ -311,7 +311,7 @@ def render() -> None:
                         "Download CSV template", data=get_schedule_template_csv(), file_name="loan_schedule_import_template.csv",
                         mime="text/csv", icon=":material/download:", key=f"ln_import_template_btn_{selected_lnid}",
                     )
-                    ln_import_file = st.file_uploader("Schedule spreadsheet", type=["csv", "xlsx"], key=f"ln_import_uploader_{selected_lnid}")
+                    ln_import_file = st.file_uploader("Schedule spreadsheet", type=["csv", "xlsx"], key=f"ln_import_uploader_{selected_lnid}", help="A .csv or .xlsx with Date / Principal / Interest columns (Outstanding Balance optional, as a check) — rows are shown for review before they're added.")
                     if st.button("Parse schedule file", icon=":material/upload_file:", key=f"ln_import_parse_btn_{selected_lnid}"):
                         if not ln_import_file:
                             st.warning("Upload a file first.")
@@ -601,7 +601,7 @@ def render() -> None:
                             if ok:
                                 refresh(done=msg)
                     with cr_col_replace:
-                        new_date = st.date_input("New check date", value=date.today(), key="ln_replace_date")
+                        new_date = st.date_input("New check date", value=date.today(), key="ln_replace_date", help="The replacement check's date. The old check is cancelled; the new one is parked (no number yet).")
                         if st.button("Replace this check (new one parked)", icon=":material/sync_alt:", key="ln_replace_btn"):
                             ok, msg, *_ = replace_check(int(cr_pick), new_date, "")
                             (st.success if ok else st.error)(msg)

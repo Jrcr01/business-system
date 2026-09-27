@@ -110,8 +110,8 @@ def render() -> None:
     )
 
     with st.container(horizontal=True):
-        st.metric("Total AP outstanding", php(ap_outstanding), border=True)
-        st.metric("Active checks in circulation", f"{int(active_checks['n'][0])} · {php(active_checks['total'][0])}", border=True)
+        st.metric("Total AP outstanding", php(ap_outstanding), border=True, help='Everything still owed today: supplier and lender checks dated today or later, bank-loan installments due today or later, and credit-card amounts still owed. Due today counts as still owed.')
+        st.metric("Active checks in circulation", f"{int(active_checks['n'][0])} · {php(active_checks['total'][0])}", border=True, help='Every check with status Active — issued and not cancelled or replaced, whatever its date.')
         st.metric(
             "Needs attention", str(len(critical_alerts) + len(dash_missing_recent_df) + len(dash_checkbook_alerts_df)),
             border=True,
@@ -423,6 +423,7 @@ def render() -> None:
         overdue_threshold = st.number_input(
             "Flag a cancelled/replaced check as \"long overdue\" past this many days", min_value=1, step=5,
             value=int(st.session_state.get("overdue_threshold", 30)), key="overdue_threshold",
+            help="A cancelled or replaced check is flagged 'long overdue' when it was voided more than this many days after the due date of what it was paying.",
         )
         avg_dpo = get_average_dpo_suppliers()
         overdue_cancelled_df = get_overdue_cancelled_checks(int(overdue_threshold))

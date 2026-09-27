@@ -263,6 +263,7 @@ def render() -> None:
             an_overdue_threshold = st.number_input(
                 "Flag a cancelled/replaced check as \"long overdue\" past this many days", min_value=1, step=5,
                 value=30, key="analytics_overdue_threshold",
+                help="A cancelled or replaced check is flagged 'long overdue' when it was voided more than this many days after the due date of what it was paying.",
             )
             an_overdue_df = get_overdue_cancelled_checks(int(an_overdue_threshold))
             if an_overdue_df.empty:

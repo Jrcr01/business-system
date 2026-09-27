@@ -64,7 +64,7 @@ def render_log_spoiled_form() -> None:
             suggested_number = str(int(brow["next_available_number"]))
     with st.form("spoiled_check_form", border=False):
         spoiled_number = st.text_input("Check number", value=suggested_number, help="Edit if the spoiled leaf's physical number differs from the suggested next number.")
-        spoiled_reason = st.text_input("Reason", placeholder="e.g. printer jam, misaligned print")
+        spoiled_reason = st.text_input("Reason", placeholder="e.g. printer jam, misaligned print", help='Why the leaf was spoiled (misprint, wrong amount, torn …) — kept in the spoiled check log.')
         _spoil_submitted = st.form_submit_button("Log spoiled check", icon=":material/report:", type="primary")
     # handled outside the form: the "not in any booklet" confirmation pop-up has its own buttons, which a form cannot hold
     if _spoil_submitted or dup_resume("log_spoiled_check"):
@@ -124,6 +124,7 @@ def render() -> None:
                 default=list(print_options.keys()),
                 format_func=lambda cid: print_options[cid],
                 key="check_print_pick",
+                help='Checks going into this Chrysanth run. Untick any you want to keep parked for a later run.',
             )
             if PRINT_CHECKS_IN_APP:
                 if st.button("Print these checks", icon=":material/print:", disabled=not print_picked_ids, key="check_print_batch_btn"):
@@ -145,9 +146,9 @@ def render() -> None:
                 with st.expander("Chrysanth settings (account number and crossing)", expanded=not _cs["account_no"]):
                     st.caption("Chrysanth's import only accepts an account that is already set up inside Chrysanth, so type its account number exactly as it appears there (up to 20 characters). "
                                "The crossing is applied to every cheque in the file.")
-                    _cs_acct = st.text_input("Account number in Chrysanth", value=_cs["account_no"], max_chars=20, key="chrys_account_no")
+                    _cs_acct = st.text_input("Account number in Chrysanth", value=_cs["account_no"], max_chars=20, key="chrys_account_no", help='Exactly as the account is set up inside Chrysanth (up to 20 characters) — Chrysanth rejects the file otherwise.')
                     _cs_cross = st.selectbox("Crossing on every cheque", options=list(CHRYSANTH_CROSSING_OPTIONS), index=list(CHRYSANTH_CROSSING_OPTIONS).index(_cs["crossing"]),
-                                             format_func=lambda k: CHRYSANTH_CROSSING_OPTIONS[k], key="chrys_crossing")
+                                             format_func=lambda k: CHRYSANTH_CROSSING_OPTIONS[k], key="chrys_crossing", help='The crossing printed on every cheque in the exported file.')
                     if st.button("Save Chrysanth settings", icon=":material/save:", key="chrys_save_btn"):
                         ok, msg = save_chrysanth_settings(_cs_acct, _cs_cross)
                         (st.success if ok else st.error)(msg)
@@ -276,6 +277,7 @@ def render() -> None:
                 default=list(assign_options.keys()),
                 format_func=lambda cid: assign_options[cid],
                 key="check_assign_pick",
+                help='Checks to number now; the rest stay unnumbered for later.',
             )
 
             st.caption("Type each check's number directly (Phase 6 Redux v2 dropped auto-sequencing here — the per-batch \"Assign a check number\" section in Order Statement/Lenders already covers picking a number from a booklet's dropdown one check at a time; this bulk grid is for typing several in at once, e.g. a backfill from an older booklet).")
@@ -286,6 +288,7 @@ def render() -> None:
             ref_booklet_id = st.selectbox(
                 "Which booklet do these belong to? (optional, for record-keeping)",
                 options=list(b_ref_options.keys()), format_func=lambda bid: b_ref_options[bid], key="check_assign_manual_booklet",
+                help='Optional: which booklet the leaves came from, so its missing / duplicate counts stay accurate.',
             )
             if not assign_picked_ids:
                 st.caption("Pick at least one check above.")

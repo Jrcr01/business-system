@@ -591,7 +591,7 @@ def render() -> None:
                         rc1.caption(f":warning: {m}")
                     if pick is not None and good_rows:
                         mb_plan.append((sh["sheet"], pick, good_rows))
-                mb_promote = st.checkbox("Also promote each new batch to Issued", value=True, key="multi_import_promote")
+                mb_promote = st.checkbox("Also promote each new batch to Issued", value=True, key="multi_import_promote", help='On: each new batch becomes Issued with its permanent OS number right away. Off: they stay Drafts for you to review first.')
                 mb_warnings = [f"{sheet}: {w}" for sheet, cid, rows_ in mb_plan
                                for w in invoice_warnings(cid, [(r["doc_ref"].strip(), r["invoice_date"], r["amount"]) for r in rows_])]
                 if st.button("Create batches and import invoices", icon=":material/playlist_add:", key="multi_import_go_btn", disabled=not mb_plan) or dup_resume("multi_import"):
@@ -732,13 +732,13 @@ def render() -> None:
                     bp_picked = st.multiselect(f"Statements to print ({len(bp_labels)} found — untick any you don't want)", options=list(bp_labels), default=list(bp_labels),
                                                format_func=lambda sid: bp_labels[sid], key=f"bulk_print_pick_{bp_scope}_{len(bp_labels)}")
                     bt1, bt2 = st.columns(2)
-                    bp_type = bt1.radio("Statement type", ["Batch Statement (A4)", "Thermal 80mm"], horizontal=True, key="bulk_print_type")
-                    bp_history = bt2.toggle("Include full check history (incl. cancelled/replaced)", value=True, key="bulk_print_history")
+                    bp_type = bt1.radio("Statement type", ["Batch Statement (A4)", "Thermal 80mm"], horizontal=True, key="bulk_print_type", help='A4 = the full Batch Statement. Thermal 80mm = the short slip with a QR code to the online A4 copy.')
+                    bp_history = bt2.toggle("Include full check history (incl. cancelled/replaced)", value=True, key="bulk_print_history", help='On: cancelled and replaced checks are listed too (marked as such). Off: only the checks that count.')
                     bp_unprinted = bt2.toggle("Include checks not yet printed", value=True, key="bulk_print_unprinted",
                                               help="On: every check is listed, as usual. Off: only checks already printed appear on the statements, and only they count as covering an invoice. "
                                                    "A check counts as printed once its Chrysanth run is marked printed (Batch run history > Mark as printed); parked checks and checks in a run "
                                                    "not marked printed yet (e.g. RUN 005) are left out.")
-                    bp_summary_on = st.toggle("Put a summary page of the included order statements in front", value=True, key="bulk_print_summary")
+                    bp_summary_on = st.toggle("Put a summary page of the included order statements in front", value=True, key="bulk_print_summary", help='A first page listing every statement in this PDF with its totals.')
                     bp_summary = bulk_summary_rows([int(x) for x in bp_picked], bp_unprinted)
                     if bp_summary:
                         st.dataframe(pd.DataFrame(bp_summary).drop(columns=["statement_id"]).rename(columns={
@@ -749,8 +749,8 @@ def render() -> None:
                     bp_apply = False
                     if bp_type == "Batch Statement (A4)":
                         bp_copies = st.radio("Copies to print", ["both", "filing", "supplier"], horizontal=True, key="bulk_print_copies",
-                                             format_func=lambda c: {"both": "Both (filing + supplier)", "filing": "Filing copy only", "supplier": "Supplier copy only"}[c])
-                        bp_apply = st.toggle("Include payment application & running balance", value=False, key="bulk_print_apply")
+                                             format_func=lambda c: {"both": "Both (filing + supplier)", "filing": "Filing copy only", "supplier": "Supplier copy only"}[c], help='Filing copy to keep, supplier copy to hand over — or both, one after the other.')
+                        bp_apply = st.toggle("Include payment application & running balance", value=False, key="bulk_print_apply", help="Adds an 'Applied To' column (which invoice(s) each check paid, where tracked) and a running balance column to the Checks table.")
                     if st.button(f"Generate one PDF for {len(bp_picked)} statement(s)", icon=":material/picture_as_pdf:", type="primary", disabled=not bp_picked, key="bulk_print_btn"):
                         merged = PdfWriter()
                         made, failed = 0, []
@@ -872,7 +872,7 @@ def render() -> None:
                 else:
                     st.caption(f"This batch is not yet balanced (remaining {php(export_remaining)}) — generating now will NOT lock it.")
 
-                export_full_history = st.toggle("Include full check history (incl. cancelled/replaced)", value=True, key="export_history_toggle")
+                export_full_history = st.toggle("Include full check history (incl. cancelled/replaced)", value=True, key="export_history_toggle", help='On: cancelled and replaced checks are listed too (marked as such). Off: only the checks that count.')
                 export_show_payment_application = st.toggle(
                     "Include payment application & running balance", value=False, key="export_payment_application_toggle",
                     help="Adds an 'Applied To' column (which invoice(s) each check paid, where tracked) and a running balance column to the Checks table.",
@@ -883,6 +883,7 @@ def render() -> None:
                     format_func=lambda c: {"both": "Both (filing + supplier)", "filing": "Filing copy only", "supplier": "Supplier copy only"}[c],
                     horizontal=True,
                     key="export_copy_choice",
+                    help='Filing copy to keep, supplier copy to hand over — or both, one after the other.',
                 )
                 if st.button("Generate Batch Statement PDF", icon=":material/picture_as_pdf:", key="export_generate_btn"):
                     pdf_bytes = generate_batch_statement_pdf(int(selected_sid), export_full_history, export_copy_choice, export_show_payment_application)
@@ -1020,6 +1021,7 @@ def render() -> None:
                         num_checks = st.number_input(
                             "Number of checks", min_value=1, max_value=50, step=1,
                             value=int(st.session_state.get(num_checks_key, 1)), key=num_checks_key,
+                            help='The remaining balance is split evenly into this many checks (whole pesos); change any date or amount in the table.',
                         )
                         st.caption("Two ways to issue: use the count above to pre-split evenly (whole pesos, editable), or just add/remove rows in the table below and type amounts yourself.")
 
@@ -1322,7 +1324,7 @@ def render() -> None:
                                "If one was already exported to Chrysanth, remove it there too.")
                     unpark_labels = {int(r["check_id"]): f"{r['check_date']} — {php(r['amount'])}" for _, r in unparkable_df.iterrows()}
                     unpark_pick = st.multiselect("Parked checks to take back", options=list(unpark_labels), format_func=lambda cid: unpark_labels[cid],
-                                                 key=batch_scoped_key("unpark_pick"))
+                                                 key=batch_scoped_key("unpark_pick"), help='Only parked checks without a number. They are deleted with their invoice links and the balance returns.')
                     if st.button("Un-park selected checks", icon=":material/undo:", disabled=not unpark_pick, key=batch_scoped_key("unpark_btn")):
                         def _do_unpark(sid=int(batch_scope_pick), picked=list(unpark_pick)):
                             ok, msg = unpark_checks(sid, picked)
@@ -1405,7 +1407,7 @@ def render() -> None:
                             format_func=lambda chid: active_checks_df.set_index("check_id").loc[chid, "check_number"] or "Pending (not yet printed)",
                             key=batch_scoped_key("note_pick"),
                         )
-                        note_text = st.text_input("Note", key=batch_scoped_key("note_text"))
+                        note_text = st.text_input("Note", key=batch_scoped_key("note_text"), help='Saved on the check as a payee note, in its history.')
                         if st.button("Add note", icon=":material/sticky_note_2:", key=batch_scoped_key("add_note_btn")):
                             if note_text.strip():
                                 ok, msg = apply_check_correction(int(note_pick), "Payee Note", note_text.strip(), "")
@@ -1428,10 +1430,10 @@ def render() -> None:
                         format_func=lambda chid: f"{active_checks_df.set_index('check_id').loc[chid, 'check_number'] or 'Pending'} ({php(active_checks_df.set_index('check_id').loc[chid, 'amount'])})",
                         key=batch_scoped_key("void_pick"),
                     )
-                    void_reissue = st.checkbox("Reissue as a new (parked) check", key=batch_scoped_key("void_reissue_toggle"))
+                    void_reissue = st.checkbox("Reissue as a new (parked) check", key=batch_scoped_key("void_reissue_toggle"), help='Also create a replacement check for the same amount — parked, no number yet, dated as you choose.')
                     if void_reissue:
-                        void_new_date = st.date_input("New check date", value=date.today(), key=batch_scoped_key("void_new_date"))
-                    void_reason = st.text_input("Reason (optional)", placeholder="e.g. postdated past new due date", key=batch_scoped_key("void_reason"))
+                        void_new_date = st.date_input("New check date", value=date.today(), key=batch_scoped_key("void_new_date"), help="The replacement check's date.")
+                    void_reason = st.text_input("Reason (optional)", placeholder="e.g. postdated past new due date", key=batch_scoped_key("void_reason"), help='Kept with the voided check in its history.')
                     if st.button("Void & reissue" if void_reissue else "Void check", icon=":material/cancel:", key=batch_scoped_key("void_submit_btn")):
                         if void_reissue:
                             ok, msg, new_check_id = replace_check(int(void_pick), void_new_date, void_reason)

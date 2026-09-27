@@ -31,11 +31,11 @@ from views.shared import (  # noqa: F401
 def render_new_booklet_form() -> None:
     """Register a new check booklet (leaf range). Shared by Admin and audit and Add data."""
     with st.form("new_booklet_form", border=False):
-        bk_code = st.text_input("Booklet code", value="Booklet A")
+        bk_code = st.text_input("Booklet code", value="Booklet A", help='Your own label for the booklet (e.g. the number on its cover), so booklets are easy to tell apart.')
         bk1, bk2 = st.columns(2)
         bk_start = bk1.number_input("Start check number", min_value=1, step=1, value=1000, help="The full number printed on the first leaf, e.g. 3992554301. It is used exactly as typed.")
         bk_end = bk2.number_input("End check number", min_value=1, step=1, value=1050, help="The full number printed on the last leaf, e.g. 3992554400.")
-        bk_received = st.date_input("Date received", value=date.today())
+        bk_received = st.date_input("Date received", value=date.today(), help='When the booklet arrived from Metrobank — for your records.')
         if st.form_submit_button("Register booklet", icon=":material/menu_book:", type="primary"):
             if bk_end < bk_start:
                 st.error("End check number must be greater than or equal to start check number.")
@@ -67,11 +67,11 @@ def render() -> None:
                     "here — mirrors Chrysanth Check Writer's own per-account Alignment tab."
                 )
                 cal_w, cal_h = st.columns(2)
-                new_width_mm = cal_w.number_input("Check width (mm)", min_value=1.0, value=float(bank["check_width_mm"]), step=1.0, key="cal_width_mm")
-                new_height_mm = cal_h.number_input("Check height (mm)", min_value=1.0, value=float(bank["check_height_mm"]), step=1.0, key="cal_height_mm")
+                new_width_mm = cal_w.number_input("Check width (mm)", min_value=1.0, value=float(bank["check_width_mm"]), step=1.0, key="cal_width_mm", help='The physical size of a check leaf — measure a real leaf with a ruler. Used to place the printed text.')
+                new_height_mm = cal_h.number_input("Check height (mm)", min_value=1.0, value=float(bank["check_height_mm"]), step=1.0, key="cal_height_mm", help='The physical size of a check leaf — measure a real leaf with a ruler. Used to place the printed text.')
                 cal_x, cal_y = st.columns(2)
-                new_offset_x_mm = cal_x.number_input("Shift right (mm)", value=float(bank["check_offset_x_mm"]), step=0.5, key="cal_offset_x_mm")
-                new_offset_y_mm = cal_y.number_input("Shift down (mm)", value=float(bank["check_offset_y_mm"]), step=0.5, key="cal_offset_y_mm")
+                new_offset_x_mm = cal_x.number_input("Shift right (mm)", value=float(bank["check_offset_x_mm"]), step=0.5, key="cal_offset_x_mm", help='Print a test check. If the text is too far left, increase this (millimetres); a negative number moves it left.')
+                new_offset_y_mm = cal_y.number_input("Shift down (mm)", value=float(bank["check_offset_y_mm"]), step=0.5, key="cal_offset_y_mm", help='Print a test check. If the text is too high, increase this (millimetres); a negative number moves it up.')
                 if st.button("Save calibration", icon=":material/tune:", key="cal_save_btn"):
                     with get_conn() as conn:
                         conn.execute(
@@ -124,10 +124,10 @@ def render() -> None:
                 if st.button("Run gap audit", icon=":material/search:"):
                     result = audit_booklet_gaps(int(audit_pick))
                     a1, a2, a3, a5, a4 = st.columns(5)
-                    a1.metric("Total leaves", result["total_leaves"], border=True)
-                    a2.metric("Missing gaps", result["missing_gaps_count"], border=True)
-                    a3.metric("Duplicates", result["duplicate_numbers_count"], border=True)
-                    a5.metric("Spoiled (error checks)", result["spoiled_count"], border=True)
+                    a1.metric("Total leaves", result["total_leaves"], border=True, help='How many checks this booklet holds (last number − first number + 1).')
+                    a2.metric("Missing gaps", result["missing_gaps_count"], border=True, help='Leaves between the first and last used numbers with no check and not logged as spoiled — find out what happened to them.')
+                    a3.metric("Duplicates", result["duplicate_numbers_count"], border=True, help='Numbers used by more than one check — one of them is probably a typo.')
+                    a5.metric("Spoiled (error checks)", result["spoiled_count"], border=True, help='Leaves logged as spoiled (error checks) — they count as used, never reissued.')
                     a4.metric("Booklet", result["booklet_code"], border=True)
                     if result["missing_gaps_count"] > 0:
                         st.error(f"Unaccounted (skipped) check numbers: {', '.join(result['missing_gaps_list'])}")
@@ -156,8 +156,8 @@ def render() -> None:
         with c2:
             st.markdown("**Restore**")
             st.caption("This overwrites the live database with the uploaded file. The current database is saved as a .bak_before_restore file first, in case this needs undoing.")
-            restore_file = st.file_uploader("Upload backup file (.db)", type=["db"])
-            confirm_text = st.text_input("Type RESTORE to confirm")
+            restore_file = st.file_uploader("Upload backup file (.db)", type=["db"], help="A backup made by this app (.db). Restoring REPLACES all current data with the backup's; the current data is saved as a .bak_before_restore file first.")
+            confirm_text = st.text_input("Type RESTORE to confirm", help='Typed on purpose, so a restore can never happen by an accidental click.')
             if st.button("Restore database", icon=":material/restore:", type="secondary"):
                 if restore_file is None:
                     st.error("Upload a backup file first.")
@@ -172,7 +172,7 @@ def render() -> None:
     with st.container(border=True):
         st.subheader("Audit log")
         audit_full = fix_nullable_int(q("SELECT log_id, user_action, entity_name, entity_id, old_values, new_values, datetime(timestamp, 'localtime') AS timestamp FROM audit_logs ORDER BY log_id DESC"), "entity_id")
-        action_filter = st.multiselect("Filter by action", options=sorted(audit_full["user_action"].unique()) if not audit_full.empty else [])
+        action_filter = st.multiselect("Filter by action", options=sorted(audit_full["user_action"].unique()) if not audit_full.empty else [], help='Show only these kinds of recorded changes (e.g. checks issued, cancelled, bank lines resolved).')
         display_audit = audit_full[audit_full["user_action"].isin(action_filter)] if action_filter else audit_full
         st.dataframe(display_audit, hide_index=True)
 

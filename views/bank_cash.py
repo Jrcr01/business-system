@@ -54,7 +54,7 @@ def show_alerts(alerts: list[dict]) -> None:
 def _import_tab() -> None:
     st.caption("Download the Statement of Account from Metrobank MBOS (PDF works; CSV / Excel too if MBOS offers them) and drop it here. "
                "The same file is never imported twice, and overlapping periods are fine — lines already on file are skipped.")
-    up = st.file_uploader("Bank statement", type=["pdf", "csv", "xlsx", "xls"], key="bank_stmt_upload", label_visibility="collapsed")
+    up = st.file_uploader("Bank statement", type=["pdf", "csv", "xlsx", "xls"], key="bank_stmt_upload", label_visibility="collapsed", help='The Statement of Account downloaded from Metrobank MBOS (PDF, CSV or Excel). The same file is never imported twice; overlapping months are fine.')
     if up is None:
         return
     data = up.getvalue()
@@ -74,7 +74,7 @@ def _import_tab() -> None:
     c1.metric("Period", f"{parsed.period_from:%b %d} – {parsed.period_to:%b %d, %Y}", border=True)
     c2.metric("Lines", f"{len(parsed.lines):,}", border=True)
     c3.metric("Closing balance", php(parsed.closing_balance) if parsed.closing_balance is not None else "—", border=True)
-    c4.metric("Running balances", "All add up" if parsed.balance_ok else f"{parsed.bad_balance_steps} don't add up", border=True)
+    c4.metric("Running balances", "All add up" if parsed.balance_ok else f"{parsed.bad_balance_steps} don't add up", border=True, help="Each line's balance should equal the one before plus money in minus money out. If some don't add up, the file may be incomplete — check it against MBOS.")
     st.caption(f"Account {parsed.masked_account() or '—'} · opening balance {php(parsed.opening_balance) if parsed.opening_balance is not None else '—'}")
     kinds = pd.Series([x.kind for x in parsed.lines]).value_counts()
     st.dataframe(pd.DataFrame({"What": [KIND_LABELS.get(k, k) for k in kinds.index], "Lines": kinds.values}), hide_index=True)
@@ -163,7 +163,7 @@ def _deal_with(shown: list[dict]) -> None:
             st.markdown("**Or tag the reason**")
             reasons = [r for r in RESOLUTIONS if r != "Linked by hand"]
             default = DEFAULT_REASON.get(e["match_status"], "Other")
-            reason = st.selectbox("Reason", reasons, index=reasons.index(default), key=f"bank_reason_{pick}")
+            reason = st.selectbox("Reason", reasons, index=reasons.index(default), key=f"bank_reason_{pick}", help='Why this line is fine: Bank error · Legacy record (old records) · Customer bounced check · Expected bank debit (loan debit, charges) · Before the system · Other. You can reopen it later under Resolved.')
             note = st.text_input("Note (optional)", key=f"bank_note_{pick}", placeholder="e.g. corrected with Metrobank, customer paid in cash")
             if st.button("Resolve", icon=":material/check:", type="primary", key=f"bank_resolve_btn_{pick}"):
                 resolve(pick, reason, note)
@@ -180,10 +180,10 @@ def _reconcile_tab() -> None:
     open_exc = [e for e in exceptions() if not e["reviewed"]]
     confirmed = q("SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS t FROM checks_issued WHERE bank_cleared_date IS NOT NULL")
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Confirmed cleared by the bank", f"{int(confirmed['n'][0])}", php(confirmed["t"][0]), delta_color="off", delta_arrow="off", border=True)
+    m1.metric("Confirmed cleared by the bank", f"{int(confirmed['n'][0])}", php(confirmed["t"][0]), delta_color="off", delta_arrow="off", border=True, help='Our checks that the imported statements show as cleared by the bank, and their total.')
     m2.metric("Not yet cleared (past their date)", f"{len(waiting)}", php(sum(w["amount"] for w in waiting)), delta_color="off", delta_arrow="off",
               border=True, help=f"Our numbered checks dated on or before {last:%b %d, %Y} (the last imported bank date) that the bank has not cleared.")
-    m3.metric("Need a look", f"{len(open_exc)}", border=True)
+    m3.metric("Need a look", f"{len(open_exc)}", border=True, help='Bank lines the app could not pair by itself — deal with them below (link, open the check, or tag the reason).')
     m4.metric("Statements reconciled", f"{sum(x['status'] == 'Reconciled' for x in stmts)} of {len(stmts)}", border=True,
               help="A statement is Reconciled once every line on it that needs a look is linked or tagged.")
     st.caption(f"Bank lines on file: {first:%b %d, %Y} to {last:%b %d, %Y}.")
@@ -266,9 +266,9 @@ def _statement_tab() -> None:
     st.caption("Bank vs the checks we issued: the bank balance, less our checks the bank has not cleared yet, is the cash really available. "
                "(The system keeps no cash book, so this is not a full book-vs-bank reconciliation.)")
     m1, m2, m3 = st.columns(3)
-    m1.metric(f"Balance per bank ({r['as_of']:%b %d, %Y})", php(r["bank_balance"]), border=True)
-    m2.metric("Less: outstanding checks", php(r["outstanding_total"]), f"{len(r['outstanding'])} check(s)", delta_color="off", delta_arrow="off", border=True)
-    m3.metric("Available after outstanding checks", php(r["available"]), border=True)
+    m1.metric(f"Balance per bank ({r['as_of']:%b %d, %Y})", php(r["bank_balance"]), border=True, help='The balance on the last line of this statement.')
+    m2.metric("Less: outstanding checks", php(r["outstanding_total"]), f"{len(r['outstanding'])} check(s)", delta_color="off", delta_arrow="off", border=True, help='Our checks dated on or before that day that the bank has not cleared yet — listed below.')
+    m3.metric("Available after outstanding checks", php(r["available"]), border=True, help='Bank balance minus the outstanding checks: the cash really free to use.')
     if r["open_items"]:
         st.warning(f"{r['open_items']} line(s) on this statement still need a look (Reconciliation tab) — it is not reconciled yet.", icon=":material/rule:")
     else:
@@ -311,7 +311,7 @@ def _forecast_tab() -> None:
         return
     _stale_note(pos)
     f1, f2 = st.columns([1, 1])
-    days = f1.segmented_control("Look ahead", [14, 30, 60, 90], default=30, required=True, format_func=lambda d: f"{d} days", key="cash_fc_days")
+    days = f1.segmented_control("Look ahead", [14, 30, 60, 90], default=30, required=True, format_func=lambda d: f"{d} days", key="cash_fc_days", help='How many days ahead to forecast.')
     buf = f2.number_input("Cash buffer (the lowest balance you want to keep)", min_value=0.0, step=50000.0, value=get_buffer(), key="cash_buffer_input",
                           help="Days when the projected balance falls under this line are flagged.")
     if abs(buf - get_buffer()) > 0.005:
@@ -320,8 +320,8 @@ def _forecast_tab() -> None:
     d = fc["daily"]
     m1, m2, m3 = st.columns(3)
     m1.metric(f"Bank balance ({fc['as_of']:%b %d})", php(fc["opening"]), border=True)
-    m2.metric("Lowest projected", php(fc["lowest"][1]), f"on {fc['lowest'][0]:%b %d}", delta_color="off", delta_arrow="off", border=True)
-    m3.metric("First day under the buffer", f"{fc['first_below']:%b %d}" if fc["first_below"] else "None", border=True)
+    m2.metric("Lowest projected", php(fc["lowest"][1]), f"on {fc['lowest'][0]:%b %d}", delta_color="off", delta_arrow="off", border=True, help='The lowest forecast balance in the period, and the day it happens.')
+    m3.metric("First day under the buffer", f"{fc['first_below']:%b %d}" if fc["first_below"] else "None", border=True, help='The first day the forecast falls under your cash buffer (set on the right).')
     chart_df = d.assign(day=pd.to_datetime(d["day"]))
     line = alt.Chart(chart_df).mark_line(point=True).encode(x=alt.X("day:T", title=None), y=alt.Y("balance:Q", title="Projected balance (PHP)"),
                                                             tooltip=[alt.Tooltip("day:T", title="Day"), alt.Tooltip("balance:Q", title="Balance", format=",.2f"),
@@ -350,7 +350,7 @@ def _float_tab() -> None:
               f"{len(overdue)} check(s)", delta_color="off", delta_arrow="off", border=True,
               help="Checks dated on or before the last imported bank date that the bank has not cleared: suppliers have not deposited them yet.")
     m2.metric("Dated ahead (not due yet)", php(float(ahead["amount"].sum()) if not ahead.empty else 0.0), f"{len(ahead)} check(s)",
-              delta_color="off", delta_arrow="off", border=True)
+              delta_color="off", delta_arrow="off", border=True, help='Checks dated after the last bank date — not due to clear yet.')
     if overdue.empty:
         st.caption("No check is waiting to be deposited within the imported period.")
         return
@@ -365,8 +365,8 @@ def _inflow_tab() -> None:
         st.info("Import a bank statement first — money in comes from its deposit lines.")
         return
     m1, m2, m3 = st.columns(3)
-    m1.metric("Money in (imported period)", php(it["total"]), border=True)
-    m2.metric("Average per week", php(it["weekly_average"]), border=True)
+    m1.metric("Money in (imported period)", php(it["total"]), border=True, help='All deposits and transfers in on the imported statements (bounced checks not counted).')
+    m2.metric("Average per week", php(it["weekly_average"]), border=True, help='Complete weeks only — a week the statements cover only partly is left out.')
     m3.metric("Slow weeks", f"{int(it['weekly']['slow'].sum())} of {int((~it['weekly']['partial']).sum())}", border=True,
               help="Complete weeks under 75% of the weekly average.")
     wk = it["weekly"]
