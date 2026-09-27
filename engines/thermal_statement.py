@@ -149,6 +149,7 @@ class Line:
     align: str = "left"            # left | center
     bold: bool = False
     big: bool = False              # double height (same 48-column width)
+    qr_before: bool = False        # the QR code prints just before this line (when the slip has a link)
 
 
 @dataclass
@@ -190,7 +191,7 @@ def statement_totals(data: dict) -> dict:
 
 def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: bool = True, include_unprinted_checks: bool = True,
                print_type: str = "ORIGINAL", version: int = 1, reprint_date: str | None = None, qr_link: str | None = None,
-               printed_at: datetime | None = None) -> Slip | None:
+               printed_at: datetime | None = None, link_until=None) -> Slip | None:
     """One copy of the slip. print_type ORIGINAL / REPRINT (with reprint_date) / REVISED (version N supersedes N-1) -- the header lines for
     REPRINT / REVISED are here already; deciding which one applies is build step 3."""
     copy = copy.upper()
@@ -269,7 +270,10 @@ def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: b
     add(Line("Scan for the full statement:", "center"))
     if not qr_link:
         add(Line("[QR code to the A4 copy goes here]", "center"))
-    add(Line("Internal summary - not an official receipt.", "center"))
+    # under the QR: until when the online copy opens (owner, 2026-09-27: 3 months after the last check date)
+    if link_until:
+        add(Line(f"Online copy until {fmt_date_long(link_until)}", "center", qr_before=True))
+    add(Line("Internal summary - not an official receipt.", "center", qr_before=not link_until))
     add(Line("*** Nothing follows ***", "center"))
     return Slip(lines=L, totals=t, copy=copy, statement_ref=str(stmt["statement_ref"]), qr_link=qr_link)
 
@@ -278,12 +282,10 @@ def render_text(slip: Slip) -> str:
     """The 48-column plain-text preview (what the paper will show, without bold / size)."""
     out = []
     for ln in slip.lines:
+        if ln.qr_before and slip.qr_link:
+            out.append("[ QR ]".center(COLUMNS).rstrip())      # the paper shows only the QR code, not the link text
         out.append(ln.text.center(COLUMNS).rstrip() if ln.align == "center" else ln.text)
-    text = "\n".join(out)
-    if slip.qr_link:                                       # the QR prints just before the closing lines
-        head, tail = "\n".join(out[:-2]), "\n".join(out[-2:])
-        text = head + "\n" + "[ QR ]".center(COLUMNS).rstrip() + "\n" + tail          # the paper shows only the QR code, not the link text
-    return text
+    return "\n".join(out)
 
 
 def estimate_lines(slip: Slip) -> int:
@@ -300,9 +302,8 @@ def build_job(slips: list[Slip], qr_size: int = 6) -> bytes:
     for slip in slips:
         p.hw("INIT")                                           # ESC @
         p.set(font="a", align="left", bold=False, normal_textsize=True)
-        qr_at = len(slip.lines) - 2                            # before "Internal summary" / "Nothing follows"
-        for i, ln in enumerate(slip.lines):
-            if i == qr_at and slip.qr_link:
+        for ln in slip.lines:
+            if ln.qr_before and slip.qr_link:
                 p.set(align="center", bold=False, normal_textsize=True)
                 p.qr(slip.qr_link, native=True, size=qr_size)
             if ln.big:

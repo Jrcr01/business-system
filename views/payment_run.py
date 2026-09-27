@@ -11,7 +11,9 @@ import streamlit as st
 from engines.cc_service import get_statement_gap_alerts
 from engines.check_run_service import mark_batch_printed
 from engines.common import php
+from engines.drive_service import GoogleDrive
 from engines.park_draft_service import list_park_drafts
+from engines.statement_version_service import daily_link_sweep, expired_public_versions
 from engines.payment_run_service import get_quick_report, get_run_stages
 from engines.today_report_pdf import generate_today_report_pdf
 
@@ -135,6 +137,21 @@ def render() -> None:
         pdf_preview_and_download(st.session_state["_pr_today_pdf"], f"today_{rep['today']:%Y%m%d}.pdf", key="pr_today_pdf_dl", label="Today's report PDF")
 
     # ------------------------------------------------------------------ reminders
+    # Statement QR links past their date (3 months after the batch's last check): switched off once a day here too, in case the laptop
+    # was off when the nightly task runs. If Drive can't be reached, say so -- the links stay open until it can.
+    try:
+        swept = daily_link_sweep(GoogleDrive)
+    except Exception:                                   # e.g. the database has no statement tables yet
+        swept = None
+    if swept and swept.get("switched_off"):
+        st.toast(f"{len(swept['switched_off'])} statement QR link(s) past their date were switched off.", icon=":material/link_off:")
+    try:
+        overdue_links = len(expired_public_versions())
+    except Exception:
+        overdue_links = 0
+    if overdue_links:
+        st.warning(f":material/link: {overdue_links} statement QR link(s) are past their date but Google Drive could not be reached to switch them "
+                   "off. Double-click **drive_connect.bat** to sign in again; they are switched off the next day.")
     drafts = list_park_drafts()
     if drafts:
         st.warning(":material/edit_note: **Checks typed but not parked yet:** " + "; ".join(f"{d['label']} ({d['n']} check(s), {php(d['total'])})" for d in drafts)

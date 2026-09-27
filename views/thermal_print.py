@@ -10,7 +10,7 @@ import streamlit as st
 
 from engines.common import DB_PATH, php
 from engines.drive_service import DriveError, DriveNotConnected, GoogleDrive, is_connected
-from engines.statement_version_service import current_version, ensure_published
+from engines.statement_version_service import current_version, ensure_published, link_expiry
 from engines.thermal_statement import COPY_LABELS, build_job, build_slip, estimate_lines, get_printer_config, render_text
 from views.shared import guard_duplicate_submit, q
 
@@ -31,16 +31,21 @@ def render_thermal_printer_section(statement_id: int, include_full_history: bool
 
     version = current_version(sid)
     link = version["drive_link"] if version and version["drive_public"] and version["drive_file_id"] else None
+    until = link_expiry(sid, version) if version else None
     if not is_connected():
         st.info(":material/cloud_off: **Google Drive is not connected yet**, so no QR copy can be made. One-time setup: double-click "
                 "**drive_connect.bat** in the project folder and follow the steps.")
     elif link:
-        st.caption(f":material/cloud_done: QR copy on Drive: statement v{version['version_no']} — [open the A4 copy]({link})")
+        st.caption(f":material/cloud_done: QR copy on Drive: statement v{version['version_no']} — [open the A4 copy]({link})"
+                   + (f" · online until {until:%b %d, %Y}" if until else ""))
+    elif version and version["drive_file_id"]:
+        st.caption(f":material/link_off: The online copy of v{version['version_no']} expired"
+                   + (f" on {until:%b %d, %Y}" if until else "") + " — printing again re-opens it for 3 months.")
     else:
         st.caption(":material/cloud_upload: Google Drive connected. The A4 copy is uploaded and shared by link when you print.")
 
     choice = st.segmented_control("Copies", list(COPY_CHOICES), default="Both", required=True, key=f"th_copies_{sid}", label_visibility="collapsed")
-    slips = [build_slip(sid, c, include_full_history=include_full_history, qr_link=link,
+    slips = [build_slip(sid, c, include_full_history=include_full_history, qr_link=link, link_until=until if link else None,
                         version=version["version_no"] if version else 1) for c in COPY_CHOICES[choice]]
     slips = [s for s in slips if s is not None]
     if not slips:
@@ -75,8 +80,9 @@ def render_thermal_printer_section(statement_id: int, include_full_history: bool
                 st.session_state.pop(sent_key, None)
                 st.error(f"Not printed — the QR copy could not be made, and a slip without a working QR is never printed. {e}")
             else:
-                ready = [build_slip(sid, c, include_full_history=include_full_history, qr_link=v["drive_link"], version=v["version_no"])
-                         for c in COPY_CHOICES[choice]]
+                v_until = link_expiry(sid, v)
+                ready = [build_slip(sid, c, include_full_history=include_full_history, qr_link=v["drive_link"], version=v["version_no"],
+                                    link_until=v_until) for c in COPY_CHOICES[choice]]
                 st.session_state[sent_key] = {"bytes": build_job(ready, cfg["thermal_qr_size"]), "copies": [s.copy for s in ready],
                                               "ref": ready[0].statement_ref, "link": v["drive_link"], "version": v["version_no"]}
                 st.rerun()

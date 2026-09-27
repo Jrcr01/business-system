@@ -656,6 +656,9 @@ CREATE TABLE IF NOT EXISTS statement_versions (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     uploaded_at DATETIME,
     revoked_at DATETIME,
+    -- link expiry (migration 049): last computed "public until" date, and the date a reprint re-opened an expired link until
+    public_until DATE,
+    reopened_until DATE,
     UNIQUE (statement_id, version_no),
     FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id)
 );

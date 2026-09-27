@@ -13,10 +13,10 @@ from engines.statement_version_service import content_hash, current_version, ens
 
 
 class FakeDrive:
-    def __init__(self, fail_upload=False, fail_share=False):
+    def __init__(self, fail_upload=False, fail_share=False, fail_revoke=False):
         self.files, self.folders, self.public = {}, {}, set()
-        self.uploads = 0
-        self.fail_upload, self.fail_share = fail_upload, fail_share
+        self.uploads = self.shares = 0
+        self.fail_upload, self.fail_share, self.fail_revoke = fail_upload, fail_share, fail_revoke
 
     def create_folder(self, name):
         self.folder_count = getattr(self, "folder_count", 0) + 1
@@ -38,9 +38,12 @@ class FakeDrive:
     def share_public(self, file_id):
         if self.fail_share:
             raise DriveError("sharing refused")
+        self.shares += 1
         self.public.add(file_id)
 
     def revoke_public(self, file_id):
+        if self.fail_revoke:
+            raise DriveError("offline")
         self.public.discard(file_id)
 
 
