@@ -66,15 +66,20 @@ import engines.search_service as search_service  # noqa: E402
 import engines.soa_matcher as soa_matcher  # noqa: E402
 import engines.validators as validators  # noqa: E402
 
-# Every module with its own DB_PATH global that a test might exercise (directly
-# or transitively, e.g. app.py calling into engines.cc_service). Missing one
-# here means that module silently keeps pointing at the real production DB.
-_DB_PATH_MODULES = [
-    app, analytics_service, db_engine, backup_service, bank_loan_report_service, bank_loan_service,
-    batch_statement_service, cc_service, check_engine, check_run_service, park_draft_service, global_search_service,
-    checkbook_service, dashboard_kpi_service, duplicate_service, duplicate_scan_service, invoice_template_service, overview_report_service, interest_service, loan_note_service, loan_schedule_service,
-    reports_service, search_service, soa_matcher, validators,
-]
+# Every module with its own DB_PATH global (app and every engines.* module) is pointed at the test database. Found
+# automatically (2026-09-27): every engines module is imported here, so a new module can never be forgotten -- a
+# forgotten one would silently keep pointing at the real production database.
+import importlib  # noqa: E402
+import pkgutil  # noqa: E402
+
+import engines  # noqa: E402
+
+for _mod in pkgutil.iter_modules(engines.__path__):
+    importlib.import_module(f"engines.{_mod.name}")
+
+
+def _db_path_modules() -> list:
+    return [m for name, m in list(sys.modules.items()) if m is not None and (name == "app" or name.startswith("engines.")) and hasattr(m, "DB_PATH")]
 
 
 @pytest.fixture
@@ -98,8 +103,8 @@ def db(tmp_path):
     conn.commit()
     conn.close()
 
-    originals = [(m, m.DB_PATH) for m in _DB_PATH_MODULES]
-    for m in _DB_PATH_MODULES:
+    originals = [(m, m.DB_PATH) for m in _db_path_modules()]
+    for m, _ in originals:
         m.DB_PATH = db_path
 
     st.cache_data.clear()
