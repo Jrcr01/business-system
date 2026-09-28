@@ -31,7 +31,7 @@ def backup_dir() -> str:
 def drive_dir() -> str:
     """Where the Google Drive login files live (thermal statement QR copies, 2026-09-27): credentials.json (the OAuth client the owner
     downloads) and token.json (written by drive_connect.bat). Outside the project folder and git: the AP_DRIVE_DIR environment variable,
-    else a "drive" folder beside the LIVE database (C:/AP_Data/drive) -- the same for the live and the test app."""
+    else a "drive" folder beside the LIVE database (C:/Slicks/Data/drive) -- the same for the live and the test app."""
     env = os.environ.get("AP_DRIVE_DIR")
     if env:
         return env
