@@ -1,0 +1,40 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Slicks ERP{% endblock %} · Slicks ERP</title>
+  <link rel="stylesheet" href="{% static 'core/erp.css' %}">
+</head>
+<body>
+<div class="shell">
+  <nav class="side" aria-label="Main menu">
+    <div class="brand">Slicks ERP</div>
+    {% for item in nav %}
+      {% if item.section %}<div class="sec">{{ item.section }}</div>{% endif %}
+      {% if item.url_name %}
+        {% url item.url_name as href %}
+        <a href="{{ href }}" {% if request.path == href %}class="on" aria-current="page"{% endif %}>{{ item.label }}</a>
+      {% else %}
+        <a class="soon" aria-disabled="true">{{ item.label }}</a>
+      {% endif %}
+    {% endfor %}
+  </nav>
+  <div>
+    <header class="top">
+      <span class="date">{{ manila_date }} · Manila</span>
+      <span class="me">
+        <span class="badge b-{{ request.user.role }}">{{ request.user.get_role_display }}</span>
+        {{ request.user.name }}
+        <a class="btn-link" href="{% url 'password_change' %}">Password</a>
+        <form method="post" action="{% url 'logout' %}" style="margin:0">{% csrf_token %}<button class="btn-link" type="submit">Sign out</button></form>
+      </span>
+    </header>
+    <main class="main">
+      {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+</body>
+</html>

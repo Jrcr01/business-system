@@ -151,3 +151,40 @@ def fetchone(db_path: str, sql: str, params: tuple = ()):
     row = conn.execute(sql, params).fetchone()
     conn.close()
     return row
+
+
+# ---- Slicks ERP (Django) -------------------------------------------------------------------------------------------------------
+@pytest.fixture(scope="session")
+def erp(tmp_path_factory):
+    """Django set up once per test run, on a fresh database built from schema.sql (+ Django's own tables via migrate), with one
+    creditor. Django is installed only in the ERP environment (.venv); under the main Python every ERP test is skipped."""
+    pytest.importorskip("django", reason="Django is installed only in the ERP environment (.venv) -- run the suite with .venv/Scripts/python")
+    db_path = str(tmp_path_factory.mktemp("erp") / "erp_test.db")
+    conn = sqlite3.connect(db_path)
+    with open(SCHEMA_PATH, encoding="utf-8") as f:
+        conn.executescript(f.read())
+    conn.execute("INSERT INTO creditors (creditor_name, creditor_type) VALUES ('Skeleton Supplier', 'SUPPLIER')")
+    conn.commit()
+    conn.close()
+
+    os.environ["ERP_DB_PATH"] = db_path
+    os.environ["ERP_DEBUG"] = "1"
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+    erp_dir = os.path.join(PROJECT_ROOT, "erp")
+    if erp_dir not in sys.path:
+        sys.path.insert(0, erp_dir)
+    import django
+    from django.core.management import call_command
+    from django.test.utils import setup_test_environment, teardown_test_environment
+
+    django.setup()
+    setup_test_environment()              # the test client's host is allowed; page context is recorded
+    from django.conf import settings
+
+    settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]   # tests only: fast; real passwords stay slow-hashed
+    call_command("migrate", verbosity=0)
+    yield db_path
+    from django.db import connections
+
+    connections.close_all()
+    teardown_test_environment()

@@ -1,0 +1,25 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · Slicks ERP</title>
+  <link rel="stylesheet" href="{% static 'core/erp.css' %}">
+</head>
+<body>
+<div class="center">
+  <form class="auth" method="post" novalidate>
+    {% csrf_token %}
+    <div class="logo"><span class="s">S</span>Slicks ERP</div>
+    <p class="note" style="margin:4px 0 8px">Slick's Tire Supply</p>
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" value="{{ email }}" placeholder="name@gmail.com" autocomplete="username" autofocus required>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button class="btn btn-main" type="submit">Sign in</button>
+    {% if error %}<p class="err" role="alert">{{ error }}</p>{% endif %}
+    <p class="note small" style="margin-top:12px">Forgot your password? Ask the owner to reset it.</p>
+  </form>
+</div>
+</body>
+</html>

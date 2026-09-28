@@ -1,0 +1,23 @@
+{% extends "core/base.html" %}
+{% block title %}Add user{% endblock %}
+{% block content %}
+<div class="head"><h1>Add user</h1></div>
+<form class="card" method="post" style="max-width:460px" novalidate>
+  {% csrf_token %}
+  <label for="id_name">Name</label>
+  <input id="id_name" name="name" type="text" value="{{ form.name.value|default:'' }}" required>
+  {{ form.name.errors }}
+  <label for="id_email">Email (the one they'll sign in with)</label>
+  <input id="id_email" name="email" type="email" value="{{ form.email.value|default:'' }}" placeholder="name@gmail.com" required>
+  {{ form.email.errors }}
+  <label for="id_role">Role</label>
+  <select id="id_role" name="role">
+    {% for value, label in form.fields.role.choices %}<option value="{{ value }}" {% if form.role.value == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <p class="note">Owner = everything. Sales = Sales and AR only. Viewer = reads reports, changes nothing.</p>
+  <div style="display:flex;gap:10px;margin-top:16px">
+    <button class="btn btn-main" type="submit">Add user</button>
+    <a class="btn" href="{% url 'users' %}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

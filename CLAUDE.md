@@ -61,7 +61,9 @@ decisions log: **`docs/SLICKS_ERP_BLUEPRINT.md`** (read it before planning anyth
 Detail: `docs/foundation/phase_f.md`. Done on `erp` (not live): **F1.1** broken-link check (`fk_check.py`), **F1.2** one door + WAL,
 **F1.3** one clock (Manila), **F1.4** safe saves (`write_tx`, `doc_counters`), **F1.5** audit "who did it" (`audit_logs.user_email`
 via SQL `acting_user()` -- every audit INSERT must include it, a test checks) + all-or-nothing manual check-number typing, **Django skeleton** (`erp/`: Manila time, shared database with the one door's rules, live
-guard, security defaults, "it works" page; Django's tables added to the sandbox DB only). Next: `core` (users / roles, audit, numbering, parties, items, carve-out tags), then server and
+guard, security defaults, "it works" page; Django's tables added to the sandbox DB only), **core C1** users / roles / sign-in
+(Owner / Sales / Viewer, password now + Google at the server step, 2 h idle sign-out, 5 wrong tries = 15 min lock, Users and Audit
+log pages for the owner; detail `erp/CLAUDE.md`). Next: core C2 (audit protection + numbering), C3 parties, C4 carve-out tags (users / roles, audit, numbering, parties, items, carve-out tags), then server and
 logins before the owner's brother uses Sales. Migrations on this branch not yet live: 054 (one-clock views), 055 (`doc_counters`), 056 (`audit_logs.user_email`).
 
 ## Docs map

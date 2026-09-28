@@ -1,0 +1,38 @@
+{% extends "core/base.html" %}
+{% block title %}{{ u.name }}{% endblock %}
+{% block content %}
+<div class="head">
+  <h1>{{ u.name }}</h1>
+  <a class="btn" href="{% url 'users' %}">Back to users</a>
+</div>
+<div class="card">
+  <p style="margin:0 0 6px">{{ u.email }}</p>
+  <p style="margin:0">
+    <span class="badge b-{{ u.role }}">{{ u.get_role_display }}</span>
+    {% if u.is_active %}<span class="badge b-active">Active</span>{% else %}<span class="badge b-off">Deactivated</span>{% endif %}
+    {% if u.must_change_password %}<span class="badge" style="background:var(--amber-bg);color:var(--amber-tx)">Temporary password</span>{% endif %}
+  </p>
+  <p class="note" style="margin-bottom:0">Added {{ u.created_at|date:"M j, Y" }} · last sign-in {% if u.last_login %}{{ u.last_login|date:"M j, Y g:i A" }}{% else %}never{% endif %}</p>
+</div>
+<div class="card">
+  <form method="post" action="{% url 'user_role' u.pk %}" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+    {% csrf_token %}
+    <div style="min-width:200px"><label for="id_role" style="margin-top:0">Role</label>
+      <select id="id_role" name="role">
+        {% for value, label in role_form.fields.role.choices %}<option value="{{ value }}" {% if u.role == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <button class="btn" type="submit">Change role</button>
+  </form>
+</div>
+<div class="card" style="display:flex;gap:10px;flex-wrap:wrap">
+  <form method="post" action="{% url 'user_reset_password' u.pk %}" onsubmit="return confirm('Give {{ u.name|escapejs }} a new temporary password? Their current password stops working.')">
+    {% csrf_token %}<button class="btn" type="submit">Reset password</button>
+  </form>
+  <form method="post" action="{% url 'user_active' u.pk %}" {% if u.is_active %}onsubmit="return confirm('Deactivate {{ u.name|escapejs }}? They are signed out and can\'t sign in until you reactivate them.')"{% endif %}>
+    {% csrf_token %}
+    {% if u.is_active %}<input type="hidden" name="active" value="0"><button class="btn btn-danger" type="submit">Deactivate</button>
+    {% else %}<input type="hidden" name="active" value="1"><button class="btn" type="submit">Reactivate</button>{% endif %}
+  </form>
+</div>
+{% endblock %}

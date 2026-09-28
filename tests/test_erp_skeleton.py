@@ -11,43 +11,12 @@ import pytest
 
 pytest.importorskip("django", reason="Django is installed only in the ERP environment (.venv) -- run the suite with .venv\\Scripts\\python")
 
-from conftest import PROJECT_ROOT, SCHEMA_PATH  # noqa: E402
+from conftest import PROJECT_ROOT  # noqa: E402
 from engines.acting_user import OWNER_EMAIL  # noqa: E402
 from engines.clock import set_fake_now  # noqa: E402
 
 ERP_DIR = os.path.join(PROJECT_ROOT, "erp")
 MANAGE = os.path.join(ERP_DIR, "manage.py")
-
-
-@pytest.fixture(scope="module")
-def erp(tmp_path_factory):
-    """Django set up once for this file, on a fresh database built from schema.sql (+ Django's own tables via migrate)."""
-    db_path = str(tmp_path_factory.mktemp("erp") / "erp_test.db")
-    conn = sqlite3.connect(db_path)
-    with open(SCHEMA_PATH, encoding="utf-8") as f:
-        conn.executescript(f.read())
-    conn.execute("INSERT INTO creditors (creditor_name, creditor_type) VALUES ('Skeleton Supplier', 'SUPPLIER')")
-    conn.commit()
-    conn.close()
-
-    os.environ["ERP_DB_PATH"] = db_path
-    os.environ["ERP_DEBUG"] = "1"
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-    if ERP_DIR not in sys.path:
-        sys.path.insert(0, ERP_DIR)
-    import django
-    from django.core.management import call_command
-
-    from django.test.utils import setup_test_environment, teardown_test_environment
-
-    django.setup()
-    setup_test_environment()              # the test client's host is allowed; page context is recorded
-    call_command("migrate", verbosity=0)
-    yield db_path
-    from django.db import connections
-
-    connections.close_all()
-    teardown_test_environment()
 
 
 def _run_manage(args, **env):
@@ -90,23 +59,33 @@ def test_django_tables_sit_beside_ap_tables_and_ap_schema_is_still_complete(erp)
     conn = sqlite3.connect(erp)
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     conn.close()
-    assert {"auth_user", "django_session", "django_migrations"} <= tables
+    assert {"core_user", "core_loginattempt", "django_session", "django_migrations"} <= tables and "auth_user" not in tables
     assert {"creditors", "checks_issued", "audit_logs"} <= tables
     report = apply_pending_migrations.diff_and_sync(erp, dry_run=True)
     assert report["tables_added"] == [] and report["columns_added"] == []
 
 
-def test_home_page_shows_manila_date_and_reads_the_shared_database(erp):
+def _signed_in_client():
     from django.test import Client
 
+    from core.models import Role, User
+
+    user = User.objects.filter(email="skeleton.owner@example.com").first() or User.objects.create_user(
+        "skeleton.owner@example.com", "Skeleton owner", Role.OWNER, None, must_change_password=False)
+    client = Client()
+    client.force_login(user)
+    return client
+
+
+def test_home_page_shows_manila_date_and_reads_the_shared_database(erp):
     set_fake_now(datetime(2030, 1, 15, 7, 30))
     try:
-        resp = Client().get("/")
+        resp = _signed_in_client().get("/")
     finally:
         set_fake_now(None)
     assert resp.status_code == 200
     html = resp.content.decode()
-    assert "Jan 15, 2030" in html and "7:30 AM" in html
+    assert "Jan 15, 2030" in html and "7:30 AM" in html          # top bar date, home page time
     assert "erp_test.db" in html and erp not in html                  # the file name, never the full path
     assert resp.context["creditors"] == 1
     assert resp.headers["X-Frame-Options"] == "DENY"
@@ -116,7 +95,9 @@ def test_home_page_shows_manila_date_and_reads_the_shared_database(erp):
 def test_home_page_is_read_only(erp):
     from django.test import Client
 
-    assert Client().post("/").status_code in (403, 405)                 # CSRF or method refused; nothing is saved
+    client = _signed_in_client()
+    assert client.post("/").status_code == 405                           # method refused; nothing is saved
+    assert Client().get("/").status_code == 302                          # nobody signed in -> the sign-in page
 
 
 def test_refuses_the_live_database_without_erp_live(tmp_path):

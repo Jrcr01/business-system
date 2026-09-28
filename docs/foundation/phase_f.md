@@ -100,7 +100,15 @@ adds `manila_today()` / `manila_now()` / `acting_user()` on every connection; re
 secret key from env or gitignored `erp/.secret_key`; HTTPS-only settings when not DEBUG (`check --deploy` clean); no admin yet.
 Home page reads the shared database (creditors, checks not yet due through `v_effective_checks`). `migrate` run on the sandbox DB
 only (Django's `auth_*` / `django_*` tables; afterwards apply_pending_migrations = up to date, fk_check = 0 broken). Go-live will
-need `manage.py migrate` in update_database.bat (not added yet). Tests `tests/test_erp_skeleton.py`. Next: `core`.*
+need `manage.py migrate` in update_database.bat (not added yet). Tests `tests/test_erp_skeleton.py`.
+**core C1 done** (2026-09-28; owner's choices: password sign-in now / Google (2-step) at the server step; roles Owner / Sales /
+Viewer; one shared party list linked to AP later in C3; items after the Sales walk-through; mock-ups approved: sign-in, ERP layout,
+Users; 2 h idle sign-out; 5 wrong tries = 15 min lock; audit log owner only). `core.User` (email sign-in, role, never deleted,
+temporary passwords must be replaced), `LoginAttempt`, every page behind a sign-in and a declared role, Users page (add with a
+one-time temporary password, change role, reset password, deactivate / reactivate; the last active owner is protected), Audit log
+page (AP + ERP rows, filter by who / action). Audit rows carry the signed-in email (`anonymous` for wrong tries).
+`create_owner` / `seed_sandbox_users` commands. Sandbox: migrated (Django's unused `auth_user` tables dropped, empty). Tests
+`tests/test_erp_c1_users.py`. Next: C2 audit protection + numbering, C3 parties, C4 carve-out tags.*
 * Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
   `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
 * Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes

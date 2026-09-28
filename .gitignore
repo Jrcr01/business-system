@@ -63,3 +63,4 @@ MBOS Latest statement/
 .venv/
 erp/.secret_key
 erp/staticfiles/
+erp/.sandbox_logins.txt

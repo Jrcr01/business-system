@@ -90,8 +90,27 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.auth.middleware.LoginRequiredMiddleware",      # every page needs a sign-in unless marked otherwise
+    "core.middleware.ActingUserMiddleware",                        # audit rows record the signed-in person
+    "core.middleware.MustChangePasswordMiddleware",                # a temporary password must be replaced first
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+# ---- users and sign-in (core step C1, owner's choices 2026-09-28) ------------------------------------------------------------
+AUTH_USER_MODEL = "core.User"
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "home"
+LOGIN_MAX_FAILS = 5                      # 5 wrong tries in a row ...
+LOGIN_LOCK_MINUTES = 15                  # ... = locked for 15 minutes
+SESSION_COOKIE_AGE = 2 * 60 * 60         # signed out after 2 hours without using the ERP
+SESSION_SAVE_EVERY_REQUEST = True        # (each page opened restarts the 2 hours)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 10}},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -110,6 +129,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "core.views.manila_header",
             ],
         },
     },

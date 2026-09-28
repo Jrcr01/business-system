@@ -1,0 +1,9 @@
+{% extends "core/base.html" %}
+{% block title %}Not for your role{% endblock %}
+{% block content %}
+<div class="card" style="max-width:520px">
+  <h1 style="margin-bottom:8px">This page isn't for your role</h1>
+  <p class="note">You're signed in as {{ request.user.get_role_display }}. Ask the owner if you need it.</p>
+  <a class="btn" href="{% url 'home' %}">Go to Home</a>
+</div>
+{% endblock %}

@@ -38,6 +38,10 @@ follows unchanged below.
   on every Django connection; refuses the live file without `ERP_LIVE=1`; sandbox site on port 8505. Owner asked whether
   microservices fit: no -- < 5 users, one person running it, sales / stock / payment must save all-or-nothing in one database;
   the modular monolith (one app per module) keeps the option open.
+* **core C1 done on `erp`** (owner's choices): core split into gated steps C1 users / roles / sign-in, C2 audit + numbering, C3 one
+  shared party list linked to AP, C4 carve-out tags; items (tires) wait for the Sales walk-through. Password sign-in now, Google
+  (2-step) at the server step; roles Owner / Sales / Viewer; signed out after 2 h idle; 5 wrong tries = 15 min lock; audit log owner
+  only. First mock-ups approved: sign-in page, ERP layout (navy sidebar, top bar), Users page.
 * **Docs re-shaped:** `CLAUDE.md` = short ERP guide; AP detail moved unchanged to `docs/modules/ap.md`; Phase F to
   `docs/foundation/phase_f.md`; the master blueprint `docs/SLICKS_ERP_BLUEPRINT.md`; one `CLAUDE.md` per module folder from now on.
 

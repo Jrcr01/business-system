@@ -1,0 +1,79 @@
+/* Slicks ERP look (C1 mock-up approved 2026-09-28): Slick's navy sidebar, white cards, Inter, one main blue button per screen.
+   Hand-written for C1; the Tailwind-based kit arrives with the Sales screens. */
+:root {
+  --navy-900: #042c53; --navy-800: #0c447c; --blue-600: #185fa5; --blue-50: #e6f1fb; --blue-200: #85b7eb; --blue-100: #b5d4f4;
+  --page: #f4f6fa; --card: #ffffff; --line: #dde3ec; --text: #1b2433; --muted: #5a6678;
+  --green-bg: #eaf3de; --green-tx: #27500a; --red-bg: #fcebeb; --red-tx: #791f1f; --teal-bg: #e1f5ee; --teal-tx: #085041;
+  --gray-bg: #f1efe8; --gray-tx: #444441; --amber-bg: #faeeda; --amber-tx: #633806;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Inter, "Segoe UI", system-ui, sans-serif; font-size: 14px; background: var(--page); color: var(--text); }
+a { color: var(--blue-600); }
+h1 { font-size: 20px; font-weight: 600; margin: 0; }
+.shell { display: grid; grid-template-columns: 210px minmax(0, 1fr); min-height: 100vh; }
+.side { background: var(--navy-900); padding: 14px 10px; }
+.brand { color: #fff; font-weight: 600; font-size: 16px; padding: 4px 10px 12px; }
+.side .sec { font-size: 11px; color: var(--blue-200); margin: 14px 10px 4px; text-transform: uppercase; letter-spacing: .04em; }
+.side a { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; color: var(--blue-100); text-decoration: none; }
+.side a:hover { background: var(--navy-800); color: #fff; }
+.side a.on { background: var(--navy-800); color: #fff; }
+.side .soon { color: var(--blue-200); cursor: default; }
+.top { display: flex; justify-content: space-between; align-items: center; padding: 10px 24px; background: var(--card); border-bottom: 1px solid var(--line); }
+.top .date { color: var(--muted); font-size: 13px; }
+.top .me { display: flex; align-items: center; gap: 10px; }
+.main { padding: 24px; max-width: 1100px; }
+.head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+.card + .card { margin-top: 16px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 13px; }
+tr:last-child td { border-bottom: 0; }
+tr.link:hover td { background: #f8fafc; cursor: pointer; }
+.tablecard { padding: 0; overflow-x: auto; }
+.badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+.b-owner { background: var(--blue-50); color: var(--navy-800); }
+.b-sales { background: var(--teal-bg); color: var(--teal-tx); }
+.b-viewer { background: var(--gray-bg); color: var(--gray-tx); }
+.b-active { background: var(--green-bg); color: var(--green-tx); }
+.b-off { background: var(--red-bg); color: var(--red-tx); }
+.btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 7px;
+  border: 1px solid #c3ccd9; background: #fff; color: var(--text); cursor: pointer; text-decoration: none; }
+.btn:hover { background: #f4f6fa; }
+.btn-main { background: var(--blue-600); border-color: var(--blue-600); color: #fff; }
+.btn-main:hover { background: var(--navy-800); }
+.btn-danger { color: var(--red-tx); border-color: #f09595; }
+.btn-link { background: none; border: 0; color: var(--muted); padding: 4px; cursor: pointer; font: inherit; }
+label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+input[type=text], input[type=email], input[type=password], select {
+  width: 100%; font: inherit; padding: 8px 10px; border: 1px solid #c3ccd9; border-radius: 7px; background: #fff; }
+input:focus, select:focus, .btn:focus-visible { outline: 2px solid var(--blue-200); outline-offset: 1px; }
+.errorlist { list-style: none; padding: 0; margin: 4px 0 0; color: var(--red-tx); font-size: 13px; }
+.msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+.msg.success { background: var(--green-bg); color: var(--green-tx); }
+.msg.error { background: var(--red-bg); color: var(--red-tx); }
+.note { color: var(--muted); font-size: 13px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.stat .k { color: var(--muted); font-size: 13px; }
+.stat .v { font-size: 22px; font-weight: 600; margin-top: 4px; }
+.filters { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 14px; }
+.filters label { margin-top: 0; }
+.filters select { width: auto; min-width: 180px; }
+.small { font-size: 12px; }
+.mono { font-family: Consolas, monospace; font-size: 18px; letter-spacing: .05em; background: var(--amber-bg); color: var(--amber-tx);
+  padding: 8px 12px; border-radius: 7px; display: inline-block; }
+/* sign-in and password pages */
+.center { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.auth { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 26px; width: 100%; max-width: 360px; }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; }
+.logo span.s { width: 32px; height: 32px; border-radius: 7px; background: var(--navy-900); color: #fff; display: inline-flex;
+  align-items: center; justify-content: center; }
+.auth .btn-main { width: 100%; justify-content: center; margin-top: 18px; }
+.auth .err { color: var(--red-tx); font-size: 13px; margin-top: 12px; }
+@media (max-width: 760px) {
+  .shell { grid-template-columns: 1fr; }
+  .side { display: flex; flex-wrap: wrap; gap: 4px; }
+  .side .sec, .brand { display: none; }
+  .main, .top { padding: 14px 16px; }
+}

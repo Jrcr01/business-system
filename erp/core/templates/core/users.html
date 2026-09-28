@@ -1,0 +1,25 @@
+{% extends "core/base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<div class="head">
+  <h1>Users</h1>
+  <a class="btn btn-main" href="{% url 'user_add' %}">+ Add user</a>
+</div>
+<div class="card tablecard">
+  <table>
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last sign-in</th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr class="link" onclick="location.href='{% url 'user_detail' u.pk %}'">
+        <td><a href="{% url 'user_detail' u.pk %}">{{ u.name }}</a></td>
+        <td>{{ u.email }}</td>
+        <td><span class="badge b-{{ u.role }}">{{ u.get_role_display }}</span></td>
+        <td>{% if u.is_active %}<span class="badge b-active">Active</span>{% else %}<span class="badge b-off">Deactivated</span>{% endif %}</td>
+        <td>{% if u.last_login %}{{ u.last_login|date:"M j, Y g:i A" }}{% else %}Never{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="note" style="margin-top:10px">Click a user to change the role, reset the password or deactivate. Users are never deleted, and every change goes to the audit log.</p>
+{% endblock %}
