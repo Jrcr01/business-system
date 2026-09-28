@@ -251,6 +251,10 @@ deposit → bank check → reports, with exceptions at any step); the owner mark
 
 **To decide**
 * When the PO / receiving system comes relative to Sales (it is the source of tire cost for profit and below-cost checks).
+  Today the price list is updated by hand on paper; no cost per sale (no FIFO / specific identification). **Owner leans to the
+  weighted average cost method** (average recalculated at each receipt from quantities on hand and received — needs receiving +
+  inventory). Suggested: Sales first with the paper price list's cost as an estimate; receiving / inventory later switches every
+  item to its weighted average (opening average = last price-list cost, checked by a stock count). To confirm.
 * Server provider (DigitalOcean / AWS Lightsail / Vultr) and the exact domain.
 * Where statement QR copies live (Google Drive or served by the app).
 * The order of the modules after Sales.
