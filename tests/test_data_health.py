@@ -4,6 +4,7 @@ import sqlite3
 from datetime import date
 
 from conftest import make_creditor, make_statement
+from engines.audit_seal import seal_and_verify
 from engines.data_health_service import findings, mark_fine, open_count, show_again
 
 TODAY = date(2026, 9, 28)
@@ -36,6 +37,7 @@ def _clean(db):
     with sqlite3.connect(db) as conn:
         _invoice(conn, s, "SI-1", "2026-09-01", "2026-10-01", 20000.0, sid)
         _check(conn, s, "3992554301", "2026-10-01", 10000.0, sid)
+    seal_and_verify(db)                  # core step C2: a clean system's audit log has been checked by the daily backup
     return s, sid
 
 

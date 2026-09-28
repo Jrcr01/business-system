@@ -74,6 +74,16 @@ if missing:
     if report.get("skipped"):
         problems += [f"database update skipped: {x}" for x in report["skipped"]]
 
+# 2b. the audit log in the backup is exactly as it was sealed (core step C2)
+from engines.audit_seal import load_key, verify  # noqa: E402
+_key = load_key(live_db_path())
+if _key is None:
+    notes.append("the audit seal key is missing beside the live database, so the backup's audit log could not be checked")
+else:
+    _audit_problems = verify(c, _key)
+    print(f"2b. Audit log as sealed: {'yes' if not _audit_problems else 'NO -- ' + ' '.join(_audit_problems)}")
+    problems += [f"audit log: {p}" for p in _audit_problems]
+
 # 3. compare with live
 live = sqlite3.connect(f"file:{live_db_path()}?mode=ro", uri=True)
 print("3. Records, backup vs live:")

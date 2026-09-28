@@ -2,6 +2,11 @@
 {% block title %}Home{% endblock %}
 {% block content %}
 <div class="head"><h1>Welcome, {{ request.user.name }}</h1></div>
+{% if audit_warnings %}
+<div class="msg error" role="alert"><strong>The audit log needs a look.</strong>
+  {% for w in audit_warnings %}<br>{{ w }}{% endfor %}
+  <br>Details on the AP app's Data health page. New entries are not sealed until this is looked at.</div>
+{% endif %}
 <div class="stats">
   <div class="stat"><div class="k">Manila time</div><div class="v">{{ manila_time }}</div></div>
   <div class="stat"><div class="k">Suppliers and lenders on file</div><div class="v">{{ creditors }}</div></div>

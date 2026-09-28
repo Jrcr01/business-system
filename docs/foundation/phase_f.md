@@ -108,7 +108,19 @@ temporary passwords must be replaced), `LoginAttempt`, every page behind a sign-
 one-time temporary password, change role, reset password, deactivate / reactivate; the last active owner is protected), Audit log
 page (AP + ERP rows, filter by who / action). Audit rows carry the signed-in email (`anonymous` for wrong tries).
 `create_owner` / `seed_sandbox_users` commands. Sandbox: migrated (Django's unused `auth_user` tables dropped, empty). Tests
-`tests/test_erp_c1_users.py`. Next: C2 audit protection + numbering, C3 parties, C4 carve-out tags.*
+`tests/test_erp_c1_users.py`.
+**core C2 done** (2026-09-28; owner's choices: lock + tamper check; corrections only by owner-run masking; numbers like AP
+`2026 - CR 0001`). Migration 057: `audit_seals` + triggers refusing UPDATE / DELETE on `audit_logs` / `audit_seals` (the one-time
+user_email fill still allowed). `engines/audit_seal.py`: per-row HMAC-SHA256 seal with a key kept beside the database file (never in
+it, never in git), a state file with the sealed count / top id; `seal_and_verify()` finds changed / deleted / unsealed / cut-off rows,
+a removed lock or a missing key, and then stops sealing new rows. Run by `backup_live_db.py` before each copy (the backup holds the
+seals), verified by `restore_test.py` (step 2b); result in settings `audit_check` → Data health group "Audit log" (new, 5th card) and a
+warning on the owner's ERP Home. `mask_audit_text.py` = the only change allowed (preview / --apply, backup, asterisks + <= 4 kept
+characters, re-seals that row, logs AUDIT_MASKED). `erp/core/numbering.py`: registered 2-letter codes, `next_number()` inside the
+save's atomic block via `engines.db_engine.next_doc_number` (doc_counters). Sandbox: 405 entries sealed. Tests
+`tests/test_audit_protection.py`, `tests/test_erp_c2_numbering.py`. Going live: after update_database, the first daily backup seals the
+live log as it is; keep a copy of `C:\Slicks\Data\audit_seal.key` somewhere safe (without it the seals can't be checked).
+Next: C3 parties, C4 carve-out tags.*
 * Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
   `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
 * Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes

@@ -42,6 +42,10 @@ follows unchanged below.
   shared party list linked to AP, C4 carve-out tags; items (tires) wait for the Sales walk-through. Password sign-in now, Google
   (2-step) at the server step; roles Owner / Sales / Viewer; signed out after 2 h idle; 5 wrong tries = 15 min lock; audit log owner
   only. First mock-ups approved: sign-in page, ERP layout (navy sidebar, top bar), Users page.
+* **core C2 done on `erp`** (owner's choices): audit log locked in the database + a daily tamper check (seals made with a key kept
+  outside the database, run by the daily backup, problems on Data health and the owner's ERP Home); private data in the log can only be
+  hidden by the owner-run `mask_audit_text.py` (like the 2026 card-number masking, now with backup + its own audit entry); ERP document
+  numbers look like AP's: `2026 - CR 0001`, restarting each year.
 * **Docs re-shaped:** `CLAUDE.md` = short ERP guide; AP detail moved unchanged to `docs/modules/ap.md`; Phase F to
   `docs/foundation/phase_f.md`; the master blueprint `docs/SLICKS_ERP_BLUEPRINT.md`; one `CLAUDE.md` per module folder from now on.
 

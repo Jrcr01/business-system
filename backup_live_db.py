@@ -62,6 +62,17 @@ def main() -> int:
         print(f"ERROR: no database at {src_path}")
         return 1
     os.makedirs(a.dest, exist_ok=True)
+    # core step C2: check the audit log is exactly as sealed, then seal the new entries -- BEFORE the copy, so the backup holds the seals
+    try:
+        from engines.audit_seal import seal_and_verify
+
+        seal = seal_and_verify(src_path)
+        if seal["ok"]:
+            print(f"Audit log check: OK ({seal['newly_sealed']} new entries sealed, {seal['sealed_total']} in all)")
+        else:
+            print("Audit log check: PROBLEM -- " + " ".join(seal["problems"]) + " (shown on Data health; new entries not sealed)")
+    except Exception as e:                                # the backup itself must still run
+        print(f"Audit log check could not run: {e}")
     out = os.path.join(a.dest, f"{PREFIX}{manila_now():%Y%m%d_%H%M%S}.db")
 
     src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)

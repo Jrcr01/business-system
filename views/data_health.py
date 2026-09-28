@@ -17,6 +17,8 @@ GROUP_HELP = {
                            "cleared long after their date.",
     "Suppliers": "The same name on file twice (a bank set up for loans and for cards is fine), inactive suppliers still owed, suppliers "
                  "without payment terms.",
+    "Audit log": "The audit log is locked and checked every day with the backup: a change made to it outside the system, its lock removed, "
+                 "or the check not running lately.",
 }
 
 

@@ -25,11 +25,25 @@ def home(request):
         cur.execute("SELECT COUNT(*) FROM v_effective_checks WHERE effective_status = 'Active'")
         checks_not_due = cur.fetchone()[0]
     return render(request, "core/home.html", {
+        "audit_warnings": _audit_warnings() if request.user.is_owner else [],
         "django_version": django.get_version(),
         "db_name": Path(settings.DATABASES["default"]["NAME"]).name,
         "creditors": creditors,
         "checks_not_due": checks_not_due,
     })
+
+
+def _audit_warnings() -> list[str]:
+    """The audit log's lock and its last daily tamper check (core step C2) -- shown to the owner on Home when something is wrong."""
+    from engines.audit_seal import _missing_triggers, last_result
+
+    connection.ensure_connection()
+    raw = connection.connection
+    out = [f"The audit log lock {t} is missing." for t in _missing_triggers(raw)]
+    res = last_result(raw)
+    if res and not res.get("ok"):
+        out += [f"Check of {res.get('at')}: {p}" for p in res.get("problems") or []]
+    return out
 
 
 # ---- users (owner only) ----------------------------------------------------------------------------------------------------

@@ -40,5 +40,18 @@ Skeleton built 2026-09-28 (Django **5.2 LTS**, owner's choice). Read the repo `C
 * First owner: `manage.py create_owner --email ... --name ...` (asks for the password). Sandbox test users:
   `manage.py seed_sandbox_users` (only a `_TEST` database; sign-ins in the gitignored `erp/.sandbox_logins.txt`, never in chat).
 * Tests use a fast password hasher (conftest); real passwords use Django's default slow hashing.
-* Next in core: C2 audit protection + numbering, C3 parties (one shared list linked to AP's creditors), C4 carve-out tags. Items
-  (tires) come after the Sales walk-through (S0/S1), not in core.
+
+## core (step C2 done 2026-09-28 — audit protection, numbering)
+* **The audit log is append-only** (owner: "lock + tamper check"): triggers refuse UPDATE / DELETE on `audit_logs` and `audit_seals`
+  (only the one-time `user_email` fill of a row that has none). Never write code or tests that edit or delete audit rows — tests
+  look at rows after a `log_id` marker instead. Hiding private data: `mask_audit_text.py` only (owner-run, preview then `--apply`,
+  backup first, mask = asterisks + at most 4 kept characters, logs `AUDIT_MASKED`).
+* **Tamper check:** `engines/audit_seal.py` — an HMAC per row with a key OUTSIDE the database (`audit_seal.key` beside the database
+  file, plus `audit_seal.state` = how many rows up to which id). `seal_and_verify()` runs in the daily backup (before the copy);
+  the monthly restore test verifies the backup. Problems (changed / deleted / unsealed / cut off / lock removed / key missing) show on
+  AP's Data health ("Audit log" group) and the owner's ERP Home; new rows stay unsealed until the owner has looked.
+* **Numbers:** `core.numbering` — `register("CR", "Collection receipt")` once per document type (2 capital letters; OS / LN belong to
+  AP), then `next_number("CR")` INSIDE the `transaction.atomic()` that saves the document → `2026 - CR 0001` (Manila year, restarts
+  yearly). Same `doc_counters` table as AP. Voided documents keep their number (never delete).
+* Next in core: C3 parties (one shared list linked to AP's creditors), C4 carve-out tags. Items (tires) come after the Sales
+  walk-through (S0/S1), not in core.

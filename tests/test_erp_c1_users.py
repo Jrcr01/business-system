@@ -44,11 +44,15 @@ def _client(user=None):
     return client
 
 
+_SINCE = {"log_id": 0}
+
+
 def _audit(action, **where):
+    """Audit rows of this action written after the last _clear_audit() (the log itself can't be cleared: core step C2)."""
     from django.db import connection
 
-    sql = "SELECT user_email, entity_id, old_values, new_values FROM audit_logs WHERE user_action = %s"
-    params = [action]
+    sql = "SELECT user_email, entity_id, old_values, new_values FROM audit_logs WHERE user_action = %s AND log_id > %s"
+    params = [action, _SINCE["log_id"]]
     for col, val in where.items():
         sql += f" AND {col} = %s"
         params.append(val)
@@ -61,7 +65,8 @@ def _clear_audit():
     from django.db import connection
 
     with connection.cursor() as cur:
-        cur.execute("DELETE FROM audit_logs")
+        cur.execute("SELECT COALESCE(MAX(log_id), 0) FROM audit_logs")
+        _SINCE["log_id"] = cur.fetchone()[0]
 
 
 def _sign_in(client, email, password=PASSWORD):
@@ -257,10 +262,12 @@ def test_audit_log_page_filters_by_who_and_action(c1):
     _sign_in(_client(), "sales@example.com")
     _sign_in(_client(), "viewer@example.com", "wrong")
     owner = _client(c1["owner"])
-    rows = owner.get("/audit/", {"who": "sales@example.com"}).context["rows"]
+    new = lambda rows: [r for r in rows if r[0] > _SINCE["log_id"]]          # entries made in this test
+    rows = new(owner.get("/audit/", {"who": "sales@example.com"}).context["rows"])
     assert [r[3] for r in rows] == ["LOGIN"]
-    rows = owner.get("/audit/", {"action": "LOGIN_FAILED"}).context["rows"]
+    rows = new(owner.get("/audit/", {"action": "LOGIN_FAILED"}).context["rows"])
     assert len(rows) == 1 and rows[0][2] == "anonymous"
+    assert all(r[3] == "LOGIN_FAILED" for r in owner.get("/audit/", {"action": "LOGIN_FAILED"}).context["rows"])
 
 
 # ---- set-up commands ----------------------------------------------------------------------------------------------------------

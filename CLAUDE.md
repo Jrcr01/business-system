@@ -43,7 +43,8 @@ decisions log: **`docs/SLICKS_ERP_BLUEPRINT.md`** (read it before planning anyth
 * **Rules for all code (Phase F1):** open the database only through `engines/common.get_conn()` / `write_tx()` (the one door:
   foreign keys, busy timeout, WAL); anything that checks then saves goes in ONE `write_tx()`; business dates/times only from
   `engines/clock.py` (`manila_today()` / `manila_now()`, SQL `manila_today()`), never the computer clock; numbers from
-  `next_doc_number()`; every `INSERT INTO audit_logs` writes `user_email` = SQL `acting_user()` (`engines/acting_user.py`); `RETURNING` instead of `lastrowid` in new SQL. Tests read views through `get_conn()`.
+  `next_doc_number()`; every `INSERT INTO audit_logs` writes `user_email` = SQL `acting_user()` (`engines/acting_user.py`); the audit log is
+  append-only (the database refuses UPDATE / DELETE — never edit or delete audit rows, not even in tests); `RETURNING` instead of `lastrowid` in new SQL. Tests read views through `get_conn()`.
 * Each module gets its own `erp/<module>/CLAUDE.md` (Claude reads it when working in that folder). AP's notes: `docs/modules/ap.md`
   (read before touching AP code — it holds every AP rule and decision).
 * Tests: `.venv\Scripts\python -m pytest` runs everything (~420; ~2 min); main-Python `python -m pytest` skips the Django tests. Sandbox app: preview `slicks-erp-sandbox-8504`.
@@ -63,8 +64,11 @@ Detail: `docs/foundation/phase_f.md`. Done on `erp` (not live): **F1.1** broken-
 via SQL `acting_user()` -- every audit INSERT must include it, a test checks) + all-or-nothing manual check-number typing, **Django skeleton** (`erp/`: Manila time, shared database with the one door's rules, live
 guard, security defaults, "it works" page; Django's tables added to the sandbox DB only), **core C1** users / roles / sign-in
 (Owner / Sales / Viewer, password now + Google at the server step, 2 h idle sign-out, 5 wrong tries = 15 min lock, Users and Audit
-log pages for the owner; detail `erp/CLAUDE.md`). Next: core C2 (audit protection + numbering), C3 parties, C4 carve-out tags (users / roles, audit, numbering, parties, items, carve-out tags), then server and
-logins before the owner's brother uses Sales. Migrations on this branch not yet live: 054 (one-clock views), 055 (`doc_counters`), 056 (`audit_logs.user_email`).
+log pages for the owner; detail `erp/CLAUDE.md`), **core C2** audit log locked + daily tamper check (seals with a key outside the
+database, run by the daily backup; problems on Data health) + owner-run masking + ERP numbers `2026 - XX 0001`. Next: core C3
+parties, C4 carve-out tags (users / roles, audit, numbering, parties, items, carve-out tags), then server and
+logins before the owner's brother uses Sales. Migrations on this branch not yet live: 054 (one-clock views), 055 (`doc_counters`), 056 (`audit_logs.user_email`), 057 (audit lock +
+`audit_seals`).
 
 ## Docs map
 

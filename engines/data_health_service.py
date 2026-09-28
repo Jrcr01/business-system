@@ -17,7 +17,7 @@ from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
-GROUPS = ["Checks", "Invoices and batches", "Bank vs our records", "Suppliers"]
+GROUPS = ["Checks", "Invoices and batches", "Bank vs our records", "Suppliers", "Audit log"]
 KEY_PREFIX = "health|"
 BROWSE_BATCHES, BROWSE_LOAN_NOTES = "Browse batches", "Browse loan notes"
 STALE_CHECK_DAYS = 180          # Philippine checks go stale six months after their date
@@ -199,13 +199,40 @@ def _suppliers(conn, today: date, out: list) -> None:
            None, r["creditor_name"], ("creditors", {"creditor_master_search": r["creditor_name"]}))
 
 
+AUDIT_CHECK_MAX_DAYS = 2          # the daily backup checks the audit log; warn when it hasn't for this long
+
+
+def _audit_log(conn, today: date, out: list) -> None:
+    """core step C2: the audit log's lock and its daily tamper check (engines/audit_seal.py, run by the daily backup)."""
+    from engines.audit_seal import _missing_triggers, last_result
+
+    g = "Audit log"
+    if not _has_table(conn, "audit_seals"):
+        return
+    for t in _missing_triggers(conn):
+        _f(out, g, "Audit log lock removed", f"audit_lock|{t}", f"The database protection {t} is missing, so audit entries could be changed. "
+           "Run update_database.bat to put it back, and ask what happened.")
+    res = last_result(conn)
+    if res is None:
+        _f(out, g, "Audit log not checked yet", "audit_never", "The daily backup checks and seals the audit log; it hasn't run since this "
+           "protection was added. It runs by itself at 18:00, or run run_backup.bat now.")
+        return
+    checked = _d(res.get("at"))
+    for i, p in enumerate(res.get("problems") or []):
+        _f(out, g, "Audit log was changed outside the system", f"audit_problem|{res.get('at')}|{i}",
+           f"Found by the check on {res.get('at')}: {p} New entries are not sealed until this is looked at.")
+    if checked and (today - checked).days > AUDIT_CHECK_MAX_DAYS:
+        _f(out, g, "Audit log not checked lately", f"audit_stale|{checked}", f"The last check was {checked} ({(today - checked).days} days ago). "
+           "It runs with the daily backup -- is the laptop's backup task running?")
+
+
 # ------------------------------------------------------------------ public
 def findings(include_fine: bool = False, today: date | None = None) -> list[dict]:
     """Everything the scan flags, grouped in GROUPS order. Items marked "It's fine" are left out unless include_fine (then 'fine' + 'note')."""
     today = today or manila_today()
     out: list[dict] = []
     with _conn() as conn:
-        for part in (_checks, _invoices_and_batches, _bank, _suppliers):
+        for part in (_checks, _invoices_and_batches, _bank, _suppliers, _audit_log):
             part(conn, today, out)
         fine = {r["dup_key"]: r["note"] for r in conn.execute("SELECT dup_key, note FROM duplicate_dismissals WHERE dup_key LIKE ?", (KEY_PREFIX + "%",))}
     for f in out:
