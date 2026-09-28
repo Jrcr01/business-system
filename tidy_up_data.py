@@ -20,6 +20,7 @@ from datetime import datetime
 args = sys.argv[1:]
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from db_location import live_db_path, safe_copy  # noqa: E402
+from engines.clock import manila_now  # noqa: E402  (one clock, Phase F1.3)
 from engines.db_engine import open_db  # noqa: E402  (the one door, Phase F1.2)
 db = args[args.index("--db") + 1] if "--db" in args else live_db_path()
 apply = "--apply" in args
@@ -80,7 +81,7 @@ if not empty and not do_note and not do_pn and not do_giorno:
     print("Nothing to do.")
     sys.exit(0)
 
-backup = db + f".before_tidy_up_{datetime.now():%Y%m%d_%H%M%S}"
+backup = db + f".before_tidy_up_{manila_now():%Y%m%d_%H%M%S}"
 safe_copy(db, backup)          # backup API: includes saves still in the -wal file (Phase F1.2)
 print("\nBackup saved:", backup)
 conn = open_db(db)

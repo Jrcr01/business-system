@@ -16,6 +16,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 import os
 from engines.common import get_conn
+from engines.clock import manila_now, manila_today
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 ACCENT = colors.HexColor("#1f3a5f")
@@ -131,7 +132,7 @@ def generate_bank_loan_pdf(bank_loan_id: int) -> bytes | None:
     if data is None:
         return None
     loan, installments = data["loan"], data["installments"]
-    today = date.today()
+    today = manila_today()
 
     total_amount = sum(r["amount"] for r in installments)
     outstanding = sum(r["amount"] for r in installments if date.fromisoformat(r["due_date"]) >= today)
@@ -147,7 +148,7 @@ def generate_bank_loan_pdf(bank_loan_id: int) -> bytes | None:
     recon_rows = [
         ["Total Scheduled", f"PHP {_money(total_amount)}"],
         ["Outstanding (not yet due)", f"PHP {_money(outstanding)}"],
-        ["Generated", datetime.now().strftime("%Y-%m-%d %H:%M")],
+        ["Generated", manila_now().strftime("%Y-%m-%d %H:%M")],
     ]
     recon_table = Table(recon_rows, colWidths=[CONTENT_WIDTH * 0.72, CONTENT_WIDTH * 0.28])
     recon_table.setStyle(TableStyle([

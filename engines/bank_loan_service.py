@@ -27,12 +27,13 @@ import sqlite3
 from engines.validators import money_amount_error
 from datetime import date
 from engines.common import get_conn
+from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 # Same "cleared" convention as v_checks_ledger.effective_status (schema.sql) and the Loan Notes/
 # Order Statement cleared-vs-issued work: a due date counts as cleared once it's in the past.
-CLEARED_SQL = "due_date < DATE('now', 'localtime')"
+CLEARED_SQL = "due_date < manila_today()"
 
 
 def _get_conn():
@@ -41,7 +42,7 @@ def _get_conn():
 
 def is_installment_cleared(due_date) -> bool:
     d = due_date if isinstance(due_date, date) else date.fromisoformat(str(due_date))
-    return d <= date.today()
+    return d <= manila_today()
 
 
 def _renumber_installments(cur: sqlite3.Cursor, bank_loan_id: int) -> None:

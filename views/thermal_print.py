@@ -23,6 +23,7 @@ from engines.thermal_statement import (
     COPY_LABELS, QR_LINES_ESTIMATE, build_slip, estimate_lines, get_printer_config, render_text, save_printer_config,
 )
 from views.shared import guard_duplicate_submit, q, refresh
+from engines.clock import manila_today
 
 COPY_CHOICES = {"Both": ["FILE", "SUPPLIER"], "File copy": ["FILE"], "Supplier copy": ["SUPPLIER"]}
 TYPE_LABELS = {"ORIGINAL": "original", "REPRINT": "REPRINT", "REVISED": "REVISED"}
@@ -70,7 +71,7 @@ def render_thermal_printer_section(statement_id: int, include_full_history: bool
 
     choice = st.segmented_control("Copies", list(COPY_CHOICES), default="Both", required=True, key=f"th_copies_{sid}", label_visibility="collapsed", help="Which slips to print: the supplier's copy to hand over, the filing copy to keep, or both.")
     planned = {c: planned_print(sid, c) for c in COPY_CHOICES[choice]}
-    today = date.today().isoformat()
+    today = manila_today().isoformat()
     slips = []
     for c in COPY_CHOICES[choice]:
         p = planned[c]

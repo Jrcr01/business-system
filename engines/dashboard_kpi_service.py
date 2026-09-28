@@ -21,6 +21,7 @@ from engines.reports_service import get_payment_schedule_all_tracks
 
 import os
 from engines.common import get_conn
+from engines.clock import manila_today
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 _SUPPLIER_CHECK_LAG_SQL = """
@@ -59,7 +60,7 @@ def get_average_dpo_suppliers() -> float | None:
     df = get_supplier_check_lag()
     if df.empty:
         return None
-    today_str = date.today().isoformat()
+    today_str = manila_today().isoformat()
     cleared = df[(df["status"] == "Active") & (df["check_date"] < today_str)]
     if cleared.empty:
         return None
@@ -97,7 +98,7 @@ def get_top_suppliers(metric: str = "outstanding", limit: int = 10) -> pd.DataFr
                 """SELECT cr.creditor_name AS supplier_name, COALESCE(SUM(c.amount), 0) AS value
                    FROM checks_issued c
                    JOIN creditors cr ON c.creditor_id = cr.creditor_id
-                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date < DATE('now', 'localtime')
+                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date < manila_today()
                    GROUP BY cr.creditor_name
                    ORDER BY value DESC
                    LIMIT ?""",
@@ -108,7 +109,7 @@ def get_top_suppliers(metric: str = "outstanding", limit: int = 10) -> pd.DataFr
                 """SELECT cr.creditor_name AS supplier_name, COALESCE(SUM(c.amount), 0) AS value
                    FROM checks_issued c
                    JOIN creditors cr ON c.creditor_id = cr.creditor_id
-                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= DATE('now', 'localtime')
+                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= manila_today()
                    GROUP BY cr.creditor_name
                    ORDER BY value DESC
                    LIMIT ?""",
@@ -215,7 +216,7 @@ def get_upcoming_cash_obligations(days: int = 7) -> float:
     df = get_payment_schedule_all_tracks()
     if df.empty:
         return 0.0
-    cutoff = (date.today() + timedelta(days=days)).isoformat()
+    cutoff = (manila_today() + timedelta(days=days)).isoformat()
     return float(df[df["due_date"] <= cutoff]["amount"].sum())
 
 
@@ -229,7 +230,7 @@ def get_supplier_concentration(limit: int = 5) -> dict:
     with get_conn(DB_PATH) as conn:
         total_row = pd.read_sql_query(
             """SELECT COALESCE(SUM(amount), 0) AS total FROM checks_issued
-               WHERE statement_id IS NOT NULL AND status = 'Active' AND check_date >= DATE('now', 'localtime')""",
+               WHERE statement_id IS NOT NULL AND status = 'Active' AND check_date >= manila_today()""",
             conn,
         )
     total_outstanding = float(total_row["total"][0])
@@ -274,8 +275,8 @@ def get_total_ap_outstanding() -> float:
     from engines.cc_rules import cc_owed_case
 
     with get_conn(DB_PATH) as conn:
-        checks = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date >= DATE('now', 'localtime')").fetchone()[0]
-        loans = conn.execute("""SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date >= DATE('now', 'localtime')
+        checks = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date >= manila_today()").fetchone()[0]
+        loans = conn.execute("""SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date >= manila_today()
                                 AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)""").fetchone()[0]
         cards = conn.execute(f"SELECT COALESCE(SUM({cc_owed_case('cs')}), 0) FROM cc_statements cs WHERE cs.status NOT IN ('Paid', 'Cancelled')").fetchone()[0]
     return float(checks) + float(loans) + float(cards)
@@ -286,5 +287,5 @@ def get_stale_checks(days: int = 180) -> dict:
     deposited. A check the imported bank statement shows as cleared is not stale, however old (2026-09-28: was check-date only)."""
     with get_conn(DB_PATH) as conn:
         n, total = conn.execute("""SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND bank_cleared_date IS NULL
-                                   AND check_date < DATE('now', 'localtime', ?)""", (f"-{int(days)} days",)).fetchone()
+                                   AND check_date < DATE(manila_today(), ?)""", (f"-{int(days)} days",)).fetchone()
     return {"n": int(n), "total": float(total)}

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date
 
 import pandas as pd
+from engines.clock import manila_today
 
 # Column-header synonyms, matched case/whitespace-insensitively. First match
 # in each list wins if a spreadsheet somehow has more than one candidate
@@ -118,7 +119,7 @@ def _rows_from_df(df: pd.DataFrame) -> tuple[list[ImportedInvoiceRow], list[str]
         if not doc_ref:
             row_issues.append("Doc Ref")
 
-        invoice_date = date.today()
+        invoice_date = manila_today()
         if date_str:
             try:
                 invoice_date = pd.to_datetime(date_str).date()

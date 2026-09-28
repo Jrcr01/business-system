@@ -92,6 +92,7 @@ from views.shared import (  # noqa: F401
     status_badge,
     status_text,
 )
+from engines.clock import manila_now, manila_today
 
 
 CHECKS_VIEWS = ["Issue checks", "Checks in this batch", "Assign numbers", "Corrections"]
@@ -306,9 +307,9 @@ def render_batch_invoices(statement_id: int) -> None:
             column_config={
                 "invoice_id": st.column_config.NumberColumn("ID"),
                 "doc_ref": st.column_config.TextColumn("Doc Ref", default=""),
-                "invoice_date": st.column_config.DateColumn("Date Received", default=date.today()),
+                "invoice_date": st.column_config.DateColumn("Date Received", default=manila_today()),
                 "due_date": st.column_config.DateColumn(
-                    "Due Date (computed, recalculated on save)", default=resolve_due_date(date.today(), supplier_terms)
+                    "Due Date (computed, recalculated on save)", default=resolve_due_date(manila_today(), supplier_terms)
                 ),
                 "gross_amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0),
                 "less_pct": st.column_config.NumberColumn("Less %", format="%.2f%%", min_value=0.0, max_value=100.0, step=1.0, default=0.0),
@@ -420,7 +421,7 @@ def render_batch_memos(statement_id: int) -> None:
             column_config={
                 "credit_memo_id": st.column_config.NumberColumn("ID"),
                 "memo_ref": st.column_config.TextColumn("Reference", default=""),
-                "memo_date": st.column_config.DateColumn("Memo Date", default=date.today()),
+                "memo_date": st.column_config.DateColumn("Memo Date", default=manila_today()),
                 "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0),
                 "reason": st.column_config.TextColumn("Reason", default=""),
             },
@@ -497,9 +498,9 @@ def render() -> None:
                   v.credit_memo_total, v.net_total,
                   v.net_total - COALESCE(
                       (SELECT SUM(amount) FROM checks_issued
-                       WHERE statement_id = os.statement_id AND status = 'Active' AND check_date < DATE('now', 'localtime')), 0
+                       WHERE statement_id = os.statement_id AND status = 'Active' AND check_date < manila_today()), 0
                   ) AS outstanding,
-                  os.status, os.is_locked, os.needs_reprint, datetime(os.created_at, 'localtime') AS created_at,
+                  os.status, os.is_locked, os.needs_reprint, datetime(os.created_at, '+8 hours') AS created_at,
                   """ + statement_modified_sql("os") + """ AS last_modified,
                   CASE WHEN os.status = 'Cancelled' THEN 'Cancelled'
                        WHEN EXISTS (SELECT 1 FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' AND k.printed_at IS NOT NULL) THEN 'Issued'
@@ -549,7 +550,7 @@ def render() -> None:
             )
             st.download_button(
                 "Download Excel entry template (with pop-up form)", data=build_invoice_entry_workbook,
-                file_name=f"invoice_entry_{date.today():%Y-%m-%d}.xlsm", mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+                file_name=f"invoice_entry_{manila_today():%Y-%m-%d}.xlsm", mime="application/vnd.ms-excel.sheet.macroEnabled.12",
                 icon=":material/download:", key="multi_import_template_dl",
                 help="A macro-enabled workbook with the supplier list refreshed from the system right now. Open it, enable macros, and use the Add invoice button.",
             )
@@ -645,7 +646,7 @@ def render() -> None:
                 help="Draft = no checks yet · Parked = checks parked, none printed yet · Issued = at least one check already exported/printed · Cancelled"
             )
             created_dates = pd.to_datetime(statements_df["created_at"]).dt.date
-            full_range = (min(created_dates.min(), date.today()), max(created_dates.max(), date.today()))
+            full_range = (min(created_dates.min(), manila_today()), max(created_dates.max(), manila_today()))
             date_preset = fc3.segmented_control(
                 "Filter: created date",
                 options=["Today", "Last 7 days", "Last 30 days", "All time", "Custom"],
@@ -654,11 +655,11 @@ def render() -> None:
                 key="batch_filter_date_preset",
             )
             if date_preset == "Today":
-                date_range = (date.today(), date.today())
+                date_range = (manila_today(), manila_today())
             elif date_preset == "Last 7 days":
-                date_range = (date.today() - timedelta(days=6), date.today())
+                date_range = (manila_today() - timedelta(days=6), manila_today())
             elif date_preset == "Last 30 days":
-                date_range = (date.today() - timedelta(days=29), date.today())
+                date_range = (manila_today() - timedelta(days=29), manila_today())
             elif date_preset == "Custom":
                 date_range = fc3.date_input("Custom range", value=full_range, key="batch_filter_date_range")
             else:  # "All time"
@@ -717,13 +718,13 @@ def render() -> None:
                 bp1, bp2 = st.columns([2, 3])
                 # "Session" = since the day checks were last printed (2026-09-27, per user: checks are not issued every day, so a calendar day or a page
                 # visit is the wrong yardstick). The last print day is the latest date any check was exported / printed.
-                _lp = q_live("SELECT DATE(MAX(printed_at), 'localtime') AS d FROM checks_issued")["d"][0]
+                _lp = q_live("SELECT DATE(MAX(printed_at), '+8 hours') AS d FROM checks_issued")["d"][0]
                 bp_last_print_day = str(_lp)[:10] if has_value(_lp) else None
                 bp_scope = bp1.radio("Which order statements", ["Since last check print", "Today", "Last 7 days", "All"], horizontal=True, key="bulk_print_scope",
                                      help="'Since last check print' = created or changed on or after the day checks were last printed / exported to Chrysanth"
                                           + (f" ({bp_last_print_day})." if bp_last_print_day else " (no check has been printed yet, so this shows everything)."))
-                bp_since = {"Since last check print": f"{bp_last_print_day} 00:00:00" if bp_last_print_day else "0000-00-00", "Today": f"{date.today():%Y-%m-%d} 00:00:00",
-                            "Last 7 days": f"{date.today() - timedelta(days=6):%Y-%m-%d} 00:00:00", "All": "0000-00-00"}[bp_scope]
+                bp_since = {"Since last check print": f"{bp_last_print_day} 00:00:00" if bp_last_print_day else "0000-00-00", "Today": f"{manila_today():%Y-%m-%d} 00:00:00",
+                            "Last 7 days": f"{manila_today() - timedelta(days=6):%Y-%m-%d} 00:00:00", "All": "0000-00-00"}[bp_scope]
                 bp_pool = statements_df[(statements_df["stage"] != "Cancelled") & (statements_df["last_modified"].astype(str) >= bp_since)].sort_values("statement_ref")
                 if bp_pool.empty:
                     st.info(f"No order statements {f'created or changed since {bp_last_print_day}, the day checks were last printed,' if bp_scope == 'Since last check print' else 'in that period'} — pick a wider range above.")
@@ -773,7 +774,7 @@ def render() -> None:
                             out = io.BytesIO()
                             merged.write(out)
                             st.success(f"{made} statement(s) combined into one PDF." + (f" Could not generate: {'; '.join(failed)}" if failed else ""))
-                            pdf_preview_and_download(out.getvalue(), f"statements_{datetime.now():%Y%m%d_%H%M}{'_thermal' if bp_type != 'Batch Statement (A4)' else ''}.pdf",
+                            pdf_preview_and_download(out.getvalue(), f"statements_{manila_now():%Y%m%d_%H%M}{'_thermal' if bp_type != 'Batch Statement (A4)' else ''}.pdf",
                                                      key="bulk_print_download", label="Combined statements PDF")
                         else:
                             st.error("Could not generate any statement PDF.")
@@ -942,7 +943,7 @@ def render() -> None:
             checks_view = st.segmented_control("Checks", CHECKS_VIEWS, format_func=CHECKS_VIEW_LABELS.get, required=True,
                                                key=checks_view_key, label_visibility="collapsed")
             scoped_checks_df = q(
-                "SELECT check_id, check_number, check_date, amount, status, datetime(printed_at, 'localtime') AS printed_at, bank_cleared_date FROM checks_issued WHERE statement_id = ? ORDER BY check_id",
+                "SELECT check_id, check_number, check_date, amount, status, datetime(printed_at, '+8 hours') AS printed_at, bank_cleared_date FROM checks_issued WHERE statement_id = ? ORDER BY check_id",
                 (int(batch_scope_pick),),
             )
             active_checks_df = scoped_checks_df[scoped_checks_df["status"] == "Active"].copy() if not scoped_checks_df.empty else scoped_checks_df
@@ -1033,7 +1034,7 @@ def render() -> None:
                     due_val = q_live("SELECT MIN(due_date) AS d FROM invoices WHERE statement_id = ? AND status IN ('Unpaid', 'Partially Paid')", (int(batch_scope_pick),))["d"][0]
                     if not has_value(due_val):
                         due_val = q_live("SELECT MIN(due_date) AS d FROM invoices WHERE statement_id = ? AND status != 'Cancelled'", (int(batch_scope_pick),))["d"][0]
-                    default_check_date = date.fromisoformat(str(due_val)[:10]) if has_value(due_val) else date.today()
+                    default_check_date = date.fromisoformat(str(due_val)[:10]) if has_value(due_val) else manila_today()
                     signature = (int(num_checks), round(remaining_balance, 2), default_check_date, per_invoice,
                                  tuple(open_invoices_df["invoice_id"]) if per_invoice else ())
                     if st.session_state.get(last_signature_key) != signature:
@@ -1432,7 +1433,7 @@ def render() -> None:
                     )
                     void_reissue = st.checkbox("Reissue as a new (parked) check", key=batch_scoped_key("void_reissue_toggle"), help='Also create a replacement check for the same amount — parked, no number yet, dated as you choose.')
                     if void_reissue:
-                        void_new_date = st.date_input("New check date", value=date.today(), key=batch_scoped_key("void_new_date"), help="The replacement check's date.")
+                        void_new_date = st.date_input("New check date", value=manila_today(), key=batch_scoped_key("void_new_date"), help="The replacement check's date.")
                     void_reason = st.text_input("Reason (optional)", placeholder="e.g. postdated past new due date", key=batch_scoped_key("void_reason"), help='Kept with the voided check in its history.')
                     if st.button("Void & reissue" if void_reissue else "Void check", icon=":material/cancel:", key=batch_scoped_key("void_submit_btn")):
                         if void_reissue:

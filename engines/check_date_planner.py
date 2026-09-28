@@ -25,6 +25,7 @@ import pandas as pd
 
 from engines.settings_store import get_number, get_setting, set_setting
 from engines.common import get_conn
+from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 FRESH_DAYS = 14                 # a bank balance older than this is not used to plan from
@@ -85,7 +86,7 @@ def open_items(today: date | None = None) -> pd.DataFrame:
                        FROM invoices i WHERE i.statement_id = ? AND i.status != 'Cancelled' ORDER BY i.due_date, i.invoice_id""", (int(b.statement_id),))
         inv = inv[inv["remaining"] > 0.005].reset_index(drop=True)
         if inv.empty:
-            rows.append((b.statement_id, b.batch, b.creditor_id, b.supplier, None, "(no open invoice)", (today or date.today()).isoformat(), b.remaining))
+            rows.append((b.statement_id, b.batch, b.creditor_id, b.supplier, None, "(no open invoice)", (today or manila_today()).isoformat(), b.remaining))
             continue
         amounts = [round(float(x), 2) for x in inv["remaining"]]
         extra = round(sum(amounts) - float(b.remaining), 2)
@@ -125,7 +126,7 @@ def cash_source(today: date | None = None) -> dict:
     """{'fresh': bool, 'balance', 'as_of'} -- whether the latest bank balance is recent enough to plan from."""
     from engines.cash_insights_service import cash_position
 
-    today = today or date.today()
+    today = today or manila_today()
     pos = cash_position()
     if pos is None:
         return {"fresh": False, "balance": None, "as_of": None}
@@ -175,7 +176,7 @@ class Plan:
 
 def plan(today: date | None = None, start_cash: float | None = None, inflow_per_day: float | None = None,
          settings: PlanSettings | None = None, items: pd.DataFrame | None = None) -> Plan:
-    today = today or date.today()
+    today = today or manila_today()
     s = settings or load_settings()
     blocked = _blocked_days()
     items = open_items(today) if items is None else items.copy()

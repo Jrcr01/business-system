@@ -19,6 +19,7 @@ from engines.check_run_service import get_pending_check_run, get_unprinted_batch
 from engines.last_modified_sql import statement_modified_sql
 from engines.reports_service import get_payment_schedule_all_tracks, next_banking_day
 from engines.common import get_conn
+from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -41,7 +42,7 @@ def get_quick_report(today: date | None = None) -> dict:
     checks_today active checks dated today (supplier and lender) -- what the bank account must cover today.
     overdue      past their due date and not covered: supplier invoices with no check for their balance, loan installments with
                  no check, and credit card statements still owed (the Dashboard's card alerts with a due date before today)."""
-    today = today or date.today()
+    today = today or manila_today()
     bank_day = next_banking_day(today)          # on a Saturday/Sunday, "due today" means the Monday it is actually paid
     sched = get_payment_schedule_all_tracks()
     if sched.empty:
@@ -107,7 +108,7 @@ def get_quick_report(today: date | None = None) -> dict:
 # ------------------------------------------------------------------ cycle stages
 def last_check_print_day() -> str | None:
     """The day checks were last exported/printed -- the start of 'Since last check print' (same query as Print statements in bulk)."""
-    v = _read("SELECT DATE(MAX(printed_at), 'localtime') AS d FROM checks_issued")["d"][0]
+    v = _read("SELECT DATE(MAX(printed_at), '+8 hours') AS d FROM checks_issued")["d"][0]
     return str(v)[:10] if v else None
 
 

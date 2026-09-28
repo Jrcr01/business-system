@@ -26,6 +26,7 @@ from views.shared import (  # noqa: F401
     status_badge,
     status_text,
 )
+from engines.clock import manila_today
 
 
 def render_new_booklet_form() -> None:
@@ -35,7 +36,7 @@ def render_new_booklet_form() -> None:
         bk1, bk2 = st.columns(2)
         bk_start = bk1.number_input("Start check number", min_value=1, step=1, value=1000, help="The full number printed on the first leaf, e.g. 3992554301. It is used exactly as typed.")
         bk_end = bk2.number_input("End check number", min_value=1, step=1, value=1050, help="The full number printed on the last leaf, e.g. 3992554400.")
-        bk_received = st.date_input("Date received", value=date.today(), help='When the booklet arrived from Metrobank — for your records.')
+        bk_received = st.date_input("Date received", value=manila_today(), help='When the booklet arrived from Metrobank — for your records.')
         if st.form_submit_button("Register booklet", icon=":material/menu_book:", type="primary"):
             if bk_end < bk_start:
                 st.error("End check number must be greater than or equal to start check number.")
@@ -171,7 +172,7 @@ def render() -> None:
 
     with st.container(border=True):
         st.subheader("Audit log")
-        audit_full = fix_nullable_int(q("SELECT log_id, user_action, entity_name, entity_id, old_values, new_values, datetime(timestamp, 'localtime') AS timestamp FROM audit_logs ORDER BY log_id DESC"), "entity_id")
+        audit_full = fix_nullable_int(q("SELECT log_id, user_action, entity_name, entity_id, old_values, new_values, datetime(timestamp, '+8 hours') AS timestamp FROM audit_logs ORDER BY log_id DESC"), "entity_id")
         action_filter = st.multiselect("Filter by action", options=sorted(audit_full["user_action"].unique()) if not audit_full.empty else [], help='Show only these kinds of recorded changes (e.g. checks issued, cancelled, bank lines resolved).')
         display_audit = audit_full[audit_full["user_action"].isin(action_filter)] if action_filter else audit_full
         st.dataframe(display_audit, hide_index=True)

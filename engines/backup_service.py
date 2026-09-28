@@ -7,6 +7,7 @@ from datetime import datetime
 
 from db_location import safe_copy
 from engines.common import get_conn
+from engines.clock import manila_now
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -17,7 +18,7 @@ _EXPECTED_TABLES = ("creditors", "checks_issued", "order_statements", "credit_ca
 
 def export_database_backup() -> tuple[str, bytes]:
     """Creates a live in-memory hot backup of ap_disbursement.db."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = manila_now().strftime("%Y%m%d_%H%M%S")
     backup_filename = f"ap_disbursement_backup_{timestamp}.db"
     
     src_conn = get_conn(DB_PATH)
@@ -71,7 +72,7 @@ def restore_database_from_bytes(uploaded_bytes: bytes) -> tuple[bool, str]:
                 check_conn.close()
 
         if os.path.exists(DB_PATH):
-            safety_copy = f"{DB_PATH}.bak_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            safety_copy = f"{DB_PATH}.bak_before_restore_{manila_now().strftime('%Y%m%d_%H%M%S')}"
             safe_copy(DB_PATH, safety_copy)
         # Phase F1.2 (WAL): never write over the live file (its -wal / -shm files would then belong to a different database) --
         # copy the uploaded database INTO it with the backup API, which replaces every page through SQLite itself.

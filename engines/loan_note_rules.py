@@ -11,6 +11,7 @@ from engines.validators import money_amount_error
 from engines.common import get_conn
 from engines.statement_rules import new_draft_ref
 from engines.check_rules import cancel_check
+from engines.clock import manila_now
 
 
 _LOAN_NOTE_STATUSES = ("Active", "Settled", "Defaulted", "Cancelled", "Pending Setup")
@@ -63,7 +64,7 @@ def promote_draft_loan_note(loan_note_id: int) -> str:
         current_ref = row[0]
         if not current_ref.startswith("DRAFT-"):
             return current_ref
-        prefix = f"{datetime.now().year} - LN "
+        prefix = f"{manila_now().year} - LN "
         # MAX sequence number in use, not "whichever row has the highest loan_note_id" -- same
         # fix as promote_draft_statement() (engines/db_engine.py): promotion order and
         # loan_note_id order aren't the same thing, so picking the highest-id row's ref could

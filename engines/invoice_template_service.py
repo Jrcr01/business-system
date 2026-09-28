@@ -14,6 +14,7 @@ from datetime import datetime
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill
 from engines.common import get_conn
+from engines.clock import manila_now
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 MASTER_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "excel_invoice_entry", "invoice_entry_master.xlsm")
@@ -47,7 +48,7 @@ def build_invoice_entry_workbook() -> bytes:
     ws.column_dimensions["A"].width = 45
     ws.column_dimensions["B"].width = 14
     if "_Start" in wb.sheetnames:
-        wb["_Start"]["B12"] = f"Supplier list refreshed from the AP system on {datetime.now():%Y-%m-%d %H:%M} ({len(suppliers)} active suppliers)."
+        wb["_Start"]["B12"] = f"Supplier list refreshed from the AP system on {manila_now():%Y-%m-%d %H:%M} ({len(suppliers)} active suppliers)."
         wb["_Start"]["B12"].font = Font(italic=True)
     out = io.BytesIO()
     wb.save(out)

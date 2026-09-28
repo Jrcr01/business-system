@@ -15,6 +15,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from engines.reports_service import get_payment_schedule_all_tracks, get_uncleared_checks_report, get_parked_checks_report
+from engines.clock import manila_now
 
 ACCENT = colors.HexColor("#1f3a5f")
 ACCENT_LIGHT = colors.HexColor("#eef2f7")
@@ -185,7 +186,7 @@ def _build_due_date_schedule_pdf(title: str, subtitle: str, df, ref_label: str) 
         ))
 
     story.append(Spacer(1, 10))
-    story.append(Paragraph(f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}", ParagraphStyle("Gen", parent=styles["Normal"], fontSize=8.4, textColor=GREY)))
+    story.append(Paragraph(f"Generated {manila_now().strftime('%Y-%m-%d %H:%M')}", ParagraphStyle("Gen", parent=styles["Normal"], fontSize=8.4, textColor=GREY)))
 
     doc.build(story)
     buffer.seek(0)

@@ -19,6 +19,7 @@ from engines.dashboard_kpi_service import get_supplier_check_lag
 from engines.duplicate_service import loan_check_mismatches
 from engines.reports_service import get_combined_ap_summary, get_payment_schedule_all_tracks
 from engines.common import get_conn
+from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 PERIOD_KINDS = ["Day", "Week", "Month", "Quarter", "Year"]
@@ -62,7 +63,7 @@ def next_bounds(kind: str, end: date) -> tuple[date, date, str]:
 # ----------------------------------------------------------------------------------------------
 def _cash_rows(conn, start: date, end: date) -> pd.DataFrame:
     """One row per payment in [start, end]: track, payee, date, paid, scheduled."""
-    s, e, today = str(start), str(end), str(date.today())
+    s, e, today = str(start), str(end), str(manila_today())
     parts = []
     parts.append(pd.read_sql_query(
         """SELECT CASE WHEN c.loan_note_id IS NOT NULL THEN 'Private Lender' ELSE 'Supplier' END AS track,
@@ -100,7 +101,7 @@ def _cash_rows(conn, start: date, end: date) -> pd.DataFrame:
 
 def _interest(conn, start: date, end: date) -> pd.DataFrame:
     """Interest cost in the period by facility (same conventions as interest_service)."""
-    s, e, today = str(start), str(end), str(date.today())
+    s, e, today = str(start), str(end), str(manila_today())
     rows = pd.concat([
         pd.read_sql_query(
             """SELECT 'Private loans' AS source, cr.creditor_name AS name, SUM(li.interest) AS interest
@@ -137,7 +138,7 @@ def _new_business(conn, start: date, end: date) -> dict:
     s, e = str(start), str(end)
     b = conn.execute(
         """SELECT COUNT(*), COALESCE(SUM(total_amount), 0) FROM order_statements
-           WHERE status = 'Issued' AND statement_ref NOT LIKE 'LEGACY-%' AND DATE(created_at, 'localtime') BETWEEN ? AND ?""", (s, e)).fetchone()
+           WHERE status = 'Issued' AND statement_ref NOT LIKE 'LEGACY-%' AND DATE(created_at, '+8 hours') BETWEEN ? AND ?""", (s, e)).fetchone()
     inv = conn.execute(
         "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status != 'Cancelled' AND invoice_date BETWEEN ? AND ?", (s, e)).fetchone()
     ln = conn.execute(
@@ -151,7 +152,7 @@ def _behavior(start: date, end: date) -> dict:
     df = get_supplier_check_lag()
     if df.empty:
         return {"count": 0, "avg_days": None, "on_time_pct": None}
-    today = str(date.today())
+    today = str(manila_today())
     d = df[(df["status"] == "Active") & (df["check_date"] >= str(start)) & (df["check_date"] <= str(end)) & (df["check_date"] < today)]
     if d.empty:
         return {"count": 0, "avg_days": None, "on_time_pct": None}
@@ -204,7 +205,7 @@ def _watch_list() -> list[dict]:
         if bad:
             items.append({"item": "Loan-note checks not matching their schedule", "count": bad, "detail": ""})
         stale = conn.execute(
-            "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date < DATE('now', 'localtime', ?)",
+            "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date < DATE(manila_today(), ?)",
             (f"-{STALE_DAYS} days",)).fetchone()
         if stale[0]:
             items.append({"item": f"Checks still uncleared after {STALE_DAYS} days", "count": int(stale[0]), "detail": _php(stale[1])})

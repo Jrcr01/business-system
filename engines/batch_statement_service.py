@@ -12,6 +12,7 @@ from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, SimpleDocTem
 
 import os
 from engines.common import get_conn
+from engines.clock import manila_now
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 ACCENT = colors.HexColor("#1f3a5f")
@@ -105,7 +106,7 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
         cover = {
             r["invoice_id"]: r for r in cur.execute(
                 """SELECT a.invoice_id, SUM(a.amount) AS covered,
-                          SUM(CASE WHEN c.check_date < DATE('now', 'localtime') THEN a.amount ELSE 0 END) AS cleared,
+                          SUM(CASE WHEN c.check_date < manila_today() THEN a.amount ELSE 0 END) AS cleared,
                           MAX(c.check_date) AS last_check_date
                    FROM invoice_check_allocations a JOIN checks_issued c ON c.check_id = a.check_id
                    WHERE c.status = 'Active' AND a.invoice_id IN (SELECT invoice_id FROM invoices WHERE statement_id = ?)
@@ -189,7 +190,7 @@ def _info_panel(stmt, styles) -> Table:
         [Paragraph("STATEMENT REF", label_style), Paragraph("SUPPLIER", label_style),
          Paragraph("STATUS", label_style), Paragraph("GENERATED", label_style)],
         [Paragraph(stmt["statement_ref"], value_style), Paragraph(stmt["creditor_name"], value_style),
-         Paragraph(stmt["status"], value_style), Paragraph(datetime.now().strftime("%Y-%m-%d %H:%M"), value_style)],
+         Paragraph(stmt["status"], value_style), Paragraph(manila_now().strftime("%Y-%m-%d %H:%M"), value_style)],
     ]
     panel = Table(rows, colWidths=[CONTENT_WIDTH * 0.3, CONTENT_WIDTH * 0.3, CONTENT_WIDTH * 0.18, CONTENT_WIDTH * 0.22])
     panel.setStyle(TableStyle([
@@ -390,7 +391,7 @@ def generate_bulk_summary_pdf(rows: list[dict], scope_label: str, statement_type
     story: list = [_title_band("Bulk print summary", styles), Spacer(1, 10)]
     info_style = ParagraphStyle("BulkInfo", parent=styles["Normal"], fontSize=9, leading=13, textColor=colors.HexColor("#374151"))
     story.append(Paragraph(
-        f"<b>{len(rows)}</b> order statement(s) &nbsp;·&nbsp; {scope_label} &nbsp;·&nbsp; {statement_type} &nbsp;·&nbsp; printed {datetime.now():%Y-%m-%d %H:%M}", info_style))
+        f"<b>{len(rows)}</b> order statement(s) &nbsp;·&nbsp; {scope_label} &nbsp;·&nbsp; {statement_type} &nbsp;·&nbsp; printed {manila_now():%Y-%m-%d %H:%M}", info_style))
     story.append(Spacer(1, 8))
     table_rows = [["#", "Order statement", "Supplier", "Status", "Inv.", "Net total (PHP)", "Checks", "Checks total (PHP)"]]
     for n, r in enumerate(rows, start=1):
@@ -455,7 +456,7 @@ def _thermal_lines(data: dict) -> list[dict]:
     add(f"Ref: {stmt['statement_ref']}")
     add(f"Supplier: {stmt['creditor_name']}")
     add(f"Status: {stmt['status']}")
-    add(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", gap_after=2)
+    add(f"Generated: {manila_now().strftime('%Y-%m-%d %H:%M')}", gap_after=2)
     add_divider()
 
     add("INVOICES", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION)

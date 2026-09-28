@@ -6,7 +6,7 @@ from __future__ import annotations
 
 
 def _latest(*parts: str) -> str:
-    return "datetime(MAX(" + ", ".join(parts) + "), 'localtime')"
+    return "datetime(MAX(" + ", ".join(parts) + "), '+8 hours')"
 
 
 def _max_or_blank(sql: str) -> str:

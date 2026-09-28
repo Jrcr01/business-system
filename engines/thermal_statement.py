@@ -22,6 +22,7 @@ from datetime import datetime
 
 from engines.batch_statement_service import _fetch_batch_data
 from engines.common import get_conn
+from engines.clock import manila_now
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -223,12 +224,12 @@ def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: b
     add(Line("BATCH PAYMENT STATEMENT", "center", bold=True))
     add(Line(COPY_LABELS[copy], "center", bold=True, big=True))
     if print_type == "REPRINT":
-        add(Line(f"REPRINT - {fmt_date_long(reprint_date or datetime.now().date().isoformat())}", "center", bold=True))
+        add(Line(f"REPRINT - {fmt_date_long(reprint_date or manila_now().date().isoformat())}", "center", bold=True))
     elif print_type == "REVISED":
         add(Line(f"REVISED v{version} – supersedes v{version - 1}", "center", bold=True))
     rule("=")
     for label, value in (("Batch", stmt["statement_ref"]), ("Supplier", stmt["creditor_name"]), ("Status", stmt["status"]),
-                         ("Version", str(version)), ("Printed", (printed_at or datetime.now()).strftime("%b %d, %Y %I:%M %p"))):
+                         ("Version", str(version)), ("Printed", (printed_at or manila_now()).strftime("%b %d, %Y %I:%M %p"))):
         for i, ln in enumerate(wrap(fmt_text(value), COLUMNS - 10)):
             add(Line((f"{label + ':':<10}" if i == 0 else " " * 10) + ln))
 

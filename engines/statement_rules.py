@@ -15,6 +15,7 @@ from datetime import timedelta
 from engines.validators import calculate_trade_discount
 from engines.validators import detect_invoice_anomalies
 from engines.common import _as_date, cell_text, get_conn, php, q_live
+from engines.clock import manila_now
 
 
 DEFAULT_SUPPLIER_TERMS = "120"
@@ -379,7 +380,7 @@ def lock_statement(statement_id: int) -> tuple[bool, str]:
 def new_draft_ref(table: str, column: str) -> str:
     """Short draft reference in the form DRAFT-YY-MM-NN, e.g. DRAFT-26-09-01, DRAFT-26-09-02 -- the
     year, the month, then a running number that restarts each month."""
-    prefix = f"DRAFT-{datetime.now().strftime('%y-%m')}-"
+    prefix = f"DRAFT-{manila_now().strftime('%y-%m')}-"
     with get_conn() as conn:
         used = [r[0][len(prefix):] for r in conn.execute(f"SELECT {column} FROM {table} WHERE {column} LIKE ?", (prefix + "%",))]
     highest = max((int(x) for x in used if x.isdigit()), default=0)
@@ -476,7 +477,7 @@ def sync_invoice_payment_status(statement_id: int) -> None:
         net_row = q_live("SELECT net_total FROM v_batch_net_totals WHERE statement_id = ?", (statement_id,))
         net_total = float(net_row["net_total"][0]) if not net_row.empty else 0.0
         cleared_row = q_live(
-            "SELECT COALESCE(SUM(amount), 0) AS s FROM checks_issued WHERE statement_id = ? AND status = 'Active' AND check_date < DATE('now', 'localtime')",
+            "SELECT COALESCE(SUM(amount), 0) AS s FROM checks_issued WHERE statement_id = ? AND status = 'Active' AND check_date < manila_today()",
             (statement_id,),
         )
         cleared_sum = float(cleared_row["s"][0])
@@ -499,7 +500,7 @@ def sync_invoice_payment_status(statement_id: int) -> None:
     cleared_df = q_live(
         """SELECT a.invoice_id, COALESCE(SUM(a.amount), 0) AS cleared
            FROM invoice_check_allocations a JOIN checks_issued c ON c.check_id = a.check_id
-           WHERE c.statement_id = ? AND c.status = 'Active' AND c.check_date < DATE('now', 'localtime')
+           WHERE c.statement_id = ? AND c.status = 'Active' AND c.check_date < manila_today()
            GROUP BY a.invoice_id""",
         (statement_id,),
     )

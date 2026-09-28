@@ -421,8 +421,8 @@ SELECT
     c.amount,
     c.status AS recorded_status,
     CASE 
-        WHEN c.status = 'Active' AND c.check_date < DATE('now', '-180 days') THEN 'Stale'
-        WHEN c.status = 'Active' AND c.check_date < DATE('now', 'localtime') THEN 'Cleared'
+        WHEN c.status = 'Active' AND c.check_date < DATE(manila_today(), '-180 days') THEN 'Stale'
+        WHEN c.status = 'Active' AND c.check_date < manila_today() THEN 'Cleared'
         ELSE c.status
     END AS effective_status,
     c.replacement_check_id,
@@ -447,17 +447,17 @@ SELECT
     cs.cc_statement_id,
     cs.due_date,
     CASE WHEN cs.unpaid_balance_next > 0 THEN cs.unpaid_balance_next ELSE cs.total_amount_due END AS total_amount_due,
-    CAST(JULIANDAY(cs.due_date) - JULIANDAY('now', 'localtime') AS INTEGER) AS days_until_due,
+    CAST(JULIANDAY(cs.due_date) - JULIANDAY(manila_now()) AS INTEGER) AS days_until_due,
     CASE
-        WHEN JULIANDAY(cs.due_date) - JULIANDAY('now', 'localtime') <= 3 THEN 'CRITICAL (0-3 Days)'
-        WHEN JULIANDAY(cs.due_date) - JULIANDAY('now', 'localtime') <= 7 THEN 'WARNING (4-7 Days)'
+        WHEN JULIANDAY(cs.due_date) - JULIANDAY(manila_now()) <= 3 THEN 'CRITICAL (0-3 Days)'
+        WHEN JULIANDAY(cs.due_date) - JULIANDAY(manila_now()) <= 7 THEN 'WARNING (4-7 Days)'
         ELSE 'UPCOMING'
     END AS urgency_status
 FROM cc_statements cs
 JOIN credit_cards cc ON cs.card_id = cc.card_id
 JOIN creditors c ON cc.creditor_id = c.creditor_id
 WHERE cs.status NOT IN ('Paid', 'Cancelled')
-  AND (cs.unpaid_balance_next > 0 OR cs.due_date >= DATE('now', 'localtime'))
+  AND (cs.unpaid_balance_next > 0 OR cs.due_date >= manila_today())
 ORDER BY cs.due_date ASC;
 
 -- Triggers

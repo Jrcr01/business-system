@@ -100,7 +100,7 @@ def _recompute_schedule(cur: sqlite3.Cursor, loan_note_id: int) -> None:
 
     total_payable = round(principal_amount + total_interest, 2)
     cur.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE loan_note_id = ? AND status = 'Active' AND check_date < DATE('now', 'localtime')",
+        "SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE loan_note_id = ? AND status = 'Active' AND check_date < manila_today()",
         (loan_note_id,),
     )
     (cleared_sum,) = cur.fetchone()

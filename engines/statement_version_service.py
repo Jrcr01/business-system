@@ -21,6 +21,7 @@ from engines.batch_statement_service import _fetch_batch_data, generate_batch_st
 from engines.drive_service import DriveError, statement_folder_id
 from engines.statement_rules import add_terms_bank_rule
 from engines.common import get_conn
+from engines.clock import manila_now, manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -100,7 +101,7 @@ def ensure_published(statement_id: int, drive, sandbox: bool = False, today: dat
     re-opens the same file for 3 more months from today (owner, 2026-09-27) -- only older versions are ever switched off by a revision,
     and those are never re-opened. A first print of a batch whose expiry has already passed also gets today + 3 months, so a printed QR
     always works. Raises DriveError / DriveNotConnected on any failure -- nothing is recorded as uploaded / re-opened then."""
-    today = today or date.today()
+    today = today or manila_today()
     sync_version(statement_id)                                         # changed since it went out -> the next version is printed
     v = ensure_current_version(statement_id)
     if v["drive_file_id"] and v["drive_public"]:
@@ -119,7 +120,7 @@ def ensure_published(statement_id: int, drive, sandbox: bool = False, today: dat
     pdf = generate_batch_statement_pdf(int(statement_id), True, "supplier", False)
     if not pdf:
         raise DriveError("Could not make the A4 statement PDF for this batch.")
-    name = f"{ref} - statement v{v['version_no']} - {datetime.now():%Y%m%d-%H%M%S}.pdf"
+    name = f"{ref} - statement v{v['version_no']} - {manila_now():%Y%m%d-%H%M%S}.pdf"
     folder_id = statement_folder_id(drive, sandbox)
     file_id, link = drive.upload_pdf(pdf, name, folder_id)
     drive.share_public(file_id)                                        # only after this succeeds is the version recorded as published
@@ -157,7 +158,7 @@ def revoke_older_versions(statement_id: int, keep_version_id: int, drive) -> lis
 
 def expired_public_versions(today: date | None = None) -> list[dict]:
     """Versions whose link is still public but past its expiry date (no Drive call) -- for the sweep and the Payment run reminder."""
-    today = today or date.today()
+    today = today or manila_today()
     with _conn() as conn:
         rows = [dict(r) for r in conn.execute(
             "SELECT * FROM statement_versions WHERE drive_public = 1 AND drive_file_id IS NOT NULL ORDER BY statement_id, version_no").fetchall()]
@@ -174,7 +175,7 @@ def expire_public_links(drive, today: date | None = None) -> dict:
     anyone-with-link sharing removed -- the file stays in Drive, privately -- and is audited. Also refreshes public_until on every public
     version. One failure does not stop the others; a failed one stays marked public and is tried again next time.
     Returns {'switched_off': [(statement_id, version_no, expiry)], 'failed': [(statement_id, version_no, error)], 'checked': n}."""
-    today = today or date.today()
+    today = today or manila_today()
     with _conn() as conn:
         public = [dict(r) for r in conn.execute(
             "SELECT * FROM statement_versions WHERE drive_public = 1 AND drive_file_id IS NOT NULL").fetchall()]
@@ -207,7 +208,7 @@ def daily_link_sweep(make_drive, today: date | None = None) -> dict | None:
     make_drive() is only called when something is actually past its date. Returns None when today's sweep already ran; otherwise the
     expire_public_links() result, or {'error': ..., 'due': n} when Drive could not be reached (the reminder then asks for drive_connect.bat).
     The date is recorded either way, so a closed Drive never slows every page load; the nightly task and tomorrow try again."""
-    today = today or date.today()
+    today = today or manila_today()
     with _conn() as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (SWEEP_KEY,)).fetchone()
     if row and row[0] == today.isoformat():

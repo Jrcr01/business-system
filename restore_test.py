@@ -22,6 +22,7 @@ from datetime import datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from db_location import backup_dir, live_db_path  # noqa: E402
+from engines.clock import manila_now  # noqa: E402  (one clock, Phase F1.3)
 from engines.schema_check import pending_schema_updates  # noqa: E402
 
 BACKUP_DIR = backup_dir()
@@ -43,7 +44,7 @@ print(f"Backup under test: {backup}")
 import re  # noqa: E402
 _stamp = re.search(r"(\d{8})_(\d{6})", os.path.basename(backup))
 made = datetime.strptime("".join(_stamp.groups()), "%Y%m%d%H%M%S") if _stamp else datetime.fromtimestamp(os.path.getmtime(backup))
-print(f"  taken {made:%Y-%m-%d %H:%M} ({(datetime.now() - made).total_seconds() / 3600:.0f} hours ago), {os.path.getsize(backup) // 1024} KB")
+print(f"  taken {made:%Y-%m-%d %H:%M} ({(manila_now() - made).total_seconds() / 3600:.0f} hours ago), {os.path.getsize(backup) // 1024} KB")
 work = tempfile.mkdtemp(prefix="ap_restore_test_")
 copy = os.path.join(work, "restored.db")
 shutil.copy2(backup, copy)
@@ -113,7 +114,7 @@ except Exception as e:  # the test harness itself failing is a problem too
 
 shutil.rmtree(work, ignore_errors=True)
 print()
-age_hours = (datetime.now() - made).total_seconds() / 3600
+age_hours = (manila_now() - made).total_seconds() / 3600
 if age_hours > 30:
     notes.append(f"this backup is {age_hours:.0f} hours old -- anything entered since then is not on Google Drive yet (run_backup.bat makes one now)")
 for n in notes:

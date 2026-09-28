@@ -19,6 +19,7 @@ from datetime import date, datetime
 import pdfplumber
 import pytesseract
 from PIL import Image, ImageOps
+from engines.clock import manila_today
 
 # pytesseract only finds the engine via PATH by default. A fresh Windows install
 # (e.g. via winget) often isn't on PATH yet for an already-running process — fall
@@ -198,7 +199,7 @@ def extract_invoice_fields(file_bytes: bytes, filename: str) -> tuple[InvoiceFie
     missing = [label for label, val in [("Doc Ref", doc_ref), ("Date", invoice_date), ("Amount", amount)] if val is None]
     fields = InvoiceFields(
         doc_ref=doc_ref or "",
-        invoice_date=invoice_date or date.today(),
+        invoice_date=invoice_date or manila_today(),
         amount=amount if amount is not None else 0.0,
     )
     warning = f"Could not read {', '.join(missing)} — check/fill in manually." if missing else None

@@ -42,7 +42,7 @@ def _invoices() -> None:
     if not supplier:
         return
     batches = q(
-        """SELECT os.statement_id, os.statement_ref, os.status, datetime(os.created_at, 'localtime') AS created_at, v.net_total,
+        """SELECT os.statement_id, os.statement_ref, os.status, datetime(os.created_at, '+8 hours') AS created_at, v.net_total,
                   (SELECT COUNT(*) FROM invoices i WHERE i.statement_id = os.statement_id) AS invoices,
                   EXISTS (SELECT 1 FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active') AS has_checks
            FROM order_statements os JOIN v_batch_net_totals v ON v.statement_id = os.statement_id

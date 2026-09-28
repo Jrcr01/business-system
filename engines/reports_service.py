@@ -7,6 +7,7 @@ import pandas as pd
 
 import os
 from engines.common import get_conn
+from engines.clock import manila_today
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
@@ -49,7 +50,7 @@ def get_uncleared_checks_report() -> pd.DataFrame:
         c.amount
     FROM checks_issued c
     JOIN creditors cr ON c.creditor_id = cr.creditor_id
-    WHERE c.status = 'Active' AND c.check_date >= DATE('now', 'localtime') AND c.check_number IS NOT NULL
+    WHERE c.status = 'Active' AND c.check_date >= manila_today() AND c.check_number IS NOT NULL
     ORDER BY c.check_date ASC, cr.creditor_name ASC
     """
     with get_conn(DB_PATH) as conn:
@@ -117,14 +118,14 @@ _PAYMENT_SCHEDULE_UNION = """
     SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Supplier' AS track, COALESCE(c.check_number, 'Pending') AS reference, os.statement_ref AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
     LEFT JOIN order_statements os ON os.statement_id = c.statement_id
-    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND c.check_date >= DATE('now', 'localtime')
+    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND c.check_date >= manila_today()
 
     UNION ALL
 
     -- Lender checks aren't batched (Loan Notes track, not Order Statements) -- batch is NULL.
     SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Lender' AS track, COALESCE(c.check_number, 'Pending') AS reference, NULL AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND c.check_date >= DATE('now', 'localtime')
+    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND c.check_date >= manila_today()
 
     UNION ALL
 
@@ -137,7 +138,7 @@ _PAYMENT_SCHEDULE_UNION = """
     JOIN bank_loans bl ON bli.bank_loan_id = bl.bank_loan_id
     JOIN creditors cr ON bl.creditor_id = cr.creditor_id
     LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id
-    WHERE bli.due_date >= DATE('now', 'localtime') AND bl.is_cancelled = 0
+    WHERE bli.due_date >= manila_today() AND bl.is_cancelled = 0
 
     UNION ALL
 
@@ -151,7 +152,7 @@ _PAYMENT_SCHEDULE_UNION = """
     JOIN credit_cards cc ON cs.card_id = cc.card_id
     JOIN creditors cr ON cc.creditor_id = cr.creditor_id
     LEFT JOIN cardholders ch ON cc.cardholder_id = ch.cardholder_id
-    WHERE cs.status IN ('Unpaid', 'Partially Paid') AND cs.due_date >= DATE('now', 'localtime')
+    WHERE cs.status IN ('Unpaid', 'Partially Paid') AND cs.due_date >= manila_today()
       AND NOT (cs.unpaid_balance_next > 0 AND """ + superseded_sql("cs") + """)
 """
 
@@ -219,13 +220,13 @@ def get_combined_ap_summary() -> pd.DataFrame:
             """SELECT COALESCE(SUM(
                    total_payable - COALESCE(
                        (SELECT SUM(amount) FROM checks_issued
-                        WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < DATE('now', 'localtime')), 0
+                        WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < manila_today()), 0
                    )
                ), 0)
                FROM loan_notes ln WHERE status IN ('Active', 'Defaulted')"""
         ).fetchone()[0]
         bank_loan = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date >= DATE('now', 'localtime') AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)"
+            "SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date >= manila_today() AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)"
         ).fetchone()[0]
         credit_card = conn.execute(
             f"""SELECT COALESCE(SUM({cc_owed_case('cs')}), 0)
@@ -254,10 +255,10 @@ def get_supplier_ap_aging_report() -> pd.DataFrame:
         c.creditor_name AS supplier_name,
         COUNT(i.invoice_id) AS open_invoices,
         SUM(i.amount) AS total_unpaid,
-        SUM(CASE WHEN (JULIANDAY(DATE('now', 'localtime')) - JULIANDAY(i.due_date)) <= 0 THEN i.amount ELSE 0 END) AS current_due,
-        SUM(CASE WHEN (JULIANDAY(DATE('now', 'localtime')) - JULIANDAY(i.due_date)) BETWEEN 1 AND 30 THEN i.amount ELSE 0 END) AS days_1_30,
-        SUM(CASE WHEN (JULIANDAY(DATE('now', 'localtime')) - JULIANDAY(i.due_date)) BETWEEN 31 AND 60 THEN i.amount ELSE 0 END) AS days_31_60,
-        SUM(CASE WHEN (JULIANDAY(DATE('now', 'localtime')) - JULIANDAY(i.due_date)) > 60 THEN i.amount ELSE 0 END) AS days_over_60
+        SUM(CASE WHEN (JULIANDAY(manila_today()) - JULIANDAY(i.due_date)) <= 0 THEN i.amount ELSE 0 END) AS current_due,
+        SUM(CASE WHEN (JULIANDAY(manila_today()) - JULIANDAY(i.due_date)) BETWEEN 1 AND 30 THEN i.amount ELSE 0 END) AS days_1_30,
+        SUM(CASE WHEN (JULIANDAY(manila_today()) - JULIANDAY(i.due_date)) BETWEEN 31 AND 60 THEN i.amount ELSE 0 END) AS days_31_60,
+        SUM(CASE WHEN (JULIANDAY(manila_today()) - JULIANDAY(i.due_date)) > 60 THEN i.amount ELSE 0 END) AS days_over_60
     FROM creditors c
     JOIN invoices i ON c.creditor_id = i.creditor_id AND i.status IN ('Unpaid', 'Partially Paid')
     WHERE c.creditor_type = 'SUPPLIER'
@@ -277,7 +278,7 @@ def get_private_lender_master_report() -> pd.DataFrame:
         ln.note_ref, ln.issue_date, ln.principal_amount, ln.total_interest, ln.total_payable,
         ln.total_payable - COALESCE(
             (SELECT SUM(amount) FROM checks_issued
-             WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < DATE('now', 'localtime')), 0
+             WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < manila_today()), 0
         ) AS outstanding_uncleared,
         ln.status
     FROM loan_notes ln
@@ -295,7 +296,7 @@ def get_supplier_history(creditor_id: int):
     master reports."""
     with get_conn(DB_PATH) as conn:
         statements = pd.read_sql_query(
-            "SELECT statement_id, statement_ref, total_amount, status, datetime(created_at, 'localtime') AS created_at "
+            "SELECT statement_id, statement_ref, total_amount, status, datetime(created_at, '+8 hours') AS created_at "
             "FROM order_statements WHERE creditor_id = ? ORDER BY created_at",
             conn, params=(creditor_id,),
         )
@@ -330,12 +331,12 @@ def get_payables_rundown(creditor_id: int | None = None, date_from=None, date_to
     SELECT c.creditor_name AS supplier, b.statement_ref AS batch,
            (SELECT MIN(k.check_date) FROM checks_issued k WHERE k.statement_id = b.statement_id AND k.status = 'Active') AS first_check,
            (SELECT MAX(k.check_date) FROM checks_issued k WHERE k.statement_id = b.statement_id AND k.status = 'Active') AS last_check,
-           (SELECT DATE(os.created_at, 'localtime') FROM order_statements os WHERE os.statement_id = b.statement_id) AS created,
+           (SELECT DATE(os.created_at, '+8 hours') FROM order_statements os WHERE os.statement_id = b.statement_id) AS created,
            b.net_total AS net_total,
            COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = b.statement_id
-                     AND k.status = 'Active' AND k.check_date < DATE('now', 'localtime')), 0) AS paid,
+                     AND k.status = 'Active' AND k.check_date < manila_today()), 0) AS paid,
            COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = b.statement_id
-                     AND k.status = 'Active' AND k.check_date >= DATE('now', 'localtime')), 0) AS scheduled
+                     AND k.status = 'Active' AND k.check_date >= manila_today()), 0) AS scheduled
     FROM v_batch_net_totals b
     JOIN creditors c ON c.creditor_id = b.creditor_id
     WHERE b.status = 'Issued' AND c.creditor_type = 'SUPPLIER'
@@ -415,7 +416,7 @@ def get_lender_history(creditor_id: int):
             """SELECT loan_note_id, note_ref, issue_date, principal_amount, total_interest, total_payable, status,
                       total_payable - COALESCE(
                           (SELECT SUM(amount) FROM checks_issued
-                           WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < DATE('now', 'localtime')), 0
+                           WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < manila_today()), 0
                       ) AS outstanding_uncleared
                FROM loan_notes ln WHERE creditor_id = ? ORDER BY issue_date""",
             conn, params=(creditor_id,),
@@ -451,7 +452,7 @@ def get_bank_loan_history(bank_loan_id: int):
         )
     if not installments.empty:
         installments["status"] = installments["due_date"].apply(
-            lambda d: "Paid" if date.fromisoformat(d) < date.today() else "Outstanding"
+            lambda d: "Paid" if date.fromisoformat(d) < manila_today() else "Outstanding"
         )
     return info, installments
 
@@ -513,7 +514,7 @@ def get_bank_loan_servicing_report() -> pd.DataFrame:
         bl.principal_amount,
         CASE WHEN bl.is_cancelled = 1 THEN 0 ELSE COALESCE(
             (SELECT SUM(amount) FROM bank_loan_installments
-             WHERE bank_loan_id = bl.bank_loan_id AND due_date >= DATE('now', 'localtime')), 0
+             WHERE bank_loan_id = bl.bank_loan_id AND due_date >= manila_today()), 0
         ) END AS outstanding,
         bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, lb.name AS beneficiary, lb.beneficiary_type
     FROM bank_loans bl

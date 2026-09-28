@@ -25,6 +25,7 @@ from engines.check_engine import generate_metrobank_check_pdf
 
 import os
 from engines.common import get_conn
+from engines.clock import manila_now
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 ACCENT = colors.HexColor("#1f3a5f")
@@ -126,8 +127,8 @@ def get_check_print_batches() -> pd.DataFrame:
     history list."""
     with get_conn(DB_PATH) as conn:
         return pd.read_sql_query(
-            "SELECT print_batch_id, datetime(exported_at, 'localtime') AS exported_at, check_count, total_amount, "
-            "datetime(printed_confirmed_at, 'localtime') AS printed_confirmed_at FROM check_print_batches ORDER BY print_batch_id DESC",
+            "SELECT print_batch_id, datetime(exported_at, '+8 hours') AS exported_at, check_count, total_amount, "
+            "datetime(printed_confirmed_at, '+8 hours') AS printed_confirmed_at FROM check_print_batches ORDER BY print_batch_id DESC",
             conn,
         )
 
@@ -233,7 +234,7 @@ def generate_check_run_summary_pdf(check_ids: list[int]) -> bytes:
     title_style = ParagraphStyle("BandTitle", parent=styles["Normal"], textColor=colors.white, fontSize=16, leading=19, fontName="Helvetica-Bold")
     sub_style = ParagraphStyle("BandSub", parent=styles["Normal"], textColor=colors.white, fontSize=9, leading=12, alignment=2)
     band = Table(
-        [[Paragraph("Check Run Summary", title_style), Paragraph(datetime.now().strftime("Printed %B %d, %Y %I:%M %p"), sub_style)]],
+        [[Paragraph("Check Run Summary", title_style), Paragraph(manila_now().strftime("Printed %B %d, %Y %I:%M %p"), sub_style)]],
         colWidths=[CONTENT_WIDTH * 0.5, CONTENT_WIDTH * 0.5],
     )
     band.setStyle(TableStyle([

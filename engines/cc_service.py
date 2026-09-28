@@ -4,6 +4,7 @@ from datetime import date
 
 import pandas as pd
 from engines.common import get_conn
+from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -36,7 +37,7 @@ def get_statement_gap_alerts() -> pd.DataFrame:
         )
     if df.empty:
         return df
-    today = date.today()
+    today = manila_today()
 
     def days_since(d):
         return None if pd.isna(d) else (today - date.fromisoformat(d)).days
@@ -66,7 +67,7 @@ def get_statement_coverage(today: date | None = None) -> pd.DataFrame:
     Depends on statements actually being on file -- last month only shows up once past
     statements have been entered (or backfilled), which is why an OK/Missing verdict is only as
     good as the history behind it."""
-    today = today or date.today()
+    today = today or manila_today()
     this_start = today.replace(day=1)
     prev_start = date(this_start.year - (1 if this_start.month == 1 else 0), 12 if this_start.month == 1 else this_start.month - 1, 1)
     next_start = date(this_start.year + (1 if this_start.month == 12 else 0), 1 if this_start.month == 12 else this_start.month + 1, 1)
@@ -139,7 +140,7 @@ def get_annual_fee_alerts(window_months: int = 2) -> pd.DataFrame:
         )
     if df.empty:
         return df
-    today = date.today()
+    today = manila_today()
     df["months_until_due"] = df["annual_fee_due_month"].apply(lambda m: (int(m) - today.month) % 12)
     df = df[df["months_until_due"] <= window_months].sort_values("months_until_due").reset_index(drop=True)
     df["when"] = df["months_until_due"].apply(lambda n: _MONTH_LABELS.get(n, f"In {n} months"))

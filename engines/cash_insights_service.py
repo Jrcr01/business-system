@@ -25,6 +25,7 @@ import pandas as pd
 
 from engines.reports_service import get_payment_schedule_all_tracks, next_banking_day
 from engines.common import get_conn
+from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 BUFFER_KEY = "cash_buffer"
@@ -114,7 +115,7 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
 def forecast(days: int = 60, today: date | None = None) -> dict:
     """{'start', 'opening', 'as_of', 'stale_days', 'buffer', 'daily': DataFrame(day, money_in, money_out, balance, below_buffer),
     'lowest': (day, balance), 'first_below': day | None}. Starts today from the latest bank balance."""
-    today = today or date.today()
+    today = today or manila_today()
     pos = cash_position()
     if pos is None:
         return {}
@@ -203,7 +204,7 @@ def working_capital(today: date | None = None) -> dict:
     """Cash vs payables: for 7 / 30 / 60 / 90 days ahead -- what is due (same outflows as the forecast), cash cover (balance / due) and
     what is left; days of cash (balance / average daily outflow over the next 30 days); DPO (average days suppliers wait, as on the
     Dashboard)."""
-    today = today or date.today()
+    today = today or manila_today()
     pos = cash_position()
     if pos is None:
         return {}
@@ -231,7 +232,7 @@ def dashboard_bank_summary(today: date | None = None) -> dict | None:
     statement is imported."""
     from engines.bank_statement_service import exceptions, not_yet_cleared, statement_coverage
 
-    today = today or date.today()
+    today = today or manila_today()
     pos = cash_position()
     if pos is None:
         return None

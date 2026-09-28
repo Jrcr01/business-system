@@ -31,6 +31,7 @@ from views.shared import (  # noqa: F401
     date_col,
     MONEY_FORMAT,
 )
+from engines.clock import manila_today
 
 
 def render() -> None:
@@ -63,7 +64,7 @@ def render() -> None:
             # across 5 years of mostly-empty periods -- real scheduled debt, but noise for
             # reading a trend. "All time" is still one click away for whoever wants the full
             # picture (e.g. to see that same long tail explicitly).
-            an_window_today = pd.Timestamp(date.today())
+            an_window_today = pd.Timestamp(manila_today())
             an_window_end_dates = {
                 "Next 1 day": (an_window_today + pd.Timedelta(days=1)).date(),
                 "Next 1 week": (an_window_today + pd.Timedelta(days=7)).date(),

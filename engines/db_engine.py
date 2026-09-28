@@ -3,6 +3,8 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 
+from engines.clock import manila_now, manila_today, sql_now, sql_today  # noqa: F401
+
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 BUSY_TIMEOUT_MS = 10000
@@ -22,6 +24,9 @@ def open_db(db_path: str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_MS / 1000)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    # one clock (Phase F1.3): SQL asks Python for Manila's today / now, never the computer's clock
+    conn.create_function("manila_today", 0, sql_today)
+    conn.create_function("manila_now", 0, sql_now)
     if path not in _WAL_DONE and path != ":memory:" and not str(path).startswith("file::memory:"):
         conn.execute("PRAGMA journal_mode = WAL")     # stored in the file itself: once per file per run is enough
         _WAL_DONE.add(path)
@@ -52,7 +57,7 @@ def promote_draft_statement(statement_id: int, target_status: str) -> str:
         # Only a batch still carrying its DRAFT- placeholder gets a new number. A batch that went back to Draft after an
         # un-park keeps the permanent OS number it already has -- promoting it again must not burn a new one.
         if current_ref.startswith("DRAFT-"):
-            current_year = datetime.now().year
+            current_year = manila_now().year
             prefix = f"{current_year} - OS "
 
             # Take the MAX sequence number actually in use, not "whichever row has the highest

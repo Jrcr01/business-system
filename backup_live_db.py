@@ -22,6 +22,7 @@ import sys
 from datetime import datetime
 
 from db_location import backup_dir, live_db_path
+from engines.clock import manila_now  # noqa: E402  (one clock, Phase F1.3)
 
 DEFAULT_DEST = backup_dir()   # db_location.py: the AP_Backups folder next to the project (Google Drive)
 PREFIX = "ap_disbursement_backup_"
@@ -36,7 +37,7 @@ def backup_code(dest_dir: str, keep: int) -> str:
     if not git or not os.path.isdir(os.path.join(HERE, ".git")):
         return "Code history: skipped (git or the repository not found)."
     os.makedirs(dest_dir, exist_ok=True)
-    out = os.path.join(dest_dir, f"{CODE_PREFIX}{datetime.now():%Y%m%d_%H%M%S}.bundle")
+    out = os.path.join(dest_dir, f"{CODE_PREFIX}{manila_now():%Y%m%d_%H%M%S}.bundle")
     made = subprocess.run([git, "-C", HERE, "bundle", "create", out, "--all"], capture_output=True, text=True)
     if made.returncode != 0 or not os.path.exists(out):
         return f"Code history: NOT saved ({(made.stderr or '').strip()[:200]})"
@@ -61,7 +62,7 @@ def main() -> int:
         print(f"ERROR: no database at {src_path}")
         return 1
     os.makedirs(a.dest, exist_ok=True)
-    out = os.path.join(a.dest, f"{PREFIX}{datetime.now():%Y%m%d_%H%M%S}.db")
+    out = os.path.join(a.dest, f"{PREFIX}{manila_now():%Y%m%d_%H%M%S}.db")
 
     src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
     dst = sqlite3.connect(out)

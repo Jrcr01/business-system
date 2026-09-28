@@ -62,6 +62,7 @@ from views.shared import (  # noqa: F401
     status_badge,
     status_text,
 )
+from engines.clock import manila_today
 
 # The heavy report queries, cached for a minute: switching filters or reports no longer re-runs every query (the Overview alone runs ~40).
 # refresh() -- called after every save in the app -- clears the cache, so a change shows at once.
@@ -159,7 +160,7 @@ def _overview() -> None:
     st.caption("What happened in a day, week, month, quarter or year, compared with the period before it — highlights first, then the numbers behind them. Pick the short version for a quick read or the full one for the detail.")
     ov1, ov2, ov3 = st.columns([2, 2, 2])
     ov_kind = ov1.selectbox("Period", PERIOD_KINDS, index=2, key="rpt_ov_kind")
-    ov_anchor = ov2.date_input("Any date inside the period", value=date.today(), key="rpt_ov_anchor")
+    ov_anchor = ov2.date_input("Any date inside the period", value=manila_today(), key="rpt_ov_anchor")
     ov_version = ov3.radio("Version", ["Short", "Full"], horizontal=True, key="rpt_ov_version")
     ov = c_overview(ov_kind, ov_anchor)
     ov_cur, ov_prev = ov["current"], ov["previous"]
@@ -438,7 +439,7 @@ def _batch_rundown() -> None:
     if not rd_all.empty and rd_all["first_check"].notna().any():
         rd_min, rd_max = date.fromisoformat(rd_all["first_check"].min()), date.fromisoformat(rd_all["last_check"].max())
     else:
-        rd_min = rd_max = date.today()
+        rd_min = rd_max = manila_today()
     rd_from_col, rd_to_col = st.columns(2)
     rd_from = rd_from_col.date_input("From", value=rd_min, key=f"rpt_rundown_from_{rd_choice}", help="Batches with a check dated on or after this day.")
     rd_to = rd_to_col.date_input("To", value=rd_max, key=f"rpt_rundown_to_{rd_choice}", help="Batches with a check dated on or before this day. Amounts shown are for the whole batch.")
@@ -689,7 +690,7 @@ def _aging() -> None:
                 "Supplier AP aging", "All suppliers",
                 ["Supplier", "Open", "Total unpaid", "Current", "1-30 days", "31-60 days", "60+ days"],
                 [[r.supplier_name, int(r.open_invoices), _pdf_money(r.total_unpaid), _pdf_money(r.current_due), _pdf_money(r.days_1_30), _pdf_money(r.days_31_60), _pdf_money(r.days_over_60)] for r in aging_df.itertuples()],
-                [0.32, 0.07, 0.14, 0.12, 0.12, 0.12, 0.11], [1, 2, 3, 4, 5, 6], [], f"As of {date.today()}",
+                [0.32, 0.07, 0.14, 0.12, 0.12, 0.12, 0.11], [1, 2, 3, 4, 5, 6], [], f"As of {manila_today()}",
             ),
             "supplier_ap_aging.pdf", key="aging_pdf_download", label="Supplier AP Aging PDF",
         )
@@ -709,7 +710,7 @@ def _lender_master() -> None:
                 "Private lender exposure", "All private lenders",
                 ["Lender", "Note", "Issue date", "Principal", "Interest", "Total payable", "Outstanding", "Status"],
                 [[r.lender_name, r.note_ref, str(r.issue_date)[:10], _pdf_money(r.principal_amount), _pdf_money(r.total_interest), _pdf_money(r.total_payable), _pdf_money(r.outstanding_uncleared), r.status] for r in df.itertuples()],
-                [0.2, 0.13, 0.09, 0.11, 0.1, 0.12, 0.11, 0.14], [3, 4, 5, 6], [], f"As of {date.today()}",
+                [0.2, 0.13, 0.09, 0.11, 0.1, 0.12, 0.11, 0.14], [3, 4, 5, 6], [], f"As of {manila_today()}",
             ),
             "private_lender_exposure.pdf", key="lender_master_pdf_download", label="Private Lender Exposure PDF",
         )
@@ -729,7 +730,7 @@ def _bank_loan_master() -> None:
                 "Bank loan servicing", "All bank loans",
                 ["Bank", "Loan ref", "Start", "Maturity", "Principal", "Outstanding", "Status"],
                 [[r.bank_name, r.loan_ref, str(r.start_date or "—")[:10], str(r.maturity_date or "—")[:10], _pdf_money(r.principal_amount) if pd.notna(r.principal_amount) else "—", _pdf_money(r.outstanding), r.status] for r in df.itertuples()],
-                [0.16, 0.32, 0.09, 0.09, 0.12, 0.12, 0.10], [4, 5], [], f"As of {date.today()}",
+                [0.16, 0.32, 0.09, 0.09, 0.12, 0.12, 0.10], [4, 5], [], f"As of {manila_today()}",
             ),
             "bank_loan_servicing.pdf", key="bl_master_pdf_download", label="Bank Loan Servicing PDF",
         )

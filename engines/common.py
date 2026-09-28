@@ -11,6 +11,7 @@ import sqlite3
 from datetime import date
 from datetime import datetime
 from engines.db_engine import df_query, open_db
+from engines.clock import manila_today
 
 
 # AP_DB_PATH override lets a separate process point at a different database (e.g. the Phase 8a
@@ -90,7 +91,7 @@ def prospective_year(month: int, today: date | None = None) -> int:
     """The year a picked month is assumed to belong to, looking forward from today (2026-09-26, per user): from September,
     picking January means January of NEXT year, picking November means this year. A month that is still ahead (or the
     current one) stays in this year; one already behind us rolls to the next. The year picker can still override it."""
-    today = today or date.today()
+    today = today or manila_today()
     return today.year if month >= today.month else today.year + 1
 
 

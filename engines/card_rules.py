@@ -9,6 +9,7 @@ import sqlite3
 from datetime import date
 from engines.validators import money_amount_error
 from engines.common import get_conn, php, q_live
+from engines.clock import manila_today
 
 
 def add_cardholder(name: str, department: str, contact_number: str) -> int:
@@ -152,7 +153,7 @@ def get_default_statement_month(card_id: int) -> tuple[int, int]:
             "SELECT MAX(COALESCE(statement_month, SUBSTR(due_date, 1, 7))) FROM cc_statements WHERE card_id = ?", (card_id,)
         ).fetchone()
     if not row or not row[0]:
-        today = date.today()
+        today = manila_today()
         return today.year, today.month
     year, month = int(row[0][:4]), int(row[0][5:7])
     return (year + 1, 1) if month == 12 else (year, month + 1)

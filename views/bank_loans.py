@@ -47,6 +47,7 @@ from views.shared import (  # noqa: F401
     status_badge,
     status_text,
 )
+from engines.clock import manila_today
 
 
 def render_new_bank_loan_form() -> None:
@@ -83,8 +84,8 @@ def render_new_bank_loan_form() -> None:
                 help='Whose loan this is in practice (a person or company). Shown with the loan in reports; optional.',
             )
         c1, c2, c3 = st.columns(3)
-        bl_start = c1.date_input("Start date", value=date.today())
-        bl_maturity = c2.date_input("Maturity date", value=date.today())
+        bl_start = c1.date_input("Start date", value=manila_today())
+        bl_maturity = c2.date_input("Maturity date", value=manila_today())
         bl_repricing = c3.date_input("Repricing date (optional)", value=None, help='When the bank may change the interest rate (from the loan document) — for your reference.')
         bl_principal = st.number_input("Principal amount (original loan amount)", min_value=0.0, step=10000.0, help='The original amount borrowed. The monthly dues come from the schedule you enter or import, not from this.')
         bl_mode_of_payment = st.text_input("Mode of payment (informational only, from the bank's document)", value="ADA")
@@ -129,7 +130,7 @@ def render_bank_loan_schedule(selected_blid: int) -> None:
     )
     if not bl_schedule_df.empty:
         bl_schedule_df["due_date"] = pd.to_datetime(bl_schedule_df["due_date"]).dt.date
-        bl_schedule_df["status"] = bl_schedule_df["due_date"].apply(lambda d: "Paid" if d < date.today() else "Pending")
+        bl_schedule_df["status"] = bl_schedule_df["due_date"].apply(lambda d: "Paid" if d < manila_today() else "Pending")
 
     bl_import_staged_key = f"bl_import_staged_{selected_blid}"
     bl_import_errors_key = f"bl_import_errors_{selected_blid}"
@@ -273,7 +274,7 @@ def render() -> None:
                   bl.principal_amount,
                   CASE WHEN bl.is_cancelled = 1 THEN 0 ELSE COALESCE(
                       (SELECT SUM(amount) FROM bank_loan_installments
-                       WHERE bank_loan_id = bl.bank_loan_id AND due_date >= DATE('now', 'localtime')), 0
+                       WHERE bank_loan_id = bl.bank_loan_id AND due_date >= manila_today()), 0
                   ) END AS outstanding,
                   bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, bl.is_cancelled, lb.name AS beneficiary, lb.beneficiary_type, bl.beneficiary_id,
                   """ + bank_loan_modified_sql("bl") + """ AS last_modified
