@@ -10,7 +10,8 @@ import sqlite3
 
 from datetime import date
 from datetime import datetime
-from engines.db_engine import df_query, open_db
+from engines.db_engine import df_query, next_doc_number, open_db
+from engines.db_engine import write_tx as _write_tx
 from engines.clock import manila_today
 
 
@@ -26,6 +27,11 @@ def get_conn(db_path: str | None = None) -> sqlite3.Connection:
     """A connection through the one door (engines/db_engine.open_db: foreign keys, busy timeout, WAL). `db_path` defaults to this
     module's DB_PATH; other modules pass their own DB_PATH."""
     return open_db(db_path or DB_PATH)
+
+
+def write_tx(db_path: str | None = None):
+    """One locked step (engines/db_engine.write_tx) on this module's database -- use for every check-then-save."""
+    return _write_tx(db_path or DB_PATH)
 
 
 def q_live(sql: str, params: tuple = ()) -> pd.DataFrame:

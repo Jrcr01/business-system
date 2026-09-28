@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from contextlib import contextmanager
 import pandas as pd
 from datetime import datetime
 
@@ -33,6 +34,40 @@ def open_db(db_path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
+
+@contextmanager
+def write_tx(db_path: str | None = None):
+    """ONE locked step for anything that checks and then saves (Phase F1.4, 2026-09-28): BEGIN IMMEDIATE takes the write lock FIRST, so
+    the check (e.g. "is there still room in this batch?") and the save happen together -- a second person's save waits (busy_timeout)
+    until this one is finished, then sees its result. Commits at the end, rolls back on an error. Code inside must NOT call
+    conn.commit() (it would end the locked step early). Reads through other connections inside the step are fine (WAL: they see
+    everything saved before the lock was taken, and nobody else can save in between)."""
+    conn = open_db(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        yield conn
+        if conn.in_transaction:
+            conn.commit()
+    except BaseException:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def next_doc_number(conn: sqlite3.Connection, series: str, year: int, in_use: int = 0) -> int:
+    """The next permanent number of a series ('OS' batches, 'LN' loan notes) for a year, from the doc_counters table -- never
+    "highest existing + 1" read outside a lock (two people promoting at once could get the same number). Call it inside write_tx().
+    `in_use` = the highest number already on file: the counter never goes below it (numbers made before the counter existed, or
+    typed in by hand), and a number is never reused even if its batch is later deleted."""
+    row = conn.execute("SELECT last_no FROM doc_counters WHERE series = ? AND year = ?", (series, int(year))).fetchone()
+    nxt = max(int(row[0]) if row else 0, int(in_use)) + 1
+    conn.execute("""INSERT INTO doc_counters (series, year, last_no) VALUES (?, ?, ?)
+                    ON CONFLICT (series, year) DO UPDATE SET last_no = excluded.last_no""", (series, int(year), nxt))
+    return nxt
+
+
 def df_query(sql_query: str, params: tuple = ()) -> pd.DataFrame:
     """Executes SQL query and returns a Pandas DataFrame with NULLs coerced to empty strings."""
     with open_db(DB_PATH) as conn:
@@ -44,7 +79,7 @@ def promote_draft_statement(statement_id: int, target_status: str) -> str:
     if target_status not in ('Issued',):
         raise ValueError("Target status must be 'Issued'.")
 
-    with open_db(DB_PATH) as conn:
+    with write_tx(DB_PATH) as conn:                  # Phase F1.4: read, number and save in ONE locked step
         cursor = conn.cursor()
         cursor.execute("SELECT statement_ref, status FROM order_statements WHERE statement_id = ?", (statement_id,))
         row = cursor.fetchone()
@@ -68,7 +103,7 @@ def promote_draft_statement(statement_id: int, target_status: str) -> str:
             # producing a ref collision (UNIQUE constraint failed) on the very next promotion.
             cursor.execute("SELECT statement_ref FROM order_statements WHERE statement_ref LIKE ?", (f"{prefix}%",))
             existing_seqs = [int(suffix) for (ref,) in cursor.fetchall() if (suffix := ref.replace(prefix, "").strip()).isdigit()]
-            next_seq = max(existing_seqs) + 1 if existing_seqs else 1
+            next_seq = next_doc_number(conn, "OS", current_year, max(existing_seqs, default=0))   # counter, never reused
 
             permanent_ref = f"{prefix}{next_seq:04d}"
 
@@ -82,5 +117,4 @@ def promote_draft_statement(statement_id: int, target_status: str) -> str:
             "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('STATEMENT_PROMOTED', 'order_statements', ?, ?)",
             (statement_id, f"{current_ref} -> {permanent_ref} ({target_status})"),
         )
-        conn.commit()
-        return permanent_ref
+    return permanent_ref

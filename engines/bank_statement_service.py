@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 import db_location
-from engines.common import get_conn
+from engines.common import get_conn, write_tx
 from engines.clock import manila_now
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
@@ -396,7 +396,16 @@ def import_statement(data: bytes, filename: str, bank_account_id: int = 1, keep_
         with open(stored_path, "wb") as f:
             f.write(data)
     new = dup = 0
-    with _conn() as conn:
+    with write_tx(DB_PATH) as conn:          # Phase F1.4: "already imported?" and the save in ONE locked step
+        conn.row_factory = sqlite3.Row
+        again = conn.execute("SELECT import_id, datetime(imported_at, '+8 hours') AS imported_at FROM bank_statement_imports WHERE file_hash = ?",
+                             (file_hash,)).fetchone()
+        if again:                                                         # someone imported the same file a moment ago
+            if stored_path and os.path.exists(stored_path):
+                os.remove(stored_path)
+            return {"already_imported": True, "import_id": again["import_id"], "imported_at": again["imported_at"], "new_lines": 0,
+                    "duplicate_lines": 0, "matched": 0, "exceptions": 0,
+                    "messages": [f"This exact file was already imported on {again['imported_at'][:16]}."]}
         cur = conn.execute("""INSERT INTO bank_statement_imports (bank_account_id, file_name, file_hash, stored_path, account_last4, period_from,
                                   period_to, opening_balance, closing_balance, line_count, balance_ok) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                            (bank_account_id, filename, file_hash, stored_path, parsed.account_number[-4:] or None,

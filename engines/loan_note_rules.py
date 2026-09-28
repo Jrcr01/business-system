@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date
 from datetime import datetime
 from engines.validators import money_amount_error
-from engines.common import get_conn
+from engines.common import get_conn, next_doc_number, write_tx
 from engines.statement_rules import new_draft_ref
 from engines.check_rules import cancel_check
 from engines.clock import manila_now
@@ -39,23 +39,20 @@ def create_loan_note(creditor_id: int, issue_date: date, principal_amount: float
         return False, err, None
     if monthly_interest_rate < 0:
         return False, "Monthly interest rate cannot be negative.", None
-    note_ref = new_draft_ref("loan_notes", "note_ref")
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute(
+    with write_tx() as conn:          # Phase F1.4: pick the draft ref and save it in ONE locked step
+        note_ref = new_draft_ref("loan_notes", "note_ref", conn)
+        loan_note_id = conn.execute(
             """INSERT INTO loan_notes (creditor_id, note_ref, issue_date, principal_amount, monthly_interest_rate, total_interest, total_payable, status)
-               VALUES (?, ?, ?, ?, ?, 0, ?, 'Active')""",
+               VALUES (?, ?, ?, ?, ?, 0, ?, 'Active') RETURNING loan_note_id""",
             (creditor_id, note_ref, str(issue_date), principal_amount, monthly_interest_rate, principal_amount),
-        )
-        loan_note_id = cur.lastrowid
-        conn.commit()
-        return True, "Draft loan note created.", loan_note_id
+        ).fetchone()[0]
+    return True, "Draft loan note created.", loan_note_id
 
 
 def promote_draft_loan_note(loan_note_id: int) -> str:
     """Assigns a permanent "YYYY - LN XXXX" sequence number if the note is still on its
     DRAFT- placeholder ref — same numbering scheme as promote_draft_statement()."""
-    with get_conn() as conn:
+    with write_tx() as conn:                          # Phase F1.4: read, number and save in ONE locked step
         cur = conn.cursor()
         cur.execute("SELECT note_ref FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
         row = cur.fetchone()
@@ -71,11 +68,10 @@ def promote_draft_loan_note(loan_note_id: int) -> str:
         # yield a lower sequence number than one already assigned elsewhere, colliding on UNIQUE.
         cur.execute("SELECT note_ref FROM loan_notes WHERE note_ref LIKE ?", (f"{prefix}%",))
         existing_seqs = [int(suffix) for (ref,) in cur.fetchall() if (suffix := ref.replace(prefix, "").strip()).isdigit()]
-        next_seq = max(existing_seqs) + 1 if existing_seqs else 1
+        next_seq = next_doc_number(conn, "LN", manila_now().year, max(existing_seqs, default=0))   # counter, never reused
         permanent_ref = f"{prefix}{next_seq:04d}"
         cur.execute("UPDATE loan_notes SET note_ref = ? WHERE loan_note_id = ?", (permanent_ref, loan_note_id))
-        conn.commit()
-        return permanent_ref
+    return permanent_ref
 
 
 def update_loan_note_status(loan_note_id: int, status: str) -> tuple[bool, str]:

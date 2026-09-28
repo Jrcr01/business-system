@@ -430,7 +430,17 @@ the Stale rule, which used UTC) and `v_cc_due_alerts` use the functions -- migra
 can only be read through the program (an outside SQLite viewer lacks the functions). Tests that read views must use `get_conn`.
 Tests `tests/test_one_clock.py` (clock pinned to 07:30 Manila 2030-01-15: due-today, bank-loan cleared rule, aging, planner; no code
 reads the computer clock).
-Next: F1.4 safe writes + `doc_counters`, F1.5 `audit_logs.user_email`.*
+**F1.4 done** -- safe writes: `db_engine.write_tx(path)` / `common.write_tx()` = ONE locked step (`BEGIN IMMEDIATE` ... commit, rollback
+on error; code inside must not call `conn.commit()`). Converted: `issue_check`, `issue_checks_grid` (payable ceiling now inside the lock),
+`apply_check_correction`, `allocate_check_to_invoices`, `assign_check_number`, `assign_check_numbers_from_booklet` / `_manual`,
+`retract_check_number`, `lock_statement`, `create_order_statement` / `create_loan_note` (draft ref picked inside the lock:
+`new_draft_ref(..., conn)`), `promote_draft_statement` / `promote_draft_loan_note`, bank `import_statement` (re-checks "already imported"
+inside the lock). Numbering: table `doc_counters` (series 'OS' / 'LN', year, last_no; migration 055) via
+`db_engine.next_doc_number(conn, series, year, in_use)` = max(counter, highest on file) + 1 -- never reused. New / touched INSERTs use
+`RETURNING`. Proof: the old code (main), two PHP 800 checks at once on a PHP 1,000 batch -> both issued (PHP 1,600); new code -> one
+refused. Tests `tests/test_safe_writes.py` (real threads, a pause injected between check and save). Known, left as is: some
+multi-row functions `return False` part-way inside the step and so keep the rows saved before it (same as before F1.4).
+Next: F1.5 `audit_logs.user_email`.*
 * Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
   `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
 * Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes

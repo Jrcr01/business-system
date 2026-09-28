@@ -21,7 +21,7 @@ try:
     from pypdf import PdfReader, PdfWriter
 except ImportError:  # same guard as app.py had: the dual-copy check PDF is simply unavailable without pypdf
     PdfReader = PdfWriter = None
-from engines.common import PRIMARY_BANK_ACCOUNT_ID, get_conn, php, q_live
+from engines.common import PRIMARY_BANK_ACCOUNT_ID, get_conn, php, q_live, write_tx
 from engines.statement_rules import _batch_lock_status, get_batch_balance, sync_invoice_payment_status
 
 
@@ -82,7 +82,7 @@ def allocate_check_to_invoices(check_id: int, allocations: list[tuple[int, float
     every check issued from here on (2026-09-14, migration 025). Re-validates against each
     invoice's live remaining balance even though the UI already enforces it, since this is the
     actual write path."""
-    with get_conn() as conn:
+    with write_tx() as conn:          # Phase F1.4: check and save in ONE locked step
         for invoice_id, amount in allocations:
             if amount <= 0.005:
                 continue
@@ -99,12 +99,11 @@ def allocate_check_to_invoices(check_id: int, allocations: list[tuple[int, float
                 "INSERT INTO invoice_check_allocations (invoice_id, check_id, amount) VALUES (?, ?, ?)",
                 (invoice_id, check_id, round(amount, 2)),
             )
-        conn.commit()
     return True, "Allocated."
 
 
 def apply_check_correction(check_id: int, correction_type: str, new_value: str, reason: str) -> tuple[bool, str]:
-    with get_conn() as conn:
+    with write_tx() as conn:          # Phase F1.4: check and save in ONE locked step
         cur = conn.cursor()
         cur.execute(
             "SELECT statement_id, loan_note_id, status, amount, check_date, bank_account_id, check_number, printed_at FROM checks_issued WHERE check_id = ?",
@@ -186,7 +185,6 @@ def apply_check_correction(check_id: int, correction_type: str, new_value: str, 
             "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_CORRECTION', 'checks_issued', ?, ?)",
             (check_id, f"{correction_type}: {old_value} -> {new_value} ({reason or 'no reason given'})"),
         )
-        conn.commit()
     if correction_type == "Amount" and statement_id is not None:
         sync_invoice_payment_status(statement_id)
     return True, "Correction applied and logged."
@@ -207,7 +205,7 @@ def assign_check_number(check_id: int, booklet_id: int | None, chosen_number: in
     all) and needs no unlock: filling in a still-missing number isn't a correction to an existing
     value, so it doesn't need that workflow's audit friction. Once a number exists, changing it
     goes through apply_check_correction() instead (locked)."""
-    with get_conn() as conn:
+    with write_tx() as conn:          # Phase F1.4: check and save in ONE locked step
         cur = conn.cursor()
         cur.execute(
             "SELECT bank_account_id, check_number, status FROM checks_issued WHERE check_id = ?",
@@ -239,7 +237,6 @@ def assign_check_number(check_id: int, booklet_id: int | None, chosen_number: in
             "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_NUMBER_ASSIGNED', 'checks_issued', ?, ?)",
             (check_id, f"Assigned check number {check_number}" + (" (from booklet)" if booklet_id else " (manual)")),
         )
-        conn.commit()
     return True, f"Check number {check_number} assigned."
 
 
@@ -285,7 +282,7 @@ def assign_check_numbers_from_booklet(assignments: list[tuple[int, int]], bookle
     if not assignments:
         return False, "Nothing to assign.", []
     try:
-        with get_conn() as conn:
+        with write_tx() as conn:          # Phase F1.4: check and save in ONE locked step
             cur = conn.cursor()
             brow = _booklet_row_dict(cur, booklet_id)
             if not brow:
@@ -305,7 +302,6 @@ def assign_check_numbers_from_booklet(assignments: list[tuple[int, int]], bookle
                     (check_id, f"Assigned check number {number} (bulk, booklet {booklet_id})"),
                 )
                 done.append(check_id)
-            conn.commit()
     except _BulkAssignError as e:
         return False, f"{e} Nothing was assigned.", []
     except sqlite3.IntegrityError as e:          # the database's own duplicate-number rule
@@ -331,7 +327,7 @@ def assign_check_numbers_manual(assignments: dict[int, str], booklet_id: int | N
         seen.add(num)
 
     assigned_ids = []
-    with get_conn() as conn:
+    with write_tx() as conn:          # Phase F1.4: check and save in ONE locked step
         cur = conn.cursor()
         for check_id, raw in assignments.items():
             cur.execute("SELECT bank_account_id FROM checks_issued WHERE check_id = ? AND status = 'Active' AND check_number IS NULL", (check_id,))
@@ -347,7 +343,6 @@ def assign_check_numbers_manual(assignments: dict[int, str], booklet_id: int | N
                 (check_id, f"Assigned check number {check_number} (manual/backfill)"),
             )
             assigned_ids.append(check_id)
-        conn.commit()
     return True, f"Assigned check numbers to {len(assigned_ids)} check(s).", assigned_ids
 
 
@@ -614,42 +609,42 @@ def issue_check(
     separately, whenever it's actually known (see assign_check_number()), independent of
     printing. Every check still belongs to a batch and is fully recorded the moment it's issued,
     same as before; only the number is deferred."""
-    # Hard rule: a check can never be issued for more than what's actually payable.
-    if installment_id is not None:
-        inst_row = q_live("SELECT principal, interest FROM loan_installments WHERE installment_id = ?", (installment_id,))
-        if not inst_row.empty:
-            payable = float(inst_row["principal"][0]) + float(inst_row["interest"][0])
-            if amount > payable + 0.005:
-                return False, f"Amount {php(amount)} exceeds this installment's payable of {php(payable)}.", None
-    elif loan_note_id is not None:
-        note_row = q_live("SELECT total_payable FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
-        if not note_row.empty:
-            active_sum_row = q_live("SELECT COALESCE(SUM(amount),0) AS s FROM checks_issued WHERE loan_note_id = ? AND status='Active'", (loan_note_id,))
-            total_payable = float(note_row["total_payable"][0])
-            active_sum = float(active_sum_row["s"][0])
-            if active_sum + amount > total_payable + 0.005:
-                return False, f"Amount would push total checks issued to {php(active_sum + amount)}, exceeding this loan's total payable of {php(total_payable)}.", None
-    elif statement_id is not None:
-        net_total, active_sum, remaining = get_batch_balance(statement_id)
-        if amount > remaining + 0.005:
-            return False, f"Amount {php(amount)} exceeds the batch's remaining balance of {php(remaining)}.", None
-
-    with get_conn() as conn:
+    # Phase F1.4: the payable-ceiling check and the save are ONE locked step -- two people issuing on the same batch at the same moment
+    # can never both pass the check and overpay it (the second waits, then sees the first check).
+    with write_tx() as conn:
         cur = conn.cursor()
-        cur.execute(
+        # Hard rule: a check can never be issued for more than what's actually payable.
+        if installment_id is not None:
+            inst_row = cur.execute("SELECT principal, interest FROM loan_installments WHERE installment_id = ?", (installment_id,)).fetchone()
+            if inst_row:
+                payable = float(inst_row[0]) + float(inst_row[1])
+                if amount > payable + 0.005:
+                    return False, f"Amount {php(amount)} exceeds this installment's payable of {php(payable)}.", None
+        elif loan_note_id is not None:
+            note_row = cur.execute("SELECT total_payable FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,)).fetchone()
+            if note_row:
+                active_sum = float(cur.execute("SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE loan_note_id = ? AND status = 'Active'",
+                                               (loan_note_id,)).fetchone()[0])
+                total_payable = float(note_row[0])
+                if active_sum + amount > total_payable + 0.005:
+                    return False, f"Amount would push total checks issued to {php(active_sum + amount)}, exceeding this loan's total payable of {php(total_payable)}.", None
+        elif statement_id is not None:
+            net_total, active_sum, remaining = get_batch_balance(statement_id)
+            if amount > remaining + 0.005:
+                return False, f"Amount {php(amount)} exceeds the batch's remaining balance of {php(remaining)}.", None
+
+        check_id = cur.execute(
             """INSERT INTO checks_issued
                (creditor_id, bank_account_id, statement_id, loan_note_id, check_number, check_date, amount, status)
-               VALUES (?, ?, ?, ?, NULL, ?, ?, 'Active')""",
+               VALUES (?, ?, ?, ?, NULL, ?, ?, 'Active') RETURNING check_id""",
             (creditor_id, bank_account_id, statement_id, loan_note_id, str(check_date), amount),
-        )
-        check_id = cur.lastrowid
+        ).fetchone()[0]
         cur.execute(
             "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_ISSUED', 'checks_issued', ?, ?)",
             (check_id, f"Parked check for {php(amount)} to creditor {creditor_id} — number to be assigned at print time"),
         )
         if installment_id is not None:
             mark_installment_active(cur, installment_id, check_id)
-        conn.commit()
     if statement_id is not None:
         sync_invoice_payment_status(statement_id)
     return True, f"Check parked for {php(amount)} — pending (number assigned when printed).", check_id
@@ -674,28 +669,26 @@ def issue_checks_grid(
     if not cleaned:
         return False, "No check rows to issue.", None
 
-    # Hard rule: this batch of checks can never push total active checks past the net total.
-    net_total, active_sum, remaining = get_batch_balance(statement_id)
-    grid_total = sum(r["amount"] for r in cleaned)
-    if grid_total > remaining + 0.005:
-        return False, f"These checks total {php(grid_total)}, exceeding the batch's remaining balance of {php(remaining)}.", None
-
-    with get_conn() as conn:
+    # Phase F1.4: the ceiling check and the saves are ONE locked step (see issue_check).
+    with write_tx() as conn:
+        # Hard rule: this batch of checks can never push total active checks past the net total.
+        net_total, active_sum, remaining = get_batch_balance(statement_id)
+        grid_total = sum(r["amount"] for r in cleaned)
+        if grid_total > remaining + 0.005:
+            return False, f"These checks total {php(grid_total)}, exceeding the batch's remaining balance of {php(remaining)}.", None
         cur = conn.cursor()
         check_ids = []
         for r in cleaned:
-            cur.execute(
+            check_ids.append(cur.execute(
                 """INSERT INTO checks_issued
                    (creditor_id, bank_account_id, statement_id, loan_note_id, check_number, check_date, amount, status)
-                   VALUES (?, ?, ?, NULL, NULL, ?, ?, 'Active')""",
+                   VALUES (?, ?, ?, NULL, NULL, ?, ?, 'Active') RETURNING check_id""",
                 (creditor_id, bank_account_id, statement_id, str(r["check_date"]), r["amount"]),
-            )
-            check_ids.append(cur.lastrowid)
+            ).fetchone()[0])
             cur.execute(
                 "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_ISSUED', 'checks_issued', ?, ?)",
                 (check_ids[-1], f"Parked check for {php(r['amount'])} to creditor {creditor_id} — number to be assigned at print time"),
             )
-        conn.commit()
 
     sync_invoice_payment_status(statement_id)
     total = sum(r["amount"] for r in cleaned)
@@ -848,7 +841,7 @@ def retract_check_number(check_id: int) -> tuple[bool, str]:
     came from a booklet, that leaf becomes available again (no false gap) and the booklet's next-number pointer
     steps back over the freed leaves. Logged in the audit trail. Refused for a locked batch (unlock it first),
     the same rule as any other correction to an existing check value."""
-    with get_conn() as conn:
+    with write_tx() as conn:          # Phase F1.4: check and save in ONE locked step
         cur = conn.cursor()
         cur.execute("SELECT check_number, booklet_id, status, statement_id, bank_account_id FROM checks_issued WHERE check_id = ?", (check_id,))
         row = cur.fetchone()
@@ -882,7 +875,6 @@ def retract_check_number(check_id: int) -> tuple[bool, str]:
             "INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values, new_values) VALUES ('CHECK_NUMBER_RETRACTED', 'checks_issued', ?, ?, ?)",
             (check_id, f"check_number {number}", "number removed" + (" (booklet leaf returned)" if booklet_id else "") + pointer_note),
         )
-        conn.commit()
     return True, f"Number {number} retracted" + (" — the booklet leaf is available again." if booklet_id else ".")
 
 

@@ -14,7 +14,7 @@ from datetime import datetime
 from datetime import timedelta
 from engines.validators import calculate_trade_discount
 from engines.validators import detect_invoice_anomalies
-from engines.common import _as_date, cell_text, get_conn, php, q_live
+from engines.common import _as_date, cell_text, get_conn, php, q_live, write_tx
 from engines.clock import manila_now
 
 
@@ -105,15 +105,12 @@ def confirm_credit_memos(statement_id: int) -> bool:
 def create_order_statement(creditor_id: int) -> int:
     """Creates a Draft batch from a supplier alone. total_amount always starts at 0 and is
     never manually entered — it is recalculated from linked invoices (see recompute_statement_total)."""
-    ref = new_draft_ref("order_statements", "statement_ref")
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO order_statements (creditor_id, statement_ref, total_amount, status) VALUES (?, ?, 0.0, 'Draft')",
+    with write_tx() as conn:          # Phase F1.4: pick the draft ref and save it in ONE locked step (two at once never clash)
+        ref = new_draft_ref("order_statements", "statement_ref", conn)
+        return conn.execute(
+            "INSERT INTO order_statements (creditor_id, statement_ref, total_amount, status) VALUES (?, ?, 0.0, 'Draft') RETURNING statement_id",
             (creditor_id, ref),
-        )
-        conn.commit()
-        return cur.lastrowid
+        ).fetchone()[0]
 
 
 def delete_credit_memo(credit_memo_id: int) -> tuple[bool, str]:
@@ -358,17 +355,16 @@ def get_invoices_with_remaining(statement_id: int) -> pd.DataFrame:
 def lock_statement(statement_id: int) -> tuple[bool, str]:
     """Hard rule: a batch can never be locked while its active checks exceed the net total —
     overpayment must be corrected (or the offending check cancelled) first, not locked past."""
-    net_total, active_sum, remaining = get_batch_balance(statement_id)
-    if remaining < -0.005:
-        return False, f"Cannot lock — checks issued ({php(active_sum)}) exceed the net total ({php(net_total)}) by {php(-remaining)}. Correct or cancel a check first."
-    with get_conn() as conn:
+    with write_tx() as conn:          # Phase F1.4: the overpaid check and the lock in ONE locked step
+        net_total, active_sum, remaining = get_batch_balance(statement_id)
+        if remaining < -0.005:
+            return False, f"Cannot lock — checks issued ({php(active_sum)}) exceed the net total ({php(net_total)}) by {php(-remaining)}. Correct or cancel a check first."
         cur = conn.cursor()
         cur.execute("UPDATE order_statements SET is_locked = 1 WHERE statement_id = ?", (statement_id,))
         cur.execute(
             "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BATCH_LOCKED', 'order_statements', ?, ?)",
             (statement_id, "Batch re-locked"),
         )
-        conn.commit()
     # Thermal statement printing, step 3: edited after an unlock and re-locked -> a new statement version, and "Needs reprint" if an
     # earlier version was already printed. Imported here (not at the top) to avoid a circular import.
     from engines.statement_version_service import on_relock
@@ -377,12 +373,16 @@ def lock_statement(statement_id: int) -> tuple[bool, str]:
     return True, "Batch locked."
 
 
-def new_draft_ref(table: str, column: str) -> str:
+def new_draft_ref(table: str, column: str, conn=None) -> str:
     """Short draft reference in the form DRAFT-YY-MM-NN, e.g. DRAFT-26-09-01, DRAFT-26-09-02 -- the
-    year, the month, then a running number that restarts each month."""
+    year, the month, then a running number that restarts each month. Pass the caller's write_tx() connection so the ref is picked
+    and saved in one locked step (Phase F1.4)."""
     prefix = f"DRAFT-{manila_now().strftime('%y-%m')}-"
-    with get_conn() as conn:
+    if conn is not None:
         used = [r[0][len(prefix):] for r in conn.execute(f"SELECT {column} FROM {table} WHERE {column} LIKE ?", (prefix + "%",))]
+    else:
+        with get_conn() as own:
+            used = [r[0][len(prefix):] for r in own.execute(f"SELECT {column} FROM {table} WHERE {column} LIKE ?", (prefix + "%",))]
     highest = max((int(x) for x in used if x.isdigit()), default=0)
     return f"{prefix}{highest + 1:02d}"
 
