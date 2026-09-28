@@ -53,6 +53,9 @@ follows unchanged below.
 * **[AP] Mother's cleared-check page** (owner, 2026-09-28): she checks cleared checks by pen and paper against the passbook / bank
   statement and wants a phone, not a laptop. Planned: role Checker, phone page with checks due, tap Cleared (provisional, confirmed or
   flagged by the bank statement import); only after the server step (F3).
+* **[Foundation] Mobile version** (owner, 2026-09-28): responsive + home-screen app (PWA), not a native app. Phone uses: mother ticks
+  cleared checks; owner approvals + dashboard + enter a new credit card statement; brother price / customer lookup and records sales
+  and collections. Needs the server (F3); every mock-up shows the phone layout.
 * **[Sales] Revenue cycle as practiced** (owner, 2026-09-28; started from a standard cycle, owner marked it up): credit is the
   owner's judgement for loyal customers, no limits (alerts instead); prices vary per customer and are agreed verbally, even at a loss
   to keep a customer -> record, don't block, review below-cost; sales invoice booklet; goods may leave before the invoice -> invoiced

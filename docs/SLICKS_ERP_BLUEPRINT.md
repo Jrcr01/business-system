@@ -100,6 +100,8 @@ A **security checklist** is run before every release, and the whole setup is rev
 ## 5. UI — professional yet functional
 
 **Decided:** one look across all modules; the owner (the UI person) approves a **mock-up of every new screen before it is built**.
+**Mobile (2026-09-28):** every page works on a phone (responsive) and the ERP installs as a home-screen app (PWA); mock-ups show
+the phone layout too.
 
 * **Layout:** left sidebar grouped by module; top bar with global search, alerts and the signed-in user; each page with a clear
   heading, key-number cards, then the working area.
@@ -308,6 +310,16 @@ parallel run (S5) once the system's daily totals and profit match it.
   marks the check cleared on that date right away (Schedule of payments and cash figures update); the bank statement import then
   confirms it, and a different date or amount is flagged for the owner — the bank statement stays the final truth. Access only once
   the ERP is on the server (F3), with her own login and 2-step verification (she does not want to use a laptop).
+
+* **Mobile version of the ERP** (owner 2026-09-28): **responsive pages + a home-screen app (PWA)** — the same ERP, laid out for
+  phones where it matters, installable as an icon; no native app, no app store; same login, roles and security. Needs the server
+  step (F3). On the phone:
+  * **Mother (Checker):** tick cleared checks (above).
+  * **Owner:** approvals (voids, write-offs, credit) and the dashboard (today's sales, cash, AR, checks due, audit alerts); **enter a new
+    credit card statement** from the phone when it arrives.
+  * **Brother (Sales):** price / cost / stock and customer-balance lookup; **record sales and collections** (with check details) from
+    the phone, besides the Excel form on the laptop.
+  Every new screen's mock-up shows its phone layout too.
 
 **To decide**
 * When the PO / receiving system comes relative to Sales (it is the source of tire cost for profit and below-cost checks).
