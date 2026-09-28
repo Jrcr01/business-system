@@ -33,6 +33,11 @@ follows unchanged below.
   `audit_logs.user_email` (migration 056; old rows = the owner, filled by update_database), written by the SQL function
   `acting_user()` on all 51 audit INSERTs; F2 sets the logged-in person with `acting_as()`. Manual check-number typing is now all or
   nothing (before: a bad 3rd number left the 1st and 2nd saved while the screen said it failed).
+* **Django skeleton done on `erp`** (owner's choices: same database file as AP, a plain "it works" page, Django 5.2 LTS): `erp/`
+  with `config` + a tiny `core`; Django only in `.venv` so the live AP's Python is untouched; the one door's rules and SQL functions
+  on every Django connection; refuses the live file without `ERP_LIVE=1`; sandbox site on port 8505. Owner asked whether
+  microservices fit: no -- < 5 users, one person running it, sales / stock / payment must save all-or-nothing in one database;
+  the modular monolith (one app per module) keeps the option open.
 * **Docs re-shaped:** `CLAUDE.md` = short ERP guide; AP detail moved unchanged to `docs/modules/ap.md`; Phase F to
   `docs/foundation/phase_f.md`; the master blueprint `docs/SLICKS_ERP_BLUEPRINT.md`; one `CLAUDE.md` per module folder from now on.
 

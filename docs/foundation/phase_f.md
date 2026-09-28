@@ -92,7 +92,15 @@ fills the old rows with the owner in the same run that adds the column (TEST: 40
 Dashboard's recent audit log. All or nothing: `assign_check_numbers_manual` raised nothing before -- its early `return False` inside the
 locked step kept the numbers saved before the bad one; now it raises, so the step rolls back (same as the booklet version). The other
 multi-row functions noted under F1.4 are left as they are (owner: this step = check-number typing only). Tests `tests/test_audit_who.py`
-(incl. a guard: no audit INSERT without user_email). Next: Django skeleton.*
+(incl. a guard: no audit INSERT without user_email).
+**Django skeleton done** (2026-09-28; owner's choices: same database file, a plain "it works" page, Django 5.2 LTS) -- `erp/` (see
+`erp/CLAUDE.md`): Django only in `.venv` (`--system-site-packages`, pins `requirements-erp.txt`), main Python untouched. Settings:
+Manila time zone, SQLite `OPTIONS` = the one door (foreign keys, busy timeout 10 s, WAL, `transaction_mode IMMEDIATE`), `core/db.py`
+adds `manila_today()` / `manila_now()` / `acting_user()` on every connection; refuses `ap_disbursement.db` without `ERP_LIVE=1`;
+secret key from env or gitignored `erp/.secret_key`; HTTPS-only settings when not DEBUG (`check --deploy` clean); no admin yet.
+Home page reads the shared database (creditors, checks not yet due through `v_effective_checks`). `migrate` run on the sandbox DB
+only (Django's `auth_*` / `django_*` tables; afterwards apply_pending_migrations = up to date, fk_check = 0 broken). Go-live will
+need `manage.py migrate` in update_database.bat (not added yet). Tests `tests/test_erp_skeleton.py`. Next: `core`.*
 * Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
   `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
 * Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes

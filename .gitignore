@@ -58,3 +58,8 @@ client_secret*.json
 
 # Real bank statements downloaded from MBOS -- never commit
 MBOS Latest statement/
+
+# Slicks ERP (Django): its own Python environment, the laptop signing key, collected static files
+.venv/
+erp/.secret_key
+erp/staticfiles/

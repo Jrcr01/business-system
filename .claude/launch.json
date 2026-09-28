@@ -12,6 +12,12 @@
       "runtimeExecutable": "C:\\AP_System\\run_test_streamlit.bat",
       "runtimeArgs": [],
       "port": 8502
+    },
+    {
+      "name": "slicks-erp-django-8505",
+      "runtimeExecutable": "C:\\Slicks\\Slicks_ERP\\run_erp_sandbox.bat",
+      "runtimeArgs": [],
+      "port": 8505
     }
   ]
 }

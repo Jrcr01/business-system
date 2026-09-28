@@ -176,7 +176,7 @@ by cash, checks (including post-dated), bank transfer / GCash / Maya, and card.
 
 ### Foundation needed first (and nothing more yet)
 1. **F1.5** *(done 2026-09-28)* — the audit log records *who* did each action; typing several check numbers at once becomes all-or-nothing.
-2. **Django skeleton** — the `erp/` project: Manila time zone, the shared database, security defaults, pinned versions.
+2. **Django skeleton** *(done 2026-09-28)* — the `erp/` project: Manila time zone, the shared database, security defaults, pinned versions.
 3. **`core`** — users and roles (owner, sales), audit, numbering, shared lists: customers (suppliers and affiliates as party types)
    and items (tires), the carve-out tag list.
 4. **Server + logins** — before your brother uses it from his own computer (HTTPS, Google sign-in with 2-step).
