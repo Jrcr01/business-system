@@ -219,6 +219,12 @@ parallel run (S5) once the system's daily totals and profit match it.
     invoice no. picked from that dropdown (next number first); the same number on several rows = one invoice with several items (the
     sheet shows each invoice's total). Numbers not used today reappear in tomorrow's template (not a gap); a spoiled / cancelled
     paper invoice is marked "Cancelled" with a reason in the sheet.
+  * **Macro entry form, like AP's `invoice_entry_master.xlsm`** (owner 2026-09-28): `sales_entry_master.xlsm` with an "Add sale"
+    pop-up (button / Ctrl+Shift+S): invoice no. (unused numbers, next first), date, customer, payment type (+ check no. / date or
+    e-wallet reference), item lines with product search, qty, suggested price and profit per line; Save writes the lines into the
+    day's sheet with running totals (qty, sales, profit); a number can be marked Cancelled with a reason. Every download rewrites the
+    hidden reference sheets (products with list price and cost, customers with credit allowed, the booklet's unused numbers) — the
+    same pattern as `engines/invoice_template_service.py`. Built in S2 after its mock-up is approved.
 * **Plus a quick screen** for a single sale or a correction.
 * **Sales invoice booklet control, like the checkbook:** each booklet's range registered; **one booklet in use at a time**; every
   number used once (the database refuses duplicates); cancelled / spoiled invoices logged with a reason (all copies kept, as BIR
