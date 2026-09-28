@@ -16,7 +16,7 @@ import streamlit as st
 from engines.bank_alerts import all_alerts, debit_factor, set_alert_settings, stale_days
 from engines.bank_recon_report import generate_recon_pdf, recon_statement
 from engines.bank_statement_service import (
-    RESOLUTIONS, exceptions, import_statement, imports_status, last_import, link_candidates, link_to_check, not_yet_cleared, parse_statement,
+    RESOLUTIONS, bank_correction, capture_check, correct_check_to_bank, exceptions, import_statement, imports_status, known_account_last4, last_import, link_candidates, link_to_check, not_yet_cleared, parse_statement,
     preview_matches, reject_suggestion, reopen, resolve, resolved_lines, statement_coverage, suggestions,
 )
 from engines.cash_insights_service import (
@@ -31,14 +31,15 @@ KIND_LABELS = {"CHECK": "Our checks clearing", "DEPOSIT": "Money in (deposits, t
                "BILLS_PAYMENT": "Bills payments", "DEBIT_MEMO": "Bank debit memos (loan debits, charges)", "OTHER": "Other"}
 EXCEPTION_LABELS = {
     "cancelled_check_cleared": "A check we cancelled / replaced was cleared by the bank",
+    "cleared_twice": "The bank cleared this check a SECOND time (our check was already cleared by another bank line) — ask Metrobank about a double debit",
     "amount_mismatch": "Cleared amount differs from our check",
     "returned_check": "A deposited check was returned (bounced)",
     "not_in_system": "Check not in the system (never recorded, or a typo in the number)",
     "unmatched_debit": "Bank debit that is not our check and matched nothing (loan debit, bills payment, charge)",
 }
-SHORT_LABELS = {"cancelled_check_cleared": "cancelled check cleared", "amount_mismatch": "amount differs", "returned_check": "bounced deposit",
+SHORT_LABELS = {"cleared_twice": "cleared twice", "cancelled_check_cleared": "cancelled check cleared", "amount_mismatch": "amount differs", "returned_check": "bounced deposit",
                 "not_in_system": "check not in the system", "unmatched_debit": "bank debit", "matched_manual": "linked to our check"}
-DEFAULT_REASON = {"returned_check": "Customer bounced check", "unmatched_debit": "Expected bank debit", "not_in_system": "Legacy record",
+DEFAULT_REASON = {"cleared_twice": "Bank error", "returned_check": "Customer bounced check", "unmatched_debit": "Expected bank debit", "not_in_system": "Legacy record",
                   "amount_mismatch": "Bank error", "cancelled_check_cleared": "Other"}
 ALERT_BOX = {"error": st.error, "warning": st.warning, "info": st.info}
 ALERT_ICON = {"low_cash": ":material/trending_down:", "large_debit": ":material/report:", "stale_deposit": ":material/hourglass_top:",
@@ -52,7 +53,7 @@ def show_alerts(alerts: list[dict]) -> None:
 
 
 def _import_tab() -> None:
-    st.caption("Download the Statement of Account from Metrobank MBOS (PDF works; CSV / Excel too if MBOS offers them) and drop it here. "
+    st.caption("Download the Statement of Account from Metrobank MBOS (Excel or CSV is fastest; PDF works too) and drop it here. "
                "The same file is never imported twice, and overlapping periods are fine — lines already on file are skipped.")
     up = st.file_uploader("Bank statement", type=["pdf", "csv", "xlsx", "xls"], key="bank_stmt_upload", label_visibility="collapsed", help='The Statement of Account downloaded from Metrobank MBOS (PDF, CSV or Excel). The same file is never imported twice; overlapping months are fine.')
     if up is None:
@@ -83,7 +84,17 @@ def _import_tab() -> None:
                     + (f", {prev['amount_mismatch']} with a different amount" if prev["amount_mismatch"] else "")
                     + (f", **{prev['cancelled_check_cleared']} that we cancelled**" if prev["cancelled_check_cleared"] else "")
                     + (f", {prev['not_in_system']} not in the system" if prev["not_in_system"] else "") + ".")
-    if st.button("Import this statement", icon=":material/upload_file:", type="primary", key="bank_import_btn"):
+    checks = capture_check(parsed, known_account_last4())
+    passed = all(c["ok"] for c in checks)
+    section("Capture check: " + ("PASS" if passed else "FAIL"), help="Proves the app read the bank statement completely and exactly before "
+            "anything is saved (owner: the bank statement is the ultimate truth). Any FAIL blocks the import. After saving, the app checks once "
+            "more that every line is in the database with the same amounts.")
+    st.dataframe(pd.DataFrame({"": ["✅ PASS" if c["ok"] else "❌ FAIL" for c in checks], "Check": [c["name"] for c in checks],
+                               "Detail": [c["detail"] for c in checks]}), hide_index=True)
+    if not passed:
+        st.error("This file can't be imported: the app could not prove it read every line correctly. Download the statement again from MBOS "
+                 "(Excel or CSV) and drop the new file here.", icon=":material/block:")
+    if st.button("Import this statement", icon=":material/upload_file:", type="primary", key="bank_import_btn", disabled=not passed):
         if not guard_duplicate_submit("bank_import", h):
             st.warning("Duplicate click ignored — identical to the click just before it.")
             return
@@ -93,7 +104,10 @@ def _import_tab() -> None:
         if res.get("already_imported"):
             st.info(res["messages"][0])
             return
-        refresh(done=f"Imported {res['new_lines']} new line(s)" + (f" ({res['duplicate_lines']} already on file)" if res["duplicate_lines"] else "")
+        if res.get("blocked"):
+            st.error(res["messages"][0])
+            return
+        refresh(done="Capture check PASS. " + f"Imported {res['new_lines']} new line(s)" + (f" ({res['duplicate_lines']} already on file)" if res["duplicate_lines"] else "")
                 + f": {res['matched']} check(s) confirmed cleared, {res['exceptions']} to look at.")
 
 
@@ -136,6 +150,7 @@ def _deal_with(shown: list[dict]) -> None:
         st.markdown(f"**{EXCEPTION_LABELS.get(e['match_status'], e['match_status'])}**  \nBank: {e['description']} · {e['posting_date']} · "
                     f"{php(e['debit'] or e['credit'])}" + (f"  \nOur check {e['our_number']} · {php(e['our_amount'])} · {e['our_status']} · {e['creditor_name']}"
                                                           if e.get("our_number") else ""))
+        _bank_fix(pick)
         a1, a2 = st.columns(2, gap="large")
         with a1:
             if e["kind"] == "CHECK":
@@ -161,13 +176,38 @@ def _deal_with(shown: list[dict]) -> None:
                     _open_check(e)
         with a2:
             st.markdown("**Or tag the reason**")
-            reasons = [r for r in RESOLUTIONS if r != "Linked by hand"]
+            reasons = [r for r in RESOLUTIONS if r not in ("Linked by hand", "Corrected to the bank")]
             default = DEFAULT_REASON.get(e["match_status"], "Other")
             reason = st.selectbox("Reason", reasons, index=reasons.index(default), key=f"bank_reason_{pick}", help='Why this line is fine: Bank error · Legacy record (old records) · Customer bounced check · Expected bank debit (loan debit, charges) · Before the system · Other. You can reopen it later under Resolved.')
             note = st.text_input("Note (optional)", key=f"bank_note_{pick}", placeholder="e.g. corrected with Metrobank, customer paid in cash")
             if st.button("Resolve", icon=":material/check:", type="primary", key=f"bank_resolve_btn_{pick}"):
                 resolve(pick, reason, note)
                 refresh(done=f"Resolved: {reason}.")
+
+
+def _bank_fix(txn_id: int) -> None:
+    """Owner rule (2026-09-28): the bank statement is the final word on our checks -- offer to correct our check to what the bank cleared."""
+    fix = bank_correction(txn_id)
+    if not fix:
+        return
+    st.markdown("**Correct our check to the bank**")
+    if not fix["ok"]:
+        st.warning(fix["why"], icon=":material/warning:")
+        return
+    st.dataframe(pd.DataFrame({"": ["Amount", "Check date", "Bank cleared"],
+                               "Our record now": [php(fix["old_amount"]), fix["check_date"], "—"],
+                               "After correction": [php(fix["new_amount"]), fix["check_date"], fix["bank_date"]]}), hide_index=True)
+    if fix["batch_left"]:
+        st.caption(f"Afterwards the batch shows {php(abs(fix['batch_left']))} " + ("still owed." if fix["batch_left"] > 0 else "overpaid — the correction will be refused."))
+    if st.button("Correct our check to the bank", icon=":material/account_balance:", key=f"bank_fix_btn_{txn_id}",
+                  help="Changes our check's amount to what the bank cleared (logged in the check's correction history) and marks it cleared by the bank."):
+        if not guard_duplicate_submit("bank_fix", txn_id):
+            st.warning("Duplicate click ignored — identical to the click just before it.")
+            return
+        ok, msg = correct_check_to_bank(txn_id)
+        if ok:
+            refresh(done=msg)
+        st.error(msg)
 
 
 def _reconcile_tab() -> None:

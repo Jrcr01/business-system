@@ -192,6 +192,20 @@ balance is over 14 days old. Tests: `tests/test_cash_insights.py` (hand-worked f
 `alt.when` on boolean fields failed here -- use a category column + `alt.Color(scale=domain/range)`. Restart the test app after editing views
 (it does not always reload them).
 
+**Bank is the truth + capture check + double-entry guard (2026-09-28, owner: "Always remember bank statement is ultimate truth and have a
+pass test to ensure system captures the bank statement well"; "put a guard rail for double entry").** MBOS CSV / Excel downloads have 9-11
+title lines above the headings (and spacer columns in .xls): `_parse_sheet` finds the headings row and reads the account number; CSV/XLS
+read the same 3,770 lines as the PDF in 1 s / 0.2 s vs 40 s. `capture_check(parsed, known_last4)`: every transaction row read (`raw_rows`),
+every line has a balance, running balance adds up, opening + in - out = closing, no exact duplicate lines, same account -- ANY fail blocks
+`import_statement()` (returns `blocked`) and the Import button; after saving, `_stored_check()` proves every line is in the database with
+the same sums or the whole import is rolled back (`CaptureCheckFailed`); a PASS is audited `BANK_STATEMENT_CAPTURE_CHECK`. Double entry:
+same file (hash), same line (line_key), and now a check cleared a second time -> `cleared_twice` (never overwrites the first clearing).
+One-click "Correct our check to the bank" (`bank_correction()` / `correct_check_to_bank()`, amount via `apply_check_correction`, then linked
+"Corrected to the bank"); refused when the bank cleared the leaf before our check date (then our check NUMBER is wrong -- check
+3992527921: owner's Oct 29, 2026 / PHP 6,409 is right; that leaf cleared Jan 29, 2026). `_set_aside_before_system` also tags
+unmatched debits ("Expected bank debit") and bounced checks ("Customer bounced check") dated before the first check. Tests:
+`tests/test_bank_capture_check.py` + additions in the import / recon v2 tests.
+
 **Reconciliation v2 (done 2026-09-28, plan phase 1 of 4 -- next: Dashboard panel + Overview bank section, Reports quick wins, "My
 reports" builder).** `match_checks()` only touches still-open lines (`reviewed = 0` and status NULL / amount_mismatch / not_in_system -- a
 re-import never undoes a hand link), then `_match_other_debits()` (DEBIT_MEMO = a `bank_loan_installments` amount within +/-5 days of its due

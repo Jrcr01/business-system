@@ -55,3 +55,6 @@ credentials.json
 token.json
 client_secret*.json
 *oauth*.json
+
+# Real bank statements downloaded from MBOS -- never commit
+MBOS Latest statement/

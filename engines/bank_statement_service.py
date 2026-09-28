@@ -41,7 +41,7 @@ _HEADER_SYNONYMS = {
     "credit": ["credit amount", "credit", "deposit", "deposits"],
     "balance": ["balance", "running balance", "available balance"],
     "channel": ["branch/channel", "branch channel", "channel", "branch"],
-    "subscriber": ["subscriber number/tin", "subscriber number tin", "subscriber number", "tin"],
+    "subscriber": ["subscriber number/tin", "subscriber number tin", "subscriber number/tin number", "subscriber number", "tin"],
     "sequence": ["sequence number", "sequence no", "reference number", "reference"],
 }
 MBOS_COLUMNS = ["txn_date", "posting_date", "txn_time", "check_number", "description", "debit", "credit", "balance", "channel", "subscriber", "sequence"]
@@ -74,6 +74,7 @@ class ParsedStatement:
     balance_ok: bool = True
     bad_balance_steps: int = 0
     messages: list = field(default_factory=list)
+    raw_rows: int = 0            # transaction rows seen in the file (a date in the first column), read or not -- for the capture check
 
     def masked_account(self) -> str:
         return ("•" * max(0, len(self.account_number) - 4) + self.account_number[-4:]) if self.account_number else ""
@@ -225,6 +226,7 @@ def _parse_pdf(data: bytes) -> ParsedStatement:
                         continue
                     if not DATE_RE.match(cells[0].strip()):
                         continue
+                    parsed.raw_rows += 1
                     standard = {f: i for i, f in enumerate(MBOS_COLUMNS)} if len(cells) == len(MBOS_COLUMNS) else {}
                     cm = ({**standard, **colmap} if colmap else standard) or None      # headings found win; the rest by MBOS position
                     if cm is None:
@@ -247,20 +249,31 @@ def _parse_sheet(data: bytes, filename: str) -> ParsedStatement:
     import pandas as pd
 
     parsed = ParsedStatement()
+    # MBOS CSV / Excel exports (checked 2026-09-28) put 9-11 title lines (bank name, Account Number:, Period Covered: ...) above the
+    # column headings, and the Excel file has empty spacer columns -- so read without a header and look for the headings row.
     if filename.lower().endswith(".csv"):
-        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False)
+        df = pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False, header=None, names=range(64), engine="python")
     else:
-        df = pd.read_excel(io.BytesIO(data), dtype=str, keep_default_na=False)
-    cm = _map_columns(list(df.columns))
-    if not {"txn_date", "debit", "credit"} <= cm.keys():
-        parsed.messages.append("Could not find the Date / Debit / Credit columns in this file. Columns found: " + ", ".join(map(str, df.columns)))
+        df = pd.read_excel(io.BytesIO(data), dtype=str, keep_default_na=False, header=None)
+    rows = [[str(c).strip() for c in r] for r in df.values.tolist()]
+    head_at, cm = None, {}
+    for i, r in enumerate(rows[:60]):
+        cand = _map_columns(r)
+        if {"txn_date", "debit", "credit"} <= cand.keys():
+            head_at, cm = i, cand
+            break
+        if r and _normalize_header(next((c for c in r if c), "")) == "account number:":
+            parsed.account_number = re.sub(r"\D", "", next((c for c in r[1:] if re.search(r"\d", c)), ""))
+    if head_at is None:
+        parsed.messages.append("Could not find the Date / Debit / Credit column headings in this file.")
         return parsed
-    cols = list(df.columns)
-    for _, r in df.iterrows():
+    for r in rows[head_at + 1:]:
+        if parse_date(r[cm["txn_date"]] if cm["txn_date"] < len(r) else "") is not None:
+            parsed.raw_rows += 1
         try:
-            line = _line_from({f: r[cols[i]] for f, i in cm.items()})
+            line = _line_from({f: r[i] for f, i in cm.items() if i < len(r)})
         except ValueError:
-            parsed.messages.append(f"Could not read the amounts on one line: {' / '.join(map(str, r.values))[:80]}")
+            parsed.messages.append(f"Could not read the amounts on one line: {' / '.join(c for c in r if c)[:80]}")
             continue
         if line:
             parsed.lines.append(line)
@@ -278,6 +291,53 @@ def parse_statement(data: bytes, filename: str) -> ParsedStatement:
     return _finish(parsed)
 
 
+# ------------------------------------------------------------------ capture check
+def capture_check(parsed: ParsedStatement, known_last4: str | None = None) -> list[dict]:
+    """Owner, 2026-09-28: "Always remember bank statement is ultimate truth and have a pass test to ensure system captures the bank statement
+    well." Proves the file was read completely and exactly; ANY failed item blocks the import (owner's choice). MBOS prints no totals of its
+    own, so the proof is the lines themselves: every transaction row read, every running balance adds up (a missing or misread line breaks
+    the chain), and opening + money in - money out = closing. Returns [{'name', 'ok', 'detail'}]."""
+    L = parsed.lines
+    money_in, money_out = round(sum(x.credit for x in L), 2), round(sum(x.debit for x in L), 2)
+    unreadable = [m for m in parsed.messages if m.startswith(("Could not read", "Skipped a line"))]
+    keys = [line_key(0, x) for x in L]
+    no_balance = sum(1 for x in L if x.balance is None)
+    out = [
+        {"name": "Every transaction line read", "ok": bool(L) and len(L) == parsed.raw_rows and not unreadable,
+         "detail": f"{len(L):,} of {parsed.raw_rows:,} line(s) read" + (f"; {len(unreadable)} could not be read" if unreadable else "")},
+        {"name": "Every line has a balance", "ok": bool(L) and no_balance == 0,
+         "detail": "all lines" if not no_balance else f"{no_balance} line(s) without a balance"},
+        {"name": "Running balance adds up on every line", "ok": bool(L) and parsed.balance_ok and no_balance == 0,
+         "detail": "every line = the one before + money in - money out" if parsed.balance_ok else f"{parsed.bad_balance_steps} line(s) do not add up"},
+    ]
+    if L and parsed.opening_balance is not None and parsed.closing_balance is not None:
+        diff = round(parsed.opening_balance + money_in - money_out - parsed.closing_balance, 2)
+        out.append({"name": "Opening + money in - money out = closing", "ok": abs(diff) < 0.005,
+                    "detail": f"{parsed.opening_balance:,.2f} + {money_in:,.2f} - {money_out:,.2f} = {parsed.closing_balance:,.2f}"
+                              + ("" if abs(diff) < 0.005 else f" (off by {diff:,.2f})")})
+    else:
+        out.append({"name": "Opening + money in - money out = closing", "ok": False, "detail": "opening or closing balance missing"})
+    out.append({"name": "No line would be lost as a duplicate", "ok": len(set(keys)) == len(keys),
+                "detail": "every line is distinct" if len(set(keys)) == len(keys) else f"{len(keys) - len(set(keys))} line(s) are exact copies of another line"})
+    last4 = parsed.account_number[-4:]
+    out.append({"name": "Same bank account", "ok": not (known_last4 and last4 and last4 != known_last4),
+                "detail": (f"account ending {last4}" if last4 else "account number not shown in the file")
+                          + (f" -- earlier statements are for the account ending {known_last4}" if known_last4 and last4 and last4 != known_last4 else "")})
+    return out
+
+
+def known_account_last4(bank_account_id: int = 1) -> str | None:
+    """The account the earlier imported statements were for (by their last 4 digits)."""
+    with _conn() as conn:
+        r = conn.execute("SELECT account_last4 FROM bank_statement_imports WHERE bank_account_id = ? AND account_last4 IS NOT NULL "
+                         "ORDER BY import_id DESC LIMIT 1", (int(bank_account_id),)).fetchone()
+    return r[0] if r else None
+
+
+class CaptureCheckFailed(Exception):
+    pass
+
+
 # ------------------------------------------------------------------ storing and matching
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
@@ -290,6 +350,21 @@ def line_key(bank_account_id: int, x: StatementLine) -> str:
     raw = "|".join(map(str, (bank_account_id, x.posting_date, x.txn_date, x.txn_time, x.check_number, x.description, f"{x.debit:.2f}",
                              f"{x.credit:.2f}", "" if x.balance is None else f"{x.balance:.2f}", x.sequence)))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _stored_check(conn, bank_account_id: int, parsed: ParsedStatement) -> dict:
+    """After saving: every line of the file is in the database (new or from an earlier overlapping statement) with the same amounts."""
+    keys = [line_key(bank_account_id, x) for x in parsed.lines]
+    n, out_, in_ = 0, 0.0, 0.0
+    for i in range(0, len(keys), 500):
+        part = keys[i:i + 500]
+        a, b, c = conn.execute(f"SELECT COUNT(*), COALESCE(SUM(debit), 0), COALESCE(SUM(credit), 0) FROM bank_transactions WHERE line_key IN "
+                               f"({','.join('?' * len(part))})", part).fetchone()
+        n, out_, in_ = n + a, out_ + b, in_ + c
+    want_out, want_in = round(sum(x.debit for x in parsed.lines), 2), round(sum(x.credit for x in parsed.lines), 2)
+    ok = n == len(keys) and abs(round(out_, 2) - want_out) < 0.005 and abs(round(in_, 2) - want_in) < 0.005
+    return {"name": "Saved lines match the file", "ok": ok,
+            "detail": f"{n:,} of {len(keys):,} line(s) on file; money out {out_:,.2f} vs {want_out:,.2f}; money in {in_:,.2f} vs {want_in:,.2f}"}
 
 
 def bank_dir() -> str:
@@ -307,9 +382,11 @@ def import_statement(data: bytes, filename: str, bank_account_id: int = 1, keep_
         return {"already_imported": True, "import_id": prev["import_id"], "imported_at": prev["imported_at"], "new_lines": 0,
                 "duplicate_lines": 0, "matched": 0, "exceptions": 0, "messages": [f"This exact file was already imported on {prev['imported_at'][:16]}."]}
     parsed = parse_statement(data, filename)
-    if not parsed.lines:
-        return {"already_imported": False, "import_id": None, "new_lines": 0, "duplicate_lines": 0, "matched": 0, "exceptions": 0,
-                "messages": parsed.messages}
+    checks = capture_check(parsed, known_account_last4(bank_account_id))
+    if not all(c["ok"] for c in checks):                               # owner: a statement that fails the capture check never goes in
+        failed = [f"{c['name']}: {c['detail']}" for c in checks if not c["ok"]]
+        return {"already_imported": False, "blocked": True, "capture": checks, "import_id": None, "new_lines": 0, "duplicate_lines": 0,
+                "matched": 0, "exceptions": 0, "messages": ["Not imported -- the capture check failed: " + "; ".join(failed)] + parsed.messages}
     stored_path = None
     if keep_copy:
         os.makedirs(bank_dir(), exist_ok=True)
@@ -334,10 +411,21 @@ def import_statement(data: bytes, filename: str, bank_account_id: int = 1, keep_
             except sqlite3.IntegrityError:                               # already imported from an overlapping statement
                 dup += 1
         conn.execute("UPDATE bank_statement_imports SET new_lines = ? WHERE import_id = ?", (new, import_id))
+        try:
+            checks.append(_stored_check(conn, bank_account_id, parsed))
+            if not checks[-1]["ok"]:
+                raise CaptureCheckFailed(checks[-1]["detail"])
+        except Exception:
+            conn.rollback()                                              # nothing of this file stays in the database
+            if stored_path and os.path.exists(stored_path):
+                os.remove(stored_path)
+            raise
+        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BANK_STATEMENT_CAPTURE_CHECK', "
+                     "'bank_statement_imports', ?, ?)", (import_id, "PASS -- " + "; ".join(f"{c['name']}: {c['detail']}" for c in checks)))
         conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BANK_STATEMENT_IMPORTED', 'bank_statement_imports', ?, ?)",
                      (import_id, f"{filename}: {new} new line(s), {dup} already on file, period {parsed.period_from} to {parsed.period_to}"))
     result = match_checks()
-    return {"already_imported": False, "import_id": import_id, "new_lines": new, "duplicate_lines": dup, "messages": parsed.messages,
+    return {"already_imported": False, "blocked": False, "capture": checks, "import_id": import_id, "new_lines": new, "duplicate_lines": dup, "messages": parsed.messages,
             "balance_ok": parsed.balance_ok, "period_from": parsed.period_from, "period_to": parsed.period_to,
             "closing_balance": parsed.closing_balance, **result}
 
@@ -351,7 +439,7 @@ def match_checks() -> dict:
     matched = exceptions = 0
     with _conn() as conn:
         ours = {}
-        for r in conn.execute("SELECT check_id, check_number, amount, status FROM checks_issued WHERE check_number IS NOT NULL AND check_number != ''"):
+        for r in conn.execute("SELECT check_id, check_number, amount, status, bank_txn_id FROM checks_issued WHERE check_number IS NOT NULL AND check_number != ''"):
             ours.setdefault(norm_check_number(r["check_number"]), []).append(dict(r))
         pending = conn.execute("""SELECT txn_id, check_number, debit, posting_date FROM bank_transactions
                                   WHERE kind = 'CHECK' AND reviewed = 0
@@ -359,11 +447,20 @@ def match_checks() -> dict:
         for t in pending:
             cands = ours.get(norm_check_number(t["check_number"]), [])
             same_amount = [c for c in cands if abs(float(c["amount"]) - float(t["debit"])) < 0.005]
+            free = [c for c in same_amount if not c["bank_txn_id"] or int(c["bank_txn_id"]) == int(t["txn_id"])]
+            if same_amount and not free:
+                # Double-entry guard (owner, 2026-09-28): one check is cleared by one bank line only. A second clearing of the same number and
+                # amount never overwrites the first -- it waits for the owner (bank double debit, or two checks sharing a number).
+                conn.execute("UPDATE bank_transactions SET matched_check_id = ?, match_status = 'cleared_twice' WHERE txn_id = ?",
+                             (same_amount[0]["check_id"], t["txn_id"]))
+                exceptions += 1
+                continue
             if same_amount:
-                c = next((c for c in same_amount if c["status"] == "Active"), same_amount[0])
+                c = next((c for c in free if c["status"] == "Active"), free[0])
                 status = "matched" if c["status"] in ("Active", "Cleared") else "cancelled_check_cleared"
                 conn.execute("UPDATE bank_transactions SET matched_check_id = ?, match_status = ? WHERE txn_id = ?", (c["check_id"], status, t["txn_id"]))
                 conn.execute("UPDATE checks_issued SET bank_cleared_date = ?, bank_txn_id = ? WHERE check_id = ?", (t["posting_date"], t["txn_id"], c["check_id"]))
+                c["bank_txn_id"] = t["txn_id"]
                 if status == "matched":
                     matched += 1
                 else:
@@ -422,17 +519,22 @@ def system_start() -> date | None:
 
 def _set_aside_before_system(conn) -> None:
     """A cleared check the system does not know, dated on the bank before the system's first check, is resolved automatically as
-    'Before the system' -- it was written before this system was used, so there is nothing to do."""
+    'Before the system' -- it was written before this system was used, so there is nothing to do. Since 2026-09-28 (owner: "resolve this
+    all", after a 12-month import left 115 old lines) bank debits that matched nothing and bounced customer checks from before then are
+    tagged the way the owner tags them by hand: 'Expected bank debit' / 'Customer bounced check'."""
     v = conn.execute("SELECT MIN(check_date) FROM checks_issued").fetchone()[0]
     if not v:
         return
-    conn.execute("""UPDATE bank_transactions SET reviewed = 1, resolution = 'Before the system',
-                        note = COALESCE(note, 'Cleared before the system started (' || ? || ')')
-                    WHERE match_status = 'not_in_system' AND reviewed = 0 AND posting_date < ?""", (str(v)[:10], str(v)[:10]))
+    start = str(v)[:10]
+    for status, resolution, note in (("not_in_system", "Before the system", "Cleared before the system started"),
+                                     ("unmatched_debit", "Expected bank debit", "Dated before the system started"),
+                                     ("returned_check", "Customer bounced check", "Dated before the system started")):
+        conn.execute("""UPDATE bank_transactions SET reviewed = 1, resolution = ?, note = COALESCE(note, ? || ' (' || ? || ')')
+                        WHERE match_status = ? AND reviewed = 0 AND posting_date < ?""", (resolution, note, start, status, start))
 
 
-EXCEPTION_STATUSES = ("amount_mismatch", "cancelled_check_cleared", "returned_check", "not_in_system", "unmatched_debit")
-RESOLUTIONS = ["Linked by hand", "Bank error", "Legacy record", "Customer bounced check", "Expected bank debit", "Before the system", "Other"]
+EXCEPTION_STATUSES = ("cleared_twice", "amount_mismatch", "cancelled_check_cleared", "returned_check", "not_in_system", "unmatched_debit")
+RESOLUTIONS = ["Linked by hand", "Corrected to the bank", "Bank error", "Legacy record", "Customer bounced check", "Expected bank debit", "Before the system", "Other"]
 
 
 def exceptions(import_id: int | None = None) -> list[dict]:
@@ -452,7 +554,7 @@ def exceptions(import_id: int | None = None) -> list[dict]:
 
 def resolved_lines(import_id: int | None = None) -> list[dict]:
     """Lines the owner (or the app) resolved: tagged exceptions and hand-linked checks -- listed so a wrong one can be reopened. The owner's
-    own come first; the ones the app set aside as 'Before the system' last."""
+    own come first; the ones the app set aside as dated before the system started last."""
     with _conn() as conn:
         return [dict(r) for r in conn.execute(
             """SELECT t.txn_id, t.import_id, t.posting_date, t.check_number, t.description, t.debit, t.credit, t.kind, t.match_status,
@@ -460,7 +562,7 @@ def resolved_lines(import_id: int | None = None) -> list[dict]:
                FROM bank_transactions t LEFT JOIN checks_issued c ON c.check_id = t.matched_check_id
                LEFT JOIN creditors cr ON cr.creditor_id = c.creditor_id
                WHERE t.reviewed = 1 AND (t.match_status IN (%s) OR t.match_status = 'matched_manual') %s
-               ORDER BY COALESCE(t.resolution, '') = 'Before the system', t.posting_date DESC, t.txn_id DESC""" % (",".join("?" * len(EXCEPTION_STATUSES)), "AND t.import_id = ?" if import_id else ""),
+               ORDER BY COALESCE(t.note, '') LIKE '%%before the system started (%%', t.posting_date DESC, t.txn_id DESC""" % (",".join("?" * len(EXCEPTION_STATUSES)), "AND t.import_id = ?" if import_id else ""),
             EXCEPTION_STATUSES + ((int(import_id),) if import_id else ())).fetchall()]
 
 
@@ -535,6 +637,53 @@ def link_to_check(txn_id: int, check_id: int, how: str = "Linked by hand") -> tu
                      (t["txn_id"], f"{how}: check {c['check_number'] or c['check_id']} (PHP {c['amount']:,.2f}) cleared {t['posting_date']} for PHP {t['debit']:,.2f}"))
     update_reconciled()
     return True, f"Linked: check {c['check_number'] or c['check_id']} is cleared by the bank on {t['posting_date']}."
+
+
+def bank_correction(txn_id: int) -> dict | None:
+    """Owner rule (2026-09-28): "Bank statement is the ultimate truth of checks record." For a line where the bank cleared one of our check
+    numbers for a different amount: what correcting our check to the bank would change, and whether the app can offer it. None when the line
+    is not such a case. Not offered when the bank cleared the leaf BEFORE our check date -- that cannot be the same check (check 3992527921:
+    bank Jan 29, 2026 vs our Oct 29, 2026 -- the owner's record was right; our check number was wrong)."""
+    with _conn() as conn:
+        r = conn.execute("""SELECT t.txn_id, t.posting_date, t.debit, t.match_status, c.check_id, c.check_number, c.check_date, c.amount,
+                                   c.status, c.statement_id, c.bank_txn_id
+                            FROM bank_transactions t JOIN checks_issued c ON c.check_id = t.matched_check_id
+                            WHERE t.txn_id = ? AND t.match_status = 'amount_mismatch'""", (int(txn_id),)).fetchone()
+    if not r:
+        return None
+    out = {"check_id": r["check_id"], "check_number": r["check_number"], "check_date": r["check_date"], "bank_date": r["posting_date"],
+           "old_amount": float(r["amount"]), "new_amount": float(r["debit"]), "ok": True, "why": "", "batch_left": None}
+    if r["status"] != "Active":
+        out.update(ok=False, why=f"Our check is {r['status']}, not Active.")
+    elif str(r["posting_date"]) < str(r["check_date"])[:10]:
+        out.update(ok=False, why=f"The bank cleared this check number on {r['posting_date']}, before our check's date ({str(r['check_date'])[:10]}) — "
+                                 "it cannot be the same check. The number on our check is probably wrong: compare it with the check stub.")
+    elif r["bank_txn_id"] and int(r["bank_txn_id"]) != int(txn_id):
+        out.update(ok=False, why="Our check is already cleared by another bank line.")
+    elif r["statement_id"]:
+        from engines.check_rules import get_batch_balance
+        net_total, active_sum, _ = get_batch_balance(int(r["statement_id"]))
+        out["batch_left"] = round(net_total - (active_sum - out["old_amount"] + out["new_amount"]), 2)
+    return out
+
+
+def correct_check_to_bank(txn_id: int) -> tuple[bool, str]:
+    """One click (owner, 2026-09-28): set our check's amount to what the bank cleared, through the audited check-correction path (same
+    rules: a locked batch must be unlocked first; a batch can never be overpaid), then link the line so the check counts as bank-cleared.
+    Reopen undoes the link; the amount correction stays in the check's correction history."""
+    fix = bank_correction(txn_id)
+    if not fix:
+        return False, "This bank line is not a check with a different amount."
+    if not fix["ok"]:
+        return False, fix["why"]
+    from engines.check_rules import apply_check_correction
+    ok, msg = apply_check_correction(fix["check_id"], "Amount", f"{fix['new_amount']:.2f}",
+                                     f"Bank statement: cleared {fix['bank_date']} for PHP {fix['new_amount']:,.2f}")
+    if not ok:
+        return False, msg
+    ok, msg = link_to_check(txn_id, fix["check_id"], how="Corrected to the bank")
+    return ok, (f"Check {fix['check_number']} corrected from {fix['old_amount']:,.2f} to {fix['new_amount']:,.2f} and marked cleared by the bank "
+                f"on {fix['bank_date']}.") if ok else msg
 
 
 def reopen(txn_id: int) -> None:

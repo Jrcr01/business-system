@@ -93,6 +93,19 @@ def test_loan_and_card_debits_are_matched_and_the_rest_left_to_tag(db, monkeypat
     assert _line(db, debit=25000.0)["match_status"] == "matched_loan" and len([e for e in exceptions() if not e["reviewed"]]) == 6
 
 
+def test_bank_debits_and_bounced_checks_before_the_system_are_tagged_automatically(db, monkeypatch, tmp_path):
+    """Owner, 2026-09-28 ("resolve this all"): old lines are tagged the way the owner tags them by hand, and listed after the owner's own."""
+    _setup(db, monkeypatch, tmp_path)
+    resolve(_line(db, debit=12345.0)["txn_id"], "Other", "mine")
+    import_statement(_csv([("09/21/2026", "0000000000", "MO DM PAY UTLTY", 111.0, 0.0),
+                           ("09/22/2026", "0000000000", "DE DM RET CHK", 222.0, 0.0)], opening=5000.0), "older.csv")
+    debit, bounced = _line(db, debit=111.0), _line(db, debit=222.0)
+    assert (debit["reviewed"], debit["resolution"]) == (1, "Expected bank debit") and "before the system started" in debit["note"]
+    assert (bounced["reviewed"], bounced["resolution"]) == (1, "Customer bounced check")
+    assert _line(db, debit=300.0)["reviewed"] == 0                  # Oct 7, after the system started: still the owner's to look at
+    assert resolved_lines()[0]["note"] == "mine"
+
+
 def test_suggestions_accept_and_reject(db, monkeypatch, tmp_path):
     ids = _setup(db, monkeypatch, tmp_path)
     sugg = {(s["bank_check_number"], s["check_id"]): s["reason"] for s in suggestions()}

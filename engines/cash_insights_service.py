@@ -193,7 +193,7 @@ def unusual_items(big_factor: float = 5.0) -> dict:
     df["group"] = [deposit_type(d) if k == "DEPOSIT" else k for d, k in zip(df["description"], df["kind"])]
     med = df.groupby("group")["amount"].transform("median")
     big = df[(df["amount"] > big_factor * med) & (df["kind"].isin(["DEPOSIT", "DEBIT_MEMO", "BILLS_PAYMENT", "OTHER"]))]
-    mismatch = df[df["match_status"].isin(["amount_mismatch", "cancelled_check_cleared"])]
+    mismatch = df[df["match_status"].isin(["cleared_twice", "amount_mismatch", "cancelled_check_cleared"])]
     debits_by_month = debits.assign(month=pd.to_datetime(debits["posting_date"]).dt.to_period("M").astype(str)).groupby(["month", "kind"])["debit"].sum().unstack(fill_value=0.0) if not debits.empty else pd.DataFrame()
     return {"returned": returned, "debits": debits, "debits_by_month": debits_by_month, "big": big.sort_values("amount", ascending=False), "mismatch": mismatch}
 

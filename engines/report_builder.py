@@ -57,7 +57,7 @@ def _payables(conn) -> pd.DataFrame:
 BANK_KINDS = {"CHECK": "Our check", "DEPOSIT": "Money in", "RETURNED_CHECK": "Bounced deposit", "BILLS_PAYMENT": "Bills payment",
               "DEBIT_MEMO": "Debit memo", "OTHER": "Other"}
 BANK_MATCH = {"matched": "Matched", "matched_manual": "Linked by hand", "matched_loan": "Bank-loan installment", "matched_card": "Card payment",
-              "amount_mismatch": "Amount differs", "cancelled_check_cleared": "Cancelled check cleared", "returned_check": "Bounced deposit",
+              "cleared_twice": "Cleared twice", "amount_mismatch": "Amount differs", "cancelled_check_cleared": "Cancelled check cleared", "returned_check": "Bounced deposit",
               "not_in_system": "Not in the system", "unmatched_debit": "Bank debit, unmatched"}
 
 

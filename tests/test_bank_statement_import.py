@@ -9,6 +9,7 @@ from engines.bank_statement_service import (
     _map_columns, _unreverse, clean_amount, exceptions, import_statement, not_yet_cleared, norm_check_number, parse_statement,
     preview_matches, statement_coverage,
 )
+from engines.bank_statement_service import bank_correction, correct_check_to_bank
 
 HEADER = "Transaction Date,Posting Date,Time,Check Number,Transaction Description,Debit Amount,Credit Amount,Balance,Branch/Channel,Subscriber Number/TIN,Sequence Number"
 
@@ -44,6 +45,27 @@ def test_a_statement_is_read_classified_and_its_balances_checked():
     assert p.lines[1].check_number == "3992514799" and p.lines[0].check_number is None
     broken = parse_statement(data.replace(b'"669,111.38"', b'"669,000.00"'), "statement.csv")
     assert not broken.balance_ok and broken.bad_balance_steps == 1 and "running balance" in broken.messages[0]
+
+
+def test_real_mbos_csv_and_excel_exports_with_title_lines_above_the_headings(tmp_path):
+    """MBOS CSV / Excel downloads (2026-09-28) start with title lines; the Excel one also has empty spacer columns."""
+    title = ["STATEMENT OF ACCOUNT,,", "SLICK'S TIRE SUPPLY,,", "Account Number:,3990000001234,", "Period Covered:,Last 12 Months,"]
+    rows = [_row("01/02/2026", "0000000000", "MO CSH DEP", "0.00", "500,000.00", "843,188.70", "1"),
+            _row("01/02/2026", "3992514799", "Inward Clearing", "54,577.32", "0.00", "788,611.38", "2")]
+    csv = ("\n".join(title) + "\n").encode() + _csv(rows) + b"Confidential Information,,\n"
+    p = parse_statement(csv, "statement.csv")
+    assert len(p.lines) == 2 and p.balance_ok and p.messages == [] and p.account_number == "3990000001234"
+    assert [x.kind for x in p.lines] == ["DEPOSIT", "CHECK"] and p.closing_balance == 788611.38
+
+    import pandas as pd
+    spaced = [["", "Account Number:", "", "3990000001234"],
+              ["", "Transaction Date", "", "Check Number", "Debit Amount", "", "Credit Amount", "Balance"],
+              ["", "01/02/2026", "", "0000000000", "0.00", "", "500,000.00", "843,188.70"],
+              ["", "01/02/2026", "", "3992514799", "54,577.32", "", "0.00", "788,611.38"]]
+    path = tmp_path / "s.xlsx"
+    pd.DataFrame(spaced).to_excel(path, header=False, index=False)
+    x = parse_statement(path.read_bytes(), "s.xlsx")
+    assert len(x.lines) == 2 and x.balance_ok and x.lines[1].check_number == "3992514799" and x.account_number == "3990000001234"
 
 
 def _checks(db):
@@ -115,3 +137,46 @@ def test_nothing_else_in_the_app_changes_meaning(db, monkeypatch, tmp_path):
     import_statement(_statement(), "s.csv")
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT check_id, status, check_date, amount FROM checks_issued ORDER BY check_id").fetchall() == before
+
+
+def test_correct_our_check_to_the_bank_in_one_click(db, monkeypatch, tmp_path):
+    """Owner, 2026-09-28: "Bank statement is the ultimate truth of checks record" -- one click, shown first, audited; never offered when the
+    bank cleared the leaf before our check date (then our check number is the mistake, as with check 3992527921)."""
+    monkeypatch.setenv("AP_DRIVE_DIR", str(tmp_path / "drive"))
+    ids = _checks(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE checks_issued SET printed_at = CURRENT_TIMESTAMP, check_date = '2026-10-10' WHERE check_id = ?", (ids["C"],))
+    import_statement(_statement(), "s.csv")
+    txn = next(e["txn_id"] for e in exceptions() if e["match_status"] == "amount_mismatch")
+    early = bank_correction(txn)
+    assert not early["ok"] and "cannot be the same check" in early["why"] and not correct_check_to_bank(txn)[0]
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE checks_issued SET check_date = '2026-10-02' WHERE check_id = ?", (ids["C"],))
+    fix = bank_correction(txn)
+    assert fix["ok"] and (fix["old_amount"], fix["new_amount"]) == (1200.0, 1250.0) and fix["batch_left"] == 850.0
+    ok, msg = correct_check_to_bank(txn)
+    assert ok, msg
+    with sqlite3.connect(db) as conn:
+        amount, cleared = conn.execute("SELECT amount, bank_cleared_date FROM checks_issued WHERE check_id = ?", (ids["C"],)).fetchone()
+        assert (amount, cleared) == (1250.0, "2026-10-06")
+        assert conn.execute("SELECT COUNT(*) FROM check_corrections WHERE check_id = ? AND correction_type = 'Amount'", (ids["C"],)).fetchone()[0] == 1
+        assert conn.execute("SELECT resolution FROM bank_transactions WHERE txn_id = ?", (txn,)).fetchone()[0] == "Corrected to the bank"
+    assert bank_correction(txn) is None
+
+
+def test_double_entry_guard_a_check_cleared_twice_never_overwrites_the_first(db, monkeypatch, tmp_path):
+    """Owner, 2026-09-28: "put a guard rail for double entry". The same file, the same lines from an overlapping statement and a second
+    clearing of the same check are each counted once; the second clearing waits in Need a look."""
+    monkeypatch.setenv("AP_DRIVE_DIR", str(tmp_path / "drive"))
+    ids = _checks(db)
+    first = import_statement(_statement(), "s.csv")
+    assert import_statement(_statement(), "copy.csv")["already_imported"]
+    again = _row("10/08/2026", "3992000001", "IM IN- CLRNG- BATCH", "1,000.00", "0.00", "98,950.00", "11")    # A clears a second time
+    res = import_statement(_statement(extra=[again]), "s2.csv")
+    assert res["new_lines"] == 1 and res["duplicate_lines"] == 7 and not res["blocked"]
+    with sqlite3.connect(db) as conn:
+        cleared, txn = conn.execute("SELECT bank_cleared_date, bank_txn_id FROM checks_issued WHERE check_id = ?", (ids["A"],)).fetchone()
+        assert cleared == "2026-10-05"                                              # the first clearing stands
+        assert conn.execute("SELECT COUNT(*) FROM bank_transactions").fetchone()[0] == 8
+    twice = [e for e in exceptions() if e["match_status"] == "cleared_twice"]
+    assert len(twice) == 1 and twice[0]["posting_date"] == "2026-10-08" and twice[0]["txn_id"] != txn and first["matched"] == 2

@@ -57,7 +57,7 @@ def recon_statement(import_id: int) -> dict | None:
             "available": round(bank_balance - out_total, 2), "bank_items": items, "money_in": float(lines["credit"].sum()) if not lines.empty else 0.0,
             "checks_cleared": int((lines["match_status"].isin(["matched", "matched_manual"])).sum()) if not lines.empty else 0,
             "open_items": int(((lines["reviewed"] == 0) & lines["match_status"].isin(
-                ["amount_mismatch", "cancelled_check_cleared", "returned_check", "not_in_system", "unmatched_debit"])).sum()) if not lines.empty else 0}
+                ["cleared_twice", "amount_mismatch", "cancelled_check_cleared", "returned_check", "not_in_system", "unmatched_debit"])).sum()) if not lines.empty else 0}
 
 
 def generate_recon_pdf(r: dict) -> bytes:
