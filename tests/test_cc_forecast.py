@@ -99,3 +99,22 @@ def test_a_card_bill_a_month_away_moves_a_supplier_check(db):
     _stmt(db, c, "2029-12-09", 10_000)                                   # last month's bill -> ~PHP 10,000 again on Jan 9 (Wednesday)
     moved = plan()
     assert (moved.suggested_date, moved.status) == (D(3), "Moved") and "cash would go under" in moved.reason
+
+
+def test_card_dues_for_the_weeks_of_typed_check_dates(db):
+    """Owner, 2026-09-29: when typing a check date, show the card dues due that week (on statements + estimated) and flag a heavy week
+    -- at least 1.5 times the average weekly card dues. Past dates are skipped; one line per week however many checks fall in it."""
+    from engines.cc_forecast_service import card_week_info
+
+    big = _card(db, "Platinum", "0013")
+    for due, amt in (("2026-07-05", 3_000_000), ("2026-08-05", 3_000_000), ("2026-09-05", 3_000_000)):
+        _stmt(db, big, due, amt)
+    small = _card(db, "Visa", "0001")
+    for due, amt in (("2026-07-20", 100_000), ("2026-08-20", 100_000), ("2026-09-20", 100_000)):
+        _stmt(db, small, due, amt)
+    info = card_week_info([date(2026, 11, 5), date(2026, 11, 6), date(2026, 11, 20), date(2026, 9, 1)], today=TODAY)
+    assert [i["week_start"] for i in info] == [date(2026, 11, 2), date(2026, 11, 16)]      # Nov 5 + 6 share a week; Sep 1 is past
+    heavy, light = info
+    assert heavy["total"] == 3_000_000 and heavy["estimated"] == 3_000_000 and heavy["heavy"]
+    assert light["total"] == 100_000 and not light["heavy"]
+    assert heavy["dates"] == [date(2026, 11, 5), date(2026, 11, 6)]

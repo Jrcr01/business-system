@@ -269,7 +269,11 @@ them via `estimated_outflows()` (so the Cash forecast, Working capital and the p
 (5 months)" (`views/planner.py _card_dues_ahead()`, shown even when there is nothing to plan) + a caption on the Cash forecast tab.
 Tests `tests/test_cc_forecast.py` (incl. a card bill a month away moving a supplier check). Live 2026-09-29: PHP 7.08M on statements +
 PHP 32.46M estimated over 5 months (Oct-Nov PHP 10.23M); the Cash forecast was already about -PHP 10.5M within 30 days before
-the estimates -- the money-in assumption (average deposits per weekday from the imported statements) should be reviewed with the owner. First live run: 21 printed checks without numbers (printed Sep 26, dated
+the estimates -- the money-in assumption (average deposits per weekday from the imported statements) should be reviewed with the owner. **Card dues next to typed check dates (same day, owner: "the objective here is to help me plan for checks"):**
+`cc_forecast_service.card_week_info(dates)` -> per week of the typed dates: on statements + estimated card dues, heavy = at least
+`HEAVY_FACTOR` (1.5) x the average weekly card dues over the next 5 months; past dates skipped. `views/card_dues_note.py
+render_card_week_notes()` under the Issue checks, Edit parked checks and Corrections grids (views/order_statement.py) and the loan-note
+Edit parked checks / Corrections grids (views/lenders.py): a warning for a heavy week, a one-line caption otherwise; never blocks. First live run: 21 printed checks without numbers (printed Sep 26, dated
 2027) + check 3992527921 (owner confirmed correct). Tests: `tests/test_data_health.py`.
 
 **Bank is the truth + capture check + double-entry guard (2026-09-28, owner: "Always remember bank statement is ultimate truth and have a

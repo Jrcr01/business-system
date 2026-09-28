@@ -116,3 +116,39 @@ def forecast_by_week(today: date | None = None, months: int = MONTHS_AHEAD) -> p
         b["cards"].add(int(r["card_id"]))
     out = [dict(v, cards=len(v["cards"])) for _, v in sorted(weeks.items())]
     return pd.DataFrame(out, columns=["week_start", "recorded", "estimated", "low", "high", "cards"])
+
+
+HEAVY_FACTOR = 1.5               # a week with at least this times the average weekly card dues is "heavy"
+
+
+def card_week_info(check_dates, today: date | None = None) -> list[dict]:
+    """For typed check dates (owner, 2026-09-29: "the objective here is to help me plan for checks"): the card dues due in the week of
+    each date -- on statements + estimated -- and whether that week is HEAVY (at least HEAVY_FACTOR x the average weekly card dues over
+    the next MONTHS_AHEAD months). One entry per week, in date order; past dates are skipped.
+    Each: {week_start, dates, recorded, estimated, total, average, heavy}."""
+    today = today or date.today()
+    dates = sorted({d if isinstance(d, date) else date.fromisoformat(str(d)[:10]) for d in check_dates if d is not None and str(d) not in ("", "NaT")})
+    dates = [d for d in dates if d >= today]
+    if not dates:
+        return []
+    months = MONTHS_AHEAD
+    while _add_month(today, months) < max(dates) + timedelta(days=7):
+        months += 1
+    weeks = forecast_by_week(today, months=months)
+    if weeks.empty:
+        return []
+    weeks = weeks.assign(total=weeks["recorded"] + weeks["estimated"])
+    horizon_end = _add_month(today, MONTHS_AHEAD)
+    n_weeks = max(1, ((horizon_end - today).days + 6) // 7)
+    average = float(weeks.loc[weeks["week_start"] < horizon_end, "total"].sum()) / n_weeks
+    by_week = {r["week_start"]: r for _, r in weeks.iterrows()}
+    out: dict = {}
+    for d in dates:
+        wk = d - timedelta(days=d.weekday())
+        if wk not in out:
+            r = by_week.get(wk)
+            rec, est = (float(r["recorded"]), float(r["estimated"])) if r is not None else (0.0, 0.0)
+            out[wk] = {"week_start": wk, "dates": [], "recorded": rec, "estimated": est, "total": rec + est, "average": average,
+                       "heavy": average > 0 and (rec + est) >= HEAVY_FACTOR * average}
+        out[wk]["dates"].append(d)
+    return [out[k] for k in sorted(out)]
