@@ -21,6 +21,7 @@ Format: dated entries, one build session at a time.
 - [2026-09-15 (Phase 8c)](#2026-09-15-phase-8c--reconstructing-real-postdated-checksinstallments-and-bank-loan-beneficiaries) — Reconstructing real postdated checks/installments, and bank loan beneficiaries
 - [2026-09-15 (PDF fix)](#2026-09-15--schedule-of-payments-pdf-long-payee-names-overlapping-the-track-column) — Schedule of Payments PDF: long payee names overlapping the Track column
 - [2026-09-17 to 2026-09-27](#2026-09-17-to-2026-09-27--live-operation-controls-and-clean-up-catch-up-entry) — Live operation: check-number rules, parking/statuses, Chrysanth, credit cards, statements, security hardening, app.py split
+- [2026-09-28 (Phase F)](#2026-09-28--phase-f-foundation-scoped-cloud-server-logins-then-salesar) — Next steps: one module at a time, Sales/AR next, cloud server on SQLite, logins, domain, backups, cost
 
 ---
 
@@ -625,3 +626,21 @@ Written 2026-09-27 as a catch-up: this log had stopped at 2026-09-15 while a lot
 * Owner: knows reconciliation matters but has no time to tick off cleared checks; has Metrobank MBOS and can download statements; wants AI business-intelligence insights. Decided: the owner only downloads and drops the file, the app matches (number + amount) and shows exceptions only; insights local first (AI write-up later, optional); show both (totals keep the check-date rule for now); working capital starts with cash vs payables.
 * The real MBOS PDF read cleanly (655 lines, balances all add up). Its checks were Jan-Feb 2026, before the system's checks (from Sep 20, 2026), but it already surfaced one legacy record whose date and amount look mistyped (check 3992527921).
 * 2026-09-28: office printers stay PDF-then-print (preview, normal Windows print window, nothing to maintain; checks print via Chrysanth); only the thermal printer is connected directly, since it needs ESC/POS and every copy must be counted.
+
+---
+
+## 2026-09-28 — Phase F (Foundation) scoped: cloud server, logins, then Sales/AR
+
+Planning conversation in claude.ai (Cowork), no code changed. Spec: CLAUDE.md "Phase F — Foundation" (copy in `Claude outputs/Phase_F_Foundation_spec.md`).
+
+* Owner asked why the system uses SQLite and what happens when AP becomes one part of a larger system. Answer: right for one user on one laptop; limits are several writers, several computers, other modules, logins. The 2026-09-28 code scan found the real cost of a later move is coupling (44 files import sqlite3; 102 direct `sqlite3.connect` calls beside 82 `get_conn()`), not SQLite itself.
+* **One module at a time** (owner): AP now, **Sales/AR next** (includes AR). AP owns the shared master data (creditors, bank accounts) for now; consolidate when Sales/AR starts. Advised and accepted: Sales/AR in the SAME database (own prefixes), sharing parties and `bank_transactions` (customer deposits are already imported) -- not a separate system merged at the end.
+* Sales/AR will be used by **staff on their own computers** (tasks delegated), **fewer than 5 users**.
+* Hosting: **small cloud server**, Singapore region; provider not chosen yet (DigitalOcean / AWS Lightsail / Vultr).
+* **Stay on SQLite on the server** (only the app opens the file; WAL + `busy_timeout` + `BEGIN IMMEDIATE`). PostgreSQL was first recommended, then deferred once the user count (< 5) was known: move only at ~10+ users at once, another program needing direct DB access, or wanting a provider-run database. F1 keeps it a one-setting switch.
+* Found in the scan and put in the spec: foreign keys only enforced on the `get_conn()` path (possible orphan rows in live); 98 `date.today()`/`datetime.now()` + 69 SQL `'localtime'` lines -> wrong "today" 00:00-08:00 Manila on a UTC server; OS / LN numbers by MAX+1 (collide with two users); payable-ceiling read-then-write (two users could overpay); `audit_logs` has no user column; laptop-only pieces (thermal backends, `C:\AP_Data`, `.bat` / Task Scheduler, Drive sign-in expiring every 7 days).
+* **Domain follows the business name, Slick's Tire Supply** (owner); one `app.` subdomain for all modules, `test.` for the test site; owner checks availability (.com / .com.ph / .ph).
+* **Off-server backup = today's setup** (owner): laptop downloads the nightly server backup into Google Drive `AP_Backups`; app warns after 2 days without one. Cloud object storage later, when the setup needs it.
+* **Thermal printing on the server = download and print first** (owner); a print counts only after "Printed" is confirmed; one-click print helper deferred until the printer is bought.
+* Estimated running cost, AP alone (prices seen 2026-09-28): ~USD 17-20/month (~PHP 1,000-1,150) = 2 GB server $12 + weekly server backup $2.40 + domain (.com ~$1/mo, .ph ~$3/mo) + likely 12% VAT. Lean option (1 GB) ~USD 9. HTTPS certificate, Google sign-in, Drive backups: no extra cost.
+* Still open: provider; exact domain; QR copies on Google Drive vs served by the app. F1 not started.

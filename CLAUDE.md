@@ -5,7 +5,8 @@
 - [Current State (2026-09-27)](#current-state-2026-09-27) — **read this first**: what is live now, where things are, rules added since 2026-09-17
 - [Thermal Statement Printing](#thermal-statement-printing) — gated mini-phase (2026-09-27): spec, locked decisions, build order, acceptance criteria
 - [Bank Statement Import and Cash Insights](#bank-statement-import-and-cash-insights) — MBOS statement import, automatic check matching, cash insights (2026-09-27), reconciliation v2 + alerts (2026-09-28)
-- [Current Priority / Scope](#current-priority--scope) — Phased roadmap (Phases 1-6)
+- [Phase F — Foundation](#phase-f--foundation-cloud-server-logins-safe-for-a-few-users) — **next** (scoped 2026-09-28, not started): cloud server, logins, safe for a few users; before Sales/AR
+- [Current Priority / Scope](#current-priority--scope) — Phased roadmap (Phases 1-6, then Phase F, then Sales/AR)
 - [Update Protocol](#update-protocol) — How to maintain this file
 - [Core System Configuration](#core-system-configuration) — Bank account, database, branding, core rules
 - [Implementation Backlog](#implementation-backlog)
@@ -34,6 +35,7 @@ The system is **live** (cut over Sep 2026) for Slick's Tire Supply, used daily b
 * `app.py` = the router: page config, startup schema check, the **grouped sidebar menu** (`st.navigation`, 2026-09-27: Daily work = Payment run, Add data, Order statements, Checks and checkbook · Other payables = Lenders, Bank loans, Credit cards · Records and reports = Dashboard, Creditors, Analytics, Reports · System = Admin and audit, Data health), sidebar (quick search, Search everything, mini calendar, shortcuts, park-draft reminder), hotkeys script. Pages are `st.Page(views.<x>.render, url_path=<id>)` held in `views.shared.PAGES`; **only the open page runs** (a click used to rerun all 10 tabs, ~2-3 s -> ~0.25-0.6 s). Navigation by page id: `_jump(page_id, **state)` (st.switch_page, from the sidebar) and `go_to(page_id, **state)` (sets `_global_jump`, applied before any page draws -- use it from buttons inside pages and dialogs). Search results carry `{'page', 'state'}`. Alt+1...0 click the first ten menu links. The first page (Payment run) lives at `/`, so typing `/payment-run` gives "Page not found".
 * Screens: `views/<page>.py`, each `render()`: payment_run (quick report + cycle stages; data from `engines/payment_run_service.py`, Today PDF `engines/today_report_pdf.py`), add_data, dashboard, analytics, creditor_master, order_statement, lenders, bank_loans, credit_cards, checks, reports, admin. **Entry forms are shared functions** called by their own page and by Add data -- `render_batch_invoices/_memos(statement_id)`, `render_add_cc_statement_form()`, `render_new_loan_note_form()`, `render_add_installment_form(loan_note_id)`, `render_new_bank_loan_form()`, `render_bank_loan_schedule(bank_loan_id)`, `render_new_booklet_form()`, `render_log_spoiled_form()`, `render_new_creditor_form()` -- change a form in one place. Shared screen helpers in `views/shared.py`: `q`, `refresh(done=msg)` (toast after the redraw), dialogs, pickers, `guard_duplicate_submit`, `batch_scoped_key`, the check-number/print sections, `global_search_dialog`, `_jump`/`go_to`, and the look: `page_header`, `section`, `status_badge`/`status_text` (Draft grey, Parked orange, Issued blue, Paid green, Cancelled red), `money_col`/`MONEY_FORMAT` (`₱%,.2f`), `date_col` (`MMM DD, YYYY`), `OS_/LN_/BL_BROWSE|NEW` + `mode_label`. Theme: `.streamlit/config.toml` (navy sidebar, Inter, `toolbarMode = minimal`); no logo on screen (PDFs keep it). One `type="primary"` button per screen, on the main action. Order statement Checks sub-tab = one switch (`os_checks_view__<sid>`: Issue checks / Checks in this batch / Assign numbers / Corrections). Business rules in `engines/common.py` (`get_conn`, `q_live`, `php`, `has_value`, `cell_text`, dates, calendar marks, `DB_PATH`, `PRIMARY_BANK_ACCOUNT_ID`), `statement_rules.py`, `check_rules.py`, `creditor_rules.py`, `loan_note_rules.py`, `card_rules.py`. `app.py` imports every name back (`app.<name>` still works for tests). New rule code goes in `engines/`, new screen code in `views/`, not `app.py`.
 * Stack decision (2026-09-27): **stay on Python + Streamlit.** Single user, one laptop, tiny data; the slowness was all-tabs-rendering, now fixed. Revisit only if: several people with their own logins/roles or approvals, use from phones / other PCs / the internet, or bank/API integrations Streamlit can't host. Then keep Python, `engines/*` and the tests, move SQLite → PostgreSQL and replace only `views/` (Django, or FastAPI + a web front end) — a gradual swap, not a rewrite.
+  **2026-09-28: the revisit trigger has arrived** -- Sales/AR (next module) will be used by staff on their own computers, fewer than 5 users. Answer = Phase F: **stay on SQLite, moved to a small cloud server** (WAL + `BEGIN IMMEDIATE`), Google sign-in + roles, Streamlit stays; PostgreSQL deferred until ~10+ users at once, another program needing direct database access, or a provider-run database is wanted. The Sales front end (Streamlit vs Django) is decided at Sales phase 0.
 * Tests: `python -m pytest` (~270). `tests/conftest.py` imports every `engines.*` / `views.*` module and repoints every module that has a `DB_PATH` automatically — there is no hand-kept list any more. AppTest note: it does not keep the open page across a button click (it falls back to the first page); open a page with `session_state["_global_jump"] = {"page": "<id>", "state": {...}}` and verify button flows in a browser on the test port (the preview tool reads `C:\Users\Rhodora\Documents\.claude\launch.json`, entry `test-copy-8502`; restart it after editing views -- it does not always reload them).
 * `archive/one_time_scripts/` = migration/clean-up scripts that already ran (Phase 8, renumbering, card-number removal…); record only, never re-run. Their tests are there too and are not collected.
 * Never commit real data (`.gitignore` covers every `*.db*`, `*.csv`, `*.xlsx/xlsm`, `*.pdf`, `data/`; the one tracked workbook is `excel_invoice_entry/invoice_entry_master.xlsm`, which the app needs). Full card numbers were removed from the database, every copy and git history (2026-09-27) — only `card_number_last4` is used; never store full numbers again.
@@ -359,6 +361,128 @@ docs / tests mention some real supplier names and check numbers (fine for a PRIV
 
 ---
 
+## Phase F — Foundation: cloud server, logins, safe for a few users
+
+Scoped 2026-09-28 (owner). **Status: scoped, not started. Gated: finish each step, stop, summarize, wait for the owner before the next.**
+Sits between AP (done, live) and Sales/AR (next module).
+
+### The owner's situation (the reasons for every decision below)
+* One module at a time; AP owns the shared master data until Sales starts; then Sales/AR shares the same database.
+* Sales/AR will be used by staff on their own computers (tasks delegated). **Fewer than 5 users in total.**
+* Hosting: **a small cloud server** (owner, 2026-09-28).
+* The owner runs the system alone and is not an IT person -> keep the moving parts few, the monthly cost low, and every risky step
+  behind a preview / `--apply` script with a backup first (the existing rule).
+
+### Decisions (locked)
+* **Stay on SQLite, moved to the server.** Staff use a browser; only the app on the server opens the database file, so the
+  "many PCs sharing one file" problem does not exist. For < 5 users SQLite is enough with: **WAL mode** (reading while someone saves),
+  `busy_timeout` (wait instead of error), and **`BEGIN IMMEDIATE` for every write transaction** (saves happen one at a time).
+* **PostgreSQL deferred, not dropped.** F1 makes it a one-setting switch later. Move only when one of these happens:
+  regularly ~10+ people at once; another program (BI / reporting tool, a second app) must connect to the database directly;
+  or the owner wants the provider to run the database and its point-in-time backups.
+* **Streamlit stays.** The Sales front end is decided at Sales phase 0, not here.
+* Sales/AR goes in the **same database** with its own table prefixes (`sales_`, `ar_`); shared: parties (creditors now), `bank_transactions`,
+  settings, audit.
+* Business dates follow **Asia/Manila**, never the server clock (cloud servers run on UTC).
+* Real data never in git; never modify the live database from a session (unchanged).
+
+### Found in the code (2026-09-28 scan) -- handle each, don't rediscover
+* 44 files import `sqlite3`; 102 direct `sqlite3.connect(...)` calls beside 82 `common.get_conn()` calls.
+* **Foreign keys are only enforced on the `get_conn()` path** (it runs `PRAGMA foreign_keys = ON`; SQLite has them off by default), so the
+  102 direct connections write with no link checks -> the live data may hold orphan rows (e.g. an allocation pointing to a deleted invoice).
+* 98 uses of `date.today()` / `datetime.now()` and 69 SQL lines with `'localtime'` / `JULIANDAY` (24 files) -> on a UTC server "today" is
+  yesterday from 00:00 to 08:00 Manila time: the **due-today-is-still-owed** rule, the planner and the aging buckets would be wrong.
+* OS / LN numbers are `MAX(existing) + 1` (`db_engine.promote_draft_statement`, `loan_note_rules`) -> two users promoting at once collide.
+* Payable-ceiling checks (`issue_check`, `issue_checks_grid`, `apply_check_correction`, `lock_statement`) read the balance, then write ->
+  two users issuing on the same batch at the same moment could both pass and overpay.
+* `audit_logs` has no user column -> with staff, "who did it" is lost.
+* Laptop-only pieces: thermal printing (USB / Bluetooth / office LAN cannot be reached from a cloud server), `C:\AP_Data` paths (bank
+  statement copies, Drive sign-in files), `.bat` / `.ps1` / Windows Task Scheduler (backup, link sweep, start / stop).
+* Google Drive sign-in expires every 7 days (OAuth app in Testing) -> on a server nobody is there to re-run `drive_connect.bat`.
+
+### Build order
+**F1 -- One door, one clock, safe writes (on the laptop; no visible change for the owner).**
+* Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
+  `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
+* Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes
+  (payable ceiling, lock, promote, check-number assignment, allocations, imports) does both inside ONE `write_tx()`.
+* Numbering: a `doc_counters` table (series, year, last_no), incremented inside the promote transaction -- never `MAX + 1`.
+* One clock: `common.today()` / `common.now()` with `ZoneInfo("Asia/Manila")`; SQL gets today as a **parameter**, never
+  `DATE('now','localtime')`. Replace the 98 Python calls and 69 SQL lines. `tests/test_due_today_rule.py` must still pass, plus a new
+  test that fakes the clock at 07:30 Manila (= 23:30 UTC the day before) and checks due-today, the aging bucket and the planner.
+* `audit_logs.user_email` (nullable; existing rows = the owner). Every write function takes the acting user (the owner until F2).
+* Foreign keys: read-only `fk_check.py` (`PRAGMA foreign_key_check` on a copy of live) lists orphan rows for the owner; fixes go through a
+  preview / `--apply` script.
+* Portable SQL for new or touched code (keeps PostgreSQL a switch later): `INSERT ... RETURNING id` instead of `lastrowid`,
+  `ON CONFLICT` instead of `INSERT OR IGNORE/REPLACE`. Untouched old queries are left alone.
+* New test: two threads issue checks on the same batch at once -> exactly one passes the ceiling; two promotions -> two different numbers.
+* Acceptance: full suite green; no `sqlite3.connect` outside common.py; no `'localtime'` or `date.today()` in engines / views;
+  `fk_check.py` on a copy of live reports zero orphans.
+
+**F2 -- Logins and roles.**
+* `st.login()` with Google sign-in (tells the app WHO; roles are ours). Table `app_users` (email, name, role, is_active, created_at).
+* Roles: `owner` (everything), `sales` (Sales/AR pages only -- none exist yet), `viewer` (read-only reports). Unknown email = no access.
+* Every page declares who may open it; `st.navigation` shows only allowed pages; engine write functions check the role too
+  (a hidden button is not a permission). Audit rows carry the user's email.
+* Admin page: add / deactivate users, change role (owner only, audited). Works on the laptop first, before any server exists.
+
+**F3 -- The cloud server.**
+* Region: **Singapore** (closest to the Philippines). One small Linux VM (1-2 GB RAM is plenty for < 5 users and this data size).
+  Candidates: DigitalOcean, AWS Lightsail, Vultr (all have Singapore) -- owner picks. No separate database service is needed.
+* Only HTTPS (443) open to the internet, through a reverse proxy with an automatic certificate (e.g. Caddy) on the owner's own domain.
+  **Domain follows the business name, Slick's Tire Supply** (owner, 2026-09-28), e.g. `slickstiresupply.com` / `.com.ph` / `.ph`
+  (owner checks availability and registers). The system lives on ONE subdomain for every module, e.g. `app.slickstiresupply.com`
+  (not `ap.`), so Sales/AR joins the same address and the bare domain stays free for a public website later. The TEST site:
+  `test.slickstiresupply.com`.
+  SSH by key only. The app runs as a service that restarts on failure and after a reboot.
+* The database file lives on the server's disk outside the app folder (the server's `AP_Data`), never inside git or a synced folder.
+* Secrets (Google login client, Drive credentials) in a server environment file, never in git.
+* Backups, three layers:
+  1. Nightly `backup_live_db.py` on the server (SQLite online backup, safe while the app runs), newest 30 kept on the server.
+  2. **Off the server every night -- decided (owner, 2026-09-28): today's setup.** A laptop task downloads the newest server backup into
+     the existing Google Drive `AP_Backups` folder (newest 30). Guardrail, because this only runs while the laptop is on: the server
+     records each successful download, and Payment run warns the owner when no copy has left the server for 2 days.
+     Cloud object storage (runs without the laptop) is **deferred** -- add it when the setup needs it (e.g. the laptop is often off,
+     or Sales staff depend on the system daily).
+  3. The provider's weekly whole-server backup (a few dollars; lets the whole server be rebuilt).
+* The monthly restore test moves to the server: restore the newest backup into a scratch copy, run the schema check and the test app on
+  it, must say PASSED.
+* Server jobs replace the Windows task: nightly backup, `expire_statement_links`, daily link sweep.
+* A TEST site on the same server with its own database copy (replaces port 8502), login required, owner only.
+
+**F4 -- Laptop-only features.**
+* Thermal printing -- **decided (owner, 2026-09-28): download and print first.** The app gives the slip as a PDF (and the raw `.bin` job);
+  the laptop prints it. Audit / version / reprint rules unchanged: a print is recorded when the owner confirms "Printed" after the
+  download (a download alone is not a print -- same rule as "viewing is never a print"). A print helper on the laptop (one-click,
+  direct to the printer) is **deferred** until the printer is bought and the download step proves tedious.
+* QR copies -- owner picks: keep Google Drive (needs a sign-in that does not expire weekly), or let the app serve each statement PDF on an
+  unguessable link with the same expiry rules (no Google dependency, no 7-day sign-in; the server is on the internet anyway).
+* Bank statement files and other uploads: server storage outside the web root, included in the backups.
+* Chrysanth export and all downloads: unchanged (the browser downloads the file).
+
+**F5 -- Cutover.**
+* A quiet evening: stop the laptop app -> final backup -> copy the database file to the server -> the owner checks a list of known
+  figures (open batches, AP total, bank balance, a few checks) -> switch. No conversion: it is the same SQLite file.
+* The laptop copy is kept read-only for 30 days. `CLAUDE.md` "How it runs" rewritten for the server; the laptop `.bat` files archived.
+
+### Decisions for the owner (ask before the step that needs them)
+* Decided 2026-09-28: domain follows the business name (Slick's Tire Supply), one `app.` subdomain for all modules; off-server backup =
+  today's setup (laptop -> Google Drive), cloud storage later if needed; thermal = download and print first.
+* Still open -- F3: provider (DigitalOcean / AWS Lightsail / Vultr, Singapore); the exact domain once availability is checked.
+* Still open -- F4: QR copies on Google Drive or served by the app.
+* Before Sales: customer data will be on a cloud server -> check the Data Privacy Act (RA 10173) obligations with the accountant / counsel.
+
+### Acceptance criteria (whole phase)
+* Business "today" is Manila's today at any hour of the server clock.
+* Two users promoting / issuing checks at the same moment never collide on a number and never overpay a batch.
+* Nobody can open the app without a login; a `sales` user cannot open or call any AP function.
+* Every audit row says who did it.
+* The same figures on the server as on the laptop after the cutover.
+* A backup reaches Google Drive every night the laptop is on; the app warns after 2 days without one; the monthly restore test PASSES.
+* A thermal slip downloaded but not confirmed "Printed" is not recorded as a print.
+
+---
+
 ## Current Priority / Scope
 
 Phased roadmap — work **one phase at a time**, and **ignore the code of other phases** while a phase is active (don't touch, extend, or polish anything belonging to a later phase):
@@ -369,6 +493,8 @@ Phased roadmap — work **one phase at a time**, and **ignore the code of other 
 4. Necessary Reports. Scoped and partially built 2026-09-06 — see Phase 4 section below.
 5. Dashboard — KPI. Started 2026-09-06 — see Phase 5 section below.
 6. Others. Check printing (Chrysanth-style engine + the park-then-print "check run" workflow) started 2026-09-06/07 — see Phase 6 section below. Redesigned 2026-09-07 (Phase 6 Redux: check numbers move to print-time assignment with multi-booklet auto-sequencing) — see Phase 6 Redux section below. Simplified again 2026-09-13 (Phase 6 Redux v2: auto-sequencing dropped in favor of manual per-booklet dropdown selection; design finalized, implementation deferred behind a stabilization pass) — see Phase 6 Redux v2 section below.
+
+**Next (2026-09-28, owner):** Phase F — Foundation (cloud server, logins, safe for a few users; see its section above) -> then the **Sales/AR module** (same database, own table prefixes `sales_` / `ar_`, shares parties + `bank_transactions`). One module at a time; AP owns the shared master data until Sales/AR starts, then it is consolidated.
 
 ## Update Protocol
 
