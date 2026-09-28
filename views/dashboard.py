@@ -568,5 +568,5 @@ def render() -> None:
             itc3.metric("YTD total", php(interest_trend_df["total_interest"].sum()))
 
     with st.expander("Recent audit log"):
-        audit_df = fix_nullable_int(q("SELECT log_id, user_action, entity_name, entity_id, old_values, new_values, datetime(timestamp, '+8 hours') AS timestamp FROM audit_logs ORDER BY log_id DESC LIMIT 15"), "entity_id")
+        audit_df = fix_nullable_int(q("SELECT log_id, datetime(timestamp, '+8 hours') AS timestamp, user_email AS who, user_action, entity_name, entity_id, old_values, new_values FROM audit_logs ORDER BY log_id DESC LIMIT 15"), "entity_id")
         st.dataframe(audit_df, hide_index=True)

@@ -52,7 +52,7 @@ def add_credit_memo(statement_id: int, memo_ref: str, memo_date: date, amount: f
         # earlier memos on this batch were already confirmed -- the net total just changed again.
         cur.execute("UPDATE order_statements SET credit_memos_confirmed = 0 WHERE statement_id = ?", (statement_id,))
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CREDIT_MEMO_APPLIED', 'order_statements', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CREDIT_MEMO_APPLIED', 'order_statements', ?, ?)",
             (statement_id, f"Memo {memo_ref} for {php(amount)}: {reason or 'no reason given'}"),
         )
         conn.commit()
@@ -127,7 +127,7 @@ def delete_credit_memo(credit_memo_id: int) -> tuple[bool, str]:
             return False, "This batch is locked. Unlock it first to delete a credit memo."
         cur.execute("DELETE FROM credit_memos WHERE credit_memo_id = ?", (credit_memo_id,))
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CREDIT_MEMO_DELETED', 'credit_memos', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CREDIT_MEMO_DELETED', 'credit_memos', ?, ?)",
             (credit_memo_id, f"Deleted {memo_ref} ({php(amount)})"),
         )
         # Credit Memo Deduction Guard: re-evaluate after the delete -- if that was the batch's
@@ -166,7 +166,7 @@ def delete_invoice(invoice_id: int) -> tuple[bool, str]:
             return False, f"This invoice has {alloc_count} check(s) already allocated to it — cancel or reallocate those first, then delete."
         cur.execute("DELETE FROM invoices WHERE invoice_id = ?", (invoice_id,))
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('INVOICE_DELETED', 'invoices', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'INVOICE_DELETED', 'invoices', ?, ?)",
             (invoice_id, f"Deleted {doc_ref} ({php(amount)})"),
         )
         conn.commit()
@@ -221,7 +221,7 @@ def edit_credit_memo(credit_memo_id: int, memo_ref: str, memo_date: date, amount
         if any(c[0] == "amount" for c in changes):
             cur.execute("UPDATE order_statements SET credit_memos_confirmed = 0 WHERE statement_id = ?", (statement_id,))
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CREDIT_MEMO_EDITED', 'credit_memos', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CREDIT_MEMO_EDITED', 'credit_memos', ?, ?)",
             (credit_memo_id, f"{len(changes)} field(s) changed: {', '.join(c[0] for c in changes)}"),
         )
         conn.commit()
@@ -287,7 +287,7 @@ def edit_invoice(invoice_id: int, doc_ref: str, invoice_date: date, due_date: da
                 (invoice_id, statement_id, field_name, old_val, new_val),
             )
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('INVOICE_EDITED', 'invoices', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'INVOICE_EDITED', 'invoices', ?, ?)",
             (invoice_id, f"{len(changes)} field(s) changed: {', '.join(c[0] for c in changes)}"),
         )
         conn.commit()
@@ -362,7 +362,7 @@ def lock_statement(statement_id: int) -> tuple[bool, str]:
         cur = conn.cursor()
         cur.execute("UPDATE order_statements SET is_locked = 1 WHERE statement_id = ?", (statement_id,))
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BATCH_LOCKED', 'order_statements', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BATCH_LOCKED', 'order_statements', ?, ?)",
             (statement_id, "Batch re-locked"),
         )
     # Thermal statement printing, step 3: edited after an unlock and re-locked -> a new statement version, and "Needs reprint" if an
@@ -531,7 +531,7 @@ def unlock_statement(statement_id: int) -> tuple[bool, str]:
             return False, "This batch is cancelled and can't be unlocked."
         cur.execute("UPDATE order_statements SET is_locked = 0 WHERE statement_id = ?", (statement_id,))
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BATCH_UNLOCKED', 'order_statements', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BATCH_UNLOCKED', 'order_statements', ?, ?)",
             (statement_id, "Batch unlocked for correction/replacement"),
         )
         conn.commit()

@@ -214,7 +214,7 @@ def edit_loan_note_terms(loan_note_id: int, principal_amount: float, monthly_int
             _recompute_schedule(cur, loan_note_id)
             _assert_no_negative_balance(cur, loan_note_id)
             cur.execute(
-                "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('LOAN_NOTE_EDITED', 'loan_notes', ?, ?)",
+                "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'LOAN_NOTE_EDITED', 'loan_notes', ?, ?)",
                 (loan_note_id, f"Principal/rate updated to {principal_amount}/{monthly_interest_rate}%"),
             )
     except _ScheduleError as e:
@@ -319,7 +319,7 @@ def create_schedule_from_checks(loan_note_id: int) -> tuple[bool, str]:
             _recompute_schedule(cur, loan_note_id)
             _assert_no_negative_balance(cur, loan_note_id)
             cur.execute(
-                "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('SCHEDULE_FROM_CHECKS', 'loan_notes', ?, ?)",
+                "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'SCHEDULE_FROM_CHECKS', 'loan_notes', ?, ?)",
                 (loan_note_id, f"{created} schedule row(s) created and {linked} existing row(s) linked to existing checks (interest 0)"),
             )
     except _ScheduleError:

@@ -144,7 +144,7 @@ def mark_batch_printed(print_batch_id: int, printed: bool = True) -> tuple[bool,
             (int(print_batch_id),),
         )
         conn.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES (?, 'check_print_batches', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), ?, 'check_print_batches', ?, ?)",
             ("BATCH_MARKED_PRINTED" if printed else "BATCH_UNMARKED_PRINTED", int(print_batch_id), "marked as printed in Chrysanth" if printed else "printed mark removed"),
         )
         conn.commit()

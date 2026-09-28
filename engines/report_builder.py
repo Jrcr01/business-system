@@ -622,7 +622,7 @@ def save_report(name: str, spec: dict, report_id: int | None = None) -> tuple[bo
             rid = int(report_id)
         else:
             rid = conn.execute("INSERT INTO saved_reports (name, spec_json) VALUES (?, ?)", (name, js)).lastrowid
-        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('REPORT_SAVED', 'saved_reports', ?, ?)", (rid, name))
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'REPORT_SAVED', 'saved_reports', ?, ?)", (rid, name))
     return True, f"Saved “{name}”.", rid
 
 
@@ -642,7 +642,7 @@ def delete_report(report_id: int) -> None:
         r = conn.execute("SELECT name FROM saved_reports WHERE report_id = ?", (int(report_id),)).fetchone()
         conn.execute("DELETE FROM saved_reports WHERE report_id = ?", (int(report_id),))
         if r:
-            conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('REPORT_DELETED', 'saved_reports', ?, ?)",
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'REPORT_DELETED', 'saved_reports', ?, ?)",
                          (int(report_id), r["name"]))
 
 

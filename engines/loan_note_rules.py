@@ -103,7 +103,7 @@ def delete_loan_note(loan_note_id: int) -> tuple[bool, str]:
         cur.execute("DELETE FROM loan_installments WHERE loan_note_id = ?", (loan_note_id,))
         cur.execute("DELETE FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('LOAN_NOTE_DELETED', 'loan_notes', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'LOAN_NOTE_DELETED', 'loan_notes', ?, ?)",
             (loan_note_id, "Deleted loan note with no checks on record"),
         )
         conn.commit()
@@ -135,7 +135,7 @@ def cancel_loan_note(loan_note_id: int) -> tuple[bool, str]:
         cur = conn.cursor()
         cur.execute("UPDATE loan_notes SET status = 'Cancelled' WHERE loan_note_id = ?", (loan_note_id,))
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('LOAN_NOTE_CANCELLED', 'loan_notes', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'LOAN_NOTE_CANCELLED', 'loan_notes', ?, ?)",
             (loan_note_id, f"Cancelled loan note: {cancelled_checks} check(s) cancelled"),
         )
         conn.commit()

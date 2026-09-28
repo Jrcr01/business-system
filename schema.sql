@@ -388,7 +388,8 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     entity_id INTEGER,
     old_values TEXT,
     new_values TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    user_email TEXT          -- who did it (Phase F1.5, migration 056): written by the SQL function acting_user()
 );
 
 -- Views

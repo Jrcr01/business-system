@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime
 
 from engines.clock import manila_now, manila_today, sql_now, sql_today  # noqa: F401
+from engines.acting_user import acting_user
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -36,6 +37,7 @@ def open_db(db_path: str | None = None) -> sqlite3.Connection:
     common.get_conn()), so the safety settings are the same everywhere:
       * foreign_keys = ON   -- links between records are checked (SQLite has them OFF unless asked, per connection);
       * busy_timeout        -- wait up to 10 s when someone else is saving, instead of failing with "database is locked";
+      * SQL functions manila_today() / manila_now() (one clock, F1.3) and acting_user() (who did it, F1.5);
       * journal_mode = WAL  -- people can read while someone saves (stored in the file; recent saves sit in <db>-wal until SQLite
                                checkpoints them, so copy the database only with the backup API -- db_location.safe_copy()).
     `db_path` defaults to this module's DB_PATH; callers pass their own module's DB_PATH so tests / scripts that point one module at
@@ -47,6 +49,8 @@ def open_db(db_path: str | None = None) -> sqlite3.Connection:
     # one clock (Phase F1.3): SQL asks Python for Manila's today / now, never the computer's clock
     conn.create_function("manila_today", 0, sql_today)
     conn.create_function("manila_now", 0, sql_now)
+    # who did it (Phase F1.5): every audit_logs row writes user_email = acting_user()
+    conn.create_function("acting_user", 0, acting_user)
     if path not in _WAL_DONE and path != ":memory:" and not str(path).startswith("file::memory:"):
         _ensure_wal(conn)                               # stored in the file itself: once per file per run is enough
         _WAL_DONE.add(path)
@@ -133,7 +137,7 @@ def promote_draft_statement(statement_id: int, target_status: str) -> str:
         """, (permanent_ref, target_status, statement_id))
         
         cursor.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('STATEMENT_PROMOTED', 'order_statements', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'STATEMENT_PROMOTED', 'order_statements', ?, ?)",
             (statement_id, f"{current_ref} -> {permanent_ref} ({target_status})"),
         )
     return permanent_ref

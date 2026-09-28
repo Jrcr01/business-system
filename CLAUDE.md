@@ -42,7 +42,7 @@ decisions log: **`docs/SLICKS_ERP_BLUEPRINT.md`** (read it before planning anyth
 * **Rules for all code (Phase F1):** open the database only through `engines/common.get_conn()` / `write_tx()` (the one door:
   foreign keys, busy timeout, WAL); anything that checks then saves goes in ONE `write_tx()`; business dates/times only from
   `engines/clock.py` (`manila_today()` / `manila_now()`, SQL `manila_today()`), never the computer clock; numbers from
-  `next_doc_number()`; `RETURNING` instead of `lastrowid` in new SQL. Tests read views through `get_conn()`.
+  `next_doc_number()`; every `INSERT INTO audit_logs` writes `user_email` = SQL `acting_user()` (`engines/acting_user.py`); `RETURNING` instead of `lastrowid` in new SQL. Tests read views through `get_conn()`.
 * Each module gets its own `erp/<module>/CLAUDE.md` (Claude reads it when working in that folder). AP's notes: `docs/modules/ap.md`
   (read before touching AP code — it holds every AP rule and decision).
 * Tests: `python -m pytest` (~400; ~1.5 min). Sandbox app: preview `slicks-erp-sandbox-8504`.
@@ -58,9 +58,9 @@ decisions log: **`docs/SLICKS_ERP_BLUEPRINT.md`** (read it before planning anyth
 ## Foundation (Phase F) — status
 
 Detail: `docs/foundation/phase_f.md`. Done on `erp` (not live): **F1.1** broken-link check (`fk_check.py`), **F1.2** one door + WAL,
-**F1.3** one clock (Manila), **F1.4** safe saves (`write_tx`, `doc_counters`). Next: **F1.5** audit "who did it" + all-or-nothing
-check-number typing; then Django skeleton + `core` (users / roles, audit, numbering, parties, items, carve-out tags), then server and
-logins before the owner's brother uses Sales. Migrations on this branch not yet live: 054 (one-clock views), 055 (`doc_counters`).
+**F1.3** one clock (Manila), **F1.4** safe saves (`write_tx`, `doc_counters`), **F1.5** audit "who did it" (`audit_logs.user_email`
+via SQL `acting_user()` -- every audit INSERT must include it, a test checks) + all-or-nothing manual check-number typing. Next: Django skeleton + `core` (users / roles, audit, numbering, parties, items, carve-out tags), then server and
+logins before the owner's brother uses Sales. Migrations on this branch not yet live: 054 (one-clock views), 055 (`doc_counters`), 056 (`audit_logs.user_email`).
 
 ## Docs map
 

@@ -431,9 +431,9 @@ def import_statement(data: bytes, filename: str, bank_account_id: int = 1, keep_
             if stored_path and os.path.exists(stored_path):
                 os.remove(stored_path)
             raise
-        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BANK_STATEMENT_CAPTURE_CHECK', "
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BANK_STATEMENT_CAPTURE_CHECK', "
                      "'bank_statement_imports', ?, ?)", (import_id, "PASS -- " + "; ".join(f"{c['name']}: {c['detail']}" for c in checks)))
-        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BANK_STATEMENT_IMPORTED', 'bank_statement_imports', ?, ?)",
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BANK_STATEMENT_IMPORTED', 'bank_statement_imports', ?, ?)",
                      (import_id, f"{filename}: {new} new line(s), {dup} already on file, period {parsed.period_from} to {parsed.period_to}"))
     result = match_checks()
     return {"already_imported": False, "blocked": False, "capture": checks, "import_id": import_id, "new_lines": new, "duplicate_lines": dup, "messages": parsed.messages,
@@ -622,7 +622,7 @@ def resolve(txn_id: int, resolution: str, note: str = "") -> None:
     """The owner has dealt with a line needing a look: record why (RESOLUTIONS) and an optional note. Audited."""
     with _conn() as conn:
         conn.execute("UPDATE bank_transactions SET reviewed = 1, resolution = ?, note = ? WHERE txn_id = ?", (resolution, note or None, int(txn_id)))
-        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BANK_LINE_RESOLVED', 'bank_transactions', ?, ?)",
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BANK_LINE_RESOLVED', 'bank_transactions', ?, ?)",
                      (int(txn_id), resolution + (f": {note}" if note else "")))
     update_reconciled()
 
@@ -644,7 +644,7 @@ def link_to_check(txn_id: int, check_id: int, how: str = "Linked by hand") -> tu
         conn.execute("UPDATE bank_transactions SET matched_check_id = ?, match_status = 'matched_manual', reviewed = 1, resolution = ? WHERE txn_id = ?",
                      (c["check_id"], how, t["txn_id"]))
         conn.execute("UPDATE checks_issued SET bank_cleared_date = ?, bank_txn_id = ? WHERE check_id = ?", (t["posting_date"], t["txn_id"], c["check_id"]))
-        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BANK_LINE_LINKED', 'bank_transactions', ?, ?)",
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BANK_LINE_LINKED', 'bank_transactions', ?, ?)",
                      (t["txn_id"], f"{how}: check {c['check_number'] or c['check_id']} (PHP {c['amount']:,.2f}) cleared {t['posting_date']} for PHP {t['debit']:,.2f}"))
     update_reconciled()
     return True, f"Linked: check {c['check_number'] or c['check_id']} is cleared by the bank on {t['posting_date']}."
@@ -704,7 +704,7 @@ def adjust_check_to_bank(txn_id: int) -> tuple[bool, str]:
             conn.execute("""INSERT INTO bank_adjustments (kind, check_id, bank_txn_id, statement_id, loan_note_id, recorded_value, bank_value,
                             amount, reason) VALUES (?,?,?,?,?,?,?,?,?)""",
                          (kind, fix["check_id"], int(txn_id), fix["statement_id"], fix["loan_note_id"], rec, bank, amount, reason))
-            conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BANK_ADJUSTMENT', 'checks_issued', ?, ?)",
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BANK_ADJUSTMENT', 'checks_issued', ?, ?)",
                          (fix["check_id"], f"{kind}: {reason}; recorded {rec} / bank {bank} / {amount:+,.2f} (bank line {txn_id})"))
     ok, msg = link_to_check(txn_id, fix["check_id"], how="Adjusted to the bank")
     if not ok:
@@ -754,11 +754,11 @@ def reopen(txn_id: int) -> None:
         except sqlite3.OperationalError:                                  # database without the adjustments table yet
             n_adj = 0
         if n_adj:
-            conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('BANK_ADJUSTMENT_REVERSED', "
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'BANK_ADJUSTMENT_REVERSED', "
                          "'bank_transactions', ?, ?)", (t["txn_id"], f"{n_adj} adjustment(s) reversed"))
         conn.execute("""UPDATE bank_transactions SET reviewed = 0, resolution = NULL, note = NULL, matched_check_id = NULL, matched_installment_id = NULL,
                             matched_cc_statement_id = NULL, match_status = NULL WHERE txn_id = ?""", (t["txn_id"],))
-        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('BANK_LINE_REOPENED', 'bank_transactions', ?, ?)",
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'BANK_LINE_REOPENED', 'bank_transactions', ?, ?)",
                      (t["txn_id"], t["resolution"]))
     match_checks()
 

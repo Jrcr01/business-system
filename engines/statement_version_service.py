@@ -91,7 +91,7 @@ def link_expiry(statement_id: int, version: dict | None = None) -> date | None:
 
 
 def _audit(conn, action: str, statement_id: int, text: str) -> None:
-    conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES (?, 'order_statements', ?, ?)",
+    conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), ?, 'order_statements', ?, ?)",
                  (action, int(statement_id), text))
 
 
@@ -133,7 +133,7 @@ def ensure_published(statement_id: int, drive, sandbox: bool = False, today: dat
         conn.execute("""UPDATE statement_versions SET pdf_file_name = ?, drive_file_id = ?, drive_link = ?, drive_public = 1,
                         uploaded_at = CURRENT_TIMESTAMP, public_until = ?, reopened_until = ? WHERE version_id = ?""",
                      (name, file_id, link, until.isoformat() if until else None, reopened.isoformat() if reopened else None, v["version_id"]))
-        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('STATEMENT_PDF_PUBLISHED', 'order_statements', ?, ?)",
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'STATEMENT_PDF_PUBLISHED', 'order_statements', ?, ?)",
                      (int(statement_id), f"v{v['version_no']} uploaded to Drive and shared by link: {name} ({file_id})"))
     return current_version(statement_id)
 
@@ -150,7 +150,7 @@ def revoke_older_versions(statement_id: int, keep_version_id: int, drive) -> lis
         drive.revoke_public(r["drive_file_id"])
         with _conn() as conn:
             conn.execute("UPDATE statement_versions SET drive_public = 0, revoked_at = CURRENT_TIMESTAMP WHERE version_id = ?", (r["version_id"],))
-            conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('STATEMENT_PDF_REVOKED', 'order_statements', ?, ?)",
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'STATEMENT_PDF_REVOKED', 'order_statements', ?, ?)",
                          (int(statement_id), f"v{r['version_no']} public link switched off ({r['drive_file_id']}); file kept privately"))
         revoked.append(int(r["version_no"]))
     return revoked

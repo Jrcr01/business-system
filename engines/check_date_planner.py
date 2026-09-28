@@ -316,6 +316,6 @@ def send_to_batch(p: Plan, statement_id: int) -> tuple[bool, str]:
     save_park_draft(int(statement_id), "By number of checks", len(rows), remaining, [int(i) for i in inv["invoice_id"]] if not inv.empty else [],
                     [(d.isoformat(), float(a)) for d, a in zip(rows["suggested_date"], rows["amount"])])
     with get_conn(DB_PATH) as conn:
-        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('PLANNER_DATES_SENT', 'order_statements', ?, ?)",
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PLANNER_DATES_SENT', 'order_statements', ?, ?)",
                      (int(statement_id), "; ".join(f"{d} {a:,.2f}" for d, a in zip(rows["suggested_date"], rows["amount"]))))
     return True, f"{len(rows)} check(s) with the suggested dates are waiting in the batch's Issue checks — review them and park."

@@ -182,8 +182,8 @@ def settle_cc_statement_via_cash(
         """, (payment_method, payment_date, cc_statement_id))
 
         cursor.execute("""
-            INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values)
-            VALUES ('CC_STATEMENT_CASH_SETTLEMENT', 'cc_statements', ?, ?)
+            INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values)
+            VALUES (acting_user(), 'CC_STATEMENT_CASH_SETTLEMENT', 'cc_statements', ?, ?)
         """, (cc_statement_id, f"Settled PHP {payment_amount:,.2f} via {payment_method} on {payment_date}",))
 
         conn.commit()

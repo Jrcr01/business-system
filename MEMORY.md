@@ -29,6 +29,10 @@ follows unchanged below.
   F1.2 / F1.3 were first committed on main, then reverted there before the live app ever loaded them.
 * **Foundation F1.1-F1.4 done on `erp`:** broken-link check (live: 0), one door + WAL, one clock (Manila; also fixed the UTC Stale
   rule), safe saves (`write_tx`, `doc_counters`; proof: the old code issued PHP 1,600 on a PHP 1,000 batch when two users raced).
+* **F1.5 done on `erp`** (owner's choices: owner's Google email until logins, a visible "Who" column, fix check-number typing only):
+  `audit_logs.user_email` (migration 056; old rows = the owner, filled by update_database), written by the SQL function
+  `acting_user()` on all 51 audit INSERTs; F2 sets the logged-in person with `acting_as()`. Manual check-number typing is now all or
+  nothing (before: a bad 3rd number left the 1st and 2nd saved while the screen said it failed).
 * **Docs re-shaped:** `CLAUDE.md` = short ERP guide; AP detail moved unchanged to `docs/modules/ap.md`; Phase F to
   `docs/foundation/phase_f.md`; the master blueprint `docs/SLICKS_ERP_BLUEPRINT.md`; one `CLAUDE.md` per module folder from now on.
 

@@ -182,7 +182,7 @@ def apply_check_correction(check_id: int, correction_type: str, new_value: str, 
             (check_id, statement_id, correction_type, old_value, new_value, reason),
         )
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_CORRECTION', 'checks_issued', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_CORRECTION', 'checks_issued', ?, ?)",
             (check_id, f"{correction_type}: {old_value} -> {new_value} ({reason or 'no reason given'})"),
         )
     if correction_type == "Amount" and statement_id is not None:
@@ -234,7 +234,7 @@ def assign_check_number(check_id: int, booklet_id: int | None, chosen_number: in
 
         cur.execute("UPDATE checks_issued SET check_number = ?, booklet_id = ? WHERE check_id = ?", (check_number, booklet_id, check_id))
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_NUMBER_ASSIGNED', 'checks_issued', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_NUMBER_ASSIGNED', 'checks_issued', ?, ?)",
             (check_id, f"Assigned check number {check_number}" + (" (from booklet)" if booklet_id else " (manual)")),
         )
     return True, f"Check number {check_number} assigned."
@@ -298,7 +298,7 @@ def assign_check_numbers_from_booklet(assignments: list[tuple[int, int]], bookle
                     raise _BulkAssignError(err)
                 cur.execute("UPDATE checks_issued SET check_number = ?, booklet_id = ? WHERE check_id = ?", (number, booklet_id, check_id))
                 cur.execute(
-                    "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_NUMBER_ASSIGNED', 'checks_issued', ?, ?)",
+                    "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_NUMBER_ASSIGNED', 'checks_issued', ?, ?)",
                     (check_id, f"Assigned check number {number} (bulk, booklet {booklet_id})"),
                 )
                 done.append(check_id)
@@ -326,23 +326,30 @@ def assign_check_numbers_manual(assignments: dict[int, str], booklet_id: int | N
             return False, f"Check number {num} is entered more than once in this batch.", []
         seen.add(num)
 
+    # Phase F1.5: all or nothing -- one bad number (taken, spoiled, the check changed meanwhile) saves NONE of the batch. Before, the
+    # early `return False` inside the locked step kept the numbers saved before the bad one while the screen said it failed.
     assigned_ids = []
-    with write_tx() as conn:          # Phase F1.4: check and save in ONE locked step
-        cur = conn.cursor()
-        for check_id, raw in assignments.items():
-            cur.execute("SELECT bank_account_id FROM checks_issued WHERE check_id = ? AND status = 'Active' AND check_number IS NULL", (check_id,))
-            row = cur.fetchone()
-            if not row:
-                return False, f"Check {check_id} not found, not Active, or already has a number.", []
-            check_number, err = assign_check_number_manual(cur, row[0], raw)
-            if err:
-                return False, err, []
-            cur.execute("UPDATE checks_issued SET check_number = ?, booklet_id = ? WHERE check_id = ?", (check_number, booklet_id, check_id))
-            cur.execute(
-                "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_NUMBER_ASSIGNED', 'checks_issued', ?, ?)",
-                (check_id, f"Assigned check number {check_number} (manual/backfill)"),
-            )
-            assigned_ids.append(check_id)
+    try:
+        with write_tx() as conn:          # Phase F1.4: check and save in ONE locked step
+            cur = conn.cursor()
+            for check_id, raw in assignments.items():
+                cur.execute("SELECT bank_account_id FROM checks_issued WHERE check_id = ? AND status = 'Active' AND check_number IS NULL", (check_id,))
+                row = cur.fetchone()
+                if not row:
+                    raise _BulkAssignError(f"Check {check_id} not found, not Active, or already has a number.")
+                check_number, err = assign_check_number_manual(cur, row[0], raw)
+                if err:
+                    raise _BulkAssignError(err)
+                cur.execute("UPDATE checks_issued SET check_number = ?, booklet_id = ? WHERE check_id = ?", (check_number, booklet_id, check_id))
+                cur.execute(
+                    "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_NUMBER_ASSIGNED', 'checks_issued', ?, ?)",
+                    (check_id, f"Assigned check number {check_number} (manual/backfill)"),
+                )
+                assigned_ids.append(check_id)
+    except _BulkAssignError as e:
+        return False, f"{e} Nothing was assigned.", []
+    except sqlite3.IntegrityError as e:          # the database's own duplicate-number rule
+        return False, f"{e}. Nothing was assigned.", []
     return True, f"Assigned check numbers to {len(assigned_ids)} check(s).", assigned_ids
 
 
@@ -378,7 +385,7 @@ def cancel_check(check_id: int) -> tuple[bool, str]:
             return False, "This batch is locked. Unlock it first to cancel a check."
         cur.execute("UPDATE checks_issued SET status = 'Cancelled' WHERE check_id = ?", (check_id,))
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_CANCELLED', 'checks_issued', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_CANCELLED', 'checks_issued', ?, ?)",
             (check_id, f"Cancelled check for {php(amount)}"),
         )
         unlink_installment_for_check(cur, check_id)
@@ -425,7 +432,7 @@ def cancel_order_statement(statement_id: int) -> tuple[bool, str]:
             (statement_id,),
         )
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BATCH_CANCELLED', 'order_statements', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BATCH_CANCELLED', 'order_statements', ?, ?)",
             (statement_id, f"Cancelled batch: {cancelled_checks} check(s) cancelled, {cancelled_invoices} invoice(s) marked Cancelled"),
         )
         conn.commit()
@@ -518,7 +525,7 @@ def edit_parked_check(check_id: int, new_amount: float, new_check_date: date) ->
                 (check_id, statement_id, field, old_v, new_v, "Parked-check edit (auto-logged)"),
             )
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('PARKED_CHECK_EDITED', 'checks_issued', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PARKED_CHECK_EDITED', 'checks_issued', ?, ?)",
             (check_id, f"{len(changes)} field(s) changed: {', '.join(c[0] for c in changes)}"),
         )
         conn.commit()
@@ -640,7 +647,7 @@ def issue_check(
             (creditor_id, bank_account_id, statement_id, loan_note_id, str(check_date), amount),
         ).fetchone()[0]
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_ISSUED', 'checks_issued', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_ISSUED', 'checks_issued', ?, ?)",
             (check_id, f"Parked check for {php(amount)} to creditor {creditor_id} — number to be assigned at print time"),
         )
         if installment_id is not None:
@@ -686,7 +693,7 @@ def issue_checks_grid(
                 (creditor_id, bank_account_id, statement_id, str(r["check_date"]), r["amount"]),
             ).fetchone()[0])
             cur.execute(
-                "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_ISSUED', 'checks_issued', ?, ?)",
+                "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_ISSUED', 'checks_issued', ?, ?)",
                 (check_ids[-1], f"Parked check for {php(r['amount'])} to creditor {creditor_id} — number to be assigned at print time"),
             )
 
@@ -708,7 +715,7 @@ def log_spoiled_check(check_number: str, reason: str, bank_account_id: int = PRI
             )
             spoiled_id = cur.lastrowid
             cur.execute(
-                "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_SPOILED', 'spoiled_checks', ?, ?)",
+                "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_SPOILED', 'spoiled_checks', ?, ?)",
                 (spoiled_id, f"Check {canonical} logged as spoiled: {reason or 'no reason given'}"),
             )
             conn.commit()
@@ -819,7 +826,7 @@ def replace_check(check_id: int, new_check_date: date, reason: str) -> tuple[boo
         retarget_installment_check(cur, check_id, new_check_id)
         retarget_invoice_allocations_for_check(cur, check_id, new_check_id)
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_REPLACED', 'checks_issued', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_REPLACED', 'checks_issued', ?, ?)",
             (check_id, f"Replaced by a new parked check (check_id {new_check_id}): {reason or 'no reason given'}"),
         )
         conn.commit()
@@ -872,7 +879,7 @@ def retract_check_number(check_id: int) -> tuple[bool, str]:
                                 (new_next, booklet_id))
                     pointer_note = f"; booklet's next number is back at {new_next}"
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values, new_values) VALUES ('CHECK_NUMBER_RETRACTED', 'checks_issued', ?, ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values, new_values) VALUES (acting_user(), 'CHECK_NUMBER_RETRACTED', 'checks_issued', ?, ?, ?)",
             (check_id, f"check_number {number}", "number removed" + (" (booklet leaf returned)" if booklet_id else "") + pointer_note),
         )
     return True, f"Number {number} retracted" + (" — the booklet leaf is available again." if booklet_id else ".")
@@ -969,11 +976,11 @@ def unpark_checks(statement_id: int, check_ids: list[int]) -> tuple[bool, str]:
             cur.execute("DELETE FROM check_corrections WHERE check_id = ?", (cid,))      # only the edit log of a check that never became final
             cur.execute("DELETE FROM checks_issued WHERE check_id = ?", (cid,))
             cur.execute(
-                "INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('CHECK_UNPARKED', 'checks_issued', ?, ?)",
+                "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'CHECK_UNPARKED', 'checks_issued', ?, ?)",
                 (cid, f"parked check {php(amount)} dated {check_date} removed from batch {statement_id}"),
             )
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('CHECKS_UNPARKED', 'order_statements', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'CHECKS_UNPARKED', 'order_statements', ?, ?)",
             (statement_id, f"{len(details)} parked check(s) totaling {php(sum(d[1] for d in details))} removed"),
         )
         for pbid in print_batches:      # keep the export history's counts honest after removing some of its checks
@@ -989,7 +996,7 @@ def unpark_checks(statement_id: int, check_ids: list[int]) -> tuple[bool, str]:
         if cur.fetchone()[0] == 0 and batch_status == "Issued":
             cur.execute("UPDATE order_statements SET status = 'Draft' WHERE statement_id = ?", (statement_id,))
             cur.execute(
-                "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('STATEMENT_BACK_TO_DRAFT', 'order_statements', ?, ?)",
+                "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'STATEMENT_BACK_TO_DRAFT', 'order_statements', ?, ?)",
                 (statement_id, f"no active checks left after un-park; {batch_ref} is a Draft again (number kept)"),
             )
             back_to_draft = f" The batch has no active checks left, so it is a Draft again (it keeps {batch_ref})."

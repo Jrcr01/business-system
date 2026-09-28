@@ -83,7 +83,16 @@ inside the lock). Numbering: table `doc_counters` (series 'OS' / 'LN', year, las
 `RETURNING`. Proof: the old code (main), two PHP 800 checks at once on a PHP 1,000 batch -> both issued (PHP 1,600); new code -> one
 refused. Tests `tests/test_safe_writes.py` (real threads, a pause injected between check and save). Known, left as is: some
 multi-row functions `return False` part-way inside the step and so keep the rows saved before it (same as before F1.4).
-Next: F1.5 `audit_logs.user_email`.*
+**F1.5 done** -- who did it: `audit_logs.user_email` (migration 056); `engines/acting_user.py` (`acting_user()` = the person set by
+`acting_as(email)` for a block of work, else `OWNER_EMAIL` -- owner's choice 2026-09-28: their Google email, the same one that becomes
+their login; a ContextVar, so two people at once keep their own names). `open_db()` registers the SQL function `acting_user()` and all 51
+audit INSERTs write `user_email = acting_user()`, so the save functions need no extra argument (the plan's "every write function takes the
+acting user" is done by the context instead); F2 only has to call `acting_as()` per page run. `apply_pending_migrations.COLUMN_BACKFILLS`
+fills the old rows with the owner in the same run that adds the column (TEST: 404 rows). "Who" column on Admin -> Audit log and the
+Dashboard's recent audit log. All or nothing: `assign_check_numbers_manual` raised nothing before -- its early `return False` inside the
+locked step kept the numbers saved before the bad one; now it raises, so the step rolls back (same as the booklet version). The other
+multi-row functions noted under F1.4 are left as they are (owner: this step = check-number typing only). Tests `tests/test_audit_who.py`
+(incl. a guard: no audit INSERT without user_email). Next: Django skeleton.*
 * Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
   `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
 * Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes

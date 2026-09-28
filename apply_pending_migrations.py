@@ -44,6 +44,7 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 SCHEMA_PATH = os.path.join(PROJECT_ROOT, "schema.sql")
 from db_location import live_db_path, safe_copy
 from engines.clock import manila_now  # noqa: E402  (one clock, Phase F1.3)
+from engines.acting_user import OWNER_EMAIL  # noqa: E402  (who did it, Phase F1.5)
 LIVE_DB_PATH = live_db_path()
 
 
@@ -85,6 +86,14 @@ def _columns(conn: sqlite3.Connection, table: str) -> dict[str, tuple]:
     return {row[1]: row for row in conn.execute(f"PRAGMA table_info({table})")}
 
 
+# One-time fills for a column the moment it is added (a new column is empty on the rows already there). Runs only in the same run
+# that adds the column, so it never touches the rows again.
+COLUMN_BACKFILLS = {
+    # Phase F1.5: every audit row made before "who did it" existed was the owner's (owner, 2026-09-28)
+    ("audit_logs", "user_email"): ("UPDATE audit_logs SET user_email = ? WHERE user_email IS NULL", (OWNER_EMAIL,)),
+}
+
+
 def diff_and_sync(target_db_path: str, dry_run: bool = False) -> dict:
     """Returns {"tables_added": [...], "columns_added": [...], "views_synced": [...], "skipped": [...]}.
     skipped holds anything this tool deliberately would NOT do safely on its own (e.g. a new NOT
@@ -122,6 +131,9 @@ def diff_and_sync(target_db_path: str, dry_run: bool = False) -> dict:
             report["columns_added"].append(f"{table}.{col_name}")
             if not dry_run:
                 target.execute(stmt)
+                fill = COLUMN_BACKFILLS.get((table, col_name))
+                if fill:
+                    target.execute(*fill)
 
     ref_views = _view_defs(ref)
     target_views = _view_defs(target)

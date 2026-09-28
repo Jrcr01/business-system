@@ -87,7 +87,7 @@ print("\nBackup saved:", backup)
 conn = open_db(db)
 for sid, ref, name, status, created in empty:
     conn.execute("DELETE FROM order_statements WHERE statement_id = ?", (sid,))
-    conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('STATEMENT_DELETED', 'order_statements', ?, ?)",
+    conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'STATEMENT_DELETED', 'order_statements', ?, ?)",
                  (sid, f"empty order statement {ref} ({name}, {status}) deleted in the data tidy-up -- no invoices, checks or memos"))
 conn.commit()
 conn.close()
@@ -99,16 +99,16 @@ if do_pn or do_giorno:
     if do_pn:
         for loan_id, ref in pn_loans:
             conn.execute("UPDATE bank_loans SET creditor_id = ? WHERE bank_loan_id = ?", (pnb_id, loan_id))
-            conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values, new_values) VALUES ('BANK_LOAN_LENDER_CHANGED', 'bank_loans', ?, ?, ?)",
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values, new_values) VALUES (acting_user(), 'BANK_LOAN_LENDER_CHANGED', 'bank_loans', ?, ?, ?)",
                          (loan_id, f"lender '{PN_LENDER}'", f"lender '{PNB_LENDER}' (loan reference {ref} kept)"))
         if not pn_other_refs:
             conn.execute("DELETE FROM creditors WHERE creditor_id = ?", (pn_id,))
-            conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('CREDITOR_DELETED', 'creditors', ?, ?)",
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'CREDITOR_DELETED', 'creditors', ?, ?)",
                          (pn_id, f"lender '{PN_LENDER}' removed -- its loan now sits under '{PNB_LENDER}'"))
         print(f"Moved {len(pn_loans)} loan(s) under '{PNB_LENDER}'" + ("" if pn_other_refs else f" and removed the empty lender '{PN_LENDER}'") + ".")
     if do_giorno:
         conn.execute("UPDATE creditors SET creditor_name = ? WHERE creditor_id = ?", (GIORNO_NEW, giorno_id))
-        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values, new_values) VALUES ('CREDITOR_RENAMED', 'creditors', ?, ?, ?)",
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values, new_values) VALUES (acting_user(), 'CREDITOR_RENAMED', 'creditors', ?, ?, ?)",
                      (giorno_id, GIORNO_OLD, GIORNO_NEW))
         print(f"Renamed '{GIORNO_OLD}' to '{GIORNO_NEW}'.")
     conn.commit()

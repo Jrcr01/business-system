@@ -136,7 +136,7 @@ def confirm_cc_payment_from_next_statement(cc_statement_id: int, carried_over: f
             (paid, unpaid_next, status, cc_statement_id),
         )
         conn.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CC_PAYMENT_CONFIRMED', 'cc_statements', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CC_PAYMENT_CONFIRMED', 'cc_statements', ?, ?)",
             (cc_statement_id, f"paid {php(paid)}, carried over {php(unpaid_next)} (from the next statement)"),
         )
         conn.commit()
@@ -233,7 +233,7 @@ def edit_cc_statement(
              amount_paid, unpaid_balance_next, status, statement_month, cc_statement_id),
         )
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CC_STATEMENT_EDITED', 'cc_statements', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CC_STATEMENT_EDITED', 'cc_statements', ?, ?)",
             (cc_statement_id, f"due {due_date}, total {php(total_amount_due)}"),
         )
         conn.commit()
@@ -255,7 +255,7 @@ def delete_cc_statement(cc_statement_id: int) -> tuple[bool, str]:
             return False, "Only the most recent statement for a card can be deleted — a later statement already carried its balance forward."
         cur.execute("DELETE FROM cc_statements WHERE cc_statement_id = ?", (cc_statement_id,))
         cur.execute(
-            "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CC_STATEMENT_DELETED', 'cc_statements', ?, ?)",
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CC_STATEMENT_DELETED', 'cc_statements', ?, ?)",
             (cc_statement_id, f"Deleted statement due {due_date} ({php(total_amount_due)})"),
         )
         conn.commit()

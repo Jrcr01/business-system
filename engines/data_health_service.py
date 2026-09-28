@@ -224,7 +224,7 @@ def mark_fine(keys: list[str], note: str = "") -> None:
     with _conn() as conn:
         for k in keys:
             conn.execute("INSERT OR REPLACE INTO duplicate_dismissals (dup_key, note) VALUES (?, ?)", (k, note or None))
-            conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('DATA_HEALTH_FINE', 'data_health', NULL, ?)",
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'DATA_HEALTH_FINE', 'data_health', NULL, ?)",
                          (k[len(KEY_PREFIX):] + (f": {note}" if note else ""),))
 
 
@@ -233,5 +233,5 @@ def show_again(keys: list[str]) -> None:
     with _conn() as conn:
         for k in keys:
             conn.execute("DELETE FROM duplicate_dismissals WHERE dup_key = ?", (k,))
-            conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('DATA_HEALTH_SHOW_AGAIN', 'data_health', NULL, ?)",
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'DATA_HEALTH_SHOW_AGAIN', 'data_health', NULL, ?)",
                          (k[len(KEY_PREFIX):],))

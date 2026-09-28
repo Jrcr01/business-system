@@ -172,7 +172,7 @@ def render() -> None:
 
     with st.container(border=True):
         st.subheader("Audit log")
-        audit_full = fix_nullable_int(q("SELECT log_id, user_action, entity_name, entity_id, old_values, new_values, datetime(timestamp, '+8 hours') AS timestamp FROM audit_logs ORDER BY log_id DESC"), "entity_id")
+        audit_full = fix_nullable_int(q("SELECT log_id, datetime(timestamp, '+8 hours') AS timestamp, user_email AS who, user_action, entity_name, entity_id, old_values, new_values FROM audit_logs ORDER BY log_id DESC"), "entity_id")
         action_filter = st.multiselect("Filter by action", options=sorted(audit_full["user_action"].unique()) if not audit_full.empty else [], help='Show only these kinds of recorded changes (e.g. checks issued, cancelled, bank lines resolved).')
         display_audit = audit_full[audit_full["user_action"].isin(action_filter)] if action_filter else audit_full
         st.dataframe(display_audit, hide_index=True)
