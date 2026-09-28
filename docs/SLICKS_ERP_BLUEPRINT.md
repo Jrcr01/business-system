@@ -238,6 +238,10 @@ parallel run (S5) once the system's daily totals and profit match it.
 * **Returns:** a full return **cancels the invoice** and the items **go back to stock**; a partial return (e.g. 1 of 4 tires) keeps
   the invoice, puts **just that item back to stock** and lowers the invoice amount (a credit note). Nothing is deleted; each is logged
   with a reason.
+* **Bad debts / write-off** (owner 2026-09-28): **owner only**, per invoice (or what is left of it), with a reason; the invoice is
+  kept and marked "Written off", leaves the AR balance and aging; a later payment is recorded as a **recovery**; writing off turns the
+  customer's credit **off** automatically; the customer shows a red **"Bad debt"** badge (with the amount written off) on the Parties
+  list and page. Built with AR (S3).
 * **Reports:** to discuss later.
 * **Sales invoice booklet control, like the checkbook:** each booklet's range registered; **one booklet in use at a time**; every
   number used once (the database refuses duplicates); cancelled / spoiled invoices logged with a reason (all copies kept, as BIR
