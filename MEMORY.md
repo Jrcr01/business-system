@@ -1,5 +1,7 @@
 # AP Disbursement System — Decisions Log
 
+> **2026-09-28:** this is the log of the **AP module** (module 1 of Slicks ERP, live on `main`). ERP-wide decisions are logged in `C:\Slicks_ERP\MEMORY.md` (the Slicks ERP build log).
+
 This file is the running record of clarifications and decisions made during Claude Code sessions — the *why* behind choices, logged as they happen. `CLAUDE.md` holds the current spec/config (the *what*); this file explains how it got there.
 
 Format: dated entries, one build session at a time.

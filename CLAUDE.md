@@ -1,5 +1,15 @@
 # AP Disbursement System — Session Memory
 
+> **THIS WORKSPACE = the LIVE AP system — module 1 of Slicks ERP** (folder `C:\AP_System`, git branch `main`; the live app runs from
+> this folder on port 8501 with the live database `C:\AP_Data\ap_disbursement.db`).
+> * Sessions here do **AP fixes and changes only**: ask first, test on the test copy (port 8502), the owner OKs, commit on `main`,
+>   push, `restart_live.bat` (or `update_database.bat` when the database changes).
+> * **Never build Slicks ERP / foundation / new-module work here.** That happens in `C:\Slicks_ERP` (branch `erp`), which has its own
+>   sandbox and its own guide (`C:\Slicks_ERP\CLAUDE.md`, the master blueprint in `docs/SLICKS_ERP_BLUEPRINT.md`). After an AP fix
+>   lands here, the ERP session pulls it in with `git merge main`.
+> * Slicks ERP (2026-09-28): one system for the business and family affairs, built module by module on Python + Django. AP stays on
+>   this Streamlit app until it moves to Django after the Sales module is stable.
+
 ## Table of Contents
 
 - [Current State (2026-09-27)](#current-state-2026-09-27) — **read this first**: what is live now, where things are, rules added since 2026-09-17
@@ -403,11 +413,11 @@ Sits between AP (done, live) and Sales/AR (next module).
 ### Build order
 **F1 -- One door, one clock, safe writes (on the laptop; no visible change for the owner).**
 **Where Phase F is built (owner, 2026-09-28: "important for now is ap system is stable and can be used"):** ALL of Phase F, up to the
-Sales/AR module, is built on the git branch **`phase-f`** in its own folder **`C:\AP_System_PhaseF`** (a git worktree) and tested on its
-own sandbox database (`C:\AP_System_PhaseF\data\ap_disbursement_TEST.db`) -- never in `C:\AP_System`, which the LIVE app runs from
+Sales/AR module, is built on the git branch **`erp`** in its own folder **`C:\Slicks_ERP`** (a git worktree) and tested on its
+own sandbox database (`C:\Slicks_ERP\data\ap_disbursement_TEST.db`) -- never in `C:\AP_System`, which the LIVE app runs from
 (branch `main`). F1.2 and F1.3 were first committed on main (0513ff9, 0e2c0b2), then reverted on main the same day before the live app
-ever loaded them; they continue on `phase-f`. Apply to live ONCE when the owner is satisfied (merge phase-f into main, one backup,
-update_database.bat, a checklist of known figures before / after). AP fixes are made on main and merged into phase-f.
+ever loaded them; they continue on `erp`. Apply to live ONCE when the owner is satisfied (merge erp into main, one backup,
+update_database.bat, a checklist of known figures before / after). AP fixes are made on main and merged into erp.
 
 *Progress (split into gated steps 2026-09-28): **F1.1 done** -- `fk_check.py` (read-only, runs `PRAGMA foreign_key_check` on a backup-API
 copy; exit 0 clean / 1 found / 2 unreadable; tests `tests/test_fk_check.py`): live and TEST = 33 tables, 41 declared links, **0 broken**.
