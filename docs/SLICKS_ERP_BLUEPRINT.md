@@ -251,6 +251,10 @@ parallel run (S5) once the system's daily totals and profit match it.
   requires); a **daily gap check** — any number skipped and not accounted for is listed for the owner the next morning. Numbers may
   be used out of order (flagged by the gap check, not blocked).
 
+**S0 answers (owner 2026-09-28):** items are identified **by description only** (brand + size + pattern; the system gives each a
+short code automatically); **no fixed customer prices** (agreed per sale). Samples (notebook page, price list, blank invoice) to
+come as descriptions first, photos later.
+
 ### Sales v1 — what it does (stable first)
 * **Customers:** "walk-in" by default, plus named customers with terms and contact details; "credit allowed" set by the owner only
   (no peso limit — alerts instead); customer type Affiliate for the mother's siblings' businesses.
