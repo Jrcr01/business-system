@@ -255,7 +255,9 @@ parallel run (S5) once the system's daily totals and profit match it.
   actually charged is typed per sale and recorded against the list price, with who agreed.
 * **Counter sale screen** (fast, keyboard-first): customer, item lines (quantity, price, discount), the **booklet invoice number**
   (required, unique; booklet ranges registered, so missing / duplicate / out-of-range numbers are flagged), cash or credit.
-* **Payments:** cash; checks (bank, number, check date → a list of post-dated checks to deposit); transfer / GCash / Maya (reference
+* **Payments:** cash; checks — **check details are required** when paid by check, especially a post-dated check (owner 2026-09-28):
+  bank, check number, check date and amount (a sale / collection can't be saved without them; the Excel form asks for them too) →
+  a list of post-dated checks to deposit by date; transfer / GCash / Maya (reference
   number); card (approval code); one sale can be paid several ways.
 * **Credit and AR:** open invoices per customer, collections applied to invoices (original white copy handed over), customer ledger
   and statements, aging (who is late); alerts for overdue or unusually high balances.
@@ -299,6 +301,13 @@ parallel run (S5) once the system's daily totals and profit match it.
   reviewed; sales invoice booklet; release before invoice allowed but invoiced the same day; post-dated checks accepted; the original
   white invoice copy is the proof of payment; deposits (by the owner's mother, trusted) several times a day, traced in the bank
   statement — light check only; affiliates tagged as a customer type; tire cost = actual received cost, from a PO / receiving system.
+
+* **Cleared checks on the mother's phone** (owner 2026-09-28): the owner's mother confirms cleared checks today with pen and paper
+  against the passbook / bank statement (the Schedule of payments matters to the family for this). Planned: a phone-first page for a
+  new role **Checker** — she sees only the checks due (date, payee, amount) and taps **Cleared** (or undoes her own tick). Her tick
+  marks the check cleared on that date right away (Schedule of payments and cash figures update); the bank statement import then
+  confirms it, and a different date or amount is flagged for the owner — the bank statement stays the final truth. Access only once
+  the ERP is on the server (F3), with her own login and 2-step verification (she does not want to use a laptop).
 
 **To decide**
 * When the PO / receiving system comes relative to Sales (it is the source of tire cost for profit and below-cost checks).

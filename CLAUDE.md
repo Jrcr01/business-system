@@ -65,8 +65,9 @@ via SQL `acting_user()` -- every audit INSERT must include it, a test checks) + 
 guard, security defaults, "it works" page; Django's tables added to the sandbox DB only), **core C1** users / roles / sign-in
 (Owner / Sales / Viewer, password now + Google at the server step, 2 h idle sign-out, 5 wrong tries = 15 min lock, Users and Audit
 log pages for the owner; detail `erp/CLAUDE.md`), **core C2** audit log locked + daily tamper check (seals with a key outside the
-database, run by the daily backup; problems on Data health) + owner-run masking + ERP numbers `2026 - XX 0001`. Next: core C3
-parties, C4 carve-out tags (users / roles, audit, numbering, parties, items, carve-out tags), then server and
+database, run by the daily backup; problems on Data health) + owner-run masking + ERP numbers `2026 - XX 0001`, **core C3**
+parties (one list, AP creditors linked read-only, Walk-in customer, Sales sees customers / affiliates only). Next: core C4 carve-out
+tags (users / roles, audit, numbering, parties, items, carve-out tags), then server and
 logins before the owner's brother uses Sales. Migrations on this branch not yet live: 054 (one-clock views), 055 (`doc_counters`), 056 (`audit_logs.user_email`), 057 (audit lock +
 `audit_seals`).
 

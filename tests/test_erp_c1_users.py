@@ -82,7 +82,7 @@ def test_every_page_needs_a_sign_in(c1):
     for pattern in get_resolver().url_patterns[0].url_patterns if hasattr(get_resolver().url_patterns[0], "url_patterns") else []:
         if pattern.name == "login":
             continue
-        path = "/" + str(pattern.pattern).replace("<int:pk>", str(c1["owner"].pk))
+        path = "/" + str(pattern.pattern).replace("<int:pk>", str(c1["owner"].pk)).replace("<int:creditor_id>", "1")
         resp = client.get(path)
         assert resp.status_code in (302, 405), path
         if resp.status_code == 302:

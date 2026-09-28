@@ -36,6 +36,16 @@ tr.link:hover td { background: #f8fafc; cursor: pointer; }
 .b-sales { background: var(--teal-bg); color: var(--teal-tx); }
 .b-viewer { background: var(--gray-bg); color: var(--gray-tx); }
 .b-active { background: var(--green-bg); color: var(--green-tx); }
+/* party roles (C3) */
+.b-customer { background: var(--teal-bg); color: var(--teal-tx); }
+.b-affiliate { background: #eeedfe; color: #3c3489; }
+.b-supplier { background: var(--blue-50); color: var(--navy-800); }
+.b-lender { background: var(--amber-bg); color: var(--amber-tx); }
+.b-bank-loan, .b-card, .b-gray { background: var(--gray-bg); color: var(--gray-tx); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+.chip { font-size: 13px; padding: 5px 12px; border: 1px solid #c3ccd9; border-radius: 999px; color: var(--muted); text-decoration: none; background: #fff; }
+.chip.on { background: var(--blue-50); color: var(--navy-800); border-color: var(--blue-200); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .b-off { background: var(--red-bg); color: var(--red-tx); }
 .btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 7px;
   border: 1px solid #c3ccd9; background: #fff; color: var(--text); cursor: pointer; text-decoration: none; }

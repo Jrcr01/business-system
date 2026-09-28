@@ -1,0 +1,73 @@
+{% extends "core/base.html" %}
+{% block title %}{{ p.name }}{% endblock %}
+{% block content %}
+<div class="head">
+  <h1>{{ p.name }}</h1>
+  <span>
+    {% for role in roles %}<span class="badge b-{{ role|slugify }}">{{ role }}</span> {% endfor %}
+    {% if p.is_active %}<span class="badge b-active">Active</span>{% else %}<span class="badge b-off">Inactive</span>{% endif %}
+  </span>
+</div>
+
+<div class="card">
+  {% if p.is_walk_in %}
+    <p style="margin:0">Every cash sale without a customer name goes here. It can't be edited, given credit or deactivated.</p>
+  {% else %}
+  <form method="post" action="{% url 'party_details' p.pk %}">
+    {% csrf_token %}
+    <div class="grid2">
+      <div><label for="id_name" style="margin-top:0">Name</label><input id="id_name" name="name" type="text" value="{{ p.name }}" required></div>
+      <div><label for="id_contact_number" style="margin-top:0">Contact number</label><input id="id_contact_number" name="contact_number" type="text" value="{{ p.contact_number }}"></div>
+    </div>
+    <label for="id_address">Address</label>
+    <input id="id_address" name="address" type="text" value="{{ p.address }}">
+    <div style="margin-top:12px"><button class="btn" type="submit">Save details</button> <span class="note" style="margin-left:8px">Sales and Owner can edit these</span></div>
+  </form>
+  {% endif %}
+</div>
+
+{% if request.user.is_owner and not p.is_walk_in %}
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center"><strong>Credit and roles</strong><span class="badge b-gray">Owner only</span></div>
+  <form method="post" action="{% url 'party_credit' p.pk %}" style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-top:10px">
+    {% csrf_token %}
+    <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" name="credit_allowed" {% if p.credit_allowed %}checked{% endif %}> Credit allowed</label>
+    <span style="display:flex;gap:6px;align-items:center">Terms <input name="terms_days" type="text" inputmode="numeric" value="{{ p.terms_days|default_if_none:'' }}" style="width:64px"> days</span>
+    <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" name="is_affiliate" {% if p.is_affiliate %}checked{% endif %}> Affiliate</label>
+    <button class="btn" type="submit">Save</button>
+  </form>
+  <p class="note" style="margin-bottom:0">No peso limit: you'll be alerted when a customer has overdue invoices or an unusually high balance.</p>
+</div>
+{% endif %}
+
+{% if request.user.is_owner and links %}
+<div class="card">
+  <strong>Linked AP records</strong> <span class="note">(managed in the AP system, read-only here)</span>
+  <table style="margin-top:8px">
+    <thead><tr><th>AP #</th><th>Name in AP</th><th>Role</th><th>Terms</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for link in links %}
+      <tr><td>{{ link.c.creditor_id }}</td><td>{{ link.c.creditor_name }}</td>
+        <td>{{ link.role }}</td><td>{{ link.c.terms|default:"—" }}</td>
+        <td>{% if link.c.is_active %}Active{% else %}Inactive{% endif %}</td>
+        <td><form method="post" action="{% url 'party_unlink' p.pk link.c.creditor_id %}" style="margin:0"
+                  onsubmit="return confirm('Move AP #{{ link.c.creditor_id }} to a party of its own? Use this when two different businesses were matched only because they have the same name.')">
+          {% csrf_token %}<button class="btn-link" type="submit">Separate</button></form></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if request.user.is_owner and not p.is_walk_in %}
+<div class="card" style="display:flex;gap:10px;align-items:center">
+  <form method="post" action="{% url 'party_active' p.pk %}" style="margin:0" {% if p.is_active %}onsubmit="return confirm('Deactivate {{ p.name|escapejs }}? It stays on file and can be reactivated.')"{% endif %}>
+    {% csrf_token %}
+    {% if p.is_active %}<input type="hidden" name="active" value="0"><button class="btn btn-danger" type="submit">Deactivate</button>
+    {% else %}<input type="hidden" name="active" value="1"><button class="btn" type="submit">Reactivate</button>{% endif %}
+  </form>
+  <span class="note">Every change on this page goes to the audit log. Parties are never deleted.</span>
+</div>
+{% endif %}
+<p style="margin-top:14px"><a href="{% url 'parties' %}">Back to parties</a></p>
+{% endblock %}

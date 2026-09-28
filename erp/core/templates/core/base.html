@@ -14,7 +14,7 @@
       {% if item.section %}<div class="sec">{{ item.section }}</div>{% endif %}
       {% if item.url_name %}
         {% url item.url_name as href %}
-        <a href="{{ href }}" {% if request.path == href %}class="on" aria-current="page"{% endif %}>{{ item.label }}</a>
+        <a href="{{ href }}" {% if request.path == href or href != '/' and href in request.path %}class="on" aria-current="page"{% endif %}>{{ item.label }}</a>
       {% else %}
         <a class="soon" aria-disabled="true">{{ item.label }}</a>
       {% endif %}

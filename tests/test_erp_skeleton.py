@@ -87,7 +87,7 @@ def test_home_page_shows_manila_date_and_reads_the_shared_database(erp):
     html = resp.content.decode()
     assert "Jan 15, 2030" in html and "7:30 AM" in html          # top bar date, home page time
     assert "erp_test.db" in html and erp not in html                  # the file name, never the full path
-    assert resp.context["creditors"] == 1
+    assert resp.context["creditors"] == sqlite3.connect(erp).execute("SELECT COUNT(*) FROM creditors").fetchone()[0] >= 1
     assert resp.headers["X-Frame-Options"] == "DENY"
     assert resp.headers["X-Content-Type-Options"] == "nosniff"
 

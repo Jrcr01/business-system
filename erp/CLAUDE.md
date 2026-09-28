@@ -53,5 +53,17 @@ Skeleton built 2026-09-28 (Django **5.2 LTS**, owner's choice). Read the repo `C
 * **Numbers:** `core.numbering` — `register("CR", "Collection receipt")` once per document type (2 capital letters; OS / LN belong to
   AP), then `next_number("CR")` INSIDE the `transaction.atomic()` that saves the document → `2026 - CR 0001` (Manila year, restarts
   yearly). Same `doc_counters` table as AP. Voided documents keep their number (never delete).
-* Next in core: C3 parties (one shared list linked to AP's creditors), C4 carve-out tags. Items (tires) come after the Sales
-  walk-through (S0/S1), not in core.
+
+## core (step C3 done 2026-09-28 — parties)
+* `core.Party` = ONE list of everyone Slick's deals with; roles: `is_customer`, `is_affiliate` (ERP) + AP roles from linked
+  creditors (Supplier / Lender / Bank loan / Card). `name_key` (lower-case, single spaces, no trailing dot) stops the same name twice.
+  One `is_walk_in` party ("Walk-in customer", made by migration 0002) for cash sales: never edited, never credit, always active.
+* **AP link:** `core.Creditor` = AP's `creditors` table, unmanaged (read-only; AP keeps managing it). `PartyAPLink` (one creditor ->
+  one party; a party may hold several, e.g. a bank for loans AND cards). `parties.sync_ap_links()` links every unlinked creditor to the
+  same-name party or a new one — runs when the owner opens Parties and via `manage.py sync_ap_parties`; the owner can "Separate" a
+  wrong same-name match (`unlink_to_own_party`). Sandbox: 124 creditors -> 118 parties (6 banks hold loan + card).
+* **Who (owner's choices):** Sales sees customers and affiliates only (`parties.visible_to`), adds customers (cash; no credit) and edits
+  name / contact number / address; only the Owner sets credit (no peso limit; terms in days required), affiliate, active, Separate.
+  Viewer: no Parties. Every change audited (PARTY_ADDED / EDITED / CREDIT_CHANGED / ROLE_CHANGED / DEACTIVATED / AP_LINKED / AP_MOVED).
+* Bad-debt write-off (S3, rules in the blueprint) will add a "Bad debt" badge and turn credit off.
+* Next in core: C4 carve-out tags. Items (tires, batteries, mags) come in Sales S1, not in core.

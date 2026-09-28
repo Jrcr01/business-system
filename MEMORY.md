@@ -46,6 +46,13 @@ follows unchanged below.
   outside the database, run by the daily backup, problems on Data health and the owner's ERP Home); private data in the log can only be
   hidden by the owner-run `mask_audit_text.py` (like the 2026 card-number masking, now with backup + its own audit entry); ERP document
   numbers look like AP's: `2026 - CR 0001`, restarting each year.
+* **core C3 done on `erp`** (owner's choices): one shared party list; Sales adds customers and edits contact / address, only the owner
+  sets credit, terms, affiliate; details = contact number + address; one Walk-in customer; all AP creditors linked read-only (same
+  name = one party, owner can separate); Sales sees customers and affiliates only. Bad-debt write-off (owner only, per invoice,
+  recoverable, credit off, badge) recorded for S3.
+* **[AP] Mother's cleared-check page** (owner, 2026-09-28): she checks cleared checks by pen and paper against the passbook / bank
+  statement and wants a phone, not a laptop. Planned: role Checker, phone page with checks due, tap Cleared (provisional, confirmed or
+  flagged by the bank statement import); only after the server step (F3).
 * **[Sales] Revenue cycle as practiced** (owner, 2026-09-28; started from a standard cycle, owner marked it up): credit is the
   owner's judgement for loyal customers, no limits (alerts instead); prices vary per customer and are agreed verbally, even at a loss
   to keep a customer -> record, don't block, review below-cost; sales invoice booklet; goods may leave before the invoice -> invoiced

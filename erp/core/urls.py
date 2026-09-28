@@ -1,6 +1,6 @@
 from django.urls import path
 
-from core import auth_views, views
+from core import auth_views, party_views, views
 
 urlpatterns = [
     path("", views.home, name="home"),
@@ -14,4 +14,11 @@ urlpatterns = [
     path("users/<int:pk>/active/", views.user_active, name="user_active"),
     path("users/<int:pk>/reset-password/", views.user_reset_password, name="user_reset_password"),
     path("audit/", views.audit_log, name="audit_log"),
+    path("parties/", party_views.parties, name="parties"),
+    path("parties/add/", party_views.party_add, name="party_add"),
+    path("parties/<int:pk>/", party_views.party_detail, name="party_detail"),
+    path("parties/<int:pk>/details/", party_views.party_details, name="party_details"),
+    path("parties/<int:pk>/credit/", party_views.party_credit, name="party_credit"),
+    path("parties/<int:pk>/active/", party_views.party_active, name="party_active"),
+    path("parties/<int:pk>/unlink/<int:creditor_id>/", party_views.party_unlink, name="party_unlink"),
 ]

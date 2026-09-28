@@ -120,7 +120,10 @@ characters, re-seals that row, logs AUDIT_MASKED). `erp/core/numbering.py`: regi
 save's atomic block via `engines.db_engine.next_doc_number` (doc_counters). Sandbox: 405 entries sealed. Tests
 `tests/test_audit_protection.py`, `tests/test_erp_c2_numbering.py`. Going live: after update_database, the first daily backup seals the
 live log as it is; keep a copy of `C:\Slicks\Data\audit_seal.key` somewhere safe (without it the seals can't be checked).
-Next: C3 parties, C4 carve-out tags.*
+**core C3 done** (2026-09-28; owner's choices: Sales adds customers, owner sets credit; contact number + address; one Walk-in
+customer; all AP creditors linked; Sales sees customers / affiliates only; mock-ups approved). `core_party`, `core_partyaplink`
+(FK to AP's `creditors`, unmanaged model — AP unchanged), Parties list / page / add, AP link sync, owner "Separate", all audited.
+Sandbox: 124 creditors linked into 118 parties + Walk-in. Tests `tests/test_erp_c3_parties.py`. Next: C4 carve-out tags.*
 * Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
   `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
 * Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes
