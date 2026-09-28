@@ -7,6 +7,11 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 - Plain-English bullet, no jargon -- written for someone who doesn't read code.
 -->
 
+## 2026-09-29
+- **Credit card dues ahead, in the Check-date planner** - a card's bill is known only about a month before it is due, but supplier checks are dated 4-5 months ahead. The planner now shows the next 5 months of card dues week by week: amounts already on a statement, plus an **estimate** for the rest (the middle of each card's last 3 statements, with the lowest-highest as the range). The estimates **count as cash going out**, so the suggested check dates avoid the weeks when big card bills land, and the Cash forecast on Bank and cash includes them too. An estimate is replaced by the real amount as soon as you enter the statement.
+- **Credit card statement check fixed** - a statement's month now follows its statement date (usually the month before the due date), the Payment run warning and the Credit cards table use the same rule, and a month with nothing due can be marked **"No due this month"** (undo any time on the Credit cards page).
+- **Data health** now also catches a credit card statement entered twice.
+
 ## 2026-09-28
 - **Bank reconciliation you can finish in the app** - on Bank and cash → Reconciliation, each bank line that needs a look can now be dealt with right there: link it to one of your checks (for a typo in the number), open the check to correct it, or tag why it is fine (bank error, legacy record, customer bounced check, expected bank debit) with a note. Made a mistake? Reopen it. Each imported statement shows **Open** until every line is dealt with, then **Reconciled**.
 - **Smarter matching** - bank debit memos are matched to your bank-loan installments (same amount, within 5 days of the due date) and bills payments to your credit-card statements (within 10 days). When a cleared check is one digit off from yours, or has two digits swapped, or matches an unnumbered check of the same amount dated within a week, the app **suggests** the match - you accept or reject it; nothing is linked by itself. Checks cleared before the system started are set aside automatically.

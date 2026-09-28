@@ -256,7 +256,20 @@ with no statement day: only when dues are < 25 days apart). **"No due this month
 recorded): `cc_service.mark_no_due / undo_no_due / no_due_marks` in `duplicate_dismissals` ('ccnodue|card|YYYY-MM', audited
 CC_NO_DUE_MARKED / _UNDONE); coverage status "No due"; buttons via `views/credit_cards.render_missing_statements()` on Credit cards
 (Needs attention + "Marked No due" list with Undo) and Payment run. Live first finding: Mastercard Toyota 4047 has two PHP 3,800
-statements (due Jun 29 and Jul 7), both the June 8 statement -- for the owner to check. First live run: 21 printed checks without numbers (printed Sep 26, dated
+statements (due Jun 29 and Jul 7), both the June 8 statement -- for the owner to check.
+
+**Credit card due forecast (2026-09-29, owner: "meant for issuing checks to avoid large amount of payables especially when there is
+credit card that only month away to schedule"; supplier checks are dated 4-5 months ahead = the usual terms).**
+`engines/cc_forecast_service.py`: `estimated_card_dues(start, end)` projects each active card's next dues after its LATEST recorded due
+date (monthly same day, or its usual gap when < 27 days), amount = median of the last 3 statements (low / high = min / max), track
+`Credit Card (estimated)`; skips months marked "No due"; cancelled statements ignored; an estimate disappears once the real statement
+is entered. `forecast_by_week(months=5)`. Estimates COUNT AS CASH GOING OUT (owner): `cash_insights_service.scheduled_outflows()` adds
+them via `estimated_outflows()` (so the Cash forecast, Working capital and the planner's bank-balance path include them) and
+`check_date_planner._baseline()` adds them on the typed-cash path; never counted as checks. UI: planner section "Credit card dues ahead
+(5 months)" (`views/planner.py _card_dues_ahead()`, shown even when there is nothing to plan) + a caption on the Cash forecast tab.
+Tests `tests/test_cc_forecast.py` (incl. a card bill a month away moving a supplier check). Live 2026-09-29: PHP 7.08M on statements +
+PHP 32.46M estimated over 5 months (Oct-Nov PHP 10.23M); the Cash forecast was already about -PHP 10.5M within 30 days before
+the estimates -- the money-in assumption (average deposits per weekday from the imported statements) should be reviewed with the owner. First live run: 21 printed checks without numbers (printed Sep 26, dated
 2027) + check 3992527921 (owner confirmed correct). Tests: `tests/test_data_health.py`.
 
 **Bank is the truth + capture check + double-entry guard (2026-09-28, owner: "Always remember bank statement is ultimate truth and have a
