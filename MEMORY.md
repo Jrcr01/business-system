@@ -1,4 +1,41 @@
-# AP Disbursement System — Decisions Log
+# Slicks ERP — Build Log
+
+The running record of decisions made with the owner — the *why* behind choices. One log for the whole ERP; each entry is tagged by
+module: [Foundation], [Sales], [AP], [Inventory] ... Newest ERP entries first; the AP module's history (2026-09-04 to 2026-09-28)
+follows unchanged below.
+
+## 2026-09-28 — [Foundation] Slicks ERP is born: vision, Django, Sales next, workspace split
+
+* **Slicks ERP** (owner): the one system for the business and the family's affairs; AP is module 1 (built first because AP is the
+  owner's area), **Sales + AR is module 2 and next**; the rest is added "like a puzzle". AP and Sales are the crucial areas.
+* **Not a commercial-ERP copy** (owner: "we do not need super similar commercial erp", no plan to hire an accountant; "our goal is to
+  have system in place"): no general ledger / financial statements; keep what protects the business (roles, audit, numbering,
+  approvals, backups, controls). Documents keep full details so formal accounting stays possible.
+* **Stack: Python + Django** (chosen over staying on Streamlit, FastAPI + React, or customising Odoo): logins, permissions, security,
+  admin and migrations built in; AP rules and tests carry over. **AP moves to Django after Sales is stable**, page by page beside the
+  old page until the figures match.
+* **Business facts** (for Sales and controls): one location; walk-in counter sales; cash and credit; invoices from **BIR pre-printed
+  booklets** (the ERP records them, never prints invoices); payments cash, checks incl. post-dated, transfer / GCash / Maya, card;
+  **non-VAT** (percentage tax); no formal bookkeeping, weak controls (family business); Sales used mostly by the owner's **brother**;
+  official books = decide later.
+* **Later modules named by the owner:** Purchasing (POs are not tracked today), Inventory (crucial — stock keeps getting lost),
+  Affiliates (stock borrowed / lent, settled by returning stock, paying, or offsetting), Rentals (other income), Family / personal
+  spending with a **carve-out** (every money record tagged Business / Rental / Family-personal, shown side by side), business
+  intelligence in every module.
+* **Security** (threat -> protection) and **UI** ("professional yet functional"; the owner is the UI person; mock-ups approved
+  before screens are built) are first-class requirements.
+* **Workspace split** (owner: "important for now is ap system is stable and can be used"): live AP stays in `C:\AP_System` on
+  `main`, untouched; the ERP is built in `C:\Slicks_ERP` on branch `erp` (a git worktree, own sandbox DB, port 8504) and goes live once.
+  F1.2 / F1.3 were first committed on main, then reverted there before the live app ever loaded them.
+* **Foundation F1.1-F1.4 done on `erp`:** broken-link check (live: 0), one door + WAL, one clock (Manila; also fixed the UTC Stale
+  rule), safe saves (`write_tx`, `doc_counters`; proof: the old code issued PHP 1,600 on a PHP 1,000 batch when two users raced).
+* **Docs re-shaped:** `CLAUDE.md` = short ERP guide; AP detail moved unchanged to `docs/modules/ap.md`; Phase F to
+  `docs/foundation/phase_f.md`; the master blueprint `docs/SLICKS_ERP_BLUEPRINT.md`; one `CLAUDE.md` per module folder from now on.
+
+---
+
+# AP module history
+
 
 This file is the running record of clarifications and decisions made during Claude Code sessions — the *why* behind choices, logged as they happen. `CLAUDE.md` holds the current spec/config (the *what*); this file explains how it got there.
 
