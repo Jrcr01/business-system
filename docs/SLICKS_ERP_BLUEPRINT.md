@@ -332,7 +332,8 @@ parallel run (S5) once the system's daily totals and profit match it.
   weighted average cost method** (average recalculated at each receipt from quantities on hand and received — needs receiving +
   inventory). Suggested: Sales first with the paper price list's cost as an estimate; receiving / inventory later switches every
   item to its weighted average (opening average = last price-list cost, checked by a stock count). To confirm.
-* Server provider (DigitalOcean / AWS Lightsail / Vultr) and the exact domain.
+* ~~Server provider and the exact domain~~ -> decided 2026-09-28: **DigitalOcean** (Singapore); domain **slickstiresupply.com** (Cloudflare
+  Registrar), the ERP at **erp.slickstiresupply.com**, the test site at **test.slickstiresupply.com**.
 * Where statement QR copies live (Google Drive or served by the app).
 * The order of the modules after Sales.
 * Whether the ERP ever becomes the official books (not planned).

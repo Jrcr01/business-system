@@ -1,0 +1,15 @@
+# Slicks ERP -- Caddy: HTTPS with an automatic certificate, then hands every request to the ERP on this server only.
+__SITE__ {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8000
+	header {
+		-Server
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+	log {
+		output file /var/log/caddy/slicks-erp.log {
+			roll_size 10MiB
+			roll_keep 10
+		}
+	}
+}

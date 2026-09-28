@@ -5,7 +5,10 @@ Environment (set by run_erp_sandbox.bat now, by the server's environment file la
   ERP_LIVE=1         required to open a file named ap_disbursement.db (the live database) -- this workspace never sets it
   ERP_DEBUG=1        developer error pages (laptop sandbox only)
   ERP_SECRET_KEY     the signing key (default: a random key made once into erp/.secret_key, not in git)
-  ERP_ALLOWED_HOSTS  comma-separated extra host names (e.g. app.slickstiresupply.com on the server)"""
+  ERP_ALLOWED_HOSTS  comma-separated extra host names (e.g. app.slickstiresupply.com on the server); each one is also trusted for
+                     forms over HTTPS (CSRF_TRUSTED_ORIGINS)
+  ERP_SITE_LABEL     a banner on every page, e.g. "TEST SITE" on test.<domain> (empty on the real site)
+  ERP_STATIC_ROOT    where collectstatic puts the files on the server (default erp/staticfiles)"""
 import os
 import secrets
 import sys
@@ -58,7 +61,10 @@ def _secret_key() -> str:
 
 
 SECRET_KEY = _secret_key()
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"] + [h.strip() for h in os.environ.get("ERP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+_SERVER_HOSTS = [h.strip() for h in os.environ.get("ERP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1"] + _SERVER_HOSTS
+CSRF_TRUSTED_ORIGINS = [f"https://{h}" for h in _SERVER_HOSTS]
+SITE_LABEL = os.environ.get("ERP_SITE_LABEL", "").strip()
 
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -87,6 +93,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",                 # serves the ERP's own CSS / icons (no separate web server needed)
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -118,7 +125,23 @@ ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 STATIC_URL = "static/"
-STATIC_ROOT = ERP_DIR / "staticfiles"
+STATIC_ROOT = Path(os.environ.get("ERP_STATIC_ROOT") or ERP_DIR / "staticfiles")
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    # compressed + cache-busting file names in production; plain files while developing (no collectstatic needed)
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage" if DEBUG
+                    else "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+
+# ---- logs: to the console, which the server's service manager (systemd) keeps -------------------------------------------------
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"plain": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
+    "root": {"handlers": ["console"], "level": "WARNING"},
+    "loggers": {"django.security": {"handlers": ["console"], "level": "WARNING", "propagate": False}},
+}
 
 TEMPLATES = [
     {

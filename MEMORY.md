@@ -62,6 +62,13 @@ follows unchanged below.
 * **core C4 done on `erp` -- core complete** (owner's choices): Business / Rental / Family-personal + own sub-tags (never deleted);
   everything untagged = Business; one main tag + peso parts moved to other tags; tags on AP card statements, lender loans, bank loans
   and supplier batches (AP unchanged); monthly Business vs family summary; owner only; phone layout for the tag list.
+* **[Foundation] Server step F3 started** (owner, 2026-09-28): ERP test site first (sandbox copy; live AP stays on the laptop until the
+  cutover), DigitalOcean Singapore, Google sign-in, a new domain the owner registers. F3.1 done on the laptop: production settings,
+  home-screen app (never stores business pages on the phone), deploy scripts (no GitHub access for the server). Next F3.2: owner
+  registers the domain and creates the Droplet, guided.
+* **[Foundation] F3.2 names and key** (owner, 2026-09-28): domain slickstiresupply.com; ERP at erp.slickstiresupply.com (not app.),
+  test site test.slickstiresupply.com. Laptop SSH key with a passphrase the owner types (ssh-add; Windows ssh-agent), so the deploy
+  scripts use Windows' OpenSSH.
 * **[Sales] Revenue cycle as practiced** (owner, 2026-09-28; started from a standard cycle, owner marked it up): credit is the
   owner's judgement for loyal customers, no limits (alerts instead); prices vary per customer and are agreed verbally, even at a loss
   to keep a customer -> record, don't block, review below-cost; sales invoice booklet; goods may leave before the invoice -> invoiced

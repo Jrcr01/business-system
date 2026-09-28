@@ -68,7 +68,9 @@ log pages for the owner; detail `erp/CLAUDE.md`), **core C2** audit log locked +
 database, run by the daily backup; problems on Data health) + owner-run masking + ERP numbers `2026 - XX 0001`, **core C3**
 parties (one list, AP creditors linked read-only, Walk-in customer, Sales sees customers / affiliates only), **core C4** carve-out
 tags (Business / Rental / Family-personal + sub-tags, main tag + peso splits on AP card statements / loans / batches, monthly summary;
-owner only) -- **core is complete**. Next: Sales S0 or the server step (owner decides) (users / roles, audit, numbering, parties, items, carve-out tags), then server and
+owner only) -- **core is complete**. **Server step F3** (owner: ERP test site first, DigitalOcean, Google sign-in, new domain):
+**F3.1 done** -- production settings, home-screen app, `deploy/` scripts (see `deploy/README.md`). Next: F3.2 the owner registers the
+domain and creates the server (guided) (users / roles, audit, numbering, parties, items, carve-out tags), then server and
 logins before the owner's brother uses Sales. Migrations on this branch not yet live: 054 (one-clock views), 055 (`doc_counters`), 056 (`audit_logs.user_email`), 057 (audit lock +
 `audit_seals`).
 

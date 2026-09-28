@@ -20,6 +20,13 @@ Skeleton built 2026-09-28 (Django **5.2 LTS**, owner's choice). Read the repo `C
 * **Security defaults:** secret key from `ERP_SECRET_KEY` or the gitignored `erp/.secret_key`; `DEBUG` only with `ERP_DEBUG=1`;
   HTTPS-only cookies / redirect / HSTS when not DEBUG; `check --deploy` must stay clean (a test runs it). No `django.contrib.admin`
   until logins are designed.
+* **Server (step F3; `deploy/README.md`):** owner's choices — ERP **test site first** (sandbox copy at `test.<domain>`), DigitalOcean
+  Singapore, Google sign-in (F3.3), a new domain. F3.1 done: whitenoise static files, `CSRF_TRUSTED_ORIGINS` from `ERP_ALLOWED_HOSTS`,
+  console logging, `ERP_SITE_LABEL` banner, home-screen app (`core/pwa.py`: manifest, service worker that caches only `/static/` and
+  the offline page — never business pages, icons in `core/static/core/icons`), `deploy/` (bootstrap, Caddy, systemd service + nightly
+  audit check / backup, release with automatic roll-back, deploy from the laptop by `git archive` over SSH — the server never gets
+  GitHub access). Server installs `requirements-server.txt` (ERP pins + pandas). New pages need `@login_not_required` only if phones
+  must load them before signing in (like the manifest).
 * **Going live (later, owner's go-ahead):** `update_database.bat` will also need `manage.py migrate` — not added yet — and the owner
   runs `create_owner` once on the live database.
 * UI: every new screen starts as a mock-up the owner approves. Approved look (C1): navy sidebar grouped by module, top bar with the

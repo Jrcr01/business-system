@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the Slicks ERP nightly check and backup at 18:00 Manila time
+
+[Timer]
+OnCalendar=*-*-* 18:00:00 Asia/Manila
+Persistent=true
+
+[Install]
+WantedBy=timers.target

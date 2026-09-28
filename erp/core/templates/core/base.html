@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Slicks ERP{% endblock %} · Slicks ERP</title>
-  <link rel="stylesheet" href="{% static 'core/erp.css' %}">
+{% include "core/_head.html" %}
 </head>
 <body>
+{% if site_label %}<div class="site-label" role="status">{{ site_label }} — practice data, not the real records</div>{% endif %}
 <div class="shell">
   <nav class="side" aria-label="Main menu">
     <div class="brand">Slicks ERP</div>

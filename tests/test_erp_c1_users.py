@@ -80,8 +80,13 @@ def test_every_page_needs_a_sign_in(c1):
     from django.urls import get_resolver
 
     client = _client()
-    for pattern in get_resolver().url_patterns[0].url_patterns if hasattr(get_resolver().url_patterns[0], "url_patterns") else []:
-        if pattern.name == "login":
+    public = {"login", "manifest", "service_worker", "offline"}          # open without a sign-in on purpose
+    patterns = []
+    for entry in get_resolver().url_patterns:
+        patterns += getattr(entry, "url_patterns", [entry])
+    assert len(patterns) > 20                                            # every page is really checked
+    for pattern in patterns:
+        if pattern.name in public:
             continue
         path = "/" + re.sub(r"<int:\w+>", str(c1["owner"].pk), re.sub(r"<str:\w+>", "batch", str(pattern.pattern)))
         resp = client.get(path)

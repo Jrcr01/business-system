@@ -1,0 +1,10 @@
+{% load static %}  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#042c53">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Slicks">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" href="{% static 'core/icons/favicon-32.png' %}">
+  <link rel="apple-touch-icon" href="{% static 'core/icons/apple-touch-icon.png' %}">
+  <link rel="stylesheet" href="{% static 'core/erp.css' %}">
+  <script>if ("serviceWorker" in navigator) { window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js", {scope: "/"}).catch(() => {})); }</script>

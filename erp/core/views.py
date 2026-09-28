@@ -172,7 +172,8 @@ def manila_header(request):
     from core.roles import nav_for
 
     now = manila_now()
-    ctx = {"manila_date": f"{now:%b} {now.day}, {now.year}", "manila_time": now.strftime("%I:%M %p").lstrip("0")}
+    ctx = {"manila_date": f"{now:%b} {now.day}, {now.year}", "manila_time": now.strftime("%I:%M %p").lstrip("0"),
+           "site_label": settings.SITE_LABEL}
     if getattr(request, "user", None) is not None and request.user.is_authenticated:
         ctx["nav"] = nav_for(request.user)
     return ctx

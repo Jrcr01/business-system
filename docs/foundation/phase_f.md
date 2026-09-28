@@ -129,6 +129,13 @@ tag AP card statements, lender loans, bank loans, supplier batches + monthly sum
 view approved). `core_tag`, `core_tagging`, `core_tagsplit` (migration 0003 seeds "General" per group). AP unchanged. Tests
 `tests/test_erp_c4_carveout.py`. **core complete.** Also decided: 2-step sign-in remembered per device for 30 days (shop static IP to
 check at F3).*
+*Progress, F3 (2026-09-28; owner's choices: ERP test site first with a sandbox copy, live AP stays on the laptop until the cutover;
+DigitalOcean Singapore; Google sign-in; a new domain): **F3.1 done** -- whitenoise, trusted HTTPS origins, logging, test-site banner,
+home-screen app (manifest + a service worker that never stores business pages), `deploy/` (Ubuntu 24.04 bootstrap: user `slicks`,
+SSH keys only, ufw 22/80/443, fail2ban, unattended upgrades, Caddy HTTPS, gunicorn service on 127.0.0.1, nightly audit check + backup
+at 18:00 Manila keeping 30; laptop deploy by git archive + release with health check and roll-back; test data upload of the sandbox
+only). Tests `tests/test_erp_f31_server.py`. Next: F3.2 (owner: domain, DigitalOcean account + Droplet with the laptop's SSH key),
+F3.3 Google sign-in, F3.4 test site online + phones.*
 * Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
   `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
 * Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes

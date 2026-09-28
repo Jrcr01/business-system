@@ -1,0 +1,7 @@
+# What the Linux server installs for the ERP (server step F3.1, 2026-09-28). The ERP's own packages plus pandas, which the shared
+# engines (engines/db_engine.py) import. Streamlit and the other AP packages are NOT installed on the server until the live AP moves.
+-r requirements-erp.txt
+pandas==3.0.5
+numpy==2.5.2
+python-dateutil==2.9.0.post0
+six==1.17.0

@@ -1,0 +1,10 @@
+[Unit]
+Description=Slicks ERP nightly: audit log check + seal, then a database backup (newest 30 kept)
+
+[Service]
+Type=oneshot
+User=slicks
+Group=slicks
+EnvironmentFile=/etc/slicks-erp/env
+WorkingDirectory=/srv/slicks/app/current
+ExecStart=/srv/slicks/venv/bin/python deploy/nightly.py
