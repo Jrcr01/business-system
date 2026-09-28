@@ -275,6 +275,16 @@ come as descriptions first, photos later.
   "Released, invoice later"; "Mark number cancelled" with reason) writing into a day sheet in the notebook's order with the day
   total at the bottom; **upload check** (nothing saved until every line is fine: used number = fix, below cost = allowed + owner
   review with reason, skipped number = explain or cancel); **quick sale** screen (desktop + phone, cost / profit / on hand shown).
+  Round 3 (credit and cash, approved 2026-09-29) — **collection** (oldest invoices first, editable; partial; extra kept as an advance;
+  number `2026 - CR ####`; required check details; "white copy handed over" tick when an invoice becomes fully paid), **customer
+  statement** (running balance, aging by days past due, originals still at the shop, alerts, print / PDF), **post-dated checks to
+  deposit** (cleared / bounced from the bank statement; bounced re-opens the invoice), **deposits light check** (cash + checks due in
+  vs deposits on the statement; GCash / card separate), **approvals** (Sales asks to cancel / return with a reason, the owner approves
+  or rejects — also on the phone — or does it directly; write-offs owner only). **S0 done.**
+* **S1 rules (owner 2026-09-29):** a sale above the stock on hand is **allowed and flagged** (stock shows negative for the owner to
+  check); stock corrections = **owner-only adjustment** to the counted quantity with a reason (difference recorded, history never
+  edited); **services are sold but not tracked** (goods only: tires, batteries, mags); the opening list is typed by the brother into
+  a system template (Tires / Batteries / Mags tabs) and **confirmed by the owner** after seeing item count, pieces and cost value.
 
 ### Sales v1 — what it does (stable first)
 * **Customers:** "walk-in" by default, plus named customers with terms and contact details; "credit allowed" set by the owner only
