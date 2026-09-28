@@ -20,6 +20,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from engines.settings_store import get_number, set_setting
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 STALE_DAYS_KEY, DEFAULT_STALE_DAYS = "stale_deposit_days", 7
@@ -53,7 +54,7 @@ def stale_deposits(days: int | None = None) -> list[dict]:
 def large_debits(factor: float | None = None) -> pd.DataFrame:
     """Unresolved bank debits that are not our checks and matched nothing, more than `factor` x the median debit of the same kind."""
     f = debit_factor() if factor is None else float(factor)
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query("""SELECT txn_id, posting_date, description, kind, debit, match_status, reviewed FROM bank_transactions
                                   WHERE kind IN ('DEBIT_MEMO', 'BILLS_PAYMENT', 'OTHER') AND debit > 0""", conn)
     if df.empty:

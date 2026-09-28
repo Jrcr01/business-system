@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 import db_location
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -340,7 +341,7 @@ class CaptureCheckFailed(Exception):
 
 # ------------------------------------------------------------------ storing and matching
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 

@@ -18,6 +18,7 @@ import pandas as pd
 from engines.check_run_service import get_pending_check_run, get_unprinted_batches
 from engines.last_modified_sql import statement_modified_sql
 from engines.reports_service import get_payment_schedule_all_tracks, next_banking_day
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -25,7 +26,7 @@ TRACKS = ["Supplier", "Lender", "Bank Loan", "Credit Card"]
 
 
 def _read(sql: str, params: tuple = ()) -> pd.DataFrame:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         return pd.read_sql_query(sql, conn, params=params)
 
 

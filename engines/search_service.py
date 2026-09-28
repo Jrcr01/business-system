@@ -13,6 +13,7 @@ not-found, since that's a real, correct answer, not a miss.
 import sqlite3
 
 import os
+from engines.common import get_conn
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
@@ -34,7 +35,7 @@ def search_records(term: str) -> dict:
         return {"kind": "none", "matches": []}
 
     like = f"%{term}%"
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
 
         checks = conn.execute(

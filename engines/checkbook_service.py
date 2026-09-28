@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 
 import os
+from engines.common import get_conn
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
@@ -36,7 +37,7 @@ def audit_booklet_gaps(booklet_id: int) -> dict:
     (historical pre-Redux data, typed in freehand back then), or a spoiled leaf logged after the
     fact. Still flags a leaf recorded under two different check_number strings meaning the same
     number (e.g. "1" vs "01"), a realistic artifact of that older free-typed era."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT bank_account_id, start_number, end_number, booklet_code FROM check_booklets WHERE booklet_id = ?", (booklet_id,))
         booklet = cursor.fetchone()
@@ -131,7 +132,7 @@ def get_checkbook_alerts() -> pd.DataFrame:
     Exhausted booklets are included (2026-09-17 fix) -- a fully-used booklet's history is just as
     real as an Active one's, and excluding it meant a gap/duplicate stopped being flagged the
     moment its last leaf was assigned. Archived (explicitly retired) stays excluded."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         booklets = pd.read_sql_query("SELECT booklet_id FROM check_booklets WHERE status IN ('Active', 'Exhausted')", conn)
     rows = []
     for booklet_id in booklets['booklet_id']:

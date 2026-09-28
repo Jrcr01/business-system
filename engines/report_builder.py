@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 import pandas as pd
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -321,7 +322,7 @@ def validate(spec: dict) -> list[str]:
 # ------------------------------------------------------------------ running
 def load(dataset: str) -> pd.DataFrame:
     ds = DATASETS[dataset]
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = ds.loader(conn) if ds.loader else pd.read_sql_query(ds.sql, conn)
     return df.reset_index(drop=True)
 
@@ -579,7 +580,7 @@ def generate_report_pdf(r: ReportResult, max_rows: int = 2000) -> bytes:
 
 # ------------------------------------------------------------------ saved reports
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 

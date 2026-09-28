@@ -23,6 +23,7 @@ import pandas as pd
 from engines.dashboard_kpi_service import _period_label, get_payables_trend, get_supplier_concentration, get_top_suppliers
 
 import os
+from engines.common import get_conn
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 _AP_COMPOSITION_UNION = """
@@ -55,7 +56,7 @@ def get_ap_composition_by_track(granularity: str = "month", start_date: date | N
     window (see get_payables_trend()'s docstring for why -- a handful of bank loan amortization
     schedules run years past everything else, thinning the chart out to mostly noise that far
     out unless bounded)."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         query = f"SELECT * FROM ({_AP_COMPOSITION_UNION})"
         conditions, params = [], []
         if start_date is not None:
@@ -118,7 +119,7 @@ def get_lender_pareto(limit: int = 10) -> pd.DataFrame:
     """Same Pareto shape as get_supplier_pareto() (rank by currently-outstanding checks, running
     cumulative % of the track's own true total) for the Lender track -- checks_issued rows tied
     to a loan_note_id instead of a statement_id."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(
             """SELECT cr.creditor_name AS name, COALESCE(SUM(c.amount), 0) AS value
                FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
@@ -144,7 +145,7 @@ def get_bank_loan_pareto(limit: int = 10) -> pd.DataFrame:
     installment total, one row per bank_loans facility (a single bank/creditor commonly has
     several facilities, e.g. two separate BDO loans, so "name" folds in the loan_ref to stay
     unambiguous rather than showing a bare bank name twice)."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(
             """SELECT cr.creditor_name AS bank_name, bl.loan_ref AS reference, COALESCE(SUM(bli.amount), 0) AS value
                FROM bank_loan_installments bli
@@ -175,7 +176,7 @@ def get_credit_card_pareto(limit: int = 10) -> pd.DataFrame:
     the moment a real statement gets entered instead of needing anyone to remember to add it
     later -- same not-yet-cleared "still owed" definition the Dashboard's Total AP outstanding
     KPI already uses for this track."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(
             f"""SELECT (cc.card_name || ' - ' || cc.card_number_last4) AS name,
                       COALESCE(SUM({cc_owed_case('cs')}), 0) AS value
@@ -206,7 +207,7 @@ def get_all_tracks_pareto(limit: int = 15) -> pd.DataFrame:
     is; a bank loan's name already carries its loan_ref (get_bank_loan_pareto's own
     disambiguation), so nothing here collides across tracks even though a bank name like "BDO"
     could otherwise appear as both a Bank Loan facility and, in principle, a Credit Card issuer."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         supplier_df = pd.read_sql_query(
             """SELECT cr.creditor_name AS name, 'Supplier' AS track, COALESCE(SUM(c.amount), 0) AS value
                FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
@@ -260,7 +261,7 @@ def get_check_status_breakdown() -> pd.DataFrame:
     'Cleared' in the database (no bank reconciliation feature), it stays 'Active' forever and
     the view reclassifies it live once its check_date arrives -- querying recorded_status
     instead would never show a single cleared check, which would be misleading, not honest."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(
             "SELECT effective_status, COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM v_effective_checks GROUP BY effective_status",
             conn,
@@ -288,7 +289,7 @@ def get_check_aging_distribution() -> pd.DataFrame:
     check_date. Doesn't need per-invoice due dates the way DPO/aging-by-due-date does, so this
     reads correctly even for Phase 8c's legacy-migrated checks that have no itemized invoice
     behind them -- just the check's own date, which every check has."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(
             "SELECT check_date, amount FROM v_effective_checks WHERE effective_status = 'Active'",
             conn,
@@ -319,7 +320,7 @@ def get_debt_cost_comparison() -> pd.DataFrame:
     previous_balance on at least one statement). A facility with nothing entered simply isn't a
     row here -- no fabricated 0%, since "no rate on file" and "genuinely 0% interest" are not
     the same fact and shouldn't look identical on a chart."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         private_df = pd.read_sql_query(
             """SELECT cr.creditor_name AS name, ln.note_ref AS reference,
                       'Private Loan' AS source, ln.monthly_interest_rate AS monthly_rate_pct
@@ -363,7 +364,7 @@ def get_missing_debt_terms(limit: int = 10) -> pd.DataFrame:
     so entering real terms starts with whichever one matters most rather than whichever's easiest
     to find. A facility with a rate already on file, or with nothing currently outstanding,
     doesn't appear here."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         lenders_df = pd.read_sql_query(
             """SELECT cr.creditor_name AS name, ln.note_ref AS reference, 'Private Loan' AS source,
                       COALESCE(SUM(c.amount), 0) AS outstanding

@@ -4,6 +4,7 @@ Order: AP_DB_PATH environment variable, then the first line of live_db_path.txt 
 move_database_out_of_drive.py), then the original data/ap_disbursement.db.
 """
 import os
+import sqlite3
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULT = os.path.join(ROOT, "data", "ap_disbursement.db")
@@ -40,3 +41,20 @@ def drive_dir() -> str:
         with open(POINTER, encoding="utf-8") as f:
             live = f.readline().strip() or None
     return os.path.join(os.path.dirname(live), "drive") if live else os.path.join(os.path.expanduser("~"), "AP_Drive")
+
+
+def safe_copy(src: str, dst: str) -> str:
+    """Copy a database file with SQLite's own backup routine (Phase F1.2, 2026-09-28). Since the database runs in WAL mode, the newest
+    saves can sit in <db>-wal until SQLite checkpoints them, so a plain file copy (shutil.copy) could miss them; this never does, and it
+    is safe while the app is open. The copy is one self-contained file. Returns dst."""
+    source = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    try:
+        target = sqlite3.connect(dst)
+        try:
+            source.backup(target)
+            target.execute("PRAGMA journal_mode = DELETE")        # a copy is a plain single file (no -wal beside it)
+        finally:
+            target.close()
+    finally:
+        source.close()
+    return dst

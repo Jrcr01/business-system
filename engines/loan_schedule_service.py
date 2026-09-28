@@ -17,12 +17,13 @@ import os
 import sqlite3
 from engines.validators import money_amount_error
 from datetime import date
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
 def _get_conn():
-    return sqlite3.connect(DB_PATH)
+    return get_conn(DB_PATH)
 
 
 def suggest_installment_interest(loan_note_id: int, due_date: date) -> tuple[float, float]:

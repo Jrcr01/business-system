@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from datetime import date, timedelta
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -22,7 +23,7 @@ STALE_CHECK_DAYS = 180          # Philippine checks go stale six months after th
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 

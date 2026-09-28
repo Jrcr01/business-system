@@ -24,6 +24,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from engines.reports_service import get_payment_schedule_all_tracks, next_banking_day
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 BUFFER_KEY = "cash_buffer"
@@ -33,12 +34,12 @@ DEPOSIT_TYPES = [("CSH DEP", "Cash deposits"), ("CHK DEP", "Check deposits"), ("
 
 
 def _read(sql: str, params: tuple = ()) -> pd.DataFrame:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         return pd.read_sql_query(sql, conn, params=params)
 
 
 def get_buffer() -> float:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (BUFFER_KEY,)).fetchone()
     try:
         return float(row[0]) if row and row[0] not in (None, "") else 0.0
@@ -47,7 +48,7 @@ def get_buffer() -> float:
 
 
 def set_buffer(amount: float) -> None:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         if conn.execute("SELECT 1 FROM settings WHERE key = ?", (BUFFER_KEY,)).fetchone():
             conn.execute("UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?", (str(float(amount)), BUFFER_KEY))
         else:

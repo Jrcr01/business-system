@@ -11,6 +11,7 @@ from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 import os
+from engines.common import get_conn
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 ACCENT = colors.HexColor("#1f3a5f")
@@ -77,7 +78,7 @@ def _invoice_display_status(inv, cover) -> str:
 
 
 def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unprinted: bool = True) -> dict | None:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         stmt = cur.execute(
@@ -356,7 +357,7 @@ def bulk_summary_rows(statement_ids: list[int], include_unprinted_checks: bool =
         return []
     marks = ",".join("?" * len(statement_ids))
     unprinted_filter = "" if include_unprinted_checks else "AND " + _printed_sql("k")
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         rows = conn.execute(
             f"""SELECT os.statement_id, os.statement_ref, cr.creditor_name, os.status, v.net_total,
                        (SELECT COUNT(*) FROM invoices i WHERE i.statement_id = os.statement_id AND i.status != 'Cancelled'),

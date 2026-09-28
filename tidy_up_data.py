@@ -19,14 +19,15 @@ from datetime import datetime
 
 args = sys.argv[1:]
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from db_location import live_db_path  # noqa: E402
+from db_location import live_db_path, safe_copy  # noqa: E402
+from engines.db_engine import open_db  # noqa: E402  (the one door, Phase F1.2)
 db = args[args.index("--db") + 1] if "--db" in args else live_db_path()
 apply = "--apply" in args
 EMELITA_NOTE_REF = "PENDING-126"
 PN_LENDER, PNB_LENDER = "PN8004 7053 5001 8969", "Philippine National Bank"
 GIORNO_OLD, GIORNO_NEW = "Honda Giorno", "Inhouse Financing"
 
-conn = sqlite3.connect(db)
+conn = open_db(db)
 empty = conn.execute(
     """SELECT os.statement_id, os.statement_ref, cr.creditor_name, os.status, DATE(os.created_at, 'localtime')
        FROM order_statements os JOIN creditors cr ON cr.creditor_id = os.creditor_id
@@ -80,9 +81,9 @@ if not empty and not do_note and not do_pn and not do_giorno:
     sys.exit(0)
 
 backup = db + f".before_tidy_up_{datetime.now():%Y%m%d_%H%M%S}"
-shutil.copy2(db, backup)
+safe_copy(db, backup)          # backup API: includes saves still in the -wal file (Phase F1.2)
 print("\nBackup saved:", backup)
-conn = sqlite3.connect(db)
+conn = open_db(db)
 for sid, ref, name, status, created in empty:
     conn.execute("DELETE FROM order_statements WHERE statement_id = ?", (sid,))
     conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('STATEMENT_DELETED', 'order_statements', ?, ?)",
@@ -93,7 +94,7 @@ if empty:
     print(f"Deleted {len(empty)} empty order statement(s).")
 
 if do_pn or do_giorno:
-    conn = sqlite3.connect(db)
+    conn = open_db(db)
     if do_pn:
         for loan_id, ref in pn_loans:
             conn.execute("UPDATE bank_loans SET creditor_id = ? WHERE bank_loan_id = ?", (pnb_id, loan_id))
@@ -122,5 +123,5 @@ if do_note:
     if not ok:
         sys.exit(1)
 
-conn = sqlite3.connect(db)
+conn = open_db(db)
 print("Integrity:", conn.execute("PRAGMA integrity_check").fetchone()[0])

@@ -6,6 +6,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 import os
+from engines.common import get_conn
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
@@ -51,7 +52,7 @@ def get_uncleared_checks_report() -> pd.DataFrame:
     WHERE c.status = 'Active' AND c.check_date >= DATE('now', 'localtime') AND c.check_number IS NOT NULL
     ORDER BY c.check_date ASC, cr.creditor_name ASC
     """
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(query, conn)
     if not df.empty:
         df["actual_payment_date"] = df["due_date"].apply(next_banking_day)
@@ -93,7 +94,7 @@ def get_parked_checks_report() -> pd.DataFrame:
     WHERE c.status = 'Active' AND c.printed_at IS NULL
     ORDER BY c.check_date ASC, cr.creditor_name ASC
     """
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(query, conn)
     if not df.empty:
         df["actual_payment_date"] = df["due_date"].apply(next_banking_day)
@@ -174,7 +175,7 @@ def get_payment_schedule_all_tracks() -> pd.DataFrame:
     which have no such concept.
     actual_payment_date shifts a weekend due_date to the following Monday (reports-only display
     convention -- see next_banking_day())."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(f"SELECT * FROM ({_PAYMENT_SCHEDULE_UNION}) ORDER BY due_date ASC, track ASC", conn)
     if not df.empty:
         df["actual_payment_date"] = df["due_date"].apply(next_banking_day)
@@ -210,7 +211,7 @@ def get_combined_ap_summary() -> pd.DataFrame:
     enough to force into one column without being misleading for half the tracks.
     **Due today = still owed** (owner, 2026-09-28): a lender check dated today and an installment due today still count as owed -- the same
     rule as the Schedule of payments and the Dashboard total."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         supplier = conn.execute(
             "SELECT COALESCE(SUM(amount), 0) FROM invoices WHERE status IN ('Unpaid', 'Partially Paid')"
         ).fetchone()[0]
@@ -262,7 +263,7 @@ def get_supplier_ap_aging_report() -> pd.DataFrame:
     WHERE c.creditor_type = 'SUPPLIER'
     GROUP BY c.creditor_id
     """
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         return pd.read_sql_query(query, conn).fillna(0.0)
 
 def get_private_lender_master_report() -> pd.DataFrame:
@@ -283,7 +284,7 @@ def get_private_lender_master_report() -> pd.DataFrame:
     JOIN creditors c ON ln.creditor_id = c.creditor_id
     WHERE c.creditor_type = 'LENDER'
     """
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         return pd.read_sql_query(query, conn).fillna(0.0)
 
 def get_supplier_history(creditor_id: int):
@@ -292,7 +293,7 @@ def get_supplier_history(creditor_id: int):
     wanted "all batches or checks or invoices related to a supplier" for one supplier at a time,
     to reconcile a single account end-to-end rather than reading it out of the aggregate
     master reports."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         statements = pd.read_sql_query(
             "SELECT statement_id, statement_ref, total_amount, status, datetime(created_at, 'localtime') AS created_at "
             "FROM order_statements WHERE creditor_id = ? ORDER BY created_at",
@@ -341,7 +342,7 @@ def get_payables_rundown(creditor_id: int | None = None, date_from=None, date_to
       AND (? IS NULL OR b.creditor_id = ?)
     ORDER BY c.creditor_name, b.statement_id
     """
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(query, conn, params=(creditor_id, creditor_id))
     df["open"] = (df["net_total"] - df["paid"] - df["scheduled"]).round(2)
     df["balance"] = (df["net_total"] - df["paid"]).round(2)
@@ -401,7 +402,7 @@ def get_invoice_rundown(creditor_id: int | None = None, date_from=None, date_to=
     """
     d1 = str(date_from) if date_from else None
     d2 = str(date_to) if date_to else None
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         return pd.read_sql_query(query, conn, params=(creditor_id, creditor_id, d1, d1, d2, d2))
 
 
@@ -409,7 +410,7 @@ def get_lender_history(creditor_id: int):
     """Full account history for one private lender -- every loan note and every check issued
     against each note. Same per-entity drill-down as get_supplier_history(), for the Lender
     track."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         notes = pd.read_sql_query(
             """SELECT loan_note_id, note_ref, issue_date, principal_amount, total_interest, total_payable, status,
                       total_payable - COALESCE(
@@ -433,7 +434,7 @@ def get_bank_loan_history(bank_loan_id: int):
     get_supplier_history(), for the Bank Loan track -- "paid" is derived the same way as
     get_bank_loan_servicing_report() (due_date in the past = paid), since no separate paid flag
     is stored for this track."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         info = pd.read_sql_query(
             """SELECT bl.loan_ref, bl.account_number, bl.start_date, bl.maturity_date, bl.principal_amount,
                       bl.mode_of_payment, bl.status, c.creditor_name AS bank_name, lb.name AS beneficiary
@@ -458,7 +459,7 @@ def get_bank_loan_history(bank_loan_id: int):
 def get_credit_card_history(card_id: int):
     """Header info plus every statement for one credit card. Same per-entity drill-down as
     get_supplier_history(), for the Credit Card track."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         info = pd.read_sql_query(
             """SELECT cc.card_name, cc.card_number_last4, cc.credit_limit, cc.annual_fee_due_month, cc.statement_day,
                       c.creditor_name AS issuer, ch.name AS cardholder
@@ -483,7 +484,7 @@ def get_cardholder_all_cards_history(cardholder_id: int | None):
     user wants one combined Statement of Account rather than picking cards one at a time."""
     holder_clause = "cc.cardholder_id IS NULL" if cardholder_id is None else "cc.cardholder_id = ?"
     params = () if cardholder_id is None else (cardholder_id,)
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         cards = pd.read_sql_query(
             f"""SELECT cc.card_id, cc.card_name, cc.card_number_last4, cc.credit_limit, c.creditor_name AS issuer
                 FROM credit_cards cc JOIN creditors c ON c.creditor_id = cc.creditor_id
@@ -520,5 +521,5 @@ def get_bank_loan_servicing_report() -> pd.DataFrame:
     LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id
     WHERE c.creditor_type = 'BANK_LOAN'
     """
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         return pd.read_sql_query(query, conn)

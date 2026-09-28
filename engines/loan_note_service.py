@@ -13,6 +13,7 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -47,7 +48,7 @@ def _money(v) -> str:
 
 
 def _fetch_loan_note_data(loan_note_id: int) -> dict | None:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         note = cur.execute(

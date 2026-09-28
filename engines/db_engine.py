@@ -5,9 +5,32 @@ from datetime import datetime
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
+BUSY_TIMEOUT_MS = 10000
+_WAL_DONE: set = set()
+
+
+def open_db(db_path: str | None = None) -> sqlite3.Connection:
+    """THE one door to the database (Phase F1.2, 2026-09-28) -- every connection in engines / views / app comes from here (through
+    common.get_conn()), so the safety settings are the same everywhere:
+      * foreign_keys = ON   -- links between records are checked (SQLite has them OFF unless asked, per connection);
+      * busy_timeout        -- wait up to 10 s when someone else is saving, instead of failing with "database is locked";
+      * journal_mode = WAL  -- people can read while someone saves (stored in the file; recent saves sit in <db>-wal until SQLite
+                               checkpoints them, so copy the database only with the backup API -- db_location.safe_copy()).
+    `db_path` defaults to this module's DB_PATH; callers pass their own module's DB_PATH so tests / scripts that point one module at
+    another file keep working."""
+    path = db_path or DB_PATH
+    conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_MS / 1000)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    if path not in _WAL_DONE and path != ":memory:" and not str(path).startswith("file::memory:"):
+        conn.execute("PRAGMA journal_mode = WAL")     # stored in the file itself: once per file per run is enough
+        _WAL_DONE.add(path)
+    return conn
+
+
 def df_query(sql_query: str, params: tuple = ()) -> pd.DataFrame:
     """Executes SQL query and returns a Pandas DataFrame with NULLs coerced to empty strings."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with open_db(DB_PATH) as conn:
         df = pd.read_sql_query(sql_query, conn, params=params)
         return df.fillna('')
 
@@ -16,7 +39,7 @@ def promote_draft_statement(statement_id: int, target_status: str) -> str:
     if target_status not in ('Issued',):
         raise ValueError("Target status must be 'Issued'.")
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with open_db(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT statement_ref, status FROM order_statements WHERE statement_id = ?", (statement_id,))
         row = cursor.fetchone()

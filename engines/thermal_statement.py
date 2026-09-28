@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from engines.batch_statement_service import _fetch_batch_data
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -46,7 +47,7 @@ PRINTER_DEFAULTS = {
 
 def get_printer_config() -> dict:
     """Printer settings from the settings table, falling back to PRINTER_DEFAULTS for anything not saved yet."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         rows = dict(conn.execute(
             "SELECT key, value FROM settings WHERE key IN (%s)" % ",".join("?" * len(PRINTER_DEFAULTS)), tuple(PRINTER_DEFAULTS)).fetchall())
     cfg = {k: (rows.get(k) if rows.get(k) not in (None, "") else v) for k, v in PRINTER_DEFAULTS.items()}
@@ -60,7 +61,7 @@ def get_printer_config() -> dict:
 
 def save_printer_config(values: dict) -> None:
     """Save printer settings (only known keys) in the settings table, category thermal_printer."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         for k, v in values.items():
             if k not in PRINTER_DEFAULTS:
                 continue

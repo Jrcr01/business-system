@@ -10,7 +10,7 @@ import sqlite3
 
 from datetime import date
 from datetime import datetime
-from engines.db_engine import df_query
+from engines.db_engine import df_query, open_db
 
 
 # AP_DB_PATH override lets a separate process point at a different database (e.g. the Phase 8a
@@ -21,10 +21,10 @@ DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 PRIMARY_BANK_ACCOUNT_ID = 1
 
 
-def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+def get_conn(db_path: str | None = None) -> sqlite3.Connection:
+    """A connection through the one door (engines/db_engine.open_db: foreign keys, busy timeout, WAL). `db_path` defaults to this
+    module's DB_PATH; other modules pass their own DB_PATH."""
+    return open_db(db_path or DB_PATH)
 
 
 def q_live(sql: str, params: tuple = ()) -> pd.DataFrame:

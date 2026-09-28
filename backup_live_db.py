@@ -66,7 +66,8 @@ def main() -> int:
     src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
     dst = sqlite3.connect(out)
     try:
-        src.backup(dst)
+        src.backup(dst)                                   # the backup API includes saves still in the live -wal file
+        dst.execute("PRAGMA journal_mode = DELETE")       # the copy is one plain file: no -wal / -shm on Google Drive (Phase F1.2)
     finally:
         dst.close()
         src.close()

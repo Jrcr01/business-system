@@ -20,6 +20,7 @@ import pandas as pd
 from engines.reports_service import get_payment_schedule_all_tracks
 
 import os
+from engines.common import get_conn
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 _SUPPLIER_CHECK_LAG_SQL = """
@@ -45,7 +46,7 @@ def get_supplier_check_lag() -> pd.DataFrame:
     means paid later than the batch's blended due date (the normal case, since checks are
     usually postdated); negative means paid early. Backs both get_average_dpo_suppliers() and
     get_overdue_cancelled_checks() so both share one definition of "how late."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         return pd.read_sql_query(_SUPPLIER_CHECK_LAG_SQL, conn)
 
 
@@ -90,7 +91,7 @@ def get_top_suppliers(metric: str = "outstanding", limit: int = 10) -> pd.DataFr
     order_statements batch without reconstructing per-invoice line items, so an invoices-based
     sum saw 0 for every migrated supplier despite tens of millions of pesos in real, still-
     outstanding checks sitting in checks_issued."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         if metric == "paid":
             df = pd.read_sql_query(
                 """SELECT cr.creditor_name AS supplier_name, COALESCE(SUM(c.amount), 0) AS value
@@ -177,7 +178,7 @@ def get_payables_trend(granularity: str = "month", start_date: date | None = Non
     facility to 2031), which is real scheduled debt but makes a trend/growth chart mostly noise
     that far out (a handful of installments per period against an otherwise-empty base). Callers
     that want the full history can leave both None, unchanged from before this parameter existed."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         query = f"SELECT * FROM ({_PAYABLES_TREND_UNION})"
         conditions, params = [], []
         if start_date is not None:
@@ -225,7 +226,7 @@ def get_supplier_concentration(limit: int = 5) -> dict:
     the top-N total, the all-supplier outstanding total, and the resulting percentage (0 if
     there's no outstanding payable at all, to avoid a divide-by-zero)."""
     top_df = get_top_suppliers("outstanding", limit=limit)
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         total_row = pd.read_sql_query(
             """SELECT COALESCE(SUM(amount), 0) AS total FROM checks_issued
                WHERE statement_id IS NOT NULL AND status = 'Active' AND check_date >= DATE('now', 'localtime')""",
@@ -272,7 +273,7 @@ def get_total_ap_outstanding() -> float:
     directly (not invoices / loan_notes status) so legacy checks count whichever path wrote them."""
     from engines.cc_rules import cc_owed_case
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         checks = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date >= DATE('now', 'localtime')").fetchone()[0]
         loans = conn.execute("""SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date >= DATE('now', 'localtime')
                                 AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)""").fetchone()[0]
@@ -283,7 +284,7 @@ def get_total_ap_outstanding() -> float:
 def get_stale_checks(days: int = 180) -> dict:
     """Active checks dated more than `days` ago that the bank has NOT confirmed cleared (bank_cleared_date empty) -- probably lost or never
     deposited. A check the imported bank statement shows as cleared is not stale, however old (2026-09-28: was check-date only)."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         n, total = conn.execute("""SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND bank_cleared_date IS NULL
                                    AND check_date < DATE('now', 'localtime', ?)""", (f"-{int(days)} days",)).fetchone()
     return {"n": int(n), "total": float(total)}

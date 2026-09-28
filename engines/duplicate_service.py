@@ -13,6 +13,7 @@ the user decide whether to continue.
 import os
 import re
 import sqlite3
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -22,7 +23,7 @@ def _php(v) -> str:
 
 
 def _conn():
-    return sqlite3.connect(DB_PATH)
+    return get_conn(DB_PATH)
 
 
 _DOC_PREFIXES = ("INVOICE", "INV", "SI", "DR", "OR", "CI", "SO")

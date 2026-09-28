@@ -3,6 +3,7 @@ import pandas as pd
 from engines.soa_parser import parse_soa_document
 
 import os
+from engines.common import get_conn
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 def reconcile_vendor_soa(creditor_id: int, file_bytes: bytes, file_name: str) -> dict:
@@ -28,7 +29,7 @@ def reconcile_vendor_soa(creditor_id: int, file_bytes: bytes, file_name: str) ->
     else:
         return {"success": False, "error": "Unsupported file format."}
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         internal_df = pd.read_sql_query("SELECT doc_ref, amount AS internal_amount, status FROM invoices WHERE creditor_id = ?", conn, params=(creditor_id,))
 
     internal_df['clean_ref'] = internal_df['doc_ref'].astype(str).str.strip().str.upper()

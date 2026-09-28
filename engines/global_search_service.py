@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -36,7 +37,7 @@ def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
     a = amt if amt is not None else -1.0           # -1 never matches an amount (all amounts are >= 0)
     groups: list[dict] = []
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         def run(title, sql, params, build):
             rows = conn.execute(sql, params).fetchall()
             total = conn.execute(f"SELECT COUNT(*) FROM ({sql.rsplit(' LIMIT ', 1)[0]})", params).fetchone()[0] if len(rows) >= limit else len(rows)

@@ -20,12 +20,13 @@ from datetime import date, datetime
 from engines.batch_statement_service import _fetch_batch_data, generate_batch_statement_pdf
 from engines.drive_service import DriveError, statement_folder_id
 from engines.statement_rules import add_terms_bank_rule
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 

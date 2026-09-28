@@ -26,6 +26,7 @@ import os
 import sqlite3
 from engines.validators import money_amount_error
 from datetime import date
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -35,7 +36,7 @@ CLEARED_SQL = "due_date < DATE('now', 'localtime')"
 
 
 def _get_conn():
-    return sqlite3.connect(DB_PATH)
+    return get_conn(DB_PATH)
 
 
 def is_installment_cleared(due_date) -> bool:

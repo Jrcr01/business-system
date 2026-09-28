@@ -17,12 +17,13 @@ from datetime import date, datetime
 from xml.sax.saxutils import escape
 
 import pandas as pd
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
 def _read(sql: str, params: tuple = ()) -> pd.DataFrame:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         return pd.read_sql_query(sql, conn, params=params)
 
 
@@ -31,7 +32,7 @@ def recon_statement(import_id: int) -> dict | None:
     if imp.empty:
         return None
     imp = imp.iloc[0].to_dict()
-    with sqlite3.connect(DB_PATH) as conn:                   # stored in UTC (CURRENT_TIMESTAMP): show local time
+    with get_conn(DB_PATH) as conn:                   # stored in UTC (CURRENT_TIMESTAMP): show local time
         for k in ("imported_at", "reconciled_at"):
             if imp.get(k) and isinstance(imp[k], str):
                 imp[k] = conn.execute("SELECT datetime(?, 'localtime')", (imp[k],)).fetchone()[0]

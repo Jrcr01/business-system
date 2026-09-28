@@ -15,6 +15,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 import os
+from engines.common import get_conn
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 ACCENT = colors.HexColor("#1f3a5f")
@@ -48,7 +49,7 @@ def _money(v) -> str:
 
 
 def _fetch_bank_loan_data(bank_loan_id: int) -> dict | None:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         loan = cur.execute(

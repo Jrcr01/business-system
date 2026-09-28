@@ -404,8 +404,17 @@ Sits between AP (done, live) and Sales/AR (next module).
 **F1 -- One door, one clock, safe writes (on the laptop; no visible change for the owner).**
 *Progress (split into gated steps 2026-09-28): **F1.1 done** -- `fk_check.py` (read-only, runs `PRAGMA foreign_key_check` on a backup-API
 copy; exit 0 clean / 1 found / 2 unreadable; tests `tests/test_fk_check.py`): live and TEST = 33 tables, 41 declared links, **0 broken**.
-Next: F1.2 one door (connections + WAL / busy_timeout; check backup / restore / export scripts that copy the raw file, since WAL keeps
-recent writes in `-wal` until a checkpoint), F1.3 one clock, F1.4 safe writes + `doc_counters`, F1.5 `audit_logs.user_email`.*
+**F1.2 done** -- the one door is `engines/db_engine.open_db(path)` (the only `sqlite3.connect` in engines / views / app, besides
+`backup_service` reading UPLOADED files read-only): `foreign_keys = ON`, `busy_timeout = 10000`, `journal_mode = WAL` (once per file per
+run). `common.get_conn(db_path=None)` returns it; the 95 engine connections became `get_conn(DB_PATH)` -- each module passes its OWN
+DB_PATH, so tests / `tidy_up_data.py` pointing one module at another file still work. WAL-safe copies: `db_location.safe_copy(src, dst)`
+(backup API, copy set to `journal_mode = DELETE`) for the in-app restore's safety copy, `update_database.bat` and `tidy_up_data.py`
+backups; the in-app restore copies the upload INTO the live file with the backup API (never over it); the nightly backup file is set to
+DELETE mode (no -wal / -shm on Google Drive). The live / TEST folders now hold `<db>-wal` and `<db>-shm` beside the database while the app
+runs -- normal, never delete them. Measured on a copy of live: a save ~5x faster, open + read ~1 ms slower. Tests
+`tests/test_one_door.py` (settings, the door rule, links enforced, safe_copy includes saves still in -wal, restore with -wal present).
+Known, not from F1.2: Arrow "could not convert ''" warning for `principal_amount` on a loans page (df_query's fillna('')).
+Next: F1.3 one clock, F1.4 safe writes + `doc_counters`, F1.5 `audit_logs.user_email`.*
 * Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
   `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
 * Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes

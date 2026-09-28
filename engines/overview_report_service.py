@@ -18,6 +18,7 @@ from engines.checkbook_service import get_checkbook_alerts
 from engines.dashboard_kpi_service import get_supplier_check_lag
 from engines.duplicate_service import loan_check_mismatches
 from engines.reports_service import get_combined_ap_summary, get_payment_schedule_all_tracks
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 PERIOD_KINDS = ["Day", "Week", "Month", "Quarter", "Year"]
@@ -197,7 +198,7 @@ def _watch_list() -> list[dict]:
             items.append({"item": "Checkbooks with a gap or duplicate number", "count": int(len(alerts)), "detail": ", ".join(alerts["booklet_code"].astype(str).head(4))})
     except Exception:
         pass
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         note_ids = [r[0] for r in conn.execute("SELECT DISTINCT loan_note_id FROM checks_issued WHERE loan_note_id IS NOT NULL AND status = 'Active'")]
         bad = sum(len(loan_check_mismatches(n)) for n in note_ids)
         if bad:
@@ -270,7 +271,7 @@ def _trend(kind: str, start: date, periods: int = 6) -> list[dict]:
         s, e, _label = previous_bounds(kind, bounds[0][0])
         bounds.insert(0, (s, e))
     out = []
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         for s, e in bounds:
             cash = _cash_rows(conn, s, e)
             out.append({"label": _short_label(kind, s), "paid": float(cash["paid"].sum()) if not cash.empty else 0.0,
@@ -329,7 +330,7 @@ def bank_note(b: dict) -> str:
 def get_overview(kind: str, anchor: date) -> dict:
     start, end, label = period_bounds(kind, anchor)
     pstart, pend, plabel = previous_bounds(kind, start)
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         cur, prev = _summarise(conn, start, end), _summarise(conn, pstart, pend)
     upcoming = _upcoming(kind, end)
     watch = _watch_list()

@@ -24,6 +24,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from engines.settings_store import get_number, get_setting, set_setting
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 FRESH_DAYS = 14                 # a bank balance older than this is not used to plan from
@@ -58,7 +59,7 @@ def save_settings(s: PlanSettings) -> None:
 
 
 def _read(sql: str, params: tuple = ()) -> pd.DataFrame:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         return pd.read_sql_query(sql, conn, params=params)
 
 
@@ -313,7 +314,7 @@ def send_to_batch(p: Plan, statement_id: int) -> tuple[bool, str]:
     inv = get_invoices_with_remaining(int(statement_id))
     save_park_draft(int(statement_id), "By number of checks", len(rows), remaining, [int(i) for i in inv["invoice_id"]] if not inv.empty else [],
                     [(d.isoformat(), float(a)) for d, a in zip(rows["suggested_date"], rows["amount"])])
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('PLANNER_DATES_SENT', 'order_statements', ?, ?)",
                      (int(statement_id), "; ".join(f"{d} {a:,.2f}" for d, a in zip(rows["suggested_date"], rows["amount"]))))
     return True, f"{len(rows)} check(s) with the suggested dates are waiting in the batch's Issue checks — review them and park."

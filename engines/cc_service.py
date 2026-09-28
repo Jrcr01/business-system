@@ -3,6 +3,7 @@ import sqlite3
 from datetime import date
 
 import pandas as pd
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -22,7 +23,7 @@ def get_statement_gap_alerts() -> pd.DataFrame:
     encode this month's bill" before it's discovered late. Uses due_date as the recency signal --
     the only per-statement date left once statement_date became a card-level property
     (credit_cards.statement_day) instead of something re-typed per statement."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(
             """SELECT cc.card_id, cc.card_name, cc.card_number_last4, ch.name AS cardholder_name,
                       MAX(cs.due_date) AS last_due_date
@@ -69,7 +70,7 @@ def get_statement_coverage(today: date | None = None) -> pd.DataFrame:
     this_start = today.replace(day=1)
     prev_start = date(this_start.year - (1 if this_start.month == 1 else 0), 12 if this_start.month == 1 else this_start.month - 1, 1)
     next_start = date(this_start.year + (1 if this_start.month == 12 else 0), 1 if this_start.month == 12 else this_start.month + 1, 1)
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(
             """SELECT cc.card_id, COALESCE(ch.name, '(no holder)') AS cardholder, cr.creditor_name AS issuer,
                       cc.card_name, cc.card_number_last4, cc.statement_day,
@@ -127,7 +128,7 @@ def get_annual_fee_alerts(window_months: int = 2) -> pd.DataFrame:
     Month-only precision (the real anniversary is the card's issuance date, which isn't on file
     for existing cards) -- so this flags the whole month as the risk window rather than a single
     day. Only cards with annual_fee_due_month set are considered."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(
             """SELECT cc.card_id, cc.card_name, cc.card_number_last4, ch.name AS cardholder_name,
                       cc.annual_fee_due_month
@@ -157,7 +158,7 @@ def settle_cc_statement_via_cash(
     Unified Debt Interest Tracking) -- this is a full settlement (status becomes 'Paid'), so the
     rolling-balance figures need to agree with that, otherwise a statement could show 'Paid' here
     while still reporting a real unpaid balance rolling into next month's previous_balance."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         cursor = conn.cursor()
 
         cursor.execute("SELECT total_amount_due, status FROM cc_statements WHERE cc_statement_id = ?", (cc_statement_id,))

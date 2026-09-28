@@ -13,6 +13,7 @@ from datetime import datetime
 
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill
+from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 MASTER_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "excel_invoice_entry", "invoice_entry_master.xlsm")
@@ -20,7 +21,7 @@ DEFAULT_TERMS = "120"
 
 
 def active_suppliers() -> list[tuple[str, str]]:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn(DB_PATH) as conn:
         return conn.execute(
             "SELECT creditor_name, COALESCE(NULLIF(TRIM(terms), ''), ?) FROM creditors "
             "WHERE creditor_type = 'SUPPLIER' AND is_active = 1 ORDER BY LOWER(creditor_name)",

@@ -14,13 +14,14 @@ import db_location
 
 os.environ.setdefault("AP_DB_PATH", db_location.live_db_path())
 
+from engines.db_engine import open_db  # noqa: E402
 from engines.drive_service import DriveError, DriveNotConnected, GoogleDrive  # noqa: E402
 from engines.statement_version_service import expire_public_links, expired_public_versions  # noqa: E402
 
 
 def main() -> int:
     db = os.environ["AP_DB_PATH"]
-    with sqlite3.connect(db) as conn:
+    with open_db(db) as conn:                              # the one door (Phase F1.2)
         if not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'statement_versions'").fetchone():
             print("Statement links: nothing to do (this database has no statement copies yet).")
             return 0

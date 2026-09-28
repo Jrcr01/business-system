@@ -42,7 +42,7 @@ from datetime import datetime
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 SCHEMA_PATH = os.path.join(PROJECT_ROOT, "schema.sql")
-from db_location import live_db_path
+from db_location import live_db_path, safe_copy
 LIVE_DB_PATH = live_db_path()
 
 
@@ -180,7 +180,7 @@ def main():
     if not args.dry_run and not args.no_backup:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = f"{args.db}.bak_pre_schema_sync_{timestamp}"
-        shutil.copy2(args.db, backup_path)
+        safe_copy(args.db, backup_path)          # backup API: includes saves still in the -wal file (Phase F1.2)
         print(f"Backed up to {backup_path}")
         print()
 
