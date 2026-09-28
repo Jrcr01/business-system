@@ -320,6 +320,10 @@ parallel run (S5) once the system's daily totals and profit match it.
   * **Brother (Sales):** price / cost / stock and customer-balance lookup; **record sales and collections** (with check details) from
     the phone, besides the Excel form on the laptop.
   Every new screen's mock-up shows its phone layout too.
+  **Samsung / Android app (owner asked for an APK, 2026-09-28):** step 1 = "Install app" from Chrome (Android makes it a real
+  installed app, auto-updating). If wanted, an **APK** wrapping the same web app (Trusted Web Activity, e.g. Bubblewrap) —
+  installed directly or published privately on Google Play (one-time developer account). Both need the server (F3) on the own
+  HTTPS domain. Decide at F3.
 
 **To decide**
 * When the PO / receiving system comes relative to Sales (it is the source of tire cost for profit and below-cost checks).
