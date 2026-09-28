@@ -9,7 +9,7 @@ from engines.bank_statement_service import (
     _map_columns, _unreverse, clean_amount, exceptions, import_statement, not_yet_cleared, norm_check_number, parse_statement,
     preview_matches, statement_coverage,
 )
-from engines.bank_statement_service import bank_correction, correct_check_to_bank
+from engines.bank_statement_service import adjust_check_to_bank, adjustments, bank_correction, reopen
 
 HEADER = "Transaction Date,Posting Date,Time,Check Number,Transaction Description,Debit Amount,Credit Amount,Balance,Branch/Channel,Subscriber Number/TIN,Sequence Number"
 
@@ -139,29 +139,39 @@ def test_nothing_else_in_the_app_changes_meaning(db, monkeypatch, tmp_path):
         assert conn.execute("SELECT check_id, status, check_date, amount FROM checks_issued ORDER BY check_id").fetchall() == before
 
 
-def test_correct_our_check_to_the_bank_in_one_click(db, monkeypatch, tmp_path):
-    """Owner, 2026-09-28: "Bank statement is the ultimate truth of checks record" -- one click, shown first, audited; never offered when the
-    bank cleared the leaf before our check date (then our check number is the mistake, as with check 3992527921)."""
+def test_adjust_to_the_bank_never_edits_our_check(db, monkeypatch, tmp_path):
+    """Owner, 2026-09-28: "Bank statement is the ultimate truth" + "not direct edit the record but tag it as adjustment due to incorrect
+    recording in the book" + adjust the batch off too. Our check C is PHP 1,200 dated Oct 10; the bank paid that number PHP 1,250 on Oct 6."""
     monkeypatch.setenv("AP_DRIVE_DIR", str(tmp_path / "drive"))
     ids = _checks(db)
     with sqlite3.connect(db) as conn:
         conn.execute("UPDATE checks_issued SET printed_at = CURRENT_TIMESTAMP, check_date = '2026-10-10' WHERE check_id = ?", (ids["C"],))
     import_statement(_statement(), "s.csv")
     txn = next(e["txn_id"] for e in exceptions() if e["match_status"] == "amount_mismatch")
-    early = bank_correction(txn)
-    assert not early["ok"] and "cannot be the same check" in early["why"] and not correct_check_to_bank(txn)[0]
-    with sqlite3.connect(db) as conn:
-        conn.execute("UPDATE checks_issued SET check_date = '2026-10-02' WHERE check_id = ?", (ids["C"],))
     fix = bank_correction(txn)
-    assert fix["ok"] and (fix["old_amount"], fix["new_amount"]) == (1200.0, 1250.0) and fix["batch_left"] == 850.0
-    ok, msg = correct_check_to_bank(txn)
+    assert fix["ok"] and fix["diff"] == 50.0 and fix["date_differs"] and "stub" in fix["warn"]
+    from engines.statement_rules import get_batch_balance
+    with sqlite3.connect(db) as conn:
+        sid = conn.execute("SELECT statement_id FROM checks_issued WHERE check_id = ?", (ids["C"],)).fetchone()[0]
+    before = get_batch_balance(sid)
+    ok, msg = adjust_check_to_bank(txn)
     assert ok, msg
     with sqlite3.connect(db) as conn:
-        amount, cleared = conn.execute("SELECT amount, bank_cleared_date FROM checks_issued WHERE check_id = ?", (ids["C"],)).fetchone()
-        assert (amount, cleared) == (1250.0, "2026-10-06")
-        assert conn.execute("SELECT COUNT(*) FROM check_corrections WHERE check_id = ? AND correction_type = 'Amount'", (ids["C"],)).fetchone()[0] == 1
-        assert conn.execute("SELECT resolution FROM bank_transactions WHERE txn_id = ?", (txn,)).fetchone()[0] == "Corrected to the bank"
-    assert bank_correction(txn) is None
+        amount, cdate, cleared = conn.execute("SELECT amount, check_date, bank_cleared_date FROM checks_issued WHERE check_id = ?", (ids["C"],)).fetchone()
+        assert (amount, cdate, cleared) == (1200.0, "2026-10-10", "2026-10-06")                 # the book is untouched; cleared by the bank
+        assert conn.execute("SELECT COUNT(*) FROM check_corrections").fetchone()[0] == 0
+        kinds = dict(conn.execute("SELECT kind, amount FROM bank_adjustments WHERE reversed_at IS NULL").fetchall())
+        assert kinds == {"CHECK_AMOUNT": 50.0, "BATCH_BALANCE": 50.0, "CHECK_DATE": 0.0}
+        assert conn.execute("SELECT resolution FROM bank_transactions WHERE txn_id = ?", (txn,)).fetchone()[0] == "Adjusted to the bank"
+    after = get_batch_balance(sid)
+    assert after[0] == before[0] + 50 and after[1] == before[1] + 50 and abs(after[2] - before[2]) < 0.005   # owes exactly what the bank paid
+    assert [a["kind"] for a in adjustments()] and bank_correction(txn) is None
+    reopen(txn)                                                                                 # undo: adjustments reversed, kept
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM bank_adjustments WHERE reversed_at IS NULL").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM bank_adjustments").fetchone()[0] == 3
+        assert conn.execute("SELECT bank_cleared_date FROM checks_issued WHERE check_id = ?", (ids["C"],)).fetchone()[0] is None
+    assert get_batch_balance(sid) == before and adjustments() == []
 
 
 def test_double_entry_guard_a_check_cleared_twice_never_overwrites_the_first(db, monkeypatch, tmp_path):

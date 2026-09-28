@@ -534,7 +534,7 @@ def _set_aside_before_system(conn) -> None:
 
 
 EXCEPTION_STATUSES = ("cleared_twice", "amount_mismatch", "cancelled_check_cleared", "returned_check", "not_in_system", "unmatched_debit")
-RESOLUTIONS = ["Linked by hand", "Corrected to the bank", "Bank error", "Legacy record", "Customer bounced check", "Expected bank debit", "Before the system", "Other"]
+RESOLUTIONS = ["Linked by hand", "Adjusted to the bank", "Corrected to the bank", "Not recorded in the system", "Bank error", "Legacy record", "Customer bounced check", "Expected bank debit", "Before the system", "Other"]
 
 
 def exceptions(import_id: int | None = None) -> list[dict]:
@@ -639,52 +639,93 @@ def link_to_check(txn_id: int, check_id: int, how: str = "Linked by hand") -> tu
     return True, f"Linked: check {c['check_number'] or c['check_id']} is cleared by the bank on {t['posting_date']}."
 
 
+BOOK_ERROR = "Incorrect recording in the book"
+CLEARING_DIFF = "Bank clearing difference"
+
+
 def bank_correction(txn_id: int) -> dict | None:
-    """Owner rule (2026-09-28): "Bank statement is the ultimate truth of checks record." For a line where the bank cleared one of our check
-    numbers for a different amount: what correcting our check to the bank would change, and whether the app can offer it. None when the line
-    is not such a case. Not offered when the bank cleared the leaf BEFORE our check date -- that cannot be the same check (check 3992527921:
-    bank Jan 29, 2026 vs our Oct 29, 2026 -- the owner's stub confirmed our record, number included)."""
+    """Owner rules (2026-09-28): "Bank statement is the ultimate truth of checks record" and "not direct edit the record but tag it as
+    adjustment due to incorrect recording in the book". For a bank line that cleared one of our check numbers for a different amount:
+    what the adjustments would be. The check itself is never changed. None when the line is not such a case.
+    'date_differs': the bank paid BEFORE our recorded check date -- a check can't be paid before its date, so the recorded date is wrong
+    (or it is a different check: 'warn' asks the owner to compare with the stub first)."""
     with _conn() as conn:
-        r = conn.execute("""SELECT t.txn_id, t.posting_date, t.debit, t.match_status, c.check_id, c.check_number, c.check_date, c.amount,
-                                   c.status, c.statement_id, c.bank_txn_id
+        r = conn.execute("""SELECT t.txn_id, t.posting_date, t.debit, c.check_id, c.check_number, c.check_date, c.amount, c.status,
+                                   c.statement_id, c.loan_note_id, c.bank_txn_id
                             FROM bank_transactions t JOIN checks_issued c ON c.check_id = t.matched_check_id
                             WHERE t.txn_id = ? AND t.match_status = 'amount_mismatch'""", (int(txn_id),)).fetchone()
     if not r:
         return None
-    out = {"check_id": r["check_id"], "check_number": r["check_number"], "check_date": r["check_date"], "bank_date": r["posting_date"],
-           "old_amount": float(r["amount"]), "new_amount": float(r["debit"]), "ok": True, "why": "", "batch_left": None}
+    rec_date = str(r["check_date"])[:10]
+    out = {"check_id": r["check_id"], "check_number": r["check_number"], "check_date": rec_date, "bank_date": r["posting_date"],
+           "old_amount": float(r["amount"]), "new_amount": float(r["debit"]), "diff": round(float(r["debit"]) - float(r["amount"]), 2),
+           "date_differs": str(r["posting_date"]) < rec_date, "statement_id": r["statement_id"], "loan_note_id": r["loan_note_id"],
+           "ok": True, "why": "", "warn": ""}
     if r["status"] != "Active":
         out.update(ok=False, why=f"Our check is {r['status']}, not Active.")
-    elif str(r["posting_date"]) < str(r["check_date"])[:10]:
-        out.update(ok=False, why=f"The bank cleared this check number on {r['posting_date']}, before our check's date ({str(r['check_date'])[:10]}) — "
-                                 "it cannot be the same check. Compare our check with its stub: if the stub agrees with our record, the bank line is the odd "
-                                 "one (ask Metrobank for the check image) — tag it and leave our check as it is.")
     elif r["bank_txn_id"] and int(r["bank_txn_id"]) != int(txn_id):
         out.update(ok=False, why="Our check is already cleared by another bank line.")
-    elif r["statement_id"]:
-        from engines.check_rules import get_batch_balance
-        net_total, active_sum, _ = get_batch_balance(int(r["statement_id"]))
-        out["batch_left"] = round(net_total - (active_sum - out["old_amount"] + out["new_amount"]), 2)
+    elif out["date_differs"]:
+        out["warn"] = (f"The bank paid this check number on {r['posting_date']}, before the recorded date {rec_date}. Only adjust if the check "
+                       "stub shows it is the same check — otherwise tag the bank line instead.")
     return out
 
 
-def correct_check_to_bank(txn_id: int) -> tuple[bool, str]:
-    """One click (owner, 2026-09-28): set our check's amount to what the bank cleared, through the audited check-correction path (same
-    rules: a locked batch must be unlocked first; a batch can never be overpaid), then link the line so the check counts as bank-cleared.
-    Reopen undoes the link; the amount correction stays in the check's correction history."""
+def adjust_check_to_bank(txn_id: int) -> tuple[bool, str]:
+    """One click: leave our check exactly as recorded and add the adjustments -- CHECK_AMOUNT (bank - recorded) and CHECK_DATE (only when
+    the bank paid before the recorded date), both "Incorrect recording in the book", plus BATCH_BALANCE of the same amount ("Bank clearing
+    difference", owner: adjust it off too) so the batch / loan note owes exactly what the bank paid. Then the line is linked (the check is
+    bank-cleared). All audited; Reopen on the bank line reverses the adjustments (kept, marked reversed)."""
     fix = bank_correction(txn_id)
     if not fix:
-        return False, "This bank line is not a check with a different amount."
+        return False, "This bank line is not one of our checks with a different amount."
     if not fix["ok"]:
         return False, fix["why"]
-    from engines.check_rules import apply_check_correction
-    ok, msg = apply_check_correction(fix["check_id"], "Amount", f"{fix['new_amount']:.2f}",
-                                     f"Bank statement: cleared {fix['bank_date']} for PHP {fix['new_amount']:,.2f}")
+    rows = []
+    if abs(fix["diff"]) >= 0.005:
+        rows.append(("CHECK_AMOUNT", f"{fix['old_amount']:.2f}", f"{fix['new_amount']:.2f}", fix["diff"], BOOK_ERROR))
+        if fix["statement_id"] or fix["loan_note_id"]:
+            rows.append(("BATCH_BALANCE", None, None, fix["diff"], CLEARING_DIFF))
+    if fix["date_differs"]:
+        rows.append(("CHECK_DATE", fix["check_date"], fix["bank_date"], 0.0, BOOK_ERROR))
+    with _conn() as conn:
+        for kind, rec, bank, amount, reason in rows:
+            conn.execute("""INSERT INTO bank_adjustments (kind, check_id, bank_txn_id, statement_id, loan_note_id, recorded_value, bank_value,
+                            amount, reason) VALUES (?,?,?,?,?,?,?,?,?)""",
+                         (kind, fix["check_id"], int(txn_id), fix["statement_id"], fix["loan_note_id"], rec, bank, amount, reason))
+            conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BANK_ADJUSTMENT', 'checks_issued', ?, ?)",
+                         (fix["check_id"], f"{kind}: {reason}; recorded {rec} / bank {bank} / {amount:+,.2f} (bank line {txn_id})"))
+    ok, msg = link_to_check(txn_id, fix["check_id"], how="Adjusted to the bank")
     if not ok:
         return False, msg
-    ok, msg = link_to_check(txn_id, fix["check_id"], how="Corrected to the bank")
-    return ok, (f"Check {fix['check_number']} corrected from {fix['old_amount']:,.2f} to {fix['new_amount']:,.2f} and marked cleared by the bank "
-                f"on {fix['bank_date']}.") if ok else msg
+    parts = [f"amount {fix['diff']:+,.2f}"] if abs(fix["diff"]) >= 0.005 else []
+    parts += [f"date {fix['check_date']} -> {fix['bank_date']}"] if fix["date_differs"] else []
+    return True, (f"Check {fix['check_number']} kept as recorded; adjustment added ({', '.join(parts)}) and marked cleared by the bank on "
+                  f"{fix['bank_date']}.")
+
+
+def adjustments(include_reversed: bool = False) -> list[dict]:
+    """Every bank adjustment with its check and payee, newest first."""
+    with _conn() as conn:
+        return [dict(r) for r in conn.execute(
+            f"""SELECT a.*, datetime(a.created_at, 'localtime') AS created_local, c.check_number, cr.creditor_name, COALESCE(os.statement_ref, ln.note_ref) AS reference
+                FROM bank_adjustments a LEFT JOIN checks_issued c ON c.check_id = a.check_id
+                LEFT JOIN creditors cr ON cr.creditor_id = c.creditor_id LEFT JOIN order_statements os ON os.statement_id = a.statement_id
+                LEFT JOIN loan_notes ln ON ln.loan_note_id = a.loan_note_id
+                {'' if include_reversed else 'WHERE a.reversed_at IS NULL'} ORDER BY a.adjustment_id DESC""").fetchall()]
+
+
+def adjustment_totals(statement_id: int | None = None, loan_note_id: int | None = None) -> tuple[float, float]:
+    """(batch adjustments, check-amount adjustments) still in force for a batch or loan note -- 0, 0 when the table is not there yet."""
+    col, val = ("statement_id", statement_id) if statement_id is not None else ("loan_note_id", loan_note_id)
+    try:
+        with _conn() as conn:
+            r = conn.execute(f"""SELECT COALESCE(SUM(CASE WHEN kind = 'BATCH_BALANCE' THEN amount END), 0),
+                                        COALESCE(SUM(CASE WHEN kind = 'CHECK_AMOUNT' THEN amount END), 0)
+                                 FROM bank_adjustments WHERE {col} = ? AND reversed_at IS NULL""", (val,)).fetchone()
+    except sqlite3.OperationalError:
+        return 0.0, 0.0
+    return float(r[0]), float(r[1])
 
 
 def reopen(txn_id: int) -> None:
@@ -696,6 +737,14 @@ def reopen(txn_id: int) -> None:
             return
         conn.execute("UPDATE checks_issued SET bank_cleared_date = NULL, bank_txn_id = NULL WHERE bank_txn_id = ? AND check_id IN "
                      "(SELECT matched_check_id FROM bank_transactions WHERE txn_id = ? AND match_status = 'matched_manual')", (t["txn_id"], t["txn_id"]))
+        try:
+            n_adj = conn.execute("UPDATE bank_adjustments SET reversed_at = CURRENT_TIMESTAMP WHERE bank_txn_id = ? AND reversed_at IS NULL",
+                                 (t["txn_id"],)).rowcount
+        except sqlite3.OperationalError:                                  # database without the adjustments table yet
+            n_adj = 0
+        if n_adj:
+            conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('BANK_ADJUSTMENT_REVERSED', "
+                         "'bank_transactions', ?, ?)", (t["txn_id"], f"{n_adj} adjustment(s) reversed"))
         conn.execute("""UPDATE bank_transactions SET reviewed = 0, resolution = NULL, note = NULL, matched_check_id = NULL, matched_installment_id = NULL,
                             matched_cc_statement_id = NULL, match_status = NULL WHERE txn_id = ?""", (t["txn_id"],))
         conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('BANK_LINE_REOPENED', 'bank_transactions', ?, ?)",
@@ -724,10 +773,16 @@ def _one_digit_apart(a: str, b: str) -> bool:
     return len(diff) == 1 or (len(diff) == 2 and diff[1] == diff[0] + 1 and a[diff[0]] == b[diff[1]] and a[diff[1]] == b[diff[0]])
 
 
+CONFIDENCE_ORDER = {"High": 0, "Medium": 1, "Low": 2}
+
+
 def suggestions() -> list[dict]:
     """Suggested (never automatic) matches for unmatched check lines: one of our active checks not cleared yet with the SAME amount and a
     number one digit off / two digits swapped, or with no number yet and a check date within 7 days of the bank date. Rejected pairs are
-    not suggested again."""
+    not suggested again.
+    Smarter since 2026-09-28 (owner: "make suggestions more intelligent", after leaf ...673 paid Sep 21 was accepted as our ...678 dated
+    Sep 29): each suggestion has a 'confidence' (High / Medium / Low) and 'reasons' (why), best first. A check dated AFTER the day the
+    bank paid it is always Low -- it cannot be that check unless our date is wrong. 'reason' = the matching rule (unchanged)."""
     with _conn() as conn:
         lines = conn.execute("""SELECT txn_id, posting_date, check_number, debit, rejected_check_ids FROM bank_transactions
                                 WHERE kind = 'CHECK' AND reviewed = 0 AND match_status IN ('amount_mismatch', 'not_in_system')""").fetchall()
@@ -737,19 +792,72 @@ def suggestions() -> list[dict]:
     for t in lines:
         rejected = {x for x in (t["rejected_check_ids"] or "").split(",") if x}
         tnum = norm_check_number(t["check_number"])
+        bank_day = date.fromisoformat(t["posting_date"])
+        found = []
         for c in ours:
             if str(c["check_id"]) in rejected or abs(float(c["amount"]) - float(t["debit"])) >= 0.005:
                 continue
             cnum = norm_check_number(c["check_number"])
+            gap = (bank_day - date.fromisoformat(str(c["check_date"])[:10])).days          # days from our check date to the bank payment
             if cnum and _one_digit_apart(tnum, cnum):
                 reason = "same amount, check number one digit off"
-            elif not cnum and abs((date.fromisoformat(str(c["check_date"])[:10]) - date.fromisoformat(t["posting_date"])).days) <= 7:
+            elif not cnum and abs(gap) <= 7:
                 reason = "same amount, our check has no number yet, dated within 7 days"
             else:
                 continue
+            found.append((c, reason, gap))
+        for c, reason, gap in found:
+            reasons = ["same amount", "number one digit off" if c["check_number"] else "our check has no number yet"]
+            if gap < 0:
+                reasons.append(f"our check is dated {-gap} day(s) AFTER the bank paid it — unlikely to be this check")
+                conf = "Low"
+            else:
+                reasons.append("paid on its date" if gap == 0 else f"paid {gap} day(s) after its date")
+                others = sum(1 for _, _, g in found if g >= 0) - 1
+                if others:
+                    reasons.append(f"{others} other check(s) also fit")
+                conf = "High" if c["check_number"] and not others and gap <= 60 else "Medium"
             out.append({"txn_id": t["txn_id"], "posting_date": t["posting_date"], "bank_check_number": t["check_number"], "amount": t["debit"],
-                        "check_id": c["check_id"], "our_number": c["check_number"], "check_date": c["check_date"], "payee": c["creditor_name"], "reason": reason})
+                        "check_id": c["check_id"], "our_number": c["check_number"], "check_date": c["check_date"], "payee": c["creditor_name"],
+                        "reason": reason, "confidence": conf, "reasons": reasons, "gap_days": gap})
+    out.sort(key=lambda s: (s["posting_date"], s["txn_id"], CONFIDENCE_ORDER[s["confidence"]], abs(s["gap_days"])))
     return out
+
+
+def series_hints(span: int = 5) -> list[dict]:
+    """A leaf the bank paid that is not in the system, next to leaves that ARE ours for the same payee and amount (Battery Depot ...674 to
+    ...678 at PHP 62,637 each; the bank paid ...673): most likely a check of that payee's series that was never recorded here. The owner
+    tags it with one click (owner, 2026-09-28: tag with the payee -- no check is created)."""
+    with _conn() as conn:
+        lines = conn.execute("""SELECT txn_id, posting_date, check_number, debit FROM bank_transactions
+                                WHERE kind = 'CHECK' AND reviewed = 0 AND match_status = 'not_in_system'""").fetchall()
+        ours = conn.execute("""SELECT c.check_number, c.amount, cr.creditor_name FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
+                               WHERE c.status != 'Cancelled' AND c.check_number IS NOT NULL AND c.check_number != ''""").fetchall()
+    by_num = {}
+    for c in ours:
+        n = norm_check_number(c["check_number"])
+        if n.isdigit():
+            by_num[int(n)] = c
+    out = []
+    for t in lines:
+        n = norm_check_number(t["check_number"])
+        if not n.isdigit():
+            continue
+        near = [by_num[int(n) + d] for d in range(-span, span + 1) if d and int(n) + d in by_num
+                and abs(float(by_num[int(n) + d]["amount"]) - float(t["debit"])) < 0.005]
+        payees = {c["creditor_name"] for c in near}
+        if len(near) >= 2 and len(payees) == 1:
+            nums = sorted(c["check_number"] for c in near)
+            out.append({"txn_id": t["txn_id"], "posting_date": t["posting_date"], "bank_check_number": t["check_number"], "amount": t["debit"],
+                        "payee": near[0]["creditor_name"], "neighbours": nums,
+                        "reason": f"leaves …{nums[0][-4:]}–…{nums[-1][-4:]} near it are {near[0]['creditor_name']} checks for the same amount; "
+                                  "this leaf is not in the system"})
+    return out
+
+
+def tag_series(txn_id: int, payee: str, note: str = "") -> None:
+    """Resolve a series leaf as a check of that payee not recorded in the system (no check is created). Audited through resolve()."""
+    resolve(txn_id, "Not recorded in the system", f"Probably a {payee} check" + (f" -- {note}" if note else ""))
 
 
 def reject_suggestion(txn_id: int, check_id: int) -> None:

@@ -309,6 +309,11 @@ def get_batch_balance(statement_id: int) -> tuple[float, float, float]:
         (statement_id,),
     )
     active_sum = float(sum_row["s"][0])
+    # Bank adjustments (migration 053): the checks stay as recorded; the bank's difference is carried by a check-amount adjustment and a
+    # matching batch adjustment, so the batch owes exactly what the bank paid (the two cancel out in what is left).
+    from engines.bank_statement_service import adjustment_totals
+    batch_adj, check_adj = adjustment_totals(statement_id=statement_id)
+    net_total, active_sum = net_total + batch_adj, active_sum + check_adj
     return net_total, active_sum, net_total - active_sum
 
 

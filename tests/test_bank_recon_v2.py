@@ -10,7 +10,7 @@ from engines import bank_alerts
 from engines.bank_recon_report import generate_recon_pdf, recon_statement
 from engines.bank_statement_service import (
     _one_digit_apart, exceptions, import_statement, imports_status, link_to_check, match_checks, reject_suggestion, reopen, resolve,
-    resolved_lines, suggestions,
+    resolved_lines, series_hints, suggestions, tag_series,
 )
 from engines.cash_insights_service import set_buffer
 
@@ -198,3 +198,38 @@ def test_alerts_default_seven_days_and_adjustable(db, monkeypatch, tmp_path):
 
 def test_no_alerts_before_anything_is_imported(db):
     assert bank_alerts.all_alerts() == [] and bank_alerts.large_debits().empty
+
+
+def test_smarter_suggestions_confidence_and_series(db, monkeypatch, tmp_path):
+    """Owner, 2026-09-28 ("make suggestions more intelligent"): the real case -- Battery Depot leaves ...674-...678 at PHP 62,637 each are
+    ours; the bank paid leaf ...673 on Sep 21. Our ...677 (Sep 25) and ...678 (Sep 29) are dated AFTER that payment -> Low; the app says
+    ...673 is probably an unrecorded Battery Depot check, and one click tags it (no check created)."""
+    monkeypatch.setenv("AP_DRIVE_DIR", str(tmp_path / "drive"))
+    bd = make_creditor(db, name="Battery Depot")
+    sid = make_statement(db, bd)
+    app.add_invoice(bd, "BD-1", date(2026, 9, 1), date(2026, 10, 1), 400000.0, [], sid)
+    ids = {}
+    for leaf, d in ((674, "2026-09-20"), (675, "2026-09-22"), (676, "2026-09-24"), (677, "2026-09-25"), (678, "2026-09-29")):
+        _, _, cid = app.issue_check(bd, 62637.0, date.fromisoformat(d), statement_id=sid)
+        ids[leaf] = cid
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE checks_issued SET check_number = ? WHERE check_id = ?", (f"3992554{leaf}", cid))
+    import_statement(_csv([("09/21/2026", "3992554673", "IM IN- CLRNG- BATCH", 62637.0, 0.0),
+                           ("09/22/2026", "3992554674", "IM IN- CLRNG- BATCH", 62637.0, 0.0)]), "s.csv")
+    sugg = {s["our_number"]: s for s in suggestions()}
+    assert sugg["3992554678"]["confidence"] == "Low" and "AFTER the bank paid it" in sugg["3992554678"]["reasons"][-1]
+    assert sugg["3992554677"]["confidence"] == "Low"
+    [hint] = series_hints()
+    assert hint["payee"] == "Battery Depot" and hint["bank_check_number"] == "3992554673" and len(hint["neighbours"]) >= 2
+    tag_series(hint["txn_id"], hint["payee"])
+    line = _line(db, check_number="3992554673")
+    assert (line["reviewed"], line["resolution"]) == (1, "Not recorded in the system") and "Battery Depot" in line["note"]
+    assert suggestions() == [] and series_hints() == []
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM checks_issued").fetchone()[0] == 5          # nothing created
+
+
+def test_a_well_fitting_suggestion_is_high(db, monkeypatch, tmp_path):
+    ids = _setup(db, monkeypatch, tmp_path)
+    t = next(s for s in suggestions() if s["check_id"] == ids["T"])          # our T dated Oct 3, bank paid Oct 6, only candidate
+    assert t["confidence"] == "High" and "paid 3 day(s) after its date" in t["reasons"]

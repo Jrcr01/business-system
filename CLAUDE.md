@@ -192,6 +192,27 @@ balance is over 14 days old. Tests: `tests/test_cash_insights.py` (hand-worked f
 `alt.when` on boolean fields failed here -- use a category column + `alt.Color(scale=domain/range)`. Restart the test app after editing views
 (it does not always reload them).
 
+**Bank adjustments -- never edit the book (2026-09-28, owner: "the bank statement is the ultimate truth. if bank cleared an incorrect
+amount then make it as adjustment to the system"; "not direct edit the record but tag it as adjustment due to incorrect recording in the
+book"; adjust the batch off too; mirror it when the bank took more; dates too).** Table `bank_adjustments` (schema.sql + migration 053;
+live via update_database.bat): kind CHECK_AMOUNT (signed bank - recorded) / CHECK_DATE (recorded vs bank date, only when the bank paid
+BEFORE the recorded date) with reason "Incorrect recording in the book", and BATCH_BALANCE (same signed amount, statement_id or
+loan_note_id) "Bank clearing difference"; `reversed_at` instead of deleting. `bank_correction()` = preview (diff, date_differs, warn: "only
+if the stub shows it is the same check"); `adjust_check_to_bank()` replaces the old edit-based `correct_check_to_bank()` -- the check row is
+never changed; then `link_to_check(how="Adjusted to the bank")`. `reopen()` reverses a line's adjustments (audit BANK_ADJUSTMENT_REVERSED).
+`adjustment_totals()` feeds `statement_rules.get_batch_balance()` (both sides, so what is left is unchanged; OperationalError-safe before
+053). UI: "Adjust to the bank" panel (recorded / bank / adjustment) and an "Adjustments to the bank" list on the Reconciliation tab.
+Times via `datetime(created_at, 'localtime') AS created_local`.
+
+**Smarter suggestions + first real matching check (2026-09-28).** Live Sep 20-25: 30 of 31 check clearings matched automatically
+(PHP 1,881,981.35, amounts all agreed); 5 pre-system leaves tagged Legacy record. Fixed on live (backup
+ap_disbursement_before_check_fixes_20260928.db): check 3992527921 = Jan 29, 2026 per owner (date changed in the app 08:55) -> corrected to
+the bank PHP 6,408 + linked (its legacy batch now shows PHP 1 owed); wrong accepted link bank ...673 (Sep 21) -> our ...678 (dated Sep 29)
+reopened. `suggestions()` now gives `confidence` High / Medium / Low + `reasons` (sorted best first; a check dated after the bank paid it is
+always Low; `reason` = the old rule text, unchanged). `series_hints()`: a leaf not in the system whose neighbour leaves (+/-5) are ours for
+the same payee and amount -> "probably an unrecorded <payee> check"; `tag_series()` resolves it "Not recorded in the system" (no check
+created). UI: badges + Tag button in Suggested matches. Early-pay discounts dropped from the list (owner: not practiced in the PH).
+
 **Data health (2026-09-28, owner-approved).** `engines/data_health_service.py` `findings(include_fine, today)`: one read-only scan in four
 groups -- Checks (same number twice, bank paid the number before our check date, printed with no number, stale 180+ days not bank-cleared,
 dated 1+ year ahead, zero amount), Invoices and batches (due before invoice date, year outside 2020..this year+2, zero amount, not in any

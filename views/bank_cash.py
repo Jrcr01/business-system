@@ -16,8 +16,8 @@ import streamlit as st
 from engines.bank_alerts import all_alerts, debit_factor, set_alert_settings, stale_days
 from engines.bank_recon_report import generate_recon_pdf, recon_statement
 from engines.bank_statement_service import (
-    RESOLUTIONS, bank_correction, capture_check, correct_check_to_bank, exceptions, import_statement, imports_status, known_account_last4, last_import, link_candidates, link_to_check, not_yet_cleared, parse_statement,
-    preview_matches, reject_suggestion, reopen, resolve, resolved_lines, statement_coverage, suggestions,
+    RESOLUTIONS, adjust_check_to_bank, adjustments, bank_correction, capture_check, exceptions, import_statement, imports_status, known_account_last4, last_import, link_candidates, link_to_check, not_yet_cleared, parse_statement,
+    preview_matches, reject_suggestion, reopen, resolve, resolved_lines, series_hints, statement_coverage, suggestions, tag_series,
 )
 from engines.cash_insights_service import (
     cash_position, float_summary, forecast, get_buffer, inflow_trends, set_buffer, unusual_items, working_capital,
@@ -119,16 +119,29 @@ def _open_check(e: dict) -> None:
         go_to("lenders", selected_loan_note_id=int(e["loan_note_id"]), ln_mode=LN_BROWSE, ln_subtab="Checks")
 
 
+CONFIDENCE_BADGE = {"High": ":green-badge[High]", "Medium": ":orange-badge[Medium]", "Low": ":red-badge[Low]"}
+
+
 def _suggestions_section() -> None:
-    sugg = suggestions()
-    if not sugg:
+    sugg, series = suggestions(), series_hints()
+    if not sugg and not series:
         return
-    section(f"Suggested matches ({len(sugg)})", help="The app never applies these by itself. Accept if the bank line IS that check (it is marked "
-            "cleared by the bank); reject if not (it is not suggested again).")
+    section(f"Suggested matches ({len(sugg) + len(series)})", help="The app never applies these by itself. Each suggestion shows how sure it is "
+            "(High / Medium / Low) and why, best first. Accept if the bank line IS that check (it is marked cleared by the bank); reject if not "
+            "(it is not suggested again). Low = our check is dated after the bank paid it, so it is very unlikely.")
+    for h in series:
+        c1, c2 = st.columns([7.2, 1.2], vertical_alignment="center")
+        c1.markdown(f":blue-badge[Series] Bank {h['posting_date']} · check # {h['bank_check_number']} · **{php(h['amount'])}** → probably a "
+                    f"**{h['payee']}** check not recorded in the system  \n:gray[{h['reason']}]")
+        if c2.button("Tag", icon=":material/sell:", key=f"bank_series_{h['txn_id']}", width="stretch",
+                     help=f"Resolves the bank line as 'Not recorded in the system — probably a {h['payee']} check'. No check is created."):
+            tag_series(h["txn_id"], h["payee"])
+            refresh(done=f"Tagged as a {h['payee']} check not recorded in the system.")
     for s_ in sugg:
         c1, c2, c3 = st.columns([6, 1.2, 1.2], vertical_alignment="center")
-        c1.markdown(f"Bank {s_['posting_date']} · check # {s_['bank_check_number'] or '—'} · **{php(s_['amount'])}** → our check "
-                    f"**{s_['our_number'] or 'no number yet'}** dated {s_['check_date']} to {s_['payee']}  \n:gray[{s_['reason']}]")
+        c1.markdown(f"{CONFIDENCE_BADGE[s_['confidence']]} Bank {s_['posting_date']} · check # {s_['bank_check_number'] or '—'} · "
+                    f"**{php(s_['amount'])}** → our check **{s_['our_number'] or 'no number yet'}** dated {s_['check_date']} to {s_['payee']}  \n"
+                    f":gray[{' · '.join(s_['reasons'])}]")
         k = f"{s_['txn_id']}_{s_['check_id']}"
         if c2.button("Accept", icon=":material/check:", key=f"bank_sg_ok_{k}", width="stretch"):
             ok, msg = link_to_check(s_["txn_id"], s_["check_id"], how="Suggested match accepted")
@@ -176,7 +189,7 @@ def _deal_with(shown: list[dict]) -> None:
                     _open_check(e)
         with a2:
             st.markdown("**Or tag the reason**")
-            reasons = [r for r in RESOLUTIONS if r not in ("Linked by hand", "Corrected to the bank")]
+            reasons = [r for r in RESOLUTIONS if r not in ("Linked by hand", "Adjusted to the bank", "Corrected to the bank")]
             default = DEFAULT_REASON.get(e["match_status"], "Other")
             reason = st.selectbox("Reason", reasons, index=reasons.index(default), key=f"bank_reason_{pick}", help='Why this line is fine: Bank error · Legacy record (old records) · Customer bounced check · Expected bank debit (loan debit, charges) · Before the system · Other. You can reopen it later under Resolved.')
             note = st.text_input("Note (optional)", key=f"bank_note_{pick}", placeholder="e.g. corrected with Metrobank, customer paid in cash")
@@ -186,28 +199,54 @@ def _deal_with(shown: list[dict]) -> None:
 
 
 def _bank_fix(txn_id: int) -> None:
-    """Owner rule (2026-09-28): the bank statement is the final word on our checks -- offer to correct our check to what the bank cleared."""
+    """Owner rules (2026-09-28): the bank statement is the final word, and our records are never edited -- the difference is added as an
+    adjustment ("incorrect recording in the book"), with the matching batch adjustment so the batch owes what the bank paid."""
     fix = bank_correction(txn_id)
     if not fix:
         return
-    st.markdown("**Correct our check to the bank**")
+    st.markdown("**Adjust to the bank** — our check stays as recorded; the difference is added as an adjustment")
     if not fix["ok"]:
         st.warning(fix["why"], icon=":material/warning:")
         return
-    st.dataframe(pd.DataFrame({"": ["Amount", "Check date", "Bank cleared"],
-                               "Our record now": [php(fix["old_amount"]), fix["check_date"], "—"],
-                               "After correction": [php(fix["new_amount"]), fix["check_date"], fix["bank_date"]]}), hide_index=True)
-    if fix["batch_left"]:
-        st.caption(f"Afterwards the batch shows {php(abs(fix['batch_left']))} " + ("still owed." if fix["batch_left"] > 0 else "overpaid — the correction will be refused."))
-    if st.button("Correct our check to the bank", icon=":material/account_balance:", key=f"bank_fix_btn_{txn_id}",
-                  help="Changes our check's amount to what the bank cleared (logged in the check's correction history) and marks it cleared by the bank."):
+    same_amt = abs(fix["diff"]) < 0.005
+    st.dataframe(pd.DataFrame({
+        "": ["Amount", "Date"],
+        "Recorded in the book": [php(fix["old_amount"]), fix["check_date"]],
+        "Bank": [php(fix["new_amount"]), f"paid {fix['bank_date']}"],
+        "Adjustment": ["" if same_amt else f"{fix['diff']:+,.2f} (incorrect recording in the book)",
+                       f"{fix['check_date']} → {fix['bank_date']} (incorrect recording in the book)" if fix["date_differs"] else ""],
+    }), hide_index=True)
+    if not same_amt and (fix["statement_id"] or fix["loan_note_id"]):
+        st.caption(f"Plus a {'batch' if fix['statement_id'] else 'loan note'} adjustment of {fix['diff']:+,.2f} (bank clearing difference), "
+                   "so it owes exactly what the bank paid.")
+    if fix["warn"]:
+        st.warning(fix["warn"], icon=":material/warning:")
+    if st.button("Adjust to the bank", icon=":material/account_balance:", key=f"bank_fix_btn_{txn_id}",
+                  help="Adds the adjustment(s) and marks the check cleared by the bank. Our check record is not changed. Reopen the bank line "
+                       "(Resolved list) to reverse."):
         if not guard_duplicate_submit("bank_fix", txn_id):
             st.warning("Duplicate click ignored — identical to the click just before it.")
             return
-        ok, msg = correct_check_to_bank(txn_id)
+        ok, msg = adjust_check_to_bank(txn_id)
         if ok:
             refresh(done=msg)
         st.error(msg)
+
+
+def _adjustments_section() -> None:
+    rows = adjustments()
+    if not rows:
+        return
+    with st.expander(f"Adjustments to the bank ({len(rows)})", icon=":material/balance:"):
+        st.caption("Differences between what was recorded and what the bank paid. Our records stay as entered; these entries carry the "
+                   "difference. Reopen the bank line under Resolved to reverse them.")
+        df = pd.DataFrame(rows)
+        kind = {"CHECK_AMOUNT": "Check amount", "CHECK_DATE": "Check date", "BATCH_BALANCE": "Batch / loan owed"}
+        st.dataframe(df.assign(kind=df["kind"].map(kind), created_local=pd.to_datetime(df["created_local"]))[
+            ["created_local", "kind", "check_number", "creditor_name", "reference", "recorded_value", "bank_value", "amount", "reason"]],
+            hide_index=True, column_config={"created_local": st.column_config.DatetimeColumn("When", format="MMM DD, YYYY h:mm A"),
+                                            "kind": "What", "check_number": "Check #", "creditor_name": "Payee", "reference": "Batch / loan note",
+                                            "recorded_value": "Recorded", "bank_value": "Bank", "amount": money_col("Adjustment"), "reason": "Reason"})
 
 
 def _reconcile_tab() -> None:
@@ -274,6 +313,8 @@ def _reconcile_tab() -> None:
             if r2.button("Reopen", icon=":material/undo:", key="bank_reopen_btn", width="stretch"):
                 reopen(int(rpick))
                 refresh(done="Reopened — it is back under Need a look (or matched again).")
+
+    _adjustments_section()
 
     section("Checks not yet cleared", help="Checks we issued, dated on or before the last imported bank date, that the bank has not cleared yet.")
     if not waiting:

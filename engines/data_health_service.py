@@ -89,7 +89,7 @@ def _checks(conn, today: date, out: list) -> None:
         cd, who, tgt = _d(r["check_date"]), r["creditor_name"], _check_target(r)
         label = r["check_number"] or f"(no number, id {r['check_id']})"
         first = bank_first.get(norm_check_number(r["check_number"])) if r["check_number"] else None
-        if first and cd and first < cd.isoformat():
+        if first and cd and first < cd.isoformat() and not r["bank_cleared_date"]:      # once adjusted and cleared it is dealt with
             _f(out, g, "Bank paid this check number before our check's date", f"bank_before|{r['check_id']}",
                f"Check {label} is dated {cd} but the bank already cleared that number on {first}. Compare it with the check stub.",
                r["amount"], who, tgt)
