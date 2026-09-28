@@ -201,8 +201,8 @@ every line has a balance, running balance adds up, opening + in - out = closing,
 the same sums or the whole import is rolled back (`CaptureCheckFailed`); a PASS is audited `BANK_STATEMENT_CAPTURE_CHECK`. Double entry:
 same file (hash), same line (line_key), and now a check cleared a second time -> `cleared_twice` (never overwrites the first clearing).
 One-click "Correct our check to the bank" (`bank_correction()` / `correct_check_to_bank()`, amount via `apply_check_correction`, then linked
-"Corrected to the bank"); refused when the bank cleared the leaf before our check date (then our check NUMBER is wrong -- check
-3992527921: owner's Oct 29, 2026 / PHP 6,409 is right; that leaf cleared Jan 29, 2026). `_set_aside_before_system` also tags
+"Corrected to the bank"); refused when the bank cleared the leaf before our check date (check 3992527921: the owner's stub confirmed Oct 29, 2026 /
+PHP 6,409 and the same number; the bank's Jan 29, 2026 / PHP 6,408 line is the odd one, resolved as Legacy record). `_set_aside_before_system` also tags
 unmatched debits ("Expected bank debit") and bounced checks ("Customer bounced check") dated before the first check. Tests:
 `tests/test_bank_capture_check.py` + additions in the import / recon v2 tests.
 

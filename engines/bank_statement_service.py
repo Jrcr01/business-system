@@ -643,7 +643,7 @@ def bank_correction(txn_id: int) -> dict | None:
     """Owner rule (2026-09-28): "Bank statement is the ultimate truth of checks record." For a line where the bank cleared one of our check
     numbers for a different amount: what correcting our check to the bank would change, and whether the app can offer it. None when the line
     is not such a case. Not offered when the bank cleared the leaf BEFORE our check date -- that cannot be the same check (check 3992527921:
-    bank Jan 29, 2026 vs our Oct 29, 2026 -- the owner's record was right; our check number was wrong)."""
+    bank Jan 29, 2026 vs our Oct 29, 2026 -- the owner's stub confirmed our record, number included)."""
     with _conn() as conn:
         r = conn.execute("""SELECT t.txn_id, t.posting_date, t.debit, t.match_status, c.check_id, c.check_number, c.check_date, c.amount,
                                    c.status, c.statement_id, c.bank_txn_id
@@ -657,7 +657,8 @@ def bank_correction(txn_id: int) -> dict | None:
         out.update(ok=False, why=f"Our check is {r['status']}, not Active.")
     elif str(r["posting_date"]) < str(r["check_date"])[:10]:
         out.update(ok=False, why=f"The bank cleared this check number on {r['posting_date']}, before our check's date ({str(r['check_date'])[:10]}) — "
-                                 "it cannot be the same check. The number on our check is probably wrong: compare it with the check stub.")
+                                 "it cannot be the same check. Compare our check with its stub: if the stub agrees with our record, the bank line is the odd "
+                                 "one (ask Metrobank for the check image) — tag it and leave our check as it is.")
     elif r["bank_txn_id"] and int(r["bank_txn_id"]) != int(txn_id):
         out.update(ok=False, why="Our check is already cleared by another bank line.")
     elif r["statement_id"]:
