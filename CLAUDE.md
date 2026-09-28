@@ -402,6 +402,13 @@ Sits between AP (done, live) and Sales/AR (next module).
 
 ### Build order
 **F1 -- One door, one clock, safe writes (on the laptop; no visible change for the owner).**
+**Where Phase F is built (owner, 2026-09-28: "important for now is ap system is stable and can be used"):** ALL of Phase F, up to the
+Sales/AR module, is built on the git branch **`phase-f`** in its own folder **`C:\AP_System_PhaseF`** (a git worktree) and tested on its
+own sandbox database (`C:\AP_System_PhaseF\data\ap_disbursement_TEST.db`) -- never in `C:\AP_System`, which the LIVE app runs from
+(branch `main`). F1.2 and F1.3 were first committed on main (0513ff9, 0e2c0b2), then reverted on main the same day before the live app
+ever loaded them; they continue on `phase-f`. Apply to live ONCE when the owner is satisfied (merge phase-f into main, one backup,
+update_database.bat, a checklist of known figures before / after). AP fixes are made on main and merged into phase-f.
+
 *Progress (split into gated steps 2026-09-28): **F1.1 done** -- `fk_check.py` (read-only, runs `PRAGMA foreign_key_check` on a backup-API
 copy; exit 0 clean / 1 found / 2 unreadable; tests `tests/test_fk_check.py`): live and TEST = 33 tables, 41 declared links, **0 broken**.
 **F1.2 done** -- the one door is `engines/db_engine.open_db(path)` (the only `sqlite3.connect` in engines / views / app, besides
