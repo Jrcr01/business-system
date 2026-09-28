@@ -181,17 +181,37 @@ by cash, checks (including post-dated), bank transfer / GCash / Maya, and card.
    and items (tires), the carve-out tag list.
 4. **Server + logins** — before your brother uses it from his own computer (HTTPS, Google sign-in with 2-step).
 
+### The revenue cycle as Slick's practices it (agreed with the owner 2026-09-28)
+Started from a standard revenue cycle (customer set-up → counter sale → release → paid now or on credit → billing → collection →
+deposit → bank check → reports, with exceptions at any step); the owner marked it up to match how the business really runs:
+
+| Step | How Slick's does it | What the system does |
+|---|---|---|
+| **Credit customers** | Credit is the owner's own judgement — only trusted, usually loyal customers. No peso limits. | "Credit allowed" is a flag only the owner sets (logged). No limit; **alerts** when a customer has overdue invoices or a balance higher than usual. |
+| **Prices** | A price list exists, but prices vary per customer and are often agreed **verbally** — sometimes at break-even or a loss to keep the customer. | **Record, don't block:** the seller types the agreed price; the system keeps list price, price charged, discount and who agreed. Below-cost sales go to a review list for the owner; reports show profit per customer. |
+| **Invoice** | **Sales invoice** from the BIR booklet, for cash and credit sales. | The booklet number is required and unique; booklet ranges registered; missing / duplicate / out-of-range numbers flagged. |
+| **Release** | Goods can leave **before** the invoice is written (e.g. installed first, invoiced later). | A "released, not yet invoiced" record; **must be invoiced the same day** — anything still open shows at the end of the day and to the owner next morning. |
+| **Payments** | Cash, checks **including post-dated**, transfer / GCash / Maya, card. | Each method recorded; post-dated checks on a "to deposit" list by date; a bounced check makes the invoice owed again. |
+| **Proof of payment (credit)** | When a credit customer pays, they receive the **original (white) copy of the sales invoice**. | The collection is recorded against the invoice number(s); the system tracks that the original copy was handed over. (Own collection number `2026 - CR 0001` kept internally.) |
+| **Deposits** | The owner's **mother** handles cash — trusted — and deposits **several times a day** (cash is tight). | **Light check:** each deposit recorded against the day's cash sales and collections; deposits are **traced in the bank statement** (the existing bank import matches them). Differences shown for a glance — no formal count sheet. |
+| **Returns, bounced checks, bad debts** | As in the standard cycle. | Credit note for a return (stock back); bounced check re-opens the invoice; write-off only with owner approval; nothing deleted. |
+| **Affiliates** | The mother's siblings' businesses help each other with tires: borrow / lend, settled by **offset, paying as a customer, or returning** the stock. | In Sales: customer type **Affiliate**, so their purchases are tagged from day one. Borrow / lend / offset = the Affiliates module. |
+| **Cost of tires** | There is a supplier price list; the encoder records what was **actually received**, at the actual cost — under, over or equal to the list. A **PO system** will be added. | Cost per tire comes from **receiving** (Purchasing / PO): actual received cost vs the supplier's list price, differences shown. Profit per sale and below-cost flags use that cost. |
+
 ### Sales v1 — what it does (stable first)
-* **Customers:** "walk-in" by default, plus named credit customers with terms, credit limit and contact details.
-* **Items and prices:** tires (brand, size, pattern, code) and services if sold; one price list; only allowed roles change prices.
+* **Customers:** "walk-in" by default, plus named customers with terms and contact details; "credit allowed" set by the owner only
+  (no peso limit — alerts instead); customer type Affiliate for the mother's siblings' businesses.
+* **Items and prices:** tires (brand, size, pattern, code) and services if sold; one price list (only allowed roles change it); the price
+  actually charged is typed per sale and recorded against the list price, with who agreed.
 * **Counter sale screen** (fast, keyboard-first): customer, item lines (quantity, price, discount), the **booklet invoice number**
   (required, unique; booklet ranges registered, so missing / duplicate / out-of-range numbers are flagged), cash or credit.
 * **Payments:** cash; checks (bank, number, check date → a list of post-dated checks to deposit); transfer / GCash / Maya (reference
   number); card (approval code); one sale can be paid several ways.
-* **Credit and AR:** open invoices per customer, collections applied to invoices, customer ledger and statements, aging (who is late);
-  the credit limit is checked — going over needs the owner's approval, logged.
+* **Credit and AR:** open invoices per customer, collections applied to invoices (original white copy handed over), customer ledger
+  and statements, aging (who is late); alerts for overdue or unusually high balances.
 * **Voids and returns:** never deleted; a void needs a reason and the owner's approval; a return becomes a credit note.
-* **End-of-day cash-up:** expected vs counted per payment type, the deposit recorded, differences explained; the owner reviews.
+* **Deposits (light check):** deposits recorded against the day's cash sales and collections and traced in the bank statement;
+  differences shown for the owner to glance at. Released-not-invoiced items listed at the end of the day.
 * **Reports and analysis:** daily / monthly sales; by payment type; by item and brand; best and slow sellers; sales by customer;
   collections vs credit given; late payers; checks to deposit; booklet number control.
 * **Stock:** v1 records the quantities sold (it does not block a sale); the Inventory module later builds stock from these records.
@@ -224,7 +244,13 @@ by cash, checks (including post-dated), bank transfer / GCash / Maya, and card.
 * Domain follows the business name; one address for all modules; laptop → Google Drive backups; thermal printing = download and print.
 * Early-pay discounts: not needed (not practiced in the Philippines).
 
+* Revenue cycle as practiced (2026-09-28): credit = owner's list, no limits, alerts; verbal prices recorded not blocked, below-cost
+  reviewed; sales invoice booklet; release before invoice allowed but invoiced the same day; post-dated checks accepted; the original
+  white invoice copy is the proof of payment; deposits (by the owner's mother, trusted) several times a day, traced in the bank
+  statement — light check only; affiliates tagged as a customer type; tire cost = actual received cost, from a PO / receiving system.
+
 **To decide**
+* When the PO / receiving system comes relative to Sales (it is the source of tire cost for profit and below-cost checks).
 * Server provider (DigitalOcean / AWS Lightsail / Vultr) and the exact domain.
 * Where statement QR copies live (Google Drive or served by the app).
 * The order of the modules after Sales.

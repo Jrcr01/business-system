@@ -46,6 +46,13 @@ follows unchanged below.
   outside the database, run by the daily backup, problems on Data health and the owner's ERP Home); private data in the log can only be
   hidden by the owner-run `mask_audit_text.py` (like the 2026 card-number masking, now with backup + its own audit entry); ERP document
   numbers look like AP's: `2026 - CR 0001`, restarting each year.
+* **[Sales] Revenue cycle as practiced** (owner, 2026-09-28; started from a standard cycle, owner marked it up): credit is the
+  owner's judgement for loyal customers, no limits (alerts instead); prices vary per customer and are agreed verbally, even at a loss
+  to keep a customer -> record, don't block, review below-cost; sales invoice booklet; goods may leave before the invoice -> invoiced
+  the same day; post-dated checks accepted; the original white invoice copy is the proof of payment; the owner's mother (trusted)
+  deposits several times a day, traced in the bank statement -> light check only; affiliates = the mother's siblings' businesses
+  (borrow / lend, settle by offset, payment or return); tire cost = actual received cost, a PO system will be added. Detail:
+  blueprint section 9.
 * **Docs re-shaped:** `CLAUDE.md` = short ERP guide; AP detail moved unchanged to `docs/modules/ap.md`; Phase F to
   `docs/foundation/phase_f.md`; the master blueprint `docs/SLICKS_ERP_BLUEPRINT.md`; one `CLAUDE.md` per module folder from now on.
 
