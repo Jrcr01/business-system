@@ -71,6 +71,10 @@ follows unchanged below.
   scripts use Windows' OpenSSH.
 * **[Foundation] Server paused after F3.1** (owner, 2026-09-28: "why deploy at this stage? we deploy if we are substantially done"):
   no server, domain or accounts until Sales is substantially done (around S5). Next: Sales S0.
+* **[Sales] S0 -- items and stock** (owner, 2026-09-28): items by description (no codes; no fixed customer prices); tire price list =
+  brand, size, qty (stock on hand), remarks (condition / notes), cost -- no selling price; batteries / mags separate lists, model /
+  type instead of size; below cost flagged not blocked; simple stock from day one (opening qty, sales out, "stock in" with cost ->
+  weighted average from day one).
 * **[Sales] Revenue cycle as practiced** (owner, 2026-09-28; started from a standard cycle, owner marked it up): credit is the
   owner's judgement for loyal customers, no limits (alerts instead); prices vary per customer and are agreed verbally, even at a loss
   to keep a customer -> record, don't block, review below-cost; sales invoice booklet; goods may leave before the invoice -> invoiced

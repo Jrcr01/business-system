@@ -254,6 +254,14 @@ parallel run (S5) once the system's daily totals and profit match it.
 **S0 answers (owner 2026-09-28):** items are identified **by description only** (brand + size + pattern; the system gives each a
 short code automatically); **no fixed customer prices** (agreed per sale). Samples (notebook page, price list, blank invoice) to
 come as descriptions first, photos later.
+* **Price list today:** one long paper list for tires — **brand, size, qty (= stock on hand), remarks (condition / notes, e.g. "old
+  stock"), cost**; **no selling price** (agreed each sale, cost is the reference; the "suggested price" idea is dropped). Batteries
+  and mags on **separate lists**, same columns but **model / type instead of size** (e.g. batteries NS40, NS60; mags design / size).
+  An item = category + brand + size-or-model (+ a remark when the same brand / size needs two rows, e.g. old stock at another cost).
+* **Below cost:** flagged for the owner's review, never blocked, with the brother's reason when he gives one.
+* **Stock from day one (owner's choice):** the list's qty imported as opening stock; each sale takes it down; each delivery recorded
+  as **"stock in" (qty + cost)** adds to it; so **weighted-average cost works from day one** (recalculated at each stock in; opening
+  average = the list's cost). The full Inventory module (counts with approval, affiliates, PO) still comes later.
 
 ### Sales v1 — what it does (stable first)
 * **Customers:** "walk-in" by default, plus named customers with terms and contact details; "credit allowed" set by the owner only
