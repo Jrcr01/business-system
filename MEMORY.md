@@ -60,6 +60,9 @@ follows unchanged below.
   dropdowns, profit and day totals by formula), uploaded at the end of each day, checked then saved all-or-nothing; plus a quick
   screen for single sales / corrections. Sales invoice booklets controlled like the checkbook (range, one booklet at a time, each
   number once, cancelled logged with reason, daily gap check; out-of-order use flagged not blocked).
+* **[Sales] Template details** (owner, 2026-09-28): product reference table (pick once, brand / size / pattern / price / cost fill in;
+  searchable dropdown -- brother has Microsoft 365 / Excel 2021+); invoice numbers pre-registered from the open booklet, picked per
+  line (same number on several rows = one invoice); unused numbers carry over, spoiled marked Cancelled with a reason.
 * **Docs re-shaped:** `CLAUDE.md` = short ERP guide; AP detail moved unchanged to `docs/modules/ap.md`; Phase F to
   `docs/foundation/phase_f.md`; the master blueprint `docs/SLICKS_ERP_BLUEPRINT.md`; one `CLAUDE.md` per module folder from now on.
 

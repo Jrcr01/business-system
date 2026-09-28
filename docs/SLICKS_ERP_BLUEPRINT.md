@@ -212,6 +212,13 @@ parallel run (S5) once the system's daily totals and profit match it.
   row checked before anything is saved (unknown item / customer, invoice number outside the open booklet or already used, below-cost
   price flagged not blocked, credit for a customer without "credit allowed") → he fixes and re-uploads → confirm = all rows saved or
   none (same pattern as AP's spreadsheet imports).
+  * **Product reference table** in the template (hidden sheet from the system's price list): he picks the item once (searchable
+    dropdown — he uses Microsoft 365 / Excel 2021+, so typing "185/65" narrows the list) and brand, size, pattern, category, list
+    price and cost fill in; he types only quantity and the price charged (list price suggested).
+  * **Pre-registered invoice numbers:** the template carries the open booklet's unused numbers; each row = one item line with the
+    invoice no. picked from that dropdown (next number first); the same number on several rows = one invoice with several items (the
+    sheet shows each invoice's total). Numbers not used today reappear in tomorrow's template (not a gap); a spoiled / cancelled
+    paper invoice is marked "Cancelled" with a reason in the sheet.
 * **Plus a quick screen** for a single sale or a correction.
 * **Sales invoice booklet control, like the checkbook:** each booklet's range registered; **one booklet in use at a time**; every
   number used once (the database refuses duplicates); cancelled / spoiled invoices logged with a reason (all copies kept, as BIR
