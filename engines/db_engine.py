@@ -12,6 +12,25 @@ BUSY_TIMEOUT_MS = 10000
 _WAL_DONE: set = set()
 
 
+def _ensure_wal(conn: sqlite3.Connection, attempts: int = 50) -> None:
+    """Switch the file to WAL only if it is not WAL yet. Switching needs the file to itself and SQLite does not wait for that (the busy
+    timeout does not apply), so when two connections open a brand-new database at the same instant one of them gets "database is
+    locked" -- found by the two-users-at-once tests (2026-09-28). Retry briefly; once the other connection has switched, the check
+    below sees 'wal' and there is nothing left to do."""
+    import time
+
+    for i in range(attempts):
+        try:
+            if str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal":
+                return
+            conn.execute("PRAGMA journal_mode = WAL")
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower() or i == attempts - 1:
+                raise
+            time.sleep(0.1)
+
+
 def open_db(db_path: str | None = None) -> sqlite3.Connection:
     """THE one door to the database (Phase F1.2, 2026-09-28) -- every connection in engines / views / app comes from here (through
     common.get_conn()), so the safety settings are the same everywhere:
@@ -29,7 +48,7 @@ def open_db(db_path: str | None = None) -> sqlite3.Connection:
     conn.create_function("manila_today", 0, sql_today)
     conn.create_function("manila_now", 0, sql_now)
     if path not in _WAL_DONE and path != ":memory:" and not str(path).startswith("file::memory:"):
-        conn.execute("PRAGMA journal_mode = WAL")     # stored in the file itself: once per file per run is enough
+        _ensure_wal(conn)                               # stored in the file itself: once per file per run is enough
         _WAL_DONE.add(path)
     return conn
 
