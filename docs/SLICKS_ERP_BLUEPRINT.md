@@ -266,6 +266,15 @@ come as descriptions first, photos later.
   total at the bottom of the day. The system's day sheet keeps that order and adds only invoice no. and payment type.
 * **Sales invoice booklet:** **50 invoices per booklet**, **triplicate**; filled in: customer name, date, cash / charge box, item lines,
   total. The customer gets the **white (original)** copy — for a charge sale, when it is fully paid.
+* **S0 mock-ups approved (2026-09-29):** round 1 (set-up) — Items and stock list (search, Tires / Batteries / Mags / Low stock,
+  on hand, average cost, last stock in; Excel price-list import), **Stock in** (supplier, date, DR / invoice no., lines qty + cost,
+  shows on hand and the new weighted-average cost before saving), **Invoice booklets** (register, used / cancelled / unused, number
+  grid, gap alert), phone item lookup. Defaults taken (owner said "continue"): stock in by Sales and Owner; low stock = a level per
+  item, default 2; Sales sees cost and average cost. Round 2 (daily sales) — Excel "Add sale" pop-up (next invoice no., customer,
+  payment type with required check bank / no. / date and check amount = sale total, item search, qty, price, profit per line;
+  "Released, invoice later"; "Mark number cancelled" with reason) writing into a day sheet in the notebook's order with the day
+  total at the bottom; **upload check** (nothing saved until every line is fine: used number = fix, below cost = allowed + owner
+  review with reason, skipped number = explain or cancel); **quick sale** screen (desktop + phone, cost / profit / on hand shown).
 
 ### Sales v1 — what it does (stable first)
 * **Customers:** "walk-in" by default, plus named customers with terms and contact details; "credit allowed" set by the owner only
