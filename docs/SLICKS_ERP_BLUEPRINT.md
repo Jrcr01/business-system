@@ -226,6 +226,19 @@ parallel run (S5) once the system's daily totals and profit match it.
     hidden reference sheets (products with list price and cost, customers with credit allowed, the booklet's unused numbers) — the
     same pattern as `engines/invoice_template_service.py`. Built in S2 after its mock-up is approved.
 * **Plus a quick screen** for a single sale or a correction.
+
+**Opening balances, collections, returns (owner 2026-09-28):**
+* **Opening receivables:** the brother encodes every unpaid invoice on the start date (customer, invoice no., date, original amount,
+  balance still owed); **his entry is final** (owner's choice — no approval step), tagged "opening balance" and visible in reports.
+  Old invoice numbers from finished booklets are allowed for these entries only.
+* **Collections — all cases:** one invoice paid in full; several invoices with one payment; **partial payments**; a payment bigger
+  than what is due (kept as an advance / unapplied, used on the next invoice). Any payment type (cash, check incl. post-dated, e-wallet,
+  card). The original white invoice copy is handed over **only when the invoice is fully paid**; partial payments are recorded with
+  date, amount and how paid, and the system lists which originals are still with the shop.
+* **Returns:** a full return **cancels the invoice** and the items **go back to stock**; a partial return (e.g. 1 of 4 tires) keeps
+  the invoice, puts **just that item back to stock** and lowers the invoice amount (a credit note). Nothing is deleted; each is logged
+  with a reason.
+* **Reports:** to discuss later.
 * **Sales invoice booklet control, like the checkbook:** each booklet's range registered; **one booklet in use at a time**; every
   number used once (the database refuses duplicates); cancelled / spoiled invoices logged with a reason (all copies kept, as BIR
   requires); a **daily gap check** — any number skipped and not accounted for is listed for the owner the next morning. Numbers may
@@ -242,7 +255,8 @@ parallel run (S5) once the system's daily totals and profit match it.
   number); card (approval code); one sale can be paid several ways.
 * **Credit and AR:** open invoices per customer, collections applied to invoices (original white copy handed over), customer ledger
   and statements, aging (who is late); alerts for overdue or unusually high balances.
-* **Voids and returns:** never deleted; a void needs a reason and the owner's approval; a return becomes a credit note.
+* **Voids and returns:** never deleted; a void (cancelled invoice) needs a reason and the owner's approval and puts the items back to
+  stock; a partial return becomes a credit note for just that item (back to stock).
 * **Deposits (light check):** deposits recorded against the day's cash sales and collections and traced in the bank statement;
   differences shown for the owner to glance at. Released-not-invoiced items listed at the end of the day.
 * **Reports and analysis:** daily / monthly sales; by payment type; by item and brand; best and slow sellers; sales by customer;

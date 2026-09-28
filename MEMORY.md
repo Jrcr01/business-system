@@ -63,6 +63,10 @@ follows unchanged below.
 * **[Sales] Template details** (owner, 2026-09-28): product reference table (pick once, brand / size / pattern / price / cost fill in;
   searchable dropdown -- brother has Microsoft 365 / Excel 2021+); invoice numbers pre-registered from the open booklet, picked per
   line (same number on several rows = one invoice); unused numbers carry over, spoiled marked Cancelled with a reason.
+* **[Sales] Opening AR, collections, returns** (owner, 2026-09-28): brother encodes opening receivables, his entry is final (no
+  approval); collections: all cases (full, several invoices, partial, advance); original white copy handed over only when fully paid;
+  full return = invoice cancelled + stock back; partial return = that item back to stock, invoice lowered (credit note). Excel
+  entry form with macros like AP's invoice workbook. Reports: later.
 * **Docs re-shaped:** `CLAUDE.md` = short ERP guide; AP detail moved unchanged to `docs/modules/ap.md`; Phase F to
   `docs/foundation/phase_f.md`; the master blueprint `docs/SLICKS_ERP_BLUEPRINT.md`; one `CLAUDE.md` per module folder from now on.
 
