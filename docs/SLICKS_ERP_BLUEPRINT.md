@@ -262,6 +262,10 @@ come as descriptions first, photos later.
 * **Stock from day one (owner's choice):** the list's qty imported as opening stock; each sale takes it down; each delivery recorded
   as **"stock in" (qty + cost)** adds to it; so **weighted-average cost works from day one** (recalculated at each stock in; opening
   average = the list's cost). The full Inventory module (counts with approval, affiliates, PO) still comes later.
+* **Notebook columns (left to right):** qty, product item, markup / profit, customer name if credit; one line per item; the day's
+  total at the bottom of the day. The system's day sheet keeps that order and adds only invoice no. and payment type.
+* **Sales invoice booklet:** **50 invoices per booklet**, **triplicate**; filled in: customer name, date, cash / charge box, item lines,
+  total. The customer gets the **white (original)** copy — for a charge sale, when it is fully paid.
 
 ### Sales v1 — what it does (stable first)
 * **Customers:** "walk-in" by default, plus named customers with terms and contact details; "credit allowed" set by the owner only
