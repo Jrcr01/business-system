@@ -17,10 +17,11 @@ from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
-GROUPS = ["Checks", "Invoices and batches", "Bank vs our records", "Suppliers", "Audit log"]
+GROUPS = ["Checks", "Invoices and batches", "Bank vs our records", "Suppliers", "Credit cards", "Audit log"]
 KEY_PREFIX = "health|"
 BROWSE_BATCHES, BROWSE_LOAN_NOTES = "Browse batches", "Browse loan notes"
 STALE_CHECK_DAYS = 180          # Philippine checks go stale six months after their date
+CC_GUESS_MIN_DAYS = 25          # card with no statement day: dues this far apart are two statements (its statement dates are only guessed)
 
 
 def _conn() -> sqlite3.Connection:
@@ -227,12 +228,52 @@ def _audit_log(conn, today: date, out: list) -> None:
 
 
 # ------------------------------------------------------------------ public
+def _credit_cards(conn, today: date, out: list) -> None:
+    """Card statements entered twice (2026-09-29, owner: "why our guardrail did not detect it?" -- a Visa Gold statement typed twice
+    in MS Access came in through the Sep 19 history loader, which bypassed the Add statement form's warning, and nothing re-checked
+    card statements afterwards). Cancelled statements are ignored."""
+    g = "Credit cards"
+    if not _has_table(conn, "cc_statements"):
+        return
+    label = "COALESCE(cc.card_name, '') || CASE WHEN cc.card_number_last4 IS NOT NULL THEN ' ' || cc.card_number_last4 ELSE '' END"
+    for r in conn.execute(f"""SELECT s.card_id, {label} AS card, s.due_date, ROUND(s.total_amount_due, 2) AS amount, COUNT(*) AS n,
+                                     GROUP_CONCAT(s.cc_statement_id) AS ids
+                              FROM cc_statements s JOIN credit_cards cc ON cc.card_id = s.card_id
+                              WHERE s.status != 'Cancelled'
+                              GROUP BY s.card_id, s.due_date, ROUND(s.total_amount_due, 2) HAVING COUNT(*) > 1"""):
+        _f(out, g, "Card statement entered twice", f"cc_dup|{r['card_id']}|{r['due_date']}|{r['amount']}",
+           f"{r['card']}: {r['n']} statements due {r['due_date']} for PHP {r['amount']:,.2f} (statement ids {r['ids']}). Cancel the extra copy.",
+           r["amount"], r["card"], ("credit-cards", {}))
+    # Owner rule (2026-09-29): "no two statement in a month" -- by STATEMENT month (engines/cc_dates.py), so two DUE dates in one
+    # calendar month (a card due near the 1st and the 30th) are fine.
+    from engines.cc_dates import statement_month_for
+
+    by_month: dict = {}
+    has_day: dict = {}
+    for r in conn.execute(f"""SELECT s.card_id, {label} AS card, cc.statement_day, s.due_date, s.total_amount_due
+                              FROM cc_statements s JOIN credit_cards cc ON cc.card_id = s.card_id
+                              WHERE s.status != 'Cancelled' AND s.due_date IS NOT NULL ORDER BY s.due_date"""):
+        month = statement_month_for(r["due_date"], r["statement_day"])
+        by_month.setdefault((r["card_id"], r["card"], month), []).append((r["due_date"], r["total_amount_due"]))
+        has_day[r["card_id"]] = bool(r["statement_day"])
+    for (card_id, card, month), items in by_month.items():
+        if len(items) < 2 or len(set(items)) < 2:
+            continue                                                   # one statement, or an exact duplicate (reported above)
+        dues = sorted(date.fromisoformat(d) for d, _ in items)
+        if not has_day[card_id] and min((b - a).days for a, b in zip(dues, dues[1:])) >= CC_GUESS_MIN_DAYS:
+            continue                                                   # no statement day on file: a month apart = two statements
+        what = "; ".join(f"due {d} PHP {a:,.2f}" for d, a in items)
+        _f(out, g, "Two statements for the same month", f"cc_twice|{card_id}|{month}",
+           f"{card}: {len(items)} statements for the {month} statement month ({what}). A card has one statement a month -- one may be "
+           "typed twice, or have the wrong due date (or the card's statement day is wrong).", None, card, ("credit-cards", {}))
+
+
 def findings(include_fine: bool = False, today: date | None = None) -> list[dict]:
     """Everything the scan flags, grouped in GROUPS order. Items marked "It's fine" are left out unless include_fine (then 'fine' + 'note')."""
     today = today or manila_today()
     out: list[dict] = []
     with _conn() as conn:
-        for part in (_checks, _invoices_and_batches, _bank, _suppliers, _audit_log):
+        for part in (_checks, _invoices_and_batches, _bank, _suppliers, _credit_cards, _audit_log):
             part(conn, today, out)
         fine = {r["dup_key"]: r["note"] for r in conn.execute("SELECT dup_key, note FROM duplicate_dismissals WHERE dup_key LIKE ?", (KEY_PREFIX + "%",))}
     for f in out:

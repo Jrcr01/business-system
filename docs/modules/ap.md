@@ -229,7 +229,25 @@ cancelled_check_cleared / cleared_twice lines; checks not cleared `stale_days()`
 BANK_LOAN + CREDIT_CARD is by design; inactive but owed; SUPPLIER with no terms -- banks / lenders left out). Each finding carries
 `page` / `state` for `go_to`. "It's fine" = `mark_fine(keys, note)` / `show_again(keys)`, stored in `duplicate_dismissals` with a `health|`
 key (no new table), audited DATA_HEALTH_FINE / DATA_HEALTH_SHOW_AGAIN. Page `views/data_health.py` (System menu, `data-health`); Payment
-run shows one line with the open count (`open_count()`). First live run: 21 printed checks without numbers (printed Sep 26, dated
+run shows one line with the open count (`open_count()`). **Credit cards group (2026-09-29):** a card statement
+entered twice (same card, due date, amount) and two statements due in one month less than `CC_CYCLE_MIN_DAYS` (25) apart -- added
+after a Visa Gold statement typed twice in MS Access (records 1810 / 1832) came in through the Sep 19 history backfill
+(`phase8e_...`: it checked the database but not its own list) and bypassed the Add statement form's warning; the extra copy
+(statement 59) was set Cancelled (audited CC_STATEMENT_CANCELLED).
+
+**Credit card statement month = statement DATE month (owner, 2026-09-29):** "card's statement date but this is usually due month minus
+1 ... instances where due date is within the same month of statement date. one thing is for sure no two statement in a month."
+`engines/cc_dates.py`: `statement_date_for(due, statement_day)` = the card's statement day 10-45 days before the due date (measured
+15-29), else due - 21 days; `statement_month_for()`. The typed `cc_statements.statement_month` is NOT used by the checks (160 of 200
+old rows carried the due month). Used by: `cc_service.get_statement_coverage()` (cancelled ignored; expected-by = the card's statement
+day, or last month's statement date's day), `get_statement_gap_alerts()` (the Payment run / Dashboard / Credit cards warning -- now the
+SAME rule as the coverage table; the old 35-days-since-due rule is retired), the Add statement form (Due date first; statement month
+pre-filled), `duplicate_service.cc_statement_month_warnings(..., due_date=)`, Data health "Two statements for the same month" (cards
+with no statement day: only when dues are < 25 days apart). **"No due this month"** (owner: statements with nothing due are not
+recorded): `cc_service.mark_no_due / undo_no_due / no_due_marks` in `duplicate_dismissals` ('ccnodue|card|YYYY-MM', audited
+CC_NO_DUE_MARKED / _UNDONE); coverage status "No due"; buttons via `views/credit_cards.render_missing_statements()` on Credit cards
+(Needs attention + "Marked No due" list with Undo) and Payment run. Live first finding: Mastercard Toyota 4047 has two PHP 3,800
+statements (due Jun 29 and Jul 7), both the June 8 statement -- for the owner to check. First live run: 21 printed checks without numbers (printed Sep 26, dated
 2027) + check 3992527921 (owner confirmed correct). Tests: `tests/test_data_health.py`.
 
 **Bank is the truth + capture check + double-entry guard (2026-09-28, owner: "Always remember bank statement is ultimate truth and have a

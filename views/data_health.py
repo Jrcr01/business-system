@@ -15,6 +15,8 @@ GROUP_HELP = {
                             "and checks payable to someone other than the batch's supplier.",
     "Bank vs our records": "Bank lines that disagree with our checks and are not yet dealt with on Bank and cash, and checks the bank has not "
                            "cleared long after their date.",
+    "Credit cards": "Card statements entered twice (same card, due date and amount), and two statements for the same statement "
+                    "month (a card has one statement a month; two due dates in one month are fine).",
     "Suppliers": "The same name on file twice (a bank set up for loans and for cards is fine), inactive suppliers still owed, suppliers "
                  "without payment terms.",
     "Audit log": "The audit log is locked and checked every day with the backup: a change made to it outside the system, its lock removed, "

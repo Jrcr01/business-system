@@ -143,3 +143,14 @@ def test_credit_card_second_statement_same_month_and_odd_total_are_flagged(db):
     assert d.cc_statement_month_warnings(7, "2026-10", 1500)          # same month again
     assert not d.cc_statement_month_warnings(7, "2026-11", 1600)      # next month, similar amount: fine
     assert d.cc_statement_month_warnings(7, "2026-11", 15000)         # ten times the last one: probably a typo
+
+
+def test_credit_card_same_month_warning_uses_the_statement_date(db):
+    """Owner, 2026-09-29: a statement's month is its STATEMENT DATE's month (card statement day 8: due Jul 7 = the Jun 8 statement,
+    due Jul 29 = the Jul 8 statement) -- and "no two statement in a month". Old labels (the due month) must not raise false warnings."""
+    cid = make_creditor(db, creditor_type="CREDIT_CARD")
+    _exec(db, "INSERT INTO credit_cards (card_id, creditor_id, card_name, card_number_last4, credit_limit, statement_day) VALUES (8, ?, 'Toyota', '4047', 50000, 8)", (cid,))
+    _exec(db, "INSERT INTO cc_statements (card_id, statement_month, due_date, total_amount_due, status) VALUES (8, '2026-07', '2026-07-07', 3800, 'Paid')")
+    from datetime import date
+    assert not d.cc_statement_month_warnings(8, "2026-07", 4000, due_date=date(2026, 7, 29))   # the July statement: no clash with the old "2026-07" label
+    assert d.cc_statement_month_warnings(8, "2026-06", 3800, due_date=date(2026, 6, 29))       # also the June 8 statement: warned
