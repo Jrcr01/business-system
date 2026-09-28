@@ -69,7 +69,7 @@ def render() -> None:
     st.caption("Master registry of payees tagged supplier, lender, or bank loan. Credit card payees stay in their own track (Credit cards page).")
 
     creditor_master_df = q(
-        "SELECT creditor_id, creditor_name, creditor_type, tin, contact_person, contact_number, email, terms, is_active, datetime(created_at, '+8 hours') AS created_at "
+        "SELECT creditor_id, creditor_name, creditor_type, tin, contact_person, contact_number, email, terms, is_active, datetime(created_at, 'localtime') AS created_at "
         "FROM creditors WHERE creditor_type IN ('SUPPLIER', 'LENDER', 'BANK_LOAN') ORDER BY creditor_type, creditor_name"
     )
     creditor_master_df["is_active"] = creditor_master_df["is_active"].astype(int) == 1

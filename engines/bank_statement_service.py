@@ -27,8 +27,6 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 import db_location
-from engines.common import get_conn
-from engines.clock import manila_now
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -342,7 +340,7 @@ class CaptureCheckFailed(Exception):
 
 # ------------------------------------------------------------------ storing and matching
 def _conn() -> sqlite3.Connection:
-    conn = get_conn(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -379,7 +377,7 @@ def import_statement(data: bytes, filename: str, bank_account_id: int = 1, keep_
     'already_imported'}. The same file (by content) is never imported twice."""
     file_hash = hashlib.sha256(data).hexdigest()
     with _conn() as conn:
-        prev = conn.execute("SELECT import_id, datetime(imported_at, '+8 hours') AS imported_at FROM bank_statement_imports WHERE file_hash = ?", (file_hash,)).fetchone()
+        prev = conn.execute("SELECT import_id, datetime(imported_at, 'localtime') AS imported_at FROM bank_statement_imports WHERE file_hash = ?", (file_hash,)).fetchone()
     if prev:
         return {"already_imported": True, "import_id": prev["import_id"], "imported_at": prev["imported_at"], "new_lines": 0,
                 "duplicate_lines": 0, "matched": 0, "exceptions": 0, "messages": [f"This exact file was already imported on {prev['imported_at'][:16]}."]}
@@ -392,7 +390,7 @@ def import_statement(data: bytes, filename: str, bank_account_id: int = 1, keep_
     stored_path = None
     if keep_copy:
         os.makedirs(bank_dir(), exist_ok=True)
-        stored_path = os.path.join(bank_dir(), f"{manila_now():%Y%m%d-%H%M%S} {re.sub(r'[^A-Za-z0-9._ -]+', '_', filename)}")
+        stored_path = os.path.join(bank_dir(), f"{datetime.now():%Y%m%d-%H%M%S} {re.sub(r'[^A-Za-z0-9._ -]+', '_', filename)}")
         with open(stored_path, "wb") as f:
             f.write(data)
     new = dup = 0
@@ -599,7 +597,7 @@ def local_times(conn, row) -> dict:
     d = dict(row)
     for k in ("imported_at", "reconciled_at"):
         if d.get(k):
-            d[k] = conn.execute("SELECT datetime(?, '+8 hours')", (d[k],)).fetchone()[0]
+            d[k] = conn.execute("SELECT datetime(?, 'localtime')", (d[k],)).fetchone()[0]
     return d
 
 
@@ -710,7 +708,7 @@ def adjustments(include_reversed: bool = False) -> list[dict]:
     """Every bank adjustment with its check and payee, newest first."""
     with _conn() as conn:
         return [dict(r) for r in conn.execute(
-            f"""SELECT a.*, datetime(a.created_at, '+8 hours') AS created_local, c.check_number, cr.creditor_name, COALESCE(os.statement_ref, ln.note_ref) AS reference
+            f"""SELECT a.*, datetime(a.created_at, 'localtime') AS created_local, c.check_number, cr.creditor_name, COALESCE(os.statement_ref, ln.note_ref) AS reference
                 FROM bank_adjustments a LEFT JOIN checks_issued c ON c.check_id = a.check_id
                 LEFT JOIN creditors cr ON cr.creditor_id = c.creditor_id LEFT JOIN order_statements os ON os.statement_id = a.statement_id
                 LEFT JOIN loan_notes ln ON ln.loan_note_id = a.loan_note_id

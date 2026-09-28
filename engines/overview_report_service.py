@@ -18,8 +18,6 @@ from engines.checkbook_service import get_checkbook_alerts
 from engines.dashboard_kpi_service import get_supplier_check_lag
 from engines.duplicate_service import loan_check_mismatches
 from engines.reports_service import get_combined_ap_summary, get_payment_schedule_all_tracks
-from engines.common import get_conn
-from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 PERIOD_KINDS = ["Day", "Week", "Month", "Quarter", "Year"]
@@ -63,7 +61,7 @@ def next_bounds(kind: str, end: date) -> tuple[date, date, str]:
 # ----------------------------------------------------------------------------------------------
 def _cash_rows(conn, start: date, end: date) -> pd.DataFrame:
     """One row per payment in [start, end]: track, payee, date, paid, scheduled."""
-    s, e, today = str(start), str(end), str(manila_today())
+    s, e, today = str(start), str(end), str(date.today())
     parts = []
     parts.append(pd.read_sql_query(
         """SELECT CASE WHEN c.loan_note_id IS NOT NULL THEN 'Private Lender' ELSE 'Supplier' END AS track,
@@ -101,7 +99,7 @@ def _cash_rows(conn, start: date, end: date) -> pd.DataFrame:
 
 def _interest(conn, start: date, end: date) -> pd.DataFrame:
     """Interest cost in the period by facility (same conventions as interest_service)."""
-    s, e, today = str(start), str(end), str(manila_today())
+    s, e, today = str(start), str(end), str(date.today())
     rows = pd.concat([
         pd.read_sql_query(
             """SELECT 'Private loans' AS source, cr.creditor_name AS name, SUM(li.interest) AS interest
@@ -138,7 +136,7 @@ def _new_business(conn, start: date, end: date) -> dict:
     s, e = str(start), str(end)
     b = conn.execute(
         """SELECT COUNT(*), COALESCE(SUM(total_amount), 0) FROM order_statements
-           WHERE status = 'Issued' AND statement_ref NOT LIKE 'LEGACY-%' AND DATE(created_at, '+8 hours') BETWEEN ? AND ?""", (s, e)).fetchone()
+           WHERE status = 'Issued' AND statement_ref NOT LIKE 'LEGACY-%' AND DATE(created_at, 'localtime') BETWEEN ? AND ?""", (s, e)).fetchone()
     inv = conn.execute(
         "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status != 'Cancelled' AND invoice_date BETWEEN ? AND ?", (s, e)).fetchone()
     ln = conn.execute(
@@ -152,7 +150,7 @@ def _behavior(start: date, end: date) -> dict:
     df = get_supplier_check_lag()
     if df.empty:
         return {"count": 0, "avg_days": None, "on_time_pct": None}
-    today = str(manila_today())
+    today = str(date.today())
     d = df[(df["status"] == "Active") & (df["check_date"] >= str(start)) & (df["check_date"] <= str(end)) & (df["check_date"] < today)]
     if d.empty:
         return {"count": 0, "avg_days": None, "on_time_pct": None}
@@ -199,13 +197,13 @@ def _watch_list() -> list[dict]:
             items.append({"item": "Checkbooks with a gap or duplicate number", "count": int(len(alerts)), "detail": ", ".join(alerts["booklet_code"].astype(str).head(4))})
     except Exception:
         pass
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         note_ids = [r[0] for r in conn.execute("SELECT DISTINCT loan_note_id FROM checks_issued WHERE loan_note_id IS NOT NULL AND status = 'Active'")]
         bad = sum(len(loan_check_mismatches(n)) for n in note_ids)
         if bad:
             items.append({"item": "Loan-note checks not matching their schedule", "count": bad, "detail": ""})
         stale = conn.execute(
-            "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date < DATE(manila_today(), ?)",
+            "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date < DATE('now', 'localtime', ?)",
             (f"-{STALE_DAYS} days",)).fetchone()
         if stale[0]:
             items.append({"item": f"Checks still uncleared after {STALE_DAYS} days", "count": int(stale[0]), "detail": _php(stale[1])})
@@ -272,7 +270,7 @@ def _trend(kind: str, start: date, periods: int = 6) -> list[dict]:
         s, e, _label = previous_bounds(kind, bounds[0][0])
         bounds.insert(0, (s, e))
     out = []
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         for s, e in bounds:
             cash = _cash_rows(conn, s, e)
             out.append({"label": _short_label(kind, s), "paid": float(cash["paid"].sum()) if not cash.empty else 0.0,
@@ -331,7 +329,7 @@ def bank_note(b: dict) -> str:
 def get_overview(kind: str, anchor: date) -> dict:
     start, end, label = period_bounds(kind, anchor)
     pstart, pend, plabel = previous_bounds(kind, start)
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         cur, prev = _summarise(conn, start, end), _summarise(conn, pstart, pend)
     upcoming = _upcoming(kind, end)
     watch = _watch_list()

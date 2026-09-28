@@ -17,14 +17,12 @@ from datetime import date, datetime
 from xml.sax.saxutils import escape
 
 import pandas as pd
-from engines.common import get_conn
-from engines.clock import manila_now
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
 def _read(sql: str, params: tuple = ()) -> pd.DataFrame:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         return pd.read_sql_query(sql, conn, params=params)
 
 
@@ -33,10 +31,10 @@ def recon_statement(import_id: int) -> dict | None:
     if imp.empty:
         return None
     imp = imp.iloc[0].to_dict()
-    with get_conn(DB_PATH) as conn:                   # stored in UTC (CURRENT_TIMESTAMP): show local time
+    with sqlite3.connect(DB_PATH) as conn:                   # stored in UTC (CURRENT_TIMESTAMP): show local time
         for k in ("imported_at", "reconciled_at"):
             if imp.get(k) and isinstance(imp[k], str):
-                imp[k] = conn.execute("SELECT datetime(?, '+8 hours')", (imp[k],)).fetchone()[0]
+                imp[k] = conn.execute("SELECT datetime(?, 'localtime')", (imp[k],)).fetchone()[0]
     lines = _read("SELECT * FROM bank_transactions WHERE import_id = ? ORDER BY posting_date, txn_id", (int(import_id),))
     as_of = date.fromisoformat(str(lines["posting_date"].max())[:10]) if not lines.empty else date.fromisoformat(str(imp["period_to"])[:10])
     last = _read("""SELECT balance FROM bank_transactions WHERE balance IS NOT NULL AND posting_date <= ? ORDER BY posting_date DESC, txn_id DESC LIMIT 1""",
@@ -113,7 +111,7 @@ def generate_recon_pdf(r: dict) -> bytes:
     story += [Spacer(1, 10), Paragraph(f"Money in during the statement: PHP {_money(r['money_in'])} · checks cleared and matched: {r['checks_cleared']} · "
                                        f"items still open: {r['open_items']}", note),
               Spacer(1, 26), Paragraph("Prepared by: ______________________________ &nbsp;&nbsp;&nbsp; Date: ________________", ss["Normal"]),
-              Spacer(1, 14), Paragraph(f"This reconciles the bank balance with the checks issued; the system keeps no cash book. Printed {manila_now():%b %d, %Y %I:%M %p}.", note)]
+              Spacer(1, 14), Paragraph(f"This reconciles the bank balance with the checks issued; the system keeps no cash book. Printed {datetime.now():%b %d, %Y %I:%M %p}.", note)]
     buf = io.BytesIO()
     SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=LEFT_MARGIN, rightMargin=RIGHT_MARGIN, topMargin=TOP_MARGIN, bottomMargin=BOTTOM_MARGIN,
                       title="Bank reconciliation").build(story)

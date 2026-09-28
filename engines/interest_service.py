@@ -24,8 +24,6 @@ import sqlite3
 import pandas as pd
 
 import os
-from engines.common import get_conn
-
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 _MONTH_NAMES = [
@@ -56,7 +54,7 @@ def _bank_loans_interest(conn: sqlite3.Connection, year: int, month: int) -> pd.
            FROM bank_loan_installments bli
            JOIN bank_loans bl ON bl.bank_loan_id = bli.bank_loan_id
            JOIN creditors c ON c.creditor_id = bl.creditor_id
-           WHERE bl.is_cancelled = 0 AND bli.due_date < manila_today()
+           WHERE bl.is_cancelled = 0 AND bli.due_date < DATE('now', 'localtime')
              AND CAST(strftime('%Y', bli.due_date) AS INTEGER) = ?
              AND CAST(strftime('%m', bli.due_date) AS INTEGER) = ?
            GROUP BY c.creditor_id
@@ -90,7 +88,7 @@ def get_monthly_interest_summary(year: int, month: int) -> dict:
     """Unified interest summary for one month, broken down by source. Every subtotal defaults
     to 0 when there's simply no data yet -- not an error, just nothing recorded for that source
     that month."""
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         private_df = _private_loans_interest(conn, year, month)
         bank_df = _bank_loans_interest(conn, year, month)
         cc_df = _credit_cards_interest(conn, year, month)

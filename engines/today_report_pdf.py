@@ -16,7 +16,6 @@ from reportlab.lib.pagesizes import LETTER
 from engines.account_history_pdf_service import (
     ACCENT, BOTTOM_MARGIN, CONTENT_WIDTH, GREY, LEFT_MARGIN, RIGHT_MARGIN, TOP_MARGIN, _money, _section_table,
 )
-from engines.clock import manila_now
 
 COMPANY = "Slick's Tire Supply"
 
@@ -101,7 +100,7 @@ def _build(report: dict, caps: dict) -> tuple[bytes, int]:
                                     [CONTENT_WIDTH * f for f in (0.16, 0.32, 0.22, 0.13, 0.17)], right_cols=(4,)))
 
     story.append(Spacer(1, 8))
-    story.append(Paragraph(f"A Saturday/Sunday due date is paid the next banking day (Monday). Printed {manila_now():%b %d, %Y %I:%M %p}.", note))
+    story.append(Paragraph(f"A Saturday/Sunday due date is paid the next banking day (Monday). Printed {datetime.now():%b %d, %Y %I:%M %p}.", note))
 
     buf = io.BytesIO()
     pages = {"n": 0}

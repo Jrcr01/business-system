@@ -36,7 +36,7 @@ The system is **live** (cut over Sep 2026) for Slick's Tire Supply, used daily b
 * Screens: `views/<page>.py`, each `render()`: payment_run (quick report + cycle stages; data from `engines/payment_run_service.py`, Today PDF `engines/today_report_pdf.py`), add_data, dashboard, analytics, creditor_master, order_statement, lenders, bank_loans, credit_cards, checks, reports, admin. **Entry forms are shared functions** called by their own page and by Add data -- `render_batch_invoices/_memos(statement_id)`, `render_add_cc_statement_form()`, `render_new_loan_note_form()`, `render_add_installment_form(loan_note_id)`, `render_new_bank_loan_form()`, `render_bank_loan_schedule(bank_loan_id)`, `render_new_booklet_form()`, `render_log_spoiled_form()`, `render_new_creditor_form()` -- change a form in one place. Shared screen helpers in `views/shared.py`: `q`, `refresh(done=msg)` (toast after the redraw), dialogs, pickers, `guard_duplicate_submit`, `batch_scoped_key`, the check-number/print sections, `global_search_dialog`, `_jump`/`go_to`, and the look: `page_header`, `section`, `status_badge`/`status_text` (Draft grey, Parked orange, Issued blue, Paid green, Cancelled red), `money_col`/`MONEY_FORMAT` (`₱%,.2f`), `date_col` (`MMM DD, YYYY`), `OS_/LN_/BL_BROWSE|NEW` + `mode_label`. Theme: `.streamlit/config.toml` (navy sidebar, Inter, `toolbarMode = minimal`); no logo on screen (PDFs keep it). One `type="primary"` button per screen, on the main action. Order statement Checks sub-tab = one switch (`os_checks_view__<sid>`: Issue checks / Checks in this batch / Assign numbers / Corrections). Business rules in `engines/common.py` (`get_conn`, `q_live`, `php`, `has_value`, `cell_text`, dates, calendar marks, `DB_PATH`, `PRIMARY_BANK_ACCOUNT_ID`), `statement_rules.py`, `check_rules.py`, `creditor_rules.py`, `loan_note_rules.py`, `card_rules.py`. `app.py` imports every name back (`app.<name>` still works for tests). New rule code goes in `engines/`, new screen code in `views/`, not `app.py`.
 * Stack decision (2026-09-27): **stay on Python + Streamlit.** Single user, one laptop, tiny data; the slowness was all-tabs-rendering, now fixed. Revisit only if: several people with their own logins/roles or approvals, use from phones / other PCs / the internet, or bank/API integrations Streamlit can't host. Then keep Python, `engines/*` and the tests, move SQLite → PostgreSQL and replace only `views/` (Django, or FastAPI + a web front end) — a gradual swap, not a rewrite.
   **2026-09-28: the revisit trigger has arrived** -- Sales/AR (next module) will be used by staff on their own computers, fewer than 5 users. Answer = Phase F: **stay on SQLite, moved to a small cloud server** (WAL + `BEGIN IMMEDIATE`), Google sign-in + roles, Streamlit stays; PostgreSQL deferred until ~10+ users at once, another program needing direct database access, or a provider-run database is wanted. The Sales front end (Streamlit vs Django) is decided at Sales phase 0.
-* Tests: `python -m pytest` (~390). Read a view in a test through `get_conn()` (the views call `manila_today()`). `tests/conftest.py` imports every `engines.*` / `views.*` module and repoints every module that has a `DB_PATH` automatically — there is no hand-kept list any more. AppTest note: it does not keep the open page across a button click (it falls back to the first page); open a page with `session_state["_global_jump"] = {"page": "<id>", "state": {...}}` and verify button flows in a browser on the test port (the preview tool reads `C:\Users\Rhodora\Documents\.claude\launch.json`, entry `test-copy-8502`; restart it after editing views -- it does not always reload them).
+* Tests: `python -m pytest` (~270). `tests/conftest.py` imports every `engines.*` / `views.*` module and repoints every module that has a `DB_PATH` automatically — there is no hand-kept list any more. AppTest note: it does not keep the open page across a button click (it falls back to the first page); open a page with `session_state["_global_jump"] = {"page": "<id>", "state": {...}}` and verify button flows in a browser on the test port (the preview tool reads `C:\Users\Rhodora\Documents\.claude\launch.json`, entry `test-copy-8502`; restart it after editing views -- it does not always reload them).
 * `archive/one_time_scripts/` = migration/clean-up scripts that already ran (Phase 8, renumbering, card-number removal…); record only, never re-run. Their tests are there too and are not collected.
 * Never commit real data (`.gitignore` covers every `*.db*`, `*.csv`, `*.xlsx/xlsm`, `*.pdf`, `data/`; the one tracked workbook is `excel_invoice_entry/invoice_entry_master.xlsm`, which the app needs). Full card numbers were removed from the database, every copy and git history (2026-09-27) — only `card_number_last4` is used; never store full numbers again.
 
@@ -402,28 +402,17 @@ Sits between AP (done, live) and Sales/AR (next module).
 
 ### Build order
 **F1 -- One door, one clock, safe writes (on the laptop; no visible change for the owner).**
+**Where Phase F is built (owner, 2026-09-28: "important for now is ap system is stable and can be used"):** ALL of Phase F, up to the
+Sales/AR module, is built on the git branch **`phase-f`** in its own folder **`C:\AP_System_PhaseF`** (a git worktree) and tested on its
+own sandbox database (`C:\AP_System_PhaseF\datap_disbursement_TEST.db`) -- never in `C:\AP_System`, which the LIVE app runs from
+(branch `main`). F1.2 and F1.3 were first committed on main (0513ff9, 0e2c0b2), then reverted on main the same day before the live app
+ever loaded them; they continue on `phase-f`. Apply to live ONCE when the owner is satisfied (merge phase-f into main, one backup,
+update_database.bat, a checklist of known figures before / after). AP fixes are made on main and merged into phase-f.
+
 *Progress (split into gated steps 2026-09-28): **F1.1 done** -- `fk_check.py` (read-only, runs `PRAGMA foreign_key_check` on a backup-API
 copy; exit 0 clean / 1 found / 2 unreadable; tests `tests/test_fk_check.py`): live and TEST = 33 tables, 41 declared links, **0 broken**.
-**F1.2 done** -- the one door is `engines/db_engine.open_db(path)` (the only `sqlite3.connect` in engines / views / app, besides
-`backup_service` reading UPLOADED files read-only): `foreign_keys = ON`, `busy_timeout = 10000`, `journal_mode = WAL` (once per file per
-run). `common.get_conn(db_path=None)` returns it; the 95 engine connections became `get_conn(DB_PATH)` -- each module passes its OWN
-DB_PATH, so tests / `tidy_up_data.py` pointing one module at another file still work. WAL-safe copies: `db_location.safe_copy(src, dst)`
-(backup API, copy set to `journal_mode = DELETE`) for the in-app restore's safety copy, `update_database.bat` and `tidy_up_data.py`
-backups; the in-app restore copies the upload INTO the live file with the backup API (never over it); the nightly backup file is set to
-DELETE mode (no -wal / -shm on Google Drive). The live / TEST folders now hold `<db>-wal` and `<db>-shm` beside the database while the app
-runs -- normal, never delete them. Measured on a copy of live: a save ~5x faster, open + read ~1 ms slower. Tests
-`tests/test_one_door.py` (settings, the door rule, links enforced, safe_copy includes saves still in -wal, restore with -wal present).
-Known, not from F1.2: Arrow "could not convert ''" warning for `principal_amount` on a loans page (df_query's fillna('')).
-**F1.3 done** -- one clock: `engines/clock.py` (`manila_today()`, `manila_now()` = naive Manila time via zoneinfo `Asia/Manila`, tzdata
-pinned; fixed UTC+8 fallback; `set_fake_now()` for tests). `open_db()` registers SQL functions `manila_today()` / `manila_now()` on every
-connection. Replaced ~100 `date.today()` / `datetime.now()` in engines / views / app / backup + maintenance scripts, and every SQL
-`DATE('now','localtime')` -> `manila_today()`, `JULIANDAY('now','localtime')` -> `JULIANDAY(manila_now())`, stored UTC times
-`datetime(x,'localtime')` -> `datetime(x,'+8 hours')` (checked on live: 533 audit times identical). Views `v_effective_checks` (also fixes
-the Stale rule, which used UTC) and `v_cc_due_alerts` use the functions -- migration 054 (live via update_database.bat); those two views
-can only be read through the program (an outside SQLite viewer lacks the functions). Tests that read views must use `get_conn`.
-Tests `tests/test_one_clock.py` (clock pinned to 07:30 Manila 2030-01-15: due-today, bank-loan cleared rule, aging, planner; no code
-reads the computer clock).
-Next: F1.4 safe writes + `doc_counters`, F1.5 `audit_logs.user_email`.*
+Next: F1.2 one door (connections + WAL / busy_timeout; check backup / restore / export scripts that copy the raw file, since WAL keeps
+recent writes in `-wal` until a checkpoint), F1.3 one clock, F1.4 safe writes + `doc_counters`, F1.5 `audit_logs.user_email`.*
 * Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
   `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
 * Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes

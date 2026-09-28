@@ -10,7 +10,6 @@ import sqlite3
 import pandas as pd
 
 from engines.duplicate_service import normalize_doc_ref
-from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 COLUMNS = ["dup_key", "kind", "supplier", "detail", "amount", "where_found", "count"]
@@ -21,7 +20,7 @@ def _php(v) -> str:
 
 
 def _findings() -> list[dict]:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         inv = pd.read_sql_query(
             """SELECT i.invoice_id, i.creditor_id, cr.creditor_name AS supplier, i.doc_ref, i.invoice_date, i.gross_amount, os.statement_ref
                FROM invoices i JOIN creditors cr ON cr.creditor_id = i.creditor_id LEFT JOIN order_statements os ON os.statement_id = i.statement_id
@@ -67,7 +66,7 @@ def _findings() -> list[dict]:
 
 def scan_possible_duplicates(include_dismissed: bool = False) -> pd.DataFrame:
     df = pd.DataFrame(_findings(), columns=COLUMNS)
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         dismissed = {r[0] for r in conn.execute("SELECT dup_key FROM duplicate_dismissals")}
     df["dismissed"] = df["dup_key"].isin(dismissed)
     if not include_dismissed:
@@ -76,14 +75,14 @@ def scan_possible_duplicates(include_dismissed: bool = False) -> pd.DataFrame:
 
 
 def dismiss(keys: list[str], note: str = "") -> int:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.executemany("INSERT OR IGNORE INTO duplicate_dismissals (dup_key, note) VALUES (?, ?)", [(k, note or None) for k in keys])
         conn.commit()
     return len(keys)
 
 
 def restore(keys: list[str]) -> int:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.executemany("DELETE FROM duplicate_dismissals WHERE dup_key = ?", [(k,) for k in keys])
         conn.commit()
     return len(keys)

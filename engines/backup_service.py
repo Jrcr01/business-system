@@ -5,10 +5,6 @@ import shutil
 import tempfile
 from datetime import datetime
 
-from db_location import safe_copy
-from engines.common import get_conn
-from engines.clock import manila_now
-
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 # A handful of core tables that only exist in this app's schema -- enough to reject an
@@ -18,11 +14,11 @@ _EXPECTED_TABLES = ("creditors", "checks_issued", "order_statements", "credit_ca
 
 def export_database_backup() -> tuple[str, bytes]:
     """Creates a live in-memory hot backup of ap_disbursement.db."""
-    timestamp = manila_now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_filename = f"ap_disbursement_backup_{timestamp}.db"
     
-    src_conn = get_conn(DB_PATH)
-    dest_conn = get_conn(":memory:")
+    src_conn = sqlite3.connect(DB_PATH)
+    dest_conn = sqlite3.connect(":memory:")
     src_conn.backup(dest_conn)
     
     try:
@@ -54,10 +50,8 @@ def restore_database_from_bytes(uploaded_bytes: bytes) -> tuple[bool, str]:
         with os.fdopen(tmp_fd, "wb") as f:
             f.write(uploaded_bytes)
 
-        check_conn = None
         try:
-            # an uploaded file is not our database yet: read it as it is (read-only, no WAL / settings from the door)
-            check_conn = sqlite3.connect(f"file:{tmp_path}?mode=ro", uri=True)
+            check_conn = sqlite3.connect(tmp_path)
             integrity = check_conn.execute("PRAGMA integrity_check").fetchone()[0]
             if integrity != "ok":
                 return False, f"Upload failed SQLite's integrity check ({integrity}) -- not restored."
@@ -68,20 +62,12 @@ def restore_database_from_bytes(uploaded_bytes: bytes) -> tuple[bool, str]:
         except sqlite3.DatabaseError:
             return False, "Uploaded file isn't a valid SQLite database -- not restored."
         finally:
-            if check_conn is not None:
-                check_conn.close()
+            check_conn.close()
 
         if os.path.exists(DB_PATH):
-            safety_copy = f"{DB_PATH}.bak_before_restore_{manila_now().strftime('%Y%m%d_%H%M%S')}"
-            safe_copy(DB_PATH, safety_copy)
-        # Phase F1.2 (WAL): never write over the live file (its -wal / -shm files would then belong to a different database) --
-        # copy the uploaded database INTO it with the backup API, which replaces every page through SQLite itself.
-        upload, live = sqlite3.connect(f"file:{tmp_path}?mode=ro", uri=True), get_conn(DB_PATH)
-        try:
-            upload.backup(live)
-        finally:
-            upload.close()
-            live.close()
+            safety_copy = f"{DB_PATH}.bak_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            shutil.copy2(DB_PATH, safety_copy)
+        shutil.copy2(tmp_path, DB_PATH)
         return True, "Database restored. The version just replaced was saved alongside it as a .bak_before_restore file, in case this needs undoing."
     finally:
         os.remove(tmp_path)

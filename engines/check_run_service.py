@@ -24,8 +24,6 @@ except ImportError:
 from engines.check_engine import generate_metrobank_check_pdf
 
 import os
-from engines.common import get_conn
-from engines.clock import manila_now
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 ACCENT = colors.HexColor("#1f3a5f")
@@ -50,7 +48,7 @@ def get_pending_check_run() -> pd.DataFrame:
     """Every committed-but-not-yet-printed check across every batch, Supplier and Lender alike --
     this *is* "the current check run," derived on demand rather than tracked as a separate
     entity (no check_runs table)."""
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         return pd.read_sql_query(
             _CHECK_ROW_SELECT + " WHERE c.status = 'Active' AND c.printed_at IS NULL ORDER BY c.check_date ASC, c.check_id ASC",
             conn,
@@ -63,7 +61,7 @@ def get_unnumbered_checks() -> pd.DataFrame:
     """Every Active check that doesn't have a check_number yet, across every batch, Supplier and
     Lender alike -- regardless of printed_at (Phase 6 Redux: printing and number-assignment are
     independent actions, so a check can be printed-but-unnumbered or numbered-but-unprinted)."""
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         return pd.read_sql_query(
             _CHECK_ROW_SELECT + " WHERE c.status = 'Active' AND c.check_number IS NULL ORDER BY c.check_date ASC, c.check_id ASC",
             conn,
@@ -77,7 +75,7 @@ def get_checks_by_ids(check_ids: list[int]) -> pd.DataFrame:
     if not check_ids:
         return pd.DataFrame(columns=["check_id", "check_number", "check_date", "amount", "payee_name", "track", "reference"])
     placeholders = ",".join("?" * len(check_ids))
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         return pd.read_sql_query(
             _CHECK_ROW_SELECT + f" WHERE c.check_id IN ({placeholders}) ORDER BY c.check_date ASC, c.check_id ASC",
             conn, params=check_ids,
@@ -91,7 +89,7 @@ def mark_checks_printed(check_ids: list[int]) -> None:
     check_number/booklet_id."""
     if not check_ids:
         return
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         placeholders = ",".join("?" * len(check_ids))
         conn.execute(f"UPDATE checks_issued SET printed_at = CURRENT_TIMESTAMP WHERE check_id IN ({placeholders}) AND printed_at IS NULL", check_ids)
         conn.commit()
@@ -106,7 +104,7 @@ def create_check_print_batch(check_ids: list[int]) -> int | None:
     check_ids is empty -- there's no batch to log."""
     if not check_ids:
         return None
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         placeholders = ",".join("?" * len(check_ids))
         total_row = conn.execute(f"SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE check_id IN ({placeholders})", check_ids).fetchone()
         cur = conn.execute(
@@ -125,10 +123,10 @@ def create_check_print_batch(check_ids: list[int]) -> int | None:
 def get_check_print_batches() -> pd.DataFrame:
     """Every export batch logged so far, most recent first -- the "Batch 1, Batch 2, ..."
     history list."""
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         return pd.read_sql_query(
-            "SELECT print_batch_id, datetime(exported_at, '+8 hours') AS exported_at, check_count, total_amount, "
-            "datetime(printed_confirmed_at, '+8 hours') AS printed_confirmed_at FROM check_print_batches ORDER BY print_batch_id DESC",
+            "SELECT print_batch_id, datetime(exported_at, 'localtime') AS exported_at, check_count, total_amount, "
+            "datetime(printed_confirmed_at, 'localtime') AS printed_confirmed_at FROM check_print_batches ORDER BY print_batch_id DESC",
             conn,
         )
 
@@ -136,7 +134,7 @@ def get_check_print_batches() -> pd.DataFrame:
 def mark_batch_printed(print_batch_id: int, printed: bool = True) -> tuple[bool, str]:
     """Records that an export run has (or has not) actually been printed in Chrysanth -- Chrysanth itself never remembers, so this
     is the app's memory of it (2026-09-27). Logged in the audit trail."""
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         if not conn.execute("SELECT 1 FROM check_print_batches WHERE print_batch_id = ?", (int(print_batch_id),)).fetchone():
             return False, "Run not found."
         conn.execute(
@@ -166,7 +164,7 @@ def get_check_print_batch_detail(batch_id: int) -> pd.DataFrame:
     whatever's been assigned to each check SINCE, not a snapshot frozen at export), check date,
     payee, which booklet its number came from (if assigned), and the OS/lender reference it
     belongs to."""
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         return pd.read_sql_query(
             """SELECT c.check_id, c.check_number, c.check_date, c.amount, cr.creditor_name AS payee_name,
                       CASE WHEN c.statement_id IS NOT NULL THEN 'Supplier' ELSE 'Lender' END AS track,
@@ -191,7 +189,7 @@ def generate_check_run_pdf(check_ids: list[int], get_calibration) -> bytes | Non
     avoid this engine reaching into app.py)."""
     if PdfWriter is None or not check_ids:
         return None
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         placeholders = ",".join("?" * len(check_ids))
         rows = conn.execute(
@@ -234,7 +232,7 @@ def generate_check_run_summary_pdf(check_ids: list[int]) -> bytes:
     title_style = ParagraphStyle("BandTitle", parent=styles["Normal"], textColor=colors.white, fontSize=16, leading=19, fontName="Helvetica-Bold")
     sub_style = ParagraphStyle("BandSub", parent=styles["Normal"], textColor=colors.white, fontSize=9, leading=12, alignment=2)
     band = Table(
-        [[Paragraph("Check Run Summary", title_style), Paragraph(manila_now().strftime("Printed %B %d, %Y %I:%M %p"), sub_style)]],
+        [[Paragraph("Check Run Summary", title_style), Paragraph(datetime.now().strftime("Printed %B %d, %Y %I:%M %p"), sub_style)]],
         colWidths=[CONTENT_WIDTH * 0.5, CONTENT_WIDTH * 0.5],
     )
     band.setStyle(TableStyle([
@@ -295,7 +293,7 @@ DEFAULT_CHRYSANTH_CROSSING = 2      # "A/C Payee Only", what every check was cro
 def get_chrysanth_settings() -> dict:
     """{'account_no': str, 'crossing': int}. The account number must be the one already added inside Chrysanth
     (its import refuses an unknown account), so it is a setting the user types once, not something guessed."""
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         rows = dict(conn.execute("SELECT key, value FROM settings WHERE key IN ('chrysanth_account_no', 'chrysanth_crossing_option')").fetchall())
     try:
         crossing = int(rows.get("chrysanth_crossing_option", DEFAULT_CHRYSANTH_CROSSING))
@@ -312,7 +310,7 @@ def save_chrysanth_settings(account_no: str, crossing: int) -> tuple[bool, str]:
         return False, "Chrysanth allows at most 20 characters for the account number."
     if int(crossing) not in CHRYSANTH_CROSSING_OPTIONS:
         return False, "Pick one of the crossing options."
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         for key, value, desc in (("chrysanth_account_no", account_no, "Account number as added in Chrysanth (AccountNo column of the batch-print import)"),
                                  ("chrysanth_crossing_option", str(int(crossing)), "Chrysanth CrossingOption code (0-4) used for every exported cheque")):
             conn.execute(
@@ -408,7 +406,7 @@ def print_batch_tag(print_batch_id: int) -> str:
     zero-padded so 'RUN 004' can never be mistaken for 'RUN 0041' when searching). Chrysanth does not remember what was already printed,
     but its Cheque Transaction History can be searched / filtered by Remark -- so the run number is how one batch is picked out from the
     rest (2026-09-27)."""
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         n = conn.execute("SELECT COUNT(*) FROM check_print_batches WHERE print_batch_id <= ?", (int(print_batch_id),)).fetchone()[0]
     return f"RUN {int(n):03d}"
 
@@ -452,7 +450,7 @@ def generate_pending_check_run_txt(check_ids: list[int] | None = None, log_batch
         tag = print_batch_tag(create_check_print_batch(ids))
         fresh = good[good["_new_placeholder"]]
         if not fresh.empty:       # remember the stand-in number each check carried, so re-downloads match what Chrysanth holds
-            with get_conn(DB_PATH) as conn:
+            with sqlite3.connect(DB_PATH) as conn:
                 conn.executemany("UPDATE checks_issued SET export_placeholder = ? WHERE check_id = ?",
                                  [(str(r["check_number"]), int(r["check_id"])) for _, r in fresh.iterrows()])
                 conn.commit()
@@ -490,7 +488,7 @@ def chrysanth_file_name(refs: list[str], tag: str) -> str:
 def _refs_for_checks(check_ids: list[int]) -> list[str]:
     if not check_ids:
         return []
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute(
             f"""SELECT DISTINCT COALESCE(os.statement_ref, ln.note_ref) FROM checks_issued c
                 LEFT JOIN order_statements os ON os.statement_id = c.statement_id
@@ -506,14 +504,14 @@ def file_name_for_checks(check_ids: list[int], print_batch_id: int) -> str:
 
 
 def file_name_for_batch(print_batch_id: int) -> str:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         ids = [r[0] for r in conn.execute("SELECT check_id FROM checks_issued WHERE print_batch_id = ?", (int(print_batch_id),)).fetchall()]
     return file_name_for_checks(ids, print_batch_id)
 
 
 def generate_batch_txt(print_batch_id: int) -> tuple[bytes, list[str]]:
     """The same file for a batch that was already exported (lost or never downloaded), from the batch history."""
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         df = pd.read_sql_query(_CHECK_ROW_SELECT + " WHERE c.print_batch_id = ? ORDER BY c.check_date ASC, c.check_id ASC", conn, params=(int(print_batch_id),))
     good, problems = chrysanth_export_problems(df)
     s = get_chrysanth_settings()

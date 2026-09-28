@@ -47,7 +47,6 @@ from views.shared import (  # noqa: F401
     status_badge,
     status_text,
 )
-from engines.clock import manila_today
 
 
 def render() -> None:
@@ -106,7 +105,7 @@ def render() -> None:
     stale_checks = get_stale_checks(180)
     pending_checks_df = get_pending_check_run()
     pending_week_df = (
-        pending_checks_df[pd.to_datetime(pending_checks_df["check_date"]).dt.date <= (manila_today() + timedelta(days=7))]
+        pending_checks_df[pd.to_datetime(pending_checks_df["check_date"]).dt.date <= (date.today() + timedelta(days=7))]
         if not pending_checks_df.empty else pending_checks_df
     )
 
@@ -217,13 +216,13 @@ def render() -> None:
     with st.container(border=True):
         st.subheader("Payment calendar (all tracks)")
         st.caption("Hover a day for its total. Darker = more payable that day.")
-        cal_year = st.session_state.get("cal_year", manila_today().year)
-        cal_month = st.session_state.get("cal_month", manila_today().month)
+        cal_year = st.session_state.get("cal_year", date.today().year)
+        cal_month = st.session_state.get("cal_month", date.today().month)
         cal_month_names = [date(2000, m, 1).strftime("%B") for m in range(1, 13)]
         # Wide enough to cover the postdated-check horizon this business actually schedules
         # against (the payables trend chart above already runs years out), padded a bit past
         # today on both sides rather than tied to whatever data happens to exist right now.
-        cal_year_options = list(range(manila_today().year - 5, manila_today().year + 11))
+        cal_year_options = list(range(date.today().year - 5, date.today().year + 11))
         if cal_year not in cal_year_options:
             cal_year_options = sorted(set(cal_year_options) | {cal_year})
 
@@ -510,7 +509,7 @@ def render() -> None:
             "(only where an installment's interest portion is filled in), and Credit Cards (only from statements "
             "entered with the interest breakdown). A source with nothing recorded yet just shows ₱0.00, not an error."
         )
-        interest_today = manila_today()
+        interest_today = date.today()
         interest_month_key = "interest_dashboard_month"
         interest_month = st.selectbox(
             "Month", options=list(range(1, 13)), index=interest_today.month - 1,
@@ -568,5 +567,5 @@ def render() -> None:
             itc3.metric("YTD total", php(interest_trend_df["total_interest"].sum()))
 
     with st.expander("Recent audit log"):
-        audit_df = fix_nullable_int(q("SELECT log_id, user_action, entity_name, entity_id, old_values, new_values, datetime(timestamp, '+8 hours') AS timestamp FROM audit_logs ORDER BY log_id DESC LIMIT 15"), "entity_id")
+        audit_df = fix_nullable_int(q("SELECT log_id, user_action, entity_name, entity_id, old_values, new_values, datetime(timestamp, 'localtime') AS timestamp FROM audit_logs ORDER BY log_id DESC LIMIT 15"), "entity_id")
         st.dataframe(audit_df, hide_index=True)

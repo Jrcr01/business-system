@@ -61,14 +61,13 @@ from views.shared import (  # noqa: F401
     status_badge,
     status_text,
 )
-from engines.clock import manila_today
 
 
 def render_new_loan_note_form() -> None:
     """The Create loan note form (with its confirmation). Shared by Lenders and Add data."""
     with st.form("new_loan_note_form", border=False):
         ln_creditor = selectbox_creditor("Lender", "LENDER", "ln_creditor")
-        ln_issue_date = st.date_input("Issue date", value=manila_today(), help="The date the money was lent — the first installment's interest is counted from here.")
+        ln_issue_date = st.date_input("Issue date", value=date.today(), help="The date the money was lent — the first installment's interest is counted from here.")
         ln_principal = st.number_input("Principal amount", min_value=0.0, step=1000.0)
         ln_rate = st.number_input("Monthly interest rate (%)", min_value=0.0, step=0.5, format="%.2f", help="Per month, e.g. 2 for 2%. Used to suggest each installment's interest (rate × balance × days ÷ 30); you can change the suggestion.")
         st.caption("LN No. starts as a draft placeholder — use \"Promote to real LN No.\" below once it's ready to assign the permanent number. Total interest/payable are computed from the repayment schedule, not typed in.")
@@ -100,7 +99,7 @@ def render_add_installment_form(loan_note_id: int) -> None:
     ln_row = q("SELECT monthly_interest_rate, principal_amount FROM loan_notes WHERE loan_note_id = ?", (selected_lnid,)).iloc[0]
     _bal = q("SELECT outstanding_balance FROM loan_installments WHERE loan_note_id = ? ORDER BY due_date, installment_id", (selected_lnid,))
     current_balance = float(_bal["outstanding_balance"].iloc[-1]) if not _bal.empty else float(ln_row["principal_amount"] or 0.0)
-    add_due_date = st.date_input("Due date", value=manila_today(), key="ln_add_due_date", help='When this installment is due. Its interest is suggested for the days since the previous installment.')
+    add_due_date = st.date_input("Due date", value=date.today(), key="ln_add_due_date", help='When this installment is due. Its interest is suggested for the days since the previous installment.')
     if st.button("Use remaining balance as principal (lump-sum payoff)", icon=":material/payments:", key="ln_lumpsum_btn"):
         st.session_state["ln_add_principal"] = current_balance
     add_principal = st.number_input("Principal", min_value=0.0, step=1000.0, key="ln_add_principal", help='The part of this payment that reduces the loan balance.')
@@ -132,7 +131,7 @@ def render() -> None:
                   ln.monthly_interest_rate, ln.total_interest, ln.total_payable,
                   ln.total_payable - COALESCE(
                       (SELECT SUM(amount) FROM checks_issued
-                       WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < manila_today()), 0
+                       WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < DATE('now', 'localtime')), 0
                   ) AS outstanding,
                   ln.status, """ + loan_note_modified_sql("ln") + """ AS last_modified
            FROM loan_notes ln JOIN creditors c ON ln.creditor_id = c.creditor_id
@@ -204,7 +203,7 @@ def render() -> None:
                 st.caption(f"Pending Setup — principal and rate not yet entered. Fill them in below (\"Edit loan note terms\") to activate this lender. Status: {ln_row['status']}")
             else:
                 diff = round(ln_row["total_payable"] - float(q(
-                    "SELECT COALESCE(SUM(amount),0) AS s FROM checks_issued WHERE loan_note_id = ? AND status='Active' AND check_date < manila_today()",
+                    "SELECT COALESCE(SUM(amount),0) AS s FROM checks_issued WHERE loan_note_id = ? AND status='Active' AND check_date < DATE('now', 'localtime')",
                     (selected_lnid,),
                 )["s"][0]), 2)
                 st.caption(
@@ -478,7 +477,7 @@ def render() -> None:
                         confirm_create_dialog(f"Create a schedule row for each of these {len(ln_unlinked)} checks (interest 0)?", "ln_sched_from_checks", _do_sched)
             st.caption("Checks issued against this loan note")
             ln_checks_df = q(
-                """SELECT chk.check_id, chk.check_number, chk.check_date, chk.amount, chk.status, datetime(chk.printed_at, '+8 hours') AS printed_at,
+                """SELECT chk.check_id, chk.check_number, chk.check_date, chk.amount, chk.status, datetime(chk.printed_at, 'localtime') AS printed_at,
                           li.installment_no
                    FROM checks_issued chk LEFT JOIN loan_installments li ON li.check_id = chk.check_id
                    WHERE chk.loan_note_id = ? ORDER BY chk.check_id DESC""",
@@ -602,7 +601,7 @@ def render() -> None:
                             if ok:
                                 refresh(done=msg)
                     with cr_col_replace:
-                        new_date = st.date_input("New check date", value=manila_today(), key="ln_replace_date", help="The replacement check's date. The old check is cancelled; the new one is parked (no number yet).")
+                        new_date = st.date_input("New check date", value=date.today(), key="ln_replace_date", help="The replacement check's date. The old check is cancelled; the new one is parked (no number yet).")
                         if st.button("Replace this check (new one parked)", icon=":material/sync_alt:", key="ln_replace_btn"):
                             ok, msg, *_ = replace_check(int(cr_pick), new_date, "")
                             (st.success if ok else st.error)(msg)

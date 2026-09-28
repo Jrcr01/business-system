@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from datetime import date
 
 import pandas as pd
-from engines.clock import manila_today
 
 _HEADER_SYNONYMS = {
     "due_date": ["due date", "date", "payment date"],
@@ -93,7 +92,7 @@ def parse_bank_loan_spreadsheet(file_bytes: bytes, filename: str) -> tuple[list[
             continue  # fully blank row
 
         row_issues = []
-        due_date = manila_today()
+        due_date = date.today()
         if date_str:
             try:
                 due_date = pd.to_datetime(date_str).date()

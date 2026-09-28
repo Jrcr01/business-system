@@ -18,7 +18,6 @@ import os
 import sqlite3
 
 import db_location
-from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
@@ -132,12 +131,12 @@ class GoogleDrive:
 def statement_folder_id(drive, sandbox: bool) -> str:
     """This database's Drive folder: created on first use (by the app, so drive.file can reach it) and remembered in settings.
     Re-created if it was deleted / trashed in Drive."""
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (FOLDER_SETTING,)).fetchone()
     if row and row[0] and drive.folder_exists(row[0]):
         return row[0]
     folder_id = drive.create_folder(FOLDER_NAME + (" (TEST)" if sandbox else ""))
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         if row:
             conn.execute("UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?", (folder_id, FOLDER_SETTING))
         else:

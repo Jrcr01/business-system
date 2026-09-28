@@ -23,8 +23,6 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 import pandas as pd
-from engines.common import get_conn
-from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -130,7 +128,7 @@ DATASETS: dict[str, Dataset] = {
          "amount": Field("Amount", "money"), "interest_portion": Field("Interest part", "money"), "status": Field("Status", "choice")},
         ("loan_ref", "bank", "installment_no", "due_date", "amount", "status"), ("due_date",),
         sql="""SELECT bl.loan_ref, cr.creditor_name AS bank, bli.installment_no, bli.due_date, bli.amount, bli.interest_portion,
-                      CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' WHEN bli.due_date < manila_today() THEN 'Paid' ELSE 'Upcoming' END AS status
+                      CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' WHEN bli.due_date < DATE('now', 'localtime') THEN 'Paid' ELSE 'Upcoming' END AS status
                FROM bank_loan_installments bli JOIN bank_loans bl ON bl.bank_loan_id = bli.bank_loan_id JOIN creditors cr ON cr.creditor_id = bl.creditor_id
                ORDER BY bli.due_date, bli.installment_id"""),
     "card_statements": Dataset(
@@ -157,7 +155,7 @@ DATASETS: dict[str, Dataset] = {
         {"timestamp": Field("When", "datetime"), "user_action": Field("Action", "choice"), "entity_name": Field("Record type", "choice"),
          "entity_id": Field("Record id", "number"), "old_values": Field("Before"), "new_values": Field("After")},
         ("timestamp", "user_action", "entity_name", "entity_id", "new_values"), ("timestamp",),
-        sql="""SELECT datetime(timestamp, '+8 hours') AS timestamp, user_action, entity_name, entity_id, old_values, new_values
+        sql="""SELECT datetime(timestamp, 'localtime') AS timestamp, user_action, entity_name, entity_id, old_values, new_values
                FROM audit_logs ORDER BY log_id"""),
 }
 
@@ -184,7 +182,7 @@ def _month_end(d: date) -> date:
 def preset_range(preset: str, today: date | None = None, n_days: int | None = None, date_from=None, date_to=None) -> tuple:
     """(from, to) for a preset, worked out from `today` -- so a saved "This month" report always shows the current month. (None, None) =
     all dates."""
-    t = today or manila_today()
+    t = today or date.today()
     n = max(1, int(n_days or 30))
     if preset in (None, "", "All dates"):
         return None, None
@@ -323,7 +321,7 @@ def validate(spec: dict) -> list[str]:
 # ------------------------------------------------------------------ running
 def load(dataset: str) -> pd.DataFrame:
     ds = DATASETS[dataset]
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         df = ds.loader(conn) if ds.loader else pd.read_sql_query(ds.sql, conn)
     return df.reset_index(drop=True)
 
@@ -581,7 +579,7 @@ def generate_report_pdf(r: ReportResult, max_rows: int = 2000) -> bytes:
 
 # ------------------------------------------------------------------ saved reports
 def _conn() -> sqlite3.Connection:
-    conn = get_conn(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 

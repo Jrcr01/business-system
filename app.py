@@ -340,7 +340,6 @@ from views.shared import (  # noqa: F401
     status_badge,
     status_text,
 )
-from engines.clock import manila_today
 
 
 # --------------------------------------------------------------------------
@@ -514,12 +513,12 @@ with st.sidebar:
         # st.rerun() from here: this sidebar is drawn before the main tabs, so an early st.rerun() made Streamlit forget
         # which tab was open and dropped you back on the Dashboard every time (2026-09-26). A callback runs before the page
         # is redrawn, so the tabs keep their state.
-        side_cal_years = list(range(manila_today().year - 5, manila_today().year + 11))
+        side_cal_years = list(range(date.today().year - 5, date.today().year + 11))
         side_cal_month_names = [date(2000, m, 1).strftime("%b") for m in range(1, 13)]
         if st.session_state.get("side_cal_year_pick") not in side_cal_years:
-            st.session_state["side_cal_year_pick"] = manila_today().year
+            st.session_state["side_cal_year_pick"] = date.today().year
         if st.session_state.get("side_cal_month_pick") not in range(1, 13):
-            st.session_state["side_cal_month_pick"] = manila_today().month
+            st.session_state["side_cal_month_pick"] = date.today().month
 
         def _side_cal_step(delta: int) -> None:
             m, y = st.session_state["side_cal_month_pick"] + delta, st.session_state["side_cal_year_pick"]

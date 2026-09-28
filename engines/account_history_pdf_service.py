@@ -20,7 +20,6 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-from engines.clock import manila_now
 
 MIN_FONT_PT = 9.0  # nothing in these reports is ever printed smaller than this
 
@@ -152,7 +151,7 @@ def _doc(buffer) -> SimpleDocTemplate:
 def _finish(doc, story) -> bytes:
     st = _styles()
     story.append(Spacer(1, 10))
-    story.append(Paragraph(f"Generated {manila_now().strftime('%Y-%m-%d %H:%M')}", st["grey_small"]))
+    story.append(Paragraph(f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}", st["grey_small"]))
     doc.build(story)
 
 

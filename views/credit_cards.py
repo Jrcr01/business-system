@@ -50,7 +50,6 @@ from views.shared import (  # noqa: F401
     status_badge,
     status_text,
 )
-from engines.clock import manila_today
 
 
 def _card_label(cid: int, df: pd.DataFrame) -> str:
@@ -123,7 +122,7 @@ def render_add_cc_statement_form() -> None:
                 help="Which month this statement is for. Pre-selected to the month after this card's last recorded statement; after December it rolls to January of the next year on its own.",
             )
             stmt_year_num = sm2.number_input("Year", min_value=2000, max_value=2100, step=1, value=default_year, key=f"stmt_year_{sm_key}")
-            stmt_due = st.date_input("Due date", value=manila_today(), key="stmt_due_date", help='The payment due date printed on the statement.')
+            stmt_due = st.date_input("Due date", value=date.today(), key="stmt_due_date", help='The payment due date printed on the statement.')
 
             if st.session_state.pop("_clear_stmt_form", False):
                 for _k in [k for k in st.session_state if str(k).startswith(("stmt_total_direct", "stmt_finance_direct", "stmt_payments_"))]:
@@ -265,7 +264,7 @@ def render() -> None:
                       CASE WHEN cs.status IN ('Paid', 'Cancelled') THEN cs.status
                            WHEN cs.unpaid_balance_next > 0 AND cs.amount_paid > 0.005 THEN 'Partially Paid'
                            WHEN cs.unpaid_balance_next > 0 THEN 'Unpaid'
-                           WHEN cs.due_date < manila_today() THEN 'Paid'
+                           WHEN cs.due_date < DATE('now', 'localtime') THEN 'Paid'
                            ELSE cs.status END AS effective_status,
                       cs.payment_method, {cc_owed_case('cs')} AS still_owed
                FROM cc_statements cs JOIN credit_cards cc ON cs.card_id = cc.card_id
@@ -591,7 +590,7 @@ def render() -> None:
     # ----------------------------------------------------------------------
     with sub_check:
         cov_df = get_statement_coverage()
-        cov_today = manila_today()
+        cov_today = date.today()
         cov_this = cov_today.strftime("%B %Y")
         cov_prev = (cov_today.replace(day=1) - timedelta(days=1)).strftime("%B %Y")
         st.caption(

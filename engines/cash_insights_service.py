@@ -24,8 +24,6 @@ from datetime import date, timedelta
 import pandas as pd
 
 from engines.reports_service import get_payment_schedule_all_tracks, next_banking_day
-from engines.common import get_conn
-from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 BUFFER_KEY = "cash_buffer"
@@ -35,12 +33,12 @@ DEPOSIT_TYPES = [("CSH DEP", "Cash deposits"), ("CHK DEP", "Check deposits"), ("
 
 
 def _read(sql: str, params: tuple = ()) -> pd.DataFrame:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         return pd.read_sql_query(sql, conn, params=params)
 
 
 def get_buffer() -> float:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (BUFFER_KEY,)).fetchone()
     try:
         return float(row[0]) if row and row[0] not in (None, "") else 0.0
@@ -49,7 +47,7 @@ def get_buffer() -> float:
 
 
 def set_buffer(amount: float) -> None:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         if conn.execute("SELECT 1 FROM settings WHERE key = ?", (BUFFER_KEY,)).fetchone():
             conn.execute("UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?", (str(float(amount)), BUFFER_KEY))
         else:
@@ -115,7 +113,7 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
 def forecast(days: int = 60, today: date | None = None) -> dict:
     """{'start', 'opening', 'as_of', 'stale_days', 'buffer', 'daily': DataFrame(day, money_in, money_out, balance, below_buffer),
     'lowest': (day, balance), 'first_below': day | None}. Starts today from the latest bank balance."""
-    today = today or manila_today()
+    today = today or date.today()
     pos = cash_position()
     if pos is None:
         return {}
@@ -204,7 +202,7 @@ def working_capital(today: date | None = None) -> dict:
     """Cash vs payables: for 7 / 30 / 60 / 90 days ahead -- what is due (same outflows as the forecast), cash cover (balance / due) and
     what is left; days of cash (balance / average daily outflow over the next 30 days); DPO (average days suppliers wait, as on the
     Dashboard)."""
-    today = today or manila_today()
+    today = today or date.today()
     pos = cash_position()
     if pos is None:
         return {}
@@ -232,7 +230,7 @@ def dashboard_bank_summary(today: date | None = None) -> dict | None:
     statement is imported."""
     from engines.bank_statement_service import exceptions, not_yet_cleared, statement_coverage
 
-    today = today or manila_today()
+    today = today or date.today()
     pos = cash_position()
     if pos is None:
         return None

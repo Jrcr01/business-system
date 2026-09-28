@@ -33,7 +33,6 @@ from engines.global_search_service import search_everything
 from engines.loan_note_rules import cancel_loan_note
 from engines.loan_note_rules import delete_loan_note
 from engines.statement_rules import unlock_statement
-from engines.clock import manila_now, manila_today
 
 
 try:
@@ -237,15 +236,15 @@ def date_preset_filter(container, df: pd.DataFrame, column: str, label: str, key
     Used for the 'Last modified' filter of the order statement, loan note and bank loan browsers."""
     days = pd.to_datetime(df[column], errors="coerce").dt.date if not df.empty else pd.Series([], dtype=object)
     valid = days.dropna()
-    full_range = (min(valid.min(), manila_today()), max(valid.max(), manila_today())) if not valid.empty else (manila_today(), manila_today())
+    full_range = (min(valid.min(), date.today()), max(valid.max(), date.today())) if not valid.empty else (date.today(), date.today())
     preset = container.segmented_control(label, options=["Today", "Last 7 days", "Last 30 days", "All time", "Custom"],
                                          default="All time", required=True, key=key)
     if preset == "Today":
-        start, end = manila_today(), manila_today()
+        start, end = date.today(), date.today()
     elif preset == "Last 7 days":
-        start, end = manila_today() - timedelta(days=6), manila_today()
+        start, end = date.today() - timedelta(days=6), date.today()
     elif preset == "Last 30 days":
-        start, end = manila_today() - timedelta(days=29), manila_today()
+        start, end = date.today() - timedelta(days=29), date.today()
     elif preset == "Custom":
         picked = container.date_input("Custom range", value=full_range, key=key + "_range")
         if not (isinstance(picked, (tuple, list)) and len(picked) == 2):
@@ -709,7 +708,7 @@ def _get_app_start_time() -> datetime:
     """Computed once per process, cached for that process's whole lifetime (st.cache_resource,
     unlike st.cache_data, doesn't expire or get cleared by "Refresh data") -- so this only ever
     changes when the app is actually restarted, not on an ordinary page interaction."""
-    return manila_now()
+    return datetime.now()
 
 
 WHATS_NEW_PATH = "WHATS_NEW.md"

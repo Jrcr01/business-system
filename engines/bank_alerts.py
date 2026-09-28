@@ -20,8 +20,6 @@ from datetime import date, timedelta
 import pandas as pd
 
 from engines.settings_store import get_number, set_setting
-from engines.common import get_conn
-from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 STALE_DAYS_KEY, DEFAULT_STALE_DAYS = "stale_deposit_days", 7
@@ -55,7 +53,7 @@ def stale_deposits(days: int | None = None) -> list[dict]:
 def large_debits(factor: float | None = None) -> pd.DataFrame:
     """Unresolved bank debits that are not our checks and matched nothing, more than `factor` x the median debit of the same kind."""
     f = debit_factor() if factor is None else float(factor)
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         df = pd.read_sql_query("""SELECT txn_id, posting_date, description, kind, debit, match_status, reviewed FROM bank_transactions
                                   WHERE kind IN ('DEBIT_MEMO', 'BILLS_PAYMENT', 'OTHER') AND debit > 0""", conn)
     if df.empty:
@@ -69,7 +67,7 @@ def low_cash_ahead(today: date | None = None) -> dict | None:
     """{'day', 'lowest', 'buffer', 'as_of'} when the forecast goes under the cash buffer within FORECAST_DAYS days, else None."""
     from engines.cash_insights_service import forecast
 
-    today = today or manila_today()
+    today = today or date.today()
     f = forecast(days=FORECAST_DAYS, today=today)
     if not f or f["stale_days"] > FORECAST_MAX_AGE or f["first_below"] is None:
         return None
@@ -83,7 +81,7 @@ def statement_age(today: date | None = None) -> dict | None:
     li = last_import()
     if not li:
         return None
-    age = ((today or manila_today()) - date.fromisoformat(str(li["imported_at"])[:10])).days
+    age = ((today or date.today()) - date.fromisoformat(str(li["imported_at"])[:10])).days
     return {"age": age, "period_to": li["period_to"]} if age > STATEMENT_MAX_AGE else None
 
 

@@ -21,7 +21,6 @@ from engines.account_history_pdf_service import (
     ACCENT, ACCENT_LIGHT, CONTENT_WIDTH, GREY, LEFT_MARGIN, MIN_FONT_PT, RIGHT_MARGIN, _section_table,
 )
 from engines.overview_report_service import _pct_change, bank_note, bank_rows
-from engines.clock import manila_now
 
 DEEP = colors.HexColor("#12304f")      # cover banner base
 TREAD = colors.HexColor("#1c4a78")     # tread pattern on the banner
@@ -109,7 +108,7 @@ def _cover_page(c, doc) -> None:
     c.saveState()
     c.setFillColor(GREY)
     c.setFont("Helvetica", 9)
-    c.drawCentredString(PAGE_W / 2, 0.45 * inch, f"{COMPANY}  |  Accounts payable overview  |  Prepared {manila_now():%B %d, %Y}")
+    c.drawCentredString(PAGE_W / 2, 0.45 * inch, f"{COMPANY}  |  Accounts payable overview  |  Prepared {datetime.now():%B %d, %Y}")
     c.restoreState()
 
 
@@ -133,7 +132,7 @@ def _inner_page(label: str):
         c.line(LEFT_MARGIN, 0.6 * inch, PAGE_W - RIGHT_MARGIN, 0.6 * inch)
         c.setFillColor(GREY)
         c.setFont("Helvetica", 9)
-        c.drawString(LEFT_MARGIN, 0.42 * inch, f"Prepared {manila_now():%Y-%m-%d %H:%M}")
+        c.drawString(LEFT_MARGIN, 0.42 * inch, f"Prepared {datetime.now():%Y-%m-%d %H:%M}")
         c.drawRightString(PAGE_W - RIGHT_MARGIN, 0.42 * inch, f"Page {doc.page}")
         c.restoreState()
     return draw

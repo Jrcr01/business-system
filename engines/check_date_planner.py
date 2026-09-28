@@ -24,8 +24,6 @@ from datetime import date, timedelta
 import pandas as pd
 
 from engines.settings_store import get_number, get_setting, set_setting
-from engines.common import get_conn
-from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 FRESH_DAYS = 14                 # a bank balance older than this is not used to plan from
@@ -60,7 +58,7 @@ def save_settings(s: PlanSettings) -> None:
 
 
 def _read(sql: str, params: tuple = ()) -> pd.DataFrame:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         return pd.read_sql_query(sql, conn, params=params)
 
 
@@ -86,7 +84,7 @@ def open_items(today: date | None = None) -> pd.DataFrame:
                        FROM invoices i WHERE i.statement_id = ? AND i.status != 'Cancelled' ORDER BY i.due_date, i.invoice_id""", (int(b.statement_id),))
         inv = inv[inv["remaining"] > 0.005].reset_index(drop=True)
         if inv.empty:
-            rows.append((b.statement_id, b.batch, b.creditor_id, b.supplier, None, "(no open invoice)", (today or manila_today()).isoformat(), b.remaining))
+            rows.append((b.statement_id, b.batch, b.creditor_id, b.supplier, None, "(no open invoice)", (today or date.today()).isoformat(), b.remaining))
             continue
         amounts = [round(float(x), 2) for x in inv["remaining"]]
         extra = round(sum(amounts) - float(b.remaining), 2)
@@ -126,7 +124,7 @@ def cash_source(today: date | None = None) -> dict:
     """{'fresh': bool, 'balance', 'as_of'} -- whether the latest bank balance is recent enough to plan from."""
     from engines.cash_insights_service import cash_position
 
-    today = today or manila_today()
+    today = today or date.today()
     pos = cash_position()
     if pos is None:
         return {"fresh": False, "balance": None, "as_of": None}
@@ -176,7 +174,7 @@ class Plan:
 
 def plan(today: date | None = None, start_cash: float | None = None, inflow_per_day: float | None = None,
          settings: PlanSettings | None = None, items: pd.DataFrame | None = None) -> Plan:
-    today = today or manila_today()
+    today = today or date.today()
     s = settings or load_settings()
     blocked = _blocked_days()
     items = open_items(today) if items is None else items.copy()
@@ -315,7 +313,7 @@ def send_to_batch(p: Plan, statement_id: int) -> tuple[bool, str]:
     inv = get_invoices_with_remaining(int(statement_id))
     save_park_draft(int(statement_id), "By number of checks", len(rows), remaining, [int(i) for i in inv["invoice_id"]] if not inv.empty else [],
                     [(d.isoformat(), float(a)) for d, a in zip(rows["suggested_date"], rows["amount"])])
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('PLANNER_DATES_SENT', 'order_statements', ?, ?)",
                      (int(statement_id), "; ".join(f"{d} {a:,.2f}" for d, a in zip(rows["suggested_date"], rows["amount"]))))
     return True, f"{len(rows)} check(s) with the suggested dates are waiting in the batch's Issue checks — review them and park."

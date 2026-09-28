@@ -13,8 +13,6 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-from engines.common import get_conn
-from engines.clock import manila_now
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -49,7 +47,7 @@ def _money(v) -> str:
 
 
 def _fetch_loan_note_data(loan_note_id: int) -> dict | None:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         note = cur.execute(
@@ -104,7 +102,7 @@ def _info_panel(note, styles) -> Table:
          Paragraph("GENERATED", label_style), Paragraph("", label_style)],
         [Paragraph(f"PHP {_money(note['principal_amount'])}", value_style),
          Paragraph("—" if note["monthly_interest_rate"] is None else f"{note['monthly_interest_rate']:g}%", value_style),
-         Paragraph(manila_now().strftime("%Y-%m-%d %H:%M"), value_style), Paragraph("", value_style)],
+         Paragraph(datetime.now().strftime("%Y-%m-%d %H:%M"), value_style), Paragraph("", value_style)],
     ]
     panel = Table(rows, colWidths=[CONTENT_WIDTH * 0.25] * 4)
     panel.setStyle(TableStyle([

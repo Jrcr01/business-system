@@ -17,13 +17,12 @@ import os
 import sqlite3
 from engines.validators import money_amount_error
 from datetime import date
-from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
 def _get_conn():
-    return get_conn(DB_PATH)
+    return sqlite3.connect(DB_PATH)
 
 
 def suggest_installment_interest(loan_note_id: int, due_date: date) -> tuple[float, float]:
@@ -100,7 +99,7 @@ def _recompute_schedule(cur: sqlite3.Cursor, loan_note_id: int) -> None:
 
     total_payable = round(principal_amount + total_interest, 2)
     cur.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE loan_note_id = ? AND status = 'Active' AND check_date < manila_today()",
+        "SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE loan_note_id = ? AND status = 'Active' AND check_date < DATE('now', 'localtime')",
         (loan_note_id,),
     )
     (cleared_sum,) = cur.fetchone()

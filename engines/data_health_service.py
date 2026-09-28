@@ -12,8 +12,6 @@ from __future__ import annotations
 import os
 import sqlite3
 from datetime import date, timedelta
-from engines.common import get_conn
-from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -24,7 +22,7 @@ STALE_CHECK_DAYS = 180          # Philippine checks go stale six months after th
 
 
 def _conn() -> sqlite3.Connection:
-    conn = get_conn(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -202,7 +200,7 @@ def _suppliers(conn, today: date, out: list) -> None:
 # ------------------------------------------------------------------ public
 def findings(include_fine: bool = False, today: date | None = None) -> list[dict]:
     """Everything the scan flags, grouped in GROUPS order. Items marked "It's fine" are left out unless include_fine (then 'fine' + 'note')."""
-    today = today or manila_today()
+    today = today or date.today()
     out: list[dict] = []
     with _conn() as conn:
         for part in (_checks, _invoices_and_batches, _bank, _suppliers):

@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from engines.common import get_conn
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -14,7 +13,7 @@ DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 def save_park_draft(statement_id: int, mode: str, count: int, balance: float, invoice_ids: list[int], rows: list[tuple[str, float]]) -> None:
     payload = json.dumps({"mode": mode, "count": int(count), "balance": round(float(balance), 2), "invoice_ids": [int(i) for i in invoice_ids],
                           "rows": [[str(d)[:10], round(float(a), 2)] for d, a in rows]})
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """INSERT INTO park_drafts (statement_id, payload) VALUES (?, ?)
                ON CONFLICT(statement_id) DO UPDATE SET payload = excluded.payload, updated_at = CURRENT_TIMESTAMP""",
@@ -24,7 +23,7 @@ def save_park_draft(statement_id: int, mode: str, count: int, balance: float, in
 
 
 def load_park_draft(statement_id: int) -> dict | None:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT payload FROM park_drafts WHERE statement_id = ?", (int(statement_id),)).fetchone()
     if not row:
         return None
@@ -35,14 +34,14 @@ def load_park_draft(statement_id: int) -> dict | None:
 
 
 def clear_park_draft(statement_id: int) -> None:
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM park_drafts WHERE statement_id = ?", (int(statement_id),))
         conn.commit()
 
 
 def list_park_drafts() -> list[dict]:
     """Every batch that has typed-but-not-parked checks: [{'statement_id', 'label', 'n', 'total'}], newest first."""
-    with get_conn(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute(
             """SELECT d.statement_id, d.payload, os.statement_ref, cr.creditor_name FROM park_drafts d
                JOIN order_statements os ON os.statement_id = d.statement_id JOIN creditors cr ON cr.creditor_id = os.creditor_id
