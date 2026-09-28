@@ -17,7 +17,7 @@ from engines.card_rules import delete_cc_statement
 from engines.card_rules import edit_cardholder
 from engines.card_rules import edit_cc_statement
 from engines.card_rules import edit_credit_card
-from engines.card_rules import get_default_statement_month
+from engines.cc_dates import statement_month_for
 from engines.card_rules import reactivate_cardholder
 from engines.card_rules import reactivate_credit_card
 from engines.cc_rules import cc_owed_case
@@ -25,6 +25,9 @@ from engines.cc_rules import superseded_sql
 from engines.cc_service import get_annual_fee_alerts
 from engines.cc_service import get_statement_coverage
 from engines.cc_service import get_statement_gap_alerts
+from engines.cc_service import mark_no_due
+from engines.cc_service import no_due_marks
+from engines.cc_service import undo_no_due
 from engines.common import php
 from engines.common import q_live
 from engines.creditor_rules import get_or_create_card_issuer
@@ -83,6 +86,31 @@ def _card_frames():
     return cardholders_df, active_cardholders_df, cards_df, active_cards_df
 
 
+def _month_label(month: str) -> str:
+    return date(int(month[:4]), int(month[5:7]), 1).strftime("%B %Y")
+
+
+def render_missing_statements(missing_df: pd.DataFrame, key: str) -> None:
+    """The cards whose statement may be missing, each with a "No due" button (owner, 2026-09-29: "there are also times that recording
+    statement is not necessary because it has no due so I opt not to record this"). Shared by Credit cards and Payment run."""
+    today = date.today()
+    this_key, prev_key = today.strftime("%Y-%m"), (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    for _, r in missing_df.iterrows():
+        both = r.get("status") == "Missing both months"
+        why = (f"no statement recorded for {_month_label(prev_key)} or {_month_label(this_key)}" if both
+               else f"the {_month_label(this_key)} statement is not recorded" + (f" (expected by {r['expected_by']})" if r.get("expected_by") else ""))
+        c1, c2 = st.columns([5, 1.6], vertical_alignment="center")
+        c1.warning(f"{r['card_name']} ({r['card_number_last4']}) — {r['cardholder_name'] or 'no cardholder set'}: {why}"
+                   + (f" · last due date on file {r['last_due_date']}" if pd.notna(r["last_due_date"]) else ""))
+        months = [prev_key, this_key] if both else [this_key]
+        if c2.button("No due (both months)" if both else "No due this month", icon=":material/event_busy:", key=f"{key}_nodue_{int(r['card_id'])}",
+                     width="stretch", help="Nothing was due on this card for the month, so there is no statement to record. The warning stops; "
+                                           "nothing is added to payables. You can undo it on the Credit cards page."):
+            for m in months:
+                mark_no_due(int(r["card_id"]), m)
+            refresh(done=f"{r['card_name']}: marked No due for " + " and ".join(_month_label(m) for m in months) + ".")
+
+
 def render_add_cc_statement_form() -> None:
     """The Add statement form (cardholder -> issuer -> card -> month, total due, payments seen, finance charge). Shared by Credit cards and Add data."""
     cardholders_df, active_cardholders_df, cards_df, active_cards_df = _card_frames()
@@ -113,16 +141,22 @@ def render_add_cc_statement_form() -> None:
                 format_func=lambda cid: _card_label(cid, stmt_issuer_cards_df),
                 key=f"stmt_card_pick_{stmt_holder}_{stmt_issuer}",
             )
-            default_year, default_month = get_default_statement_month(int(stmt_card))
+            stmt_due = st.date_input("Due date", value=date.today(), key="stmt_due_date", help='The payment due date printed on the statement.')
+            # Owner, 2026-09-29: the statement month is the month of the card's statement date -- usually the month before the due
+            # date, sometimes the same month (engines/cc_dates.py). Pre-filled from the due date; can be changed.
+            stmt_card_day = stmt_issuer_cards_df.set_index("card_id").loc[stmt_card, "statement_day"]
+            stmt_card_day = None if pd.isna(stmt_card_day) else int(stmt_card_day)
+            default_month_text = statement_month_for(stmt_due, stmt_card_day)
+            default_year, default_month = int(default_month_text[:4]), int(default_month_text[5:7])
             sm_key = f"{int(stmt_card)}_{default_year}_{default_month}"
             sm1, sm2 = st.columns([3, 2])
             stmt_month_num = sm1.selectbox(
                 "Statement month", options=list(range(1, 13)), index=default_month - 1,
                 format_func=lambda m: date(2000, m, 1).strftime("%B"), key=f"stmt_month_{sm_key}",
-                help="Which month this statement is for. Pre-selected to the month after this card's last recorded statement; after December it rolls to January of the next year on its own.",
+                help="The month of the statement date. Filled in from the due date and the card's Statement day (usually the month before the "
+                     "due date, sometimes the same month) — change it if the statement says otherwise.",
             )
             stmt_year_num = sm2.number_input("Year", min_value=2000, max_value=2100, step=1, value=default_year, key=f"stmt_year_{sm_key}")
-            stmt_due = st.date_input("Due date", value=date.today(), key="stmt_due_date", help='The payment due date printed on the statement.')
 
             if st.session_state.pop("_clear_stmt_form", False):
                 for _k in [k for k in st.session_state if str(k).startswith(("stmt_total_direct", "stmt_finance_direct", "stmt_payments_"))]:
@@ -180,7 +214,7 @@ def render_add_cc_statement_form() -> None:
             if st.button("Add statement", icon=":material/receipt_long:", type="primary", key="add_cc_statement_btn", disabled=not stmt_math_ok) or dup_resume("add_cc_statement"):
                 stmt_month_text = f"{int(stmt_year_num)}-{int(stmt_month_num):02d}"
                 if dup_needs_confirm("add_cc_statement", cc_statement_warnings(int(stmt_card), stmt_due, stmt_total_due)
-                                     + cc_statement_month_warnings(int(stmt_card), stmt_month_text, stmt_total_due)):
+                                     + cc_statement_month_warnings(int(stmt_card), stmt_month_text, stmt_total_due, due_date=stmt_due)):
                     pass
                 elif guard_duplicate_submit("add_cc_statement", stmt_card, stmt_due, stmt_total_due, stmt_interest, stmt_payments):
                     add_cc_statement(int(stmt_card), stmt_due, stmt_previous, stmt_new_charges, stmt_interest, 0.0,
@@ -227,14 +261,7 @@ def render() -> None:
         if not missing_recent_df.empty or not fee_alerts_df.empty:
             with st.container(border=True):
                 st.markdown("**Needs attention**")
-                for _, r in missing_recent_df.iterrows():
-                    # Raw truthiness on last_due_date used to silently work by accident when every
-                    # card had zero statements (a uniformly-NULL column, read back as an empty
-                    # string that's already falsy) -- surfaced as a literal "(last due date on file:
-                    # nan)" the moment the column became a real mix of dates and missing values
-                    # (2026-09-17, once the first real cc_statements rows existed): a NaN float is
-                    # truthy in Python, unlike None or ''. pd.notna() is the correct check either way.
-                    st.warning(f"{r['card_name']} ({r['card_number_last4']}) — {r['cardholder_name'] or 'no cardholder set'}: {r['alert']}" + (f" (last due date on file: {r['last_due_date']})" if pd.notna(r['last_due_date']) else ""))
+                render_missing_statements(missing_recent_df, "cc_attention")
                 if not fee_alerts_df.empty:
                     st.caption("Annual fee month coming up — month only, since the exact day is the card's issuance date and isn't on file. Request the waiver before it posts.")
                     st.dataframe(fee_alerts_df[["card_name", "card_number_last4", "cardholder_name", "when"]], hide_index=True)
@@ -247,6 +274,17 @@ def render() -> None:
                     ),
                     hide_index=True,
                 )
+    marks = sorted(no_due_marks(), key=lambda m: (m[1], m[0]), reverse=True)
+    if marks:
+        with st.expander(f"Marked \"No due\" ({len(marks)})", icon=":material/event_busy:"):
+            st.caption("Months you marked as having nothing due on a card, so no statement was recorded. Undo if a statement turns up.")
+            names = {int(c): f"{n} ({l4})" for c, n, l4 in q_live("SELECT card_id, card_name, card_number_last4 FROM credit_cards").itertuples(index=False)}
+            for card_id, month in marks:
+                m1, m2 = st.columns([5, 1.2], vertical_alignment="center")
+                m1.markdown(f"{names.get(card_id, card_id)} — **{_month_label(month)}**: no due")
+                if m2.button("Undo", icon=":material/undo:", key=f"nodue_undo_{card_id}_{month}", width="stretch"):
+                    undo_no_due(card_id, month)
+                    refresh(done=f"{names.get(card_id, card_id)}: {_month_label(month)} is no longer marked No due.")
 
     sub_statements, sub_cards, sub_check = st.tabs([
         ":material/receipt_long: Statements", ":material/credit_card: Cards & cardholders", ":material/fact_check: Missing statement check",
@@ -594,8 +632,9 @@ def render() -> None:
         cov_this = cov_today.strftime("%B %Y")
         cov_prev = (cov_today.replace(day=1) - timedelta(days=1)).strftime("%B %Y")
         st.caption(
-            f"Compares {cov_prev} with {cov_this} for every active card, so a card that had a statement last month "
-            "but has none recorded yet this month stands out. Only as good as the statements recorded: a card shows "
+            f"Compares the {cov_prev} and {cov_this} statements of every active card, so a card that had a statement last month "
+            "but has none recorded yet this month stands out. A statement's month is its statement date's month (the card's "
+            "Statement day, usually the month before the due date). A month you marked \"No due\" counts as done. A card shows "
             "\"No statement ever\" until its first one is entered."
         )
         if cov_df.empty:
@@ -607,21 +646,22 @@ def render() -> None:
                 st.metric("Missing both months", int(counts.get("Missing both months", 0)), border=True, help=f"Older history, but nothing in {cov_prev} or {cov_this}.")
                 st.metric("No statement ever", int(counts.get("No statement ever", 0)), border=True, help='Active cards with no statement recorded at all — often cards not in use yet.')
                 st.metric("Not yet expected", int(counts.get("Not yet expected", 0)), border=True, help="Had one last month, but this card's statement isn't due to arrive yet this month (based on its Statement day, or last month's due day).")
+                st.metric("No due", int(counts.get("No due", 0)), border=True, help=f"You marked {cov_this} as having nothing due on this card.")
                 st.metric("OK", int(counts.get("OK", 0)), border=True, help=f"A statement is recorded for {cov_this}.")
             only_problems = st.toggle("Show only cards that need attention", value=True, key="cov_only_problems")
-            cov_show = cov_df[~cov_df["status"].isin(["OK", "Not yet expected"])] if only_problems else cov_df
+            cov_show = cov_df[~cov_df["status"].isin(["OK", "Not yet expected", "No due"])] if only_problems else cov_df
             report_df = cov_show.rename(columns={
                 "status": "Status", "cardholder": "Card holder", "issuer": "Issuer", "card_name": "Card",
-                "card_number_last4": "Last 4", "prev_month_due": f"{cov_prev} due date", "prev_month_amount": f"{cov_prev} amount",
-                "this_month_due": f"{cov_this} due date", "this_month_amount": f"{cov_this} amount", "last_due_date": "Last statement on file",
+                "card_number_last4": "Last 4", "prev_month_due": f"{cov_prev} statement: due", "prev_month_amount": f"{cov_prev} statement: amount",
+                "this_month_due": f"{cov_this} statement: due", "this_month_amount": f"{cov_this} statement: amount", "last_due_date": "Latest due date on file",
                 "expected_by": "Expected by",
             }).drop(columns=["card_id", "statement_day"])
             report_df = report_df.sort_values(["Card holder", "Status", "Issuer", "Card"]).reset_index(drop=True)
             st.dataframe(
                 report_df, hide_index=True,
                 column_config={
-                    f"{cov_prev} amount": st.column_config.NumberColumn(format=MONEY_FORMAT),
-                    f"{cov_this} amount": st.column_config.NumberColumn(format=MONEY_FORMAT),
+                    f"{cov_prev} statement: amount": st.column_config.NumberColumn(format=MONEY_FORMAT),
+                    f"{cov_this} statement: amount": st.column_config.NumberColumn(format=MONEY_FORMAT),
                 },
             )
             if report_df.empty:
@@ -633,7 +673,7 @@ def render() -> None:
                         first_name = holder.split()[0] if holder and holder != "(no holder)" else "there"
                         card_lines = "\n".join(
                             f"- {r['Issuer']} {r['Card']} (ending {r['Last 4']})"
-                            + (f" — last month's statement was due {r[f'{cov_prev} due date']}" if pd.notna(r[f"{cov_prev} due date"]) else "")
+                            + (f" — last month's statement was due {r[f'{cov_prev} statement: due']}" if pd.notna(r[f"{cov_prev} statement: due"]) else "")
                             for _, r in grp.iterrows()
                         )
                         st.markdown(f"**{holder}** — {len(grp)} card(s)")

@@ -109,7 +109,8 @@ def test_card_statement_duplicates_are_found(db):
     """Owner, 2026-09-29: a Visa Gold statement typed twice in MS Access came in through the one-time history loader, bypassing the
     Add statement form's warning, and nothing re-checked card statements. Data health now does: an exact duplicate (same card, due
     date and amount) and two statements due in the same month (possible -- some 30-day-cycle cards really have two). Cancelled ones
-    are ignored. Two dues 25+ days apart in one month (a card due near the 1st and the 30th) are a normal 30-day cycle, not flagged."""
+    are ignored. Owner rule (2026-09-29): "no two statement in a month" -- judged by STATEMENT month (engines/cc_dates.py), so two DUE
+    dates in one month (a card due near the 1st and the 30th) are fine."""
     _clean(db)
     bank = make_creditor(db, name="East West", creditor_type="CREDIT_CARD", terms="")
     with sqlite3.connect(db) as conn:
@@ -120,14 +121,14 @@ def test_card_statement_duplicates_are_found(db):
         fine = conn.execute("INSERT INTO credit_cards (creditor_id, card_name, card_number_last4, credit_limit) VALUES (?, 'Fine', '2222', 1)",
                             (bank,)).lastrowid
         for card, due, amt, st in ((gold, "2026-06-04", 18600, "Paid"), (gold, "2026-06-04", 18600, "Paid"),
-                                   (toyota, "2026-09-01", 219500, "Paid"), (toyota, "2026-09-29", 426221, "Unpaid"),   # 30-day cycle: fine
-                                   (toyota, "2026-07-07", 3800, "Paid"), (toyota, "2026-07-29", 50500, "Paid"),        # 22 days apart: flag
+                                   (toyota, "2026-09-01", 219500, "Paid"), (toyota, "2026-09-29", 426221, "Unpaid"),   # Aug 11 + Sep 8 statements: fine
+                                   (toyota, "2026-07-10", 3800, "Paid"), (toyota, "2026-07-15", 50500, "Paid"),        # both the June statement: flag
                                    (fine, "2026-08-10", 500, "Paid"), (fine, "2026-09-10", 600, "Paid"),
                                    (fine, "2026-09-10", 600, "Cancelled")):
             conn.execute("INSERT INTO cc_statements (card_id, due_date, total_amount_due, status) VALUES (?, ?, ?, ?)", (card, due, amt, st))
     got = {(f["check"], f["payee"]) for f in findings(today=TODAY) if f["group"] == "Credit cards"}
-    assert got == {("Card statement entered twice", "Visa Gold 2005"), ("Two statements due in the same month", "Toyota 1111")}
-    twice = [f for f in findings(today=TODAY) if f["check"] == "Two statements due in the same month"]
-    assert len(twice) == 1 and "2026-07" in twice[0]["detail"]                       # July (22 days apart) only, not September
+    assert got == {("Card statement entered twice", "Visa Gold 2005"), ("Two statements for the same month", "Toyota 1111")}
+    twice = [f for f in findings(today=TODAY) if f["check"] == "Two statements for the same month"]
+    assert len(twice) == 1 and "2026-06" in twice[0]["detail"]                       # June's statement twice; Aug + Sep is fine
     exact = next(f for f in findings(today=TODAY) if f["check"] == "Card statement entered twice")
     assert exact["page"] == "credit-cards" and exact["amount"] == 18600

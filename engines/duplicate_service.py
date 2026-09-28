@@ -173,16 +173,29 @@ def cc_statement_warnings(card_id: int, due_date, total_due: float) -> list[str]
     return [f"This card already has a statement due {hit[1]} for the same amount due ({_php(total_due)})."] if hit else []
 
 
-def cc_statement_month_warnings(card_id: int, statement_month: str, total_due: float) -> list[str]:
+def cc_statement_month_warnings(card_id: int, statement_month: str, total_due: float, due_date=None) -> list[str]:
     """One statement per card per month: a second one for the same month is almost always the same statement typed
-    twice. Also flags a total far from the card's previous statement (a typo like an extra zero)."""
+    twice. Also flags a total far from the card's previous statement (a typo like an extra zero).
+    With `due_date` (owner, 2026-09-29): the months compared are STATEMENT-DATE months worked out from each due date and the card's
+    statement day (engines/cc_dates.py) -- old statements were mostly labelled with their due month, which would raise false alarms."""
     out = []
     with _conn() as conn:
-        same = conn.execute(
-            """SELECT due_date, total_amount_due FROM cc_statements WHERE card_id = ? AND status != 'Cancelled'
-               AND COALESCE(statement_month, SUBSTR(due_date, 1, 7)) = ? LIMIT 1""",
-            (card_id, statement_month),
-        ).fetchone()
+        if due_date is not None:
+            from engines.cc_dates import statement_month_for
+
+            day_row = conn.execute("SELECT statement_day FROM credit_cards WHERE card_id = ?", (card_id,)).fetchone()
+            day = day_row[0] if day_row else None
+            new_month = statement_month_for(due_date, day)
+            same = next((r for r in conn.execute(
+                "SELECT due_date, total_amount_due FROM cc_statements WHERE card_id = ? AND status != 'Cancelled' AND due_date IS NOT NULL",
+                (card_id,)) if statement_month_for(r[0], day) == new_month), None)
+            statement_month = new_month
+        else:
+            same = conn.execute(
+                """SELECT due_date, total_amount_due FROM cc_statements WHERE card_id = ? AND status != 'Cancelled'
+                   AND COALESCE(statement_month, SUBSTR(due_date, 1, 7)) = ? LIMIT 1""",
+                (card_id, statement_month),
+            ).fetchone()
         last = conn.execute(
             "SELECT total_amount_due FROM cc_statements WHERE card_id = ? AND status != 'Cancelled' ORDER BY due_date DESC, cc_statement_id DESC LIMIT 1",
             (card_id,),

@@ -20,6 +20,7 @@ from engines.payment_run_service import get_quick_report, get_run_stages
 from engines.today_report_pdf import generate_today_report_pdf
 
 from views.bank_cash import show_alerts
+from views.credit_cards import render_missing_statements
 from views.shared import (  # noqa: F401
     LN_BROWSE,
     OS_BROWSE,
@@ -197,6 +198,8 @@ def render() -> None:
         rc1.error(f":material/report: {len(missing)} credit card statement(s) may have been overlooked — " + "; ".join(missing["card_name"].astype(str)) + ".")
         if rc2.button("Open Credit cards", icon=":material/credit_card:", key="pr_cc_gap_btn", width="stretch"):
             go_to("credit-cards")
+        with st.expander("Nothing due on one of these cards? Mark it", icon=":material/event_busy:"):
+            render_missing_statements(missing, "pr")
 
     # ------------------------------------------------------------------ the cycle
     section("Payment cycle", help="Draft → Parked → Exported to Chrysanth → Printed → Numbered → Statements. Nothing here is marked by itself.")
