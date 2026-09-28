@@ -75,6 +75,10 @@ follows unchanged below.
   brand, size, qty (stock on hand), remarks (condition / notes), cost -- no selling price; batteries / mags separate lists, model /
   type instead of size; below cost flagged not blocked; simple stock from day one (opening qty, sales out, "stock in" with cost ->
   weighted average from day one).
+* **[Sales] S0 done, S1 done on `erp`** (2026-09-29): three mock-up rounds approved (set-up; daily sales; credit and cash). S1 = the
+  `inventory` app: items TR / BA / MG codes, stock ledger never edited, weighted average at each stock in, stock in numbered
+  `RR` (active AP suppliers only; check then save; owner reverses), owner adjust-to-count with reason, sale above stock allowed and
+  flagged, opening list template -> upload check -> owner confirms totals. Services not tracked (owner).
 * **[Sales] Revenue cycle as practiced** (owner, 2026-09-28; started from a standard cycle, owner marked it up): credit is the
   owner's judgement for loyal customers, no limits (alerts instead); prices vary per customer and are agreed verbally, even at a loss
   to keep a customer -> record, don't block, review below-cost; sales invoice booklet; goods may leave before the invoice -> invoiced

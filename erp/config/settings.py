@@ -89,6 +89,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.humanize",              # 1,234,567.89 in money columns
     "core",
+    "inventory",                            # items and stock (Sales step S1)
 ]
 
 MIDDLEWARE = [

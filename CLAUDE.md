@@ -70,7 +70,10 @@ parties (one list, AP creditors linked read-only, Walk-in customer, Sales sees c
 tags (Business / Rental / Family-personal + sub-tags, main tag + peso splits on AP card statements / loans / batches, monthly summary;
 owner only) -- **core is complete**. **Server step F3** (owner: ERP test site first, DigitalOcean, Google sign-in, new domain):
 **F3.1 done** -- production settings, home-screen app, `deploy/` scripts (see `deploy/README.md`). **F3.2-F3.4 paused** (owner:
-"we deploy if we are substantially done") until Sales is substantially done (around S5); domain registered then too. Next: **Sales S0** (users / roles, audit, numbering, parties, items, carve-out tags), then server and
+"we deploy if we are substantially done") until Sales is substantially done (around S5); domain registered then too. **Sales S0 done**
+(walk-through + three mock-up rounds approved, blueprint section 9); **S1 done** -- `erp/inventory/` items, stock ledger, weighted
+average, stock in, owner adjustments, opening list (template -> upload check -> owner confirms); see `erp/inventory/CLAUDE.md`.
+Next: **S2** counter sale + Excel entry workbook + invoice booklets (users / roles, audit, numbering, parties, items, carve-out tags), then server and
 logins before the owner's brother uses Sales. Migrations on this branch not yet live: 054 (one-clock views), 055 (`doc_counters`), 056 (`audit_logs.user_email`), 057 (audit lock +
 `audit_seals`).
 

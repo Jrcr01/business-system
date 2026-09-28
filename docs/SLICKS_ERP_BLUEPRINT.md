@@ -311,8 +311,8 @@ come as descriptions first, photos later.
 ### Build order (each step gated)
 | Step | What | Owner's part |
 |---|---|---|
-| **S0** | Walk-through of a real sales day with your brother: booklets, price list, credit customers, opening balances (who owes what today). **Mock-ups of every Sales screen.** | Approve the mock-ups |
-| **S1** | Customers, items and prices (+ importing your current lists) | Check the imported lists |
+| **S0** *(done 2026-09-29)* | Walk-through of a real sales day with your brother: booklets, price list, credit customers, opening balances (who owes what today). **Mock-ups of every Sales screen.** | Approve the mock-ups |
+| **S1** *(done 2026-09-29)* | Customers (core C3), items, stock and cost (+ the opening price list: template → check → owner confirms) | Check the imported lists |
 | **S2** | Counter sale + payments + booklet number control | Try it on the sandbox |
 | **S3** | Credit, AR and collections | Check balances and statements |
 | **S4** | End-of-day cash-up + reports and analysis | Check the figures |

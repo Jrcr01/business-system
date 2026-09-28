@@ -106,3 +106,7 @@ input:focus, select:focus, .btn:focus-visible { outline: 2px solid var(--blue-20
 }
 /* server step F3.1: banner on the test site (ERP_SITE_LABEL) */
 .site-label { background: #fac775; color: #412402; text-align: center; font-size: 13px; font-weight: 600; padding: 6px 12px; }
+/* items (Sales S1) */
+.b-tire { background: var(--blue-50); color: var(--navy-800); }
+.b-battery { background: var(--amber-bg); color: var(--amber-tx); }
+.b-mags { background: #eeedfe; color: #3c3489; }

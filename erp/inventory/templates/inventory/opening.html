@@ -1,0 +1,50 @@
+{% extends "core/base.html" %}
+{% load humanize %}
+{% block title %}Opening list{% endblock %}
+{% block content %}
+<div class="head"><h1>Opening list</h1></div>
+<div class="card">
+  <strong>1. Download the template</strong> and copy the paper price list into its Tires, Batteries and Mags tabs (brand, size or model, qty on hand, remarks, cost).
+  <div style="margin-top:10px"><a class="btn" href="{% url 'inv_opening_template' %}">Download template (Excel)</a></div>
+</div>
+<form class="card" method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+  <strong>2. Upload it</strong> — every row is checked; nothing is saved while there is a problem.
+  <div class="inline" style="margin-top:10px"><input type="file" name="file" accept=".xlsx" required><button class="btn btn-main" type="submit">Upload and check</button></div>
+</form>
+{% if result and result.errors %}
+<div class="card">
+  <strong style="color:var(--red-tx)">Fix these in the file, then upload again ({{ result.errors|length }})</strong>
+  <ul style="margin:8px 0 0">{% for e in result.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+<div class="card tablecard">
+  <table class="stack">
+    <thead><tr><th>Uploaded</th><th>File</th><th class="num">Items</th><th class="num">Pieces</th><th class="num">Cost value</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for imp in imports %}
+      <tr>
+        <td data-label="Uploaded">{{ imp.uploaded_at|date:"M j, Y g:i A" }} <span class="note small">{{ imp.uploaded_by }}</span></td>
+        <td data-label="File">{{ imp.file_name }}</td>
+        <td data-label="Items" class="num">{{ imp.items_count }}</td>
+        <td data-label="Pieces" class="num">{{ imp.pieces|intcomma }}</td>
+        <td data-label="Cost value" class="num">₱{{ imp.value|floatformat:2|intcomma }}</td>
+        <td data-label="Status">{% if imp.status == "pending" %}<span class="badge" style="background:var(--amber-bg);color:var(--amber-tx)">{{ imp.get_status_display }}</span>{% elif imp.status == "confirmed" %}<span class="badge b-active">Confirmed</span>{% else %}<span class="badge b-gray">Discarded</span>{% endif %}
+          {% if imp.note %}<br><span class="note small">{{ imp.note }}</span>{% endif %}</td>
+        <td data-label="">
+          {% if imp.status == "pending" and request.user.is_owner %}
+          <form method="post" action="{% url 'inv_opening_decide' imp.pk %}" class="inline" onsubmit="return confirm('Record {{ imp.items_count }} items and {{ imp.pieces }} pieces as the opening stock?')">{% csrf_token %}
+            <input type="hidden" name="decision" value="confirm"><button class="btn btn-main" type="submit">3. Confirm totals</button></form>
+          <form method="post" action="{% url 'inv_opening_decide' imp.pk %}" class="inline" style="margin-top:4px">{% csrf_token %}
+            <input type="hidden" name="decision" value="discard"><input type="text" name="reason" placeholder="why discard" aria-label="Reason to discard"><button class="btn-link" type="submit">Discard</button></form>
+          {% elif imp.status == "pending" %}<span class="note small">Waiting for the owner</span>{% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="note">Nothing uploaded yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p style="margin-top:14px"><a href="{% url 'inv_items' %}">Back to items</a></p>
+{% endblock %}

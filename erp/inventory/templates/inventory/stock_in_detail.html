@@ -1,0 +1,32 @@
+{% extends "core/base.html" %}
+{% load humanize %}
+{% block title %}{{ doc.number }}{% endblock %}
+{% block content %}
+<div class="head"><h1>{{ doc.number }}</h1>{% if doc.reversed_at %}<span class="badge b-off">Reversed</span>{% endif %}</div>
+<div class="card">
+  <p style="margin:0">{{ doc.supplier.name }} · received {{ doc.received_on|date:"M j, Y" }} · their ref {{ doc.supplier_ref|default:"—" }} · <strong>₱{{ doc.total|floatformat:2|intcomma }}</strong></p>
+  <p class="note" style="margin-bottom:0">Recorded by {{ doc.created_by }}{% if doc.reversed_at %} · reversed by {{ doc.reversed_by }}: {{ doc.reverse_reason }}{% endif %}</p>
+</div>
+<div class="card tablecard">
+  <table class="stack">
+    <thead><tr><th>Item</th><th>What</th><th class="num">Qty</th><th class="num">Cost each</th><th class="num">Avg after</th></tr></thead>
+    <tbody>
+    {% for m in moves %}
+      <tr><td data-label="Item"><a href="{% url 'inv_item' m.item.pk %}">{{ m.item.code }} {{ m.item.description }}</a></td>
+        <td data-label="What">{{ m.get_kind_display }}</td><td data-label="Qty" class="num">{{ m.qty|stringformat:"+d" }}</td>
+        <td data-label="Cost each" class="num">₱{{ m.unit_cost|floatformat:2|intcomma }}</td><td data-label="Avg after" class="num">₱{{ m.avg_after|floatformat:2|intcomma }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if request.user.is_owner and not doc.reversed_at %}
+<form class="card" method="post" action="{% url 'inv_stock_in_reverse' doc.pk %}" style="max-width:560px" onsubmit="return confirm('Reverse {{ doc.number }}? Its pieces leave the stock again. It is not deleted.')">
+  {% csrf_token %}
+  <strong>Reverse this stock in</strong> <span class="badge b-gray">Owner only</span>
+  <label for="reason">Reason</label><input id="reason" name="reason" type="text" placeholder="entered twice / wrong supplier" required>
+  <button class="btn btn-danger" type="submit" style="margin-top:10px">Reverse</button>
+  <p class="note small" style="margin-bottom:0">To correct a stock in: reverse it, then enter it again correctly.</p>
+</form>
+{% endif %}
+<p style="margin-top:14px"><a href="{% url 'inv_stock_ins' %}">All stock ins</a></p>
+{% endblock %}
