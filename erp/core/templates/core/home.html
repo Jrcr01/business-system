@@ -7,6 +7,10 @@
   {% for w in audit_warnings %}<br>{{ w }}{% endfor %}
   <br>Details on the AP app's Data health page. New entries are not sealed until this is looked at.</div>
 {% endif %}
+{% if sales_alerts %}
+<div class="msg" style="background:var(--amber-bg);color:var(--amber-tx)"><strong>To look at:</strong>
+  {% for text, link in sales_alerts %}<br><a href="{{ link }}" style="color:var(--amber-tx)">{{ text }}</a>{% endfor %}</div>
+{% endif %}
 <div class="stats">
   <div class="stat"><div class="k">Manila time</div><div class="v">{{ manila_time }}</div></div>
   <div class="stat"><div class="k">Suppliers and lenders on file</div><div class="v">{{ creditors }}</div></div>

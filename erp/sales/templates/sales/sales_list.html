@@ -1,0 +1,47 @@
+{% extends "core/base.html" %}
+{% load humanize %}
+{% block title %}Sales{% endblock %}
+{% block content %}
+<div class="head">
+  <h1>Sales</h1>
+  <span style="display:flex;gap:8px;flex-wrap:wrap">
+    {% if to_review %}<a class="btn" href="{% url 'sales_below_cost' %}">Below cost to review ({{ to_review }})</a>{% endif %}
+    <a class="btn" href="{% url 'sales_daysheet' %}">Day sheet</a>
+    <a class="btn btn-main" href="{% url 'sales_new' %}">+ New sale</a>
+  </span>
+</div>
+<form class="filters" method="get">
+  <div><label for="from">From</label><input id="from" name="from" type="date" value="{{ start|date:'Y-m-d' }}"></div>
+  <div><label for="to">To</label><input id="to" name="to" type="date" value="{{ end|date:'Y-m-d' }}"></div>
+  <button class="btn" type="submit">Show</button>
+  <a class="btn-link" href="?from={{ prev|date:'Y-m-d' }}">← Day before</a>
+  <a class="btn-link" href="?from={{ next|date:'Y-m-d' }}">Day after →</a>
+  <a class="btn-link" href="?from={{ today|date:'Y-m-d' }}">Today</a>
+</form>
+<div class="stats">
+  <div class="stat"><div class="k">Sales</div><div class="v">₱{{ total|floatformat:2|intcomma }}</div></div>
+  <div class="stat"><div class="k">Profit</div><div class="v">₱{{ profit|floatformat:2|intcomma }}</div></div>
+  <div class="stat"><div class="k">Pieces</div><div class="v">{{ pieces|intcomma }}</div></div>
+  <div class="stat"><div class="k">Invoices</div><div class="v">{{ sales|length }}</div></div>
+</div>
+{% if by_pay %}<p class="note" style="margin:10px 0">{% for p in by_pay %}{{ p.label }}: {{ p.n }} · ₱{{ p.total|floatformat:2|intcomma }}{% if not forloop.last %} &nbsp;|&nbsp; {% endif %}{% endfor %}</p>{% endif %}
+<div class="card tablecard">
+  <table class="stack">
+    <thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Paid</th><th class="num">Amount</th><th class="num">Profit</th></tr></thead>
+    <tbody>
+    {% for s in sales %}
+      <tr class="link" onclick="location.href='{% url 'sales_sale' s.pk %}'">
+        <td data-label="Invoice"><a href="{% url 'sales_sale' s.pk %}">{{ s.number_text }}</a></td>
+        <td data-label="Date">{{ s.sale_date|date:"M j, Y" }}</td>
+        <td data-label="Customer">{{ s.customer.name }}{% if s.customer_note %} <span class="note small">{{ s.customer_note }}</span>{% endif %}</td>
+        <td data-label="Paid">{{ s.get_payment_type_display }}</td>
+        <td data-label="Amount" class="num">₱{{ s.total|floatformat:2|intcomma }}</td>
+        <td data-label="Profit" class="num">₱{{ s.profit|floatformat:2|intcomma }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="note">No sales on these dates.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

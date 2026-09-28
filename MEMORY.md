@@ -79,6 +79,12 @@ follows unchanged below.
   `inventory` app: items TR / BA / MG codes, stock ledger never edited, weighted average at each stock in, stock in numbered
   `RR` (active AP suppliers only; check then save; owner reverses), owner adjust-to-count with reason, sale above stock allowed and
   flagged, opening list template -> upload check -> owner confirms totals. Services not tracked (owner).
+* **[Sales] S2 done on `erp`** (2026-09-29, owner: "continue until what you can do" -> defaults taken, listed in the blueprint for
+  confirmation): invoice booklets (one in use, cancel spoiled with reason, gap check flagged), counter sale (one payment type,
+  charge only with credit, check details required, stock out at average cost, below cost flagged + owner review), Excel day sheet
+  WITHOUT macros (needs the owner's Excel VBA-trust decision), upload check all or nothing. Not yet: macro pop-up, released-
+  invoice-later, split payments, sale carve-out tags. Also fixed: menu highlight = closest match only; service worker fetches the
+  look network-first (stale CSS otherwise).
 * **[Sales] Revenue cycle as practiced** (owner, 2026-09-28; started from a standard cycle, owner marked it up): credit is the
   owner's judgement for loyal customers, no limits (alerts instead); prices vary per customer and are agreed verbally, even at a loss
   to keep a customer -> record, don't block, review below-cost; sales invoice booklet; goods may leave before the invoice -> invoiced

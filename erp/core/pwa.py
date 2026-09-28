@@ -1,7 +1,8 @@
 """Home-screen app (server step F3.1, owner 2026-09-28: "responsive + home-screen app"; Samsung phones). Two small files make the ERP
 installable ("Install app" in Chrome, or later an APK built around the same site):
   * /manifest.webmanifest -- the app's name, icon, colours, and that it opens full screen;
-  * /sw.js -- a service worker that ONLY keeps the ERP's own look (CSS, icons) and a "no connection" page on the phone.
+  * /sw.js -- a service worker that ONLY keeps the ERP's own look (CSS, icons) and a "no connection" page on the phone; it always
+    asks the server first (so a new look arrives at once) and uses the stored copy only without signal.
     Business pages are never stored on the phone (privacy: a lost phone holds no records) -- they always come from the server.
 Both open without signing in (the phone asks for them before anyone signs in)."""
 from django.conf import settings
@@ -14,7 +15,7 @@ from django.views.decorators.http import require_safe
 
 APP_NAME = "Slicks ERP"
 NAVY = "#042c53"
-SW_VERSION = "1"            # raise when the list below changes, so phones drop the old copies
+SW_VERSION = "2"            # raise when the list below changes, so phones drop the old copies
 
 
 @login_not_required
@@ -61,8 +62,9 @@ self.addEventListener("fetch", e => {{
     return;
   }}
   const url = new URL(req.url);
-  if (url.origin === location.origin && url.pathname.startsWith("/static/")) {{
-    e.respondWith(caches.match(req).then(hit => hit || fetch(req)));
+  if (url.origin === location.origin && url.pathname.startsWith("/static/")) {{   // latest look first; the stored copy when offline
+    e.respondWith(fetch(req).then(resp => {{ const copy = resp.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return resp; }})
+                            .catch(() => caches.match(req)));
   }}
 }});
 """

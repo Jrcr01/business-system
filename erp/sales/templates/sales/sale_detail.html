@@ -1,0 +1,30 @@
+{% extends "core/base.html" %}
+{% load humanize %}
+{% block title %}Invoice {{ sale.number_text }}{% endblock %}
+{% block content %}
+<div class="head"><h1>Invoice {{ sale.number_text }}</h1><span class="badge b-gray">{{ sale.booklet.label }}</span></div>
+<div class="card">
+  <p style="margin:0">{{ sale.sale_date|date:"M j, Y" }} · {{ sale.customer.name }}{% if sale.customer_note %} ({{ sale.customer_note }}){% endif %} · <strong>{{ sale.get_payment_type_display }}</strong>
+    {% if sale.payment_type == "check" %} · {{ sale.check_bank }} check {{ sale.check_number }} dated {{ sale.check_date|date:"M j, Y" }}{% endif %}
+    {% if sale.payment_ref %} · ref {{ sale.payment_ref }}{% endif %}
+    {% if sale.due_date %} · due {{ sale.due_date|date:"M j, Y" }}{% endif %}</p>
+  <p class="note" style="margin-bottom:0">Recorded by {{ sale.created_by }} from the {{ sale.get_source_display|lower }}{% if sale.upload %} ({{ sale.upload.file_name }}){% endif %}.</p>
+</div>
+<div class="card tablecard">
+  <table class="stack">
+    <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price each</th><th class="num">Cost each</th><th class="num">Amount</th><th class="num">Profit</th></tr></thead>
+    <tbody>
+    {% for l in lines %}
+      <tr><td data-label="Item"><a href="{% url 'inv_item' l.item.pk %}">{{ l.item.code }} {{ l.item.description }}</a>
+          {% if l.below_cost %}<br><span class="badge b-off">Below cost</span>{% if l.below_cost_reason %} <span class="note small">{{ l.below_cost_reason }}</span>{% endif %}{% if l.reviewed_at %} <span class="note small">reviewed</span>{% endif %}{% endif %}</td>
+        <td data-label="Qty" class="num">{{ l.qty }}</td><td data-label="Price each" class="num">₱{{ l.price|floatformat:2|intcomma }}</td>
+        <td data-label="Cost each" class="num">₱{{ l.unit_cost|floatformat:2|intcomma }}</td><td data-label="Amount" class="num">₱{{ l.amount|floatformat:2|intcomma }}</td>
+        <td data-label="Profit" class="num">₱{{ l.profit|floatformat:2|intcomma }}</td></tr>
+    {% endfor %}
+      <tr class="total"><td>Total</td><td></td><td></td><td></td><td class="num">₱{{ sale.total|floatformat:2|intcomma }}</td><td class="num">₱{{ sale.profit|floatformat:2|intcomma }}</td></tr>
+    </tbody>
+  </table>
+</div>
+<p class="note">Cancelling or a return needs the owner's approval (comes with Credit and AR, S3). Nothing is ever deleted.</p>
+<p><a href="{% url 'sales_list' %}?from={{ sale.sale_date|date:'Y-m-d' }}">Back to the day's sales</a></p>
+{% endblock %}

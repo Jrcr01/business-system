@@ -26,11 +26,31 @@ def home(request):
         checks_not_due = cur.fetchone()[0]
     return render(request, "core/home.html", {
         "audit_warnings": _audit_warnings() if request.user.is_owner else [],
+        "sales_alerts": _sales_alerts() if request.user.is_owner else [],
         "django_version": django.get_version(),
         "db_name": Path(settings.DATABASES["default"]["NAME"]).name,
         "creditors": creditors,
         "checks_not_due": checks_not_due,
     })
+
+
+def _sales_alerts() -> list[tuple[str, str]]:
+    """Owner's Home: things to look at from Sales (skipped invoice numbers, sales below cost, stock below zero)."""
+    from inventory.models import Item
+    from sales import rules
+    from sales.models import SaleLine
+
+    out = []
+    gaps = rules.gaps()
+    if gaps:
+        out.append((f"{len(gaps)} invoice number(s) skipped and not cancelled", "/sales/booklets/"))
+    below = SaleLine.objects.filter(below_cost=True, reviewed_at__isnull=True).count()
+    if below:
+        out.append((f"{below} sale line(s) below cost to review", "/sales/below-cost/"))
+    negative = Item.objects.filter(on_hand__lt=0, is_active=True).count()
+    if negative:
+        out.append((f"{negative} item(s) show less than zero on hand", "/items/?show=low"))
+    return out
 
 
 def _audit_warnings() -> list[str]:
@@ -175,5 +195,5 @@ def manila_header(request):
     ctx = {"manila_date": f"{now:%b} {now.day}, {now.year}", "manila_time": now.strftime("%I:%M %p").lstrip("0"),
            "site_label": settings.SITE_LABEL}
     if getattr(request, "user", None) is not None and request.user.is_authenticated:
-        ctx["nav"] = nav_for(request.user)
+        ctx["nav"] = nav_for(request.user, request.path)
     return ctx

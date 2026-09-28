@@ -285,6 +285,11 @@ come as descriptions first, photos later.
   check); stock corrections = **owner-only adjustment** to the counted quantity with a reason (difference recorded, history never
   edited); **services are sold but not tracked** (goods only: tires, batteries, mags); the opening list is typed by the brother into
   a system template (Tires / Batteries / Mags tabs) and **confirmed by the owner** after seeing item count, pieces and cost value.
+* **S2 defaults taken (owner 2026-09-29: "continue until what you can do" -- to confirm):** one payment type per invoice (split
+  payments later); booklets registered / closed by the owner, a spoiled leaf cancelled by Sales or Owner with a reason; a gap is
+  flagged, never blocking; the Excel day sheet is built **without macros** for now (dropdowns + formulas; the macro pop-up needs
+  an Excel security setting -- "trust access to the VBA project" -- which is the owner's decision); "released, invoice later"
+  not built yet.
 
 ### Sales v1 — what it does (stable first)
 * **Customers:** "walk-in" by default, plus named customers with terms and contact details; "credit allowed" set by the owner only
@@ -313,7 +318,7 @@ come as descriptions first, photos later.
 |---|---|---|
 | **S0** *(done 2026-09-29)* | Walk-through of a real sales day with your brother: booklets, price list, credit customers, opening balances (who owes what today). **Mock-ups of every Sales screen.** | Approve the mock-ups |
 | **S1** *(done 2026-09-29)* | Customers (core C3), items, stock and cost (+ the opening price list: template → check → owner confirms) | Check the imported lists |
-| **S2** | Counter sale + payments + booklet number control | Try it on the sandbox |
+| **S2** *(done 2026-09-29)* | Counter sale + payments + booklet number control; Excel day sheet (no macros yet — see below) | Try it on the sandbox |
 | **S3** | Credit, AR and collections | Check balances and statements |
 | **S4** | End-of-day cash-up + reports and analysis | Check the figures |
 | **S5** | **Parallel run** for 1–2 weeks: booklet and system side by side, figures compared every day | Sign off |

@@ -8,6 +8,10 @@ from core.models import Role
 # The sidebar: (section, label, url name, icon, roles). Pages not built yet are shown as "Coming soon".
 NAV = [
     (None, "Home", "home", "home", {Role.OWNER, Role.SALES, Role.VIEWER}),
+    ("Sales and AR", "Sales", "sales_list", "receipt", {Role.OWNER, Role.SALES}),
+    ("Sales and AR", "New sale", "sales_new", "plus", {Role.OWNER, Role.SALES}),
+    ("Sales and AR", "Day sheet", "sales_daysheet", "file-spreadsheet", {Role.OWNER, Role.SALES}),
+    ("Sales and AR", "Invoice booklets", "sales_booklets", "notebook", {Role.OWNER, Role.SALES}),
     ("Sales and AR", "Parties", "parties", "users-group", {Role.OWNER, Role.SALES}),
     ("Sales and AR", "Items and stock", "inv_items", "package", {Role.OWNER, Role.SALES}),
     ("Sales and AR", "Stock in", "inv_stock_ins", "truck-delivery", {Role.OWNER, Role.SALES}),
@@ -32,11 +36,22 @@ def role_required(*roles):
     return deco
 
 
-def nav_for(user) -> list[dict]:
+def nav_for(user, path: str = "") -> list[dict]:
+    """The sidebar for this role; the ONE item whose address is the closest match to the page is marked "on"."""
+    from django.urls import NoReverseMatch, reverse
+
     items, last_section = [], object()
     for section, label, url_name, icon, roles in NAV:
         if user.role not in roles:
             continue
-        items.append({"section": section if section != last_section else None, "label": label, "url_name": url_name, "icon": icon})
+        try:
+            href = reverse(url_name) if url_name else ""
+        except NoReverseMatch:
+            href = ""
+        items.append({"section": section if section != last_section else None, "label": label, "url_name": url_name, "icon": icon,
+                      "href": href, "on": False})
         last_section = section
+    matches = [i for i in items if i["href"] and (path == i["href"] or (i["href"] != "/" and path.startswith(i["href"])))]
+    if matches:
+        max(matches, key=lambda i: len(i["href"]))["on"] = True
     return items

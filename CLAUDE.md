@@ -73,7 +73,9 @@ owner only) -- **core is complete**. **Server step F3** (owner: ERP test site fi
 "we deploy if we are substantially done") until Sales is substantially done (around S5); domain registered then too. **Sales S0 done**
 (walk-through + three mock-up rounds approved, blueprint section 9); **S1 done** -- `erp/inventory/` items, stock ledger, weighted
 average, stock in, owner adjustments, opening list (template -> upload check -> owner confirms); see `erp/inventory/CLAUDE.md`.
-Next: **S2** counter sale + Excel entry workbook + invoice booklets (users / roles, audit, numbering, parties, items, carve-out tags), then server and
+**S2 done** -- `erp/sales/`: invoice booklets (one in use, cancel spoiled, gap check), counter sale (stock out at average cost,
+below cost flagged + owner review), Excel day sheet without macros (upload check, all or nothing); see `erp/sales/CLAUDE.md`
+(incl. what is not built yet). Next: **S3** credit, AR and collections (users / roles, audit, numbering, parties, items, carve-out tags), then server and
 logins before the owner's brother uses Sales. Migrations on this branch not yet live: 054 (one-clock views), 055 (`doc_counters`), 056 (`audit_logs.user_email`), 057 (audit lock +
 `audit_seals`).
 

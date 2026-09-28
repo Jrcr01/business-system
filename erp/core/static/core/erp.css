@@ -110,3 +110,10 @@ input:focus, select:focus, .btn:focus-visible { outline: 2px solid var(--blue-20
 .b-tire { background: var(--blue-50); color: var(--navy-800); }
 .b-battery { background: var(--amber-bg); color: var(--amber-tx); }
 .b-mags { background: #eeedfe; color: #3c3489; }
+/* invoice booklet grid (Sales S2) */
+.cells { display: flex; flex-wrap: wrap; gap: 4px; }
+.cell { min-width: 34px; height: 24px; border-radius: 4px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+.c-used { background: var(--green-bg); color: var(--green-tx); }
+.c-cancelled { background: var(--red-bg); color: var(--red-tx); }
+.c-gap { background: var(--amber-bg); color: var(--amber-tx); font-weight: 600; }
+.c-unused { background: var(--gray-bg); color: var(--gray-tx); }
