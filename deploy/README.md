@@ -24,6 +24,10 @@ banner), the home-screen app (manifest, icons, a service worker that never store
 domain stays free for a public website. The laptop key `~/.ssh/slicks_erp` has a passphrase only the owner types (`ssh-add` once;
 Windows' ssh-agent keeps it unlocked); the deploy scripts use Windows' own ssh/scp for that reason.
 
+**Paused after F3.1 (owner 2026-09-28: "we deploy if we are substantially done")** -- F3.2-F3.4 resume when Sales is substantially
+done (around the parallel run, S5). Google sign-in (F3.3) can be built and tested on the laptop before that (Google accepts
+`localhost`). The domain is registered when the server step resumes.
+
 **F3.2 — the owner, guided:**
 1. Register the domain (e.g. at Cloudflare) and keep its DNS there.
 2. Create the DigitalOcean account, then a Droplet: Ubuntu 24.04, Singapore, the smallest "Basic" size that has 1 GB memory,

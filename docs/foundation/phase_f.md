@@ -135,7 +135,8 @@ home-screen app (manifest + a service worker that never stores business pages), 
 SSH keys only, ufw 22/80/443, fail2ban, unattended upgrades, Caddy HTTPS, gunicorn service on 127.0.0.1, nightly audit check + backup
 at 18:00 Manila keeping 30; laptop deploy by git archive + release with health check and roll-back; test data upload of the sandbox
 only). Tests `tests/test_erp_f31_server.py`. Next: F3.2 (owner: domain, DigitalOcean account + Droplet with the laptop's SSH key),
-F3.3 Google sign-in, F3.4 test site online + phones.*
+F3.3 Google sign-in, F3.4 test site online + phones. **Paused after F3.1** (owner: "we deploy if we are substantially done") until Sales
+is substantially done; domain registered then.*
 * Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
   `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
 * Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes

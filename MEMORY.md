@@ -69,6 +69,8 @@ follows unchanged below.
 * **[Foundation] F3.2 names and key** (owner, 2026-09-28): domain slickstiresupply.com; ERP at erp.slickstiresupply.com (not app.),
   test site test.slickstiresupply.com. Laptop SSH key with a passphrase the owner types (ssh-add; Windows ssh-agent), so the deploy
   scripts use Windows' OpenSSH.
+* **[Foundation] Server paused after F3.1** (owner, 2026-09-28: "why deploy at this stage? we deploy if we are substantially done"):
+  no server, domain or accounts until Sales is substantially done (around S5). Next: Sales S0.
 * **[Sales] Revenue cycle as practiced** (owner, 2026-09-28; started from a standard cycle, owner marked it up): credit is the
   owner's judgement for loyal customers, no limits (alerts instead); prices vary per customer and are agreed verbally, even at a loss
   to keep a customer -> record, don't block, review below-cost; sales invoice booklet; goods may leave before the invoice -> invoiced
