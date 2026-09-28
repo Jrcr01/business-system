@@ -56,6 +56,10 @@ follows unchanged below.
 * **[Sales] The brother's notebook** (owner, 2026-09-28): per item line from the invoice booklet -- date, qty, tire / battery / mags,
   profit (price - paper price-list cost), credit customer's name; day's total qty and total. No invoice number, no payment type.
   The system replaces it after the parallel run. Cost method: owner leans to weighted average (needs receiving + inventory).
+* **[Sales] Brother's workflow improved** (owner, 2026-09-28): Excel template downloaded from the system (price list + customers as
+  dropdowns, profit and day totals by formula), uploaded at the end of each day, checked then saved all-or-nothing; plus a quick
+  screen for single sales / corrections. Sales invoice booklets controlled like the checkbook (range, one booklet at a time, each
+  number once, cancelled logged with reason, daily gap check; out-of-order use flagged not blocked).
 * **Docs re-shaped:** `CLAUDE.md` = short ERP guide; AP detail moved unchanged to `docs/modules/ap.md`; Phase F to
   `docs/foundation/phase_f.md`; the master blueprint `docs/SLICKS_ERP_BLUEPRINT.md`; one `CLAUDE.md` per module folder from now on.
 

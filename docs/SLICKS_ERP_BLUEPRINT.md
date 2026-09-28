@@ -205,6 +205,19 @@ So the counter sale screen should feel like the notebook (fast item lines, profi
 notebook lacks: the booklet invoice number (one invoice, several lines) and the payment type. The notebook is replaced after the
 parallel run (S5) once the system's daily totals and profit match it.
 
+**Improving the brother's workflow (owner 2026-09-28: "his way is tedious"):**
+* **Excel batch entry, uploaded at the end of each day.** He downloads a fresh **template from the system** (current price list with
+  list price and cost, customer list — both as dropdowns); types one row per item line like the notebook (date, invoice no., customer,
+  item, qty, price charged, payment type / reference); the sheet works out **profit and the day's totals** as he types. Upload → every
+  row checked before anything is saved (unknown item / customer, invoice number outside the open booklet or already used, below-cost
+  price flagged not blocked, credit for a customer without "credit allowed") → he fixes and re-uploads → confirm = all rows saved or
+  none (same pattern as AP's spreadsheet imports).
+* **Plus a quick screen** for a single sale or a correction.
+* **Sales invoice booklet control, like the checkbook:** each booklet's range registered; **one booklet in use at a time**; every
+  number used once (the database refuses duplicates); cancelled / spoiled invoices logged with a reason (all copies kept, as BIR
+  requires); a **daily gap check** — any number skipped and not accounted for is listed for the owner the next morning. Numbers may
+  be used out of order (flagged by the gap check, not blocked).
+
 ### Sales v1 — what it does (stable first)
 * **Customers:** "walk-in" by default, plus named customers with terms and contact details; "credit allowed" set by the owner only
   (no peso limit — alerts instead); customer type Affiliate for the mother's siblings' businesses.
