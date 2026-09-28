@@ -39,15 +39,15 @@ Sits between AP (done, live) and Sales/AR (next module).
 * Payable-ceiling checks (`issue_check`, `issue_checks_grid`, `apply_check_correction`, `lock_statement`) read the balance, then write ->
   two users issuing on the same batch at the same moment could both pass and overpay.
 * `audit_logs` has no user column -> with staff, "who did it" is lost.
-* Laptop-only pieces: thermal printing (USB / Bluetooth / office LAN cannot be reached from a cloud server), `C:\AP_Data` paths (bank
+* Laptop-only pieces: thermal printing (USB / Bluetooth / office LAN cannot be reached from a cloud server), `C:\Slicks\Data` paths (bank
   statement copies, Drive sign-in files), `.bat` / `.ps1` / Windows Task Scheduler (backup, link sweep, start / stop).
 * Google Drive sign-in expires every 7 days (OAuth app in Testing) -> on a server nobody is there to re-run `drive_connect.bat`.
 
 ### Build order
 **F1 -- One door, one clock, safe writes (on the laptop; no visible change for the owner).**
 **Where Phase F is built (owner, 2026-09-28: "important for now is ap system is stable and can be used"):** ALL of Phase F, up to the
-Sales/AR module, is built on the git branch **`erp`** in its own folder **`C:\Slicks_ERP`** (a git worktree) and tested on its
-own sandbox database (`C:\Slicks_ERP\data\ap_disbursement_TEST.db`) -- never in `C:\AP_System`, which the LIVE app runs from
+Sales/AR module, is built on the git branch **`erp`** in its own folder **`C:\Slicks\Slicks_ERP`** (a git worktree) and tested on its
+own sandbox database (`C:\Slicks\Slicks_ERP\data\ap_disbursement_TEST.db`) -- never in `C:\Slicks\AP_System`, which the LIVE app runs from
 (branch `main`). F1.2 and F1.3 were first committed on main (0513ff9, 0e2c0b2), then reverted on main the same day before the live app
 ever loaded them; they continue on `erp`. Apply to live ONCE when the owner is satisfied (merge erp into main, one backup,
 update_database.bat, a checklist of known figures before / after). AP fixes are made on main and merged into erp.

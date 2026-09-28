@@ -117,8 +117,8 @@ A **security checklist** is run before every release, and the whole setup is rev
 ## 6. Engineering practices — how changes are made safely
 
 * **Gated steps:** each step is built, tested and shown to the owner before the next begins.
-* **Two workspaces:** `C:\AP_System` (branch `main`) = the **live** AP; `C:\Slicks_ERP` (branch `erp`) = the ERP build with its own
-  sandbox database. Use two Claude sessions: *"AP live — fixes"* on `C:\AP_System`, *"Slicks ERP — build"* on `C:\Slicks_ERP`.
+* **Two workspaces:** `C:\Slicks\AP_System` (branch `main`) = the **live** AP; `C:\Slicks\Slicks_ERP` (branch `erp`) = the ERP build with its own
+  sandbox database. Use two Claude sessions: *"AP live — fixes"* on `C:\Slicks\AP_System`, *"Slicks ERP — build"* on `C:\Slicks\Slicks_ERP`.
 * **Going live once per release:** backup → update → a checklist of known figures compared before and after → owner OK.
 * **Tests for every rule**, including a fake clock (Manila time at any hour) and two-users-at-once tests.
 * **Database changes only ever add** (new tables / columns); nothing is dropped or narrowed without a hand-checked plan.
@@ -216,7 +216,7 @@ by cash, checks (including post-dated), bank transfer / GCash / Maya, and card.
 * Slicks ERP = one system for the business and family affairs; AP = module 1 (live), **Sales + AR = module 2 (next)**.
 * Not a commercial-ERP copy; no general ledger / financial statements; controls and analysis instead.
 * **Stack: Python + Django**; AP moves to Django after Sales is stable, page by page.
-* Build in `C:\Slicks_ERP` (branch `erp`); live AP in `C:\AP_System` stays untouched; go live once per release.
+* Build in `C:\Slicks\Slicks_ERP` (branch `erp`); live AP in `C:\Slicks\AP_System` stays untouched; go live once per release.
 * Security and UI are first-class; every screen is approved as a mock-up first.
 * ERP records BIR booklet invoices; does not print invoices.
 * Carve-out tags: Business / Rental / Family-personal.

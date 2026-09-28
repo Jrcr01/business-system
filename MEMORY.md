@@ -32,6 +32,9 @@ follows unchanged below.
 * **Docs re-shaped:** `CLAUDE.md` = short ERP guide; AP detail moved unchanged to `docs/modules/ap.md`; Phase F to
   `docs/foundation/phase_f.md`; the master blueprint `docs/SLICKS_ERP_BLUEPRINT.md`; one `CLAUDE.md` per module folder from now on.
 
+* **Folders moved** (2026-09-28 evening, owner: "place in one parent folder"): `C:\AP_System` -> `C:\Slicks\AP_System`, `C:\Slicks_ERP` -> `C:\Slicks\Slicks_ERP`, `C:\AP_Data` -> `C:\Slicks\Data`. Updated: live_db_path.txt, the saved bank-statement path in the database (audited FILE_PATH_MOVED), the backup task, the
+  git worktree link, preview settings, notes. Entries below keep the paths as they were at the time.
+
 ---
 
 # AP module history

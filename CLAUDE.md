@@ -1,13 +1,18 @@
 # Slicks ERP — guide for every session
 
-> **THIS WORKSPACE = the Slicks ERP BUILD** (folder `C:\Slicks_ERP`, git branch `erp`, sandbox app on port 8504 with its own
-> database `C:\Slicks_ERP\data\ap_disbursement_TEST.db`).
-> * **Never** edit `C:\AP_System` (the LIVE AP system, branch `main`) or the live database `C:\AP_Data\ap_disbursement.db` from here.
+> **THIS WORKSPACE = the Slicks ERP BUILD** (folder `C:\Slicks\Slicks_ERP`, git branch `erp`, sandbox app on port 8504 with its own
+> database `C:\Slicks\Slicks_ERP\data\ap_disbursement_TEST.db`).
+> * **Never** edit `C:\Slicks\AP_System` (the LIVE AP system, branch `main`) or the live database `C:\Slicks\Data\ap_disbursement.db` from here.
 >   Never run `update_database.bat` / `restart_live.bat` for ERP work. This folder has no `live_db_path.txt` / `local_settings.bat` on
 >   purpose, so its scripts cannot reach live data or the Google Drive backups.
 > * After an AP fix lands on `main`: `git merge main` here (AP notes written on main belong in `docs/modules/ap.md`).
 > * Everything built here goes live **once**, when the owner approves: merge `erp` into `main`, backup, `update_database.bat`,
 >   a before / after checklist of known figures.
+
+**Folders (moved 2026-09-28, owner: one parent folder):** everything lives in `C:\Slicks`: `AP_System` (live AP program,
+branch `main`), `Slicks_ERP` (ERP build, branch `erp`), `Data` (live database `ap_disbursement.db`, bank statement copies `bank`,
+Drive sign-in `drive`, code bundles `code_backups`). The backup task "AP System Daily Backup" runs
+`C:\Slicks\AP_System\run_backup.bat quiet`; `live_db_path.txt` points at `C:\Slicks\Data\ap_disbursement.db`.
 
 ## What Slicks ERP is
 

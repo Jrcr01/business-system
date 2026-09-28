@@ -89,7 +89,7 @@ def main() -> int:
     for path in old[:-a.keep] if a.keep > 0 else []:
         os.remove(path)
         print("Removed old backup", os.path.basename(path))
-    # next to the database that was backed up: C:\AP_Data\code_backups for the live one (a test's own temp folder in the tests)
+    # next to the database that was backed up: C:\Slicks\Data\code_backups for the live one (a test's own temp folder in the tests)
     print(backup_code(os.path.join(os.path.dirname(os.path.abspath(src_path)), "code_backups"), a.keep))
     return 0
 
