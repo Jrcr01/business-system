@@ -9,6 +9,9 @@ from core.models import Role
 NAV = [
     (None, "Home", "home", "home", {Role.OWNER, Role.SALES, Role.VIEWER}),
     ("Sales and AR", "Parties", "parties", "users-group", {Role.OWNER, Role.SALES}),
+    ("Carve-out", "Business vs family", "carveout_summary", "chart-pie", {Role.OWNER}),
+    ("Carve-out", "Tag records", "tag_records", "tags", {Role.OWNER}),
+    ("Carve-out", "Tags", "tags", "tag", {Role.OWNER}),
     ("System", "Users", "users", "users", {Role.OWNER}),
     ("System", "Audit log", "audit_log", "list-search", {Role.OWNER}),
 ]

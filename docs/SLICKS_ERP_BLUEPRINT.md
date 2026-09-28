@@ -84,7 +84,8 @@ once; numbers never collide), a broken-link check (live data: 0 broken).
 
 | Threat | Protection |
 |---|---|
-| Stolen or guessed password, phishing | Sign-in with Google, **2-step verification required for every user**; no separate app passwords; sessions end when idle; alert on a new device. |
+| Stolen or guessed password, phishing | Sign-in with Google, **2-step verification required for every user**, remembered per device for 30 days (owner 2026-09-28: asked once per phone /
+laptop, anywhere; skipping it on the shop's WiFi only works with a static IP — check at the server step); no separate app passwords; sessions end when idle; alert on a new device. |
 | Someone seeing or doing too much | Roles and permissions per module and per action (your brother = Sales only). **Family / personal records visible to the owner only.** Separation of duties. Approvals for voids, discounts, price and credit changes. |
 | Attacks on the website | HTTPS only (with HSTS). Django's built-in protections against SQL injection, cross-site scripting, forged requests (CSRF) and clickjacking. Login attempts rate-limited. Strict security headers. Only the web port open; server access by key only; automatic security updates. |
 | Weak software parts | Every library version pinned. Monthly vulnerability check (`pip-audit`). Updates tried on the sandbox first. |

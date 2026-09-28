@@ -56,6 +56,12 @@ follows unchanged below.
 * **[Foundation] Mobile version** (owner, 2026-09-28): responsive + home-screen app (PWA), not a native app. Phone uses: mother ticks
   cleared checks; owner approvals + dashboard + enter a new credit card statement; brother price / customer lookup and records sales
   and collections. Needs the server (F3); every mock-up shows the phone layout.
+* **[Foundation] 2-step sign-in rule** (owner, 2026-09-28): asked whether MFA can apply only outside the shop WiFi -- possible only
+  with a static public IP (PH ISPs usually change / share addresses). Chosen: 2-step once per device, remembered 30 days, anywhere
+  (Google sign-in behaves this way). Shop static IP unknown -> check at F3.
+* **core C4 done on `erp` -- core complete** (owner's choices): Business / Rental / Family-personal + own sub-tags (never deleted);
+  everything untagged = Business; one main tag + peso parts moved to other tags; tags on AP card statements, lender loans, bank loans
+  and supplier batches (AP unchanged); monthly Business vs family summary; owner only; phone layout for the tag list.
 * **[Sales] Revenue cycle as practiced** (owner, 2026-09-28; started from a standard cycle, owner marked it up): credit is the
   owner's judgement for loyal customers, no limits (alerts instead); prices vary per customer and are agreed verbally, even at a loss
   to keep a customer -> record, don't block, review below-cost; sales invoice booklet; goods may leave before the invoice -> invoiced

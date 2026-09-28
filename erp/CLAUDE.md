@@ -66,4 +66,15 @@ Skeleton built 2026-09-28 (Django **5.2 LTS**, owner's choice). Read the repo `C
   name / contact number / address; only the Owner sets credit (no peso limit; terms in days required), affiliate, active, Separate.
   Viewer: no Parties. Every change audited (PARTY_ADDED / EDITED / CREDIT_CHANGED / ROLE_CHANGED / DEACTIVATED / AP_LINKED / AP_MOVED).
 * Bad-debt write-off (S3, rules in the blueprint) will add a "Bad debt" badge and turn credit off.
-* Next in core: C4 carve-out tags. Items (tires, batteries, mags) come in Sales S1, not in core.
+
+## core (step C4 done 2026-09-28 — carve-out tags) — core is complete
+* `Tag` (group business / rental / family + the owner's sub-tags; one "General" per group, Business · General `is_default`;
+  renamed / deactivated, never deleted), `Tagging` (record_type + record_id -> main tag), `TagSplit` (peso parts moved to other tags).
+* **Rules (`core/carveout.py`):** no Tagging row = 100% Business · General; the main tag gets the record's amount minus the parts, so
+  the parts always add up even when AP changes the total; parts larger than a lowered total = "split needs a look" (summary counts
+  it). AP records (card statements, lender loans, bank loans, supplier batches) are read with plain SQL, never changed; card numbers
+  only as name + last 4. Every change audited (TAG_SET / TAG_SPLIT / TAG_ADDED / RENAMED / DEACTIVATED).
+* Pages (owner only, menu "Carve-out"): Business vs family (monthly summary by record type and sub-tag), Tag records (main tag per
+  row, Split page with up to 4 parts), Tags. `table.stack` + `data-label` = the phone layout (rows become cards under 760 px).
+* New modules tag their own records from day one (a sale is Business by default); Family-personal stays owner only.
+* Next: Sales S0 (walk-through + mock-ups) or the server step F3 — owner decides. Items (tires, batteries, mags) come in Sales S1.

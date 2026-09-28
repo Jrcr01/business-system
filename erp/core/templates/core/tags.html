@@ -1,0 +1,41 @@
+{% extends "core/base.html" %}
+{% block title %}Tags{% endblock %}
+{% block content %}
+<div class="head"><h1>Tags</h1></div>
+<p class="note" style="margin-top:-6px">Three fixed groups with your own sub-tags. Records never tagged count as Business · General. Sub-tags are renamed or deactivated, never deleted, so past records and reports stay the same.</p>
+<div class="grid3">
+  {% for g in groups %}
+  <div class="card">
+    <span class="badge b-{{ g.key }}">{{ g.label }}</span>
+    <table style="margin-top:8px">
+      <tbody>
+      {% for t in g.tags %}
+        <tr>
+          <td>
+            <form method="post" action="{% url 'tag_edit' t.pk %}" class="inline">{% csrf_token %}
+              <input type="text" name="name" value="{{ t.name }}" aria-label="Name of {{ t }}" {% if not t.is_active %}style="color:var(--muted)"{% endif %}>
+              <button class="btn-link" type="submit">Rename</button>
+            </form>
+            {% if t.is_default %}<span class="note small">default</span>{% elif not t.is_active %}<span class="note small">deactivated</span>{% endif %}
+          </td>
+          <td style="width:1%;white-space:nowrap">
+            {% if not t.is_default %}
+            <form method="post" action="{% url 'tag_edit' t.pk %}" style="margin:0">{% csrf_token %}
+              {% if t.is_active %}<input type="hidden" name="active" value="0"><button class="btn-link" type="submit">Deactivate</button>
+              {% else %}<input type="hidden" name="active" value="1"><button class="btn-link" type="submit">Reactivate</button>{% endif %}
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <form method="post" action="{% url 'tag_add' %}" class="inline" style="margin-top:10px">{% csrf_token %}
+      <input type="hidden" name="group" value="{{ g.key }}">
+      <input type="text" name="name" placeholder="New sub-tag" aria-label="New sub-tag for {{ g.label }}">
+      <button class="btn" type="submit">+ Add</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

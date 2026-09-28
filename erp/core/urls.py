@@ -1,6 +1,6 @@
 from django.urls import path
 
-from core import auth_views, party_views, views
+from core import auth_views, carveout_views, party_views, views
 
 urlpatterns = [
     path("", views.home, name="home"),
@@ -21,4 +21,11 @@ urlpatterns = [
     path("parties/<int:pk>/credit/", party_views.party_credit, name="party_credit"),
     path("parties/<int:pk>/active/", party_views.party_active, name="party_active"),
     path("parties/<int:pk>/unlink/<int:creditor_id>/", party_views.party_unlink, name="party_unlink"),
+    path("tags/", carveout_views.tags, name="tags"),
+    path("tags/add/", carveout_views.tag_add, name="tag_add"),
+    path("tags/<int:pk>/", carveout_views.tag_edit, name="tag_edit"),
+    path("tag-records/", carveout_views.tag_records, name="tag_records"),
+    path("tag-records/main/", carveout_views.tag_record_main, name="tag_record_main"),
+    path("tag-records/<str:record_type>/<int:record_id>/", carveout_views.tag_record_split, name="tag_record_split"),
+    path("carve-out/", carveout_views.carveout_summary, name="carveout_summary"),
 ]

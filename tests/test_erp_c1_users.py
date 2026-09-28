@@ -5,6 +5,7 @@ Owner / Sales / Viewer, signed out after 2 hours idle, 5 wrong tries = locked 15
   * sign-in, wrong tries, the lock, sign-out and every user change land in audit_logs with WHO did it;
   * a temporary password (new user, reset) must be replaced before anything else;
   * the system can never be left without an active owner; a deactivated user is signed out at once."""
+import re
 from datetime import datetime
 
 import pytest
@@ -82,7 +83,7 @@ def test_every_page_needs_a_sign_in(c1):
     for pattern in get_resolver().url_patterns[0].url_patterns if hasattr(get_resolver().url_patterns[0], "url_patterns") else []:
         if pattern.name == "login":
             continue
-        path = "/" + str(pattern.pattern).replace("<int:pk>", str(c1["owner"].pk)).replace("<int:creditor_id>", "1")
+        path = "/" + re.sub(r"<int:\w+>", str(c1["owner"].pk), re.sub(r"<str:\w+>", "batch", str(pattern.pattern)))
         resp = client.get(path)
         assert resp.status_code in (302, 405), path
         if resp.status_code == 302:

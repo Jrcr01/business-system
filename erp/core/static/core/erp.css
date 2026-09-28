@@ -46,6 +46,23 @@ tr.link:hover td { background: #f8fafc; cursor: pointer; }
 .chip { font-size: 13px; padding: 5px 12px; border: 1px solid #c3ccd9; border-radius: 999px; color: var(--muted); text-decoration: none; background: #fff; }
 .chip.on { background: var(--blue-50); color: var(--navy-800); border-color: var(--blue-200); }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+/* carve-out (C4) */
+.b-business { background: var(--blue-50); color: var(--navy-800); }
+.b-rental { background: var(--amber-bg); color: var(--amber-tx); }
+.b-family { background: #fbeaf0; color: #72243e; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.inline { display: flex; gap: 6px; align-items: center; margin: 0; }
+.inline input[type=text], .inline select { width: auto; flex: 1; min-width: 0; }
+.num { text-align: right; white-space: nowrap; }
+tr.total td { font-weight: 600; border-top: 2px solid var(--line); }
+@media (max-width: 760px) {
+  /* phone view (approved C4 mock-up): each table row becomes a small card with captions */
+  table.stack thead { display: none; }
+  table.stack tr { display: block; border-bottom: 1px solid var(--line); padding: 8px 4px; }
+  table.stack td { display: flex; justify-content: space-between; gap: 12px; border: 0; padding: 3px 8px; text-align: right; }
+  table.stack td::before { content: attr(data-label); color: var(--muted); text-align: left; }
+  table.stack td .inline { flex: 1; justify-content: flex-end; }
+}
 .b-off { background: var(--red-bg); color: var(--red-tx); }
 .btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 7px;
   border: 1px solid #c3ccd9; background: #fff; color: var(--text); cursor: pointer; text-decoration: none; }

@@ -121,3 +121,64 @@ class PartyAPLink(models.Model):
     party = models.ForeignKey(Party, on_delete=models.PROTECT, related_name="ap_links")
     creditor = models.OneToOneField(Creditor, on_delete=models.PROTECT, db_column="creditor_id", related_name="party_link")
     linked_at = models.DateTimeField(default=now_aware)
+
+
+# ---- carve-out tags (core step C4, 2026-09-28) ------------------------------------------------------------------------------------
+# Owner's choices: three fixed groups (Business / Rental / Family-personal) with the owner's own sub-tags; everything never tagged
+# counts as Business; a record has one MAIN tag and may move peso amounts to other tags (the main tag keeps the rest, so the parts
+# always add up); sub-tags are renamed or deactivated, never deleted; owner only (family-personal records are the owner's).
+
+class TagGroup(models.TextChoices):
+    BUSINESS = "business", "Business"
+    RENTAL = "rental", "Rental"
+    FAMILY = "family", "Family-personal"
+
+
+class Tag(models.Model):
+    group = models.CharField(max_length=10, choices=TagGroup.choices)
+    name = models.CharField(max_length=60)
+    name_key = models.CharField(max_length=60)
+    is_default = models.BooleanField(default=False)       # the one "Business · General" every untagged record falls under
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=now_aware)
+
+    class Meta:
+        ordering = ["group", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["group", "name_key"], name="core_tag_unique_name_in_group"),
+            models.UniqueConstraint(fields=["is_default"], condition=models.Q(is_default=True), name="core_tag_one_default"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_group_display()} · {self.name}"
+
+
+class RecordType(models.TextChoices):
+    CC_STATEMENT = "cc_statement", "Card statements"
+    LOAN_NOTE = "loan_note", "Lender loans"
+    BANK_LOAN = "bank_loan", "Bank loans"
+    BATCH = "batch", "Supplier batches"
+
+
+class Tagging(models.Model):
+    """The tag of one money record (AP's records are pointed at by type + id; AP itself is not changed). No row = Business · General."""
+    record_type = models.CharField(max_length=20, choices=RecordType.choices)
+    record_id = models.IntegerField()
+    main_tag = models.ForeignKey(Tag, on_delete=models.PROTECT, related_name="main_of")
+    updated_at = models.DateTimeField(default=now_aware)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["record_type", "record_id"], name="core_tagging_one_per_record")]
+
+
+class TagSplit(models.Model):
+    """A peso amount of the record moved from the main tag to another tag."""
+    tagging = models.ForeignKey(Tagging, on_delete=models.CASCADE, related_name="splits")
+    tag = models.ForeignKey(Tag, on_delete=models.PROTECT, related_name="split_parts")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["tagging", "tag"], name="core_tagsplit_one_per_tag"),
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="core_tagsplit_amount_positive"),
+        ]
