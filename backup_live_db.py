@@ -34,7 +34,7 @@ def backup_code(dest_dir: str, keep: int) -> str:
     """Saves the full git history of the program as one bundle file in dest_dir. Returns a one-line report; never fails the
     database backup (a missing git or repository is just reported)."""
     git = shutil.which("git")
-    if not git or not os.path.isdir(os.path.join(HERE, ".git")):
+    if not git or not os.path.exists(os.path.join(HERE, ".git")):      # a folder, or a file in a git worktree
         return "Code history: skipped (git or the repository not found)."
     os.makedirs(dest_dir, exist_ok=True)
     out = os.path.join(dest_dir, f"{CODE_PREFIX}{manila_now():%Y%m%d_%H%M%S}.bundle")
