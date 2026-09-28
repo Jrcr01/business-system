@@ -238,7 +238,11 @@ cancelled_check_cleared / cleared_twice lines; checks not cleared `stale_days()`
 BANK_LOAN + CREDIT_CARD is by design; inactive but owed; SUPPLIER with no terms -- banks / lenders left out). Each finding carries
 `page` / `state` for `go_to`. "It's fine" = `mark_fine(keys, note)` / `show_again(keys)`, stored in `duplicate_dismissals` with a `health|`
 key (no new table), audited DATA_HEALTH_FINE / DATA_HEALTH_SHOW_AGAIN. Page `views/data_health.py` (System menu, `data-health`); Payment
-run shows one line with the open count (`open_count()`). First live run: 21 printed checks without numbers (printed Sep 26, dated
+run shows one line with the open count (`open_count()`). **Credit cards group (2026-09-29):** a card statement
+entered twice (same card, due date, amount) and two statements due in one month less than `CC_CYCLE_MIN_DAYS` (25) apart -- added
+after a Visa Gold statement typed twice in MS Access (records 1810 / 1832) came in through the Sep 19 history backfill
+(`phase8e_...`: it checked the database but not its own list) and bypassed the Add statement form's warning; the extra copy
+(statement 59) was set Cancelled (audited CC_STATEMENT_CANCELLED). First live run: 21 printed checks without numbers (printed Sep 26, dated
 2027) + check 3992527921 (owner confirmed correct). Tests: `tests/test_data_health.py`.
 
 **Bank is the truth + capture check + double-entry guard (2026-09-28, owner: "Always remember bank statement is ultimate truth and have a

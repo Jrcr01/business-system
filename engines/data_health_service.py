@@ -15,10 +15,11 @@ from datetime import date, timedelta
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
-GROUPS = ["Checks", "Invoices and batches", "Bank vs our records", "Suppliers"]
+GROUPS = ["Checks", "Invoices and batches", "Bank vs our records", "Suppliers", "Credit cards"]
 KEY_PREFIX = "health|"
 BROWSE_BATCHES, BROWSE_LOAN_NOTES = "Browse batches", "Browse loan notes"
-STALE_CHECK_DAYS = 180          # Philippine checks go stale six months after their date
+STALE_CHECK_DAYS = 180
+CC_CYCLE_MIN_DAYS = 25           # two card dues this far apart in one month = a normal ~30-day cycle, not a duplicate          # Philippine checks go stale six months after their date
 
 
 def _conn() -> sqlite3.Connection:
@@ -198,12 +199,44 @@ def _suppliers(conn, today: date, out: list) -> None:
 
 
 # ------------------------------------------------------------------ public
+def _credit_cards(conn, today: date, out: list) -> None:
+    """Card statements entered twice (2026-09-29, owner: "why our guardrail did not detect it?" -- a Visa Gold statement typed twice
+    in MS Access came in through the Sep 19 history loader, which bypassed the Add statement form's warning, and nothing re-checked
+    card statements afterwards). Cancelled statements are ignored."""
+    g = "Credit cards"
+    if not _has_table(conn, "cc_statements"):
+        return
+    label = "COALESCE(cc.card_name, '') || CASE WHEN cc.card_number_last4 IS NOT NULL THEN ' ' || cc.card_number_last4 ELSE '' END"
+    for r in conn.execute(f"""SELECT s.card_id, {label} AS card, s.due_date, ROUND(s.total_amount_due, 2) AS amount, COUNT(*) AS n,
+                                     GROUP_CONCAT(s.cc_statement_id) AS ids
+                              FROM cc_statements s JOIN credit_cards cc ON cc.card_id = s.card_id
+                              WHERE s.status != 'Cancelled'
+                              GROUP BY s.card_id, s.due_date, ROUND(s.total_amount_due, 2) HAVING COUNT(*) > 1"""):
+        _f(out, g, "Card statement entered twice", f"cc_dup|{r['card_id']}|{r['due_date']}|{r['amount']}",
+           f"{r['card']}: {r['n']} statements due {r['due_date']} for PHP {r['amount']:,.2f} (statement ids {r['ids']}). Cancel the extra copy.",
+           r["amount"], r["card"], ("credit-cards", {}))
+    for r in conn.execute(f"""SELECT s.card_id, {label} AS card, SUBSTR(s.due_date, 1, 7) AS month, COUNT(*) AS n,
+                                     GROUP_CONCAT(s.due_date || ' PHP ' || PRINTF('%,.2f', s.total_amount_due), '; ') AS what,
+                                     COUNT(DISTINCT s.due_date || '|' || ROUND(s.total_amount_due, 2)) AS distinct_n,
+                                     JULIANDAY(MAX(s.due_date)) - JULIANDAY(MIN(s.due_date)) AS spread
+                              FROM cc_statements s JOIN credit_cards cc ON cc.card_id = s.card_id
+                              WHERE s.status != 'Cancelled'
+                              GROUP BY s.card_id, SUBSTR(s.due_date, 1, 7) HAVING COUNT(*) > 1"""):
+        if r["distinct_n"] < 2:
+            continue                                                   # already reported above as an exact duplicate
+        if r["n"] == 2 and r["spread"] >= CC_CYCLE_MIN_DAYS:
+            continue                                                   # a normal 30-day cycle landing twice (due near the 1st and the 30th)
+        _f(out, g, "Two statements due in the same month", f"cc_twice|{r['card_id']}|{r['month']}",
+           f"{r['card']}: {r['n']} statements due in {r['month']} ({r['what']}), only {int(r['spread'])} day(s) apart -- one may be "
+           "typed twice or have the wrong due date.", None, r["card"], ("credit-cards", {}))
+
+
 def findings(include_fine: bool = False, today: date | None = None) -> list[dict]:
     """Everything the scan flags, grouped in GROUPS order. Items marked "It's fine" are left out unless include_fine (then 'fine' + 'note')."""
     today = today or date.today()
     out: list[dict] = []
     with _conn() as conn:
-        for part in (_checks, _invoices_and_batches, _bank, _suppliers):
+        for part in (_checks, _invoices_and_batches, _bank, _suppliers, _credit_cards):
             part(conn, today, out)
         fine = {r["dup_key"]: r["note"] for r in conn.execute("SELECT dup_key, note FROM duplicate_dismissals WHERE dup_key LIKE ?", (KEY_PREFIX + "%",))}
     for f in out:
