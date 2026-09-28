@@ -402,6 +402,10 @@ Sits between AP (done, live) and Sales/AR (next module).
 
 ### Build order
 **F1 -- One door, one clock, safe writes (on the laptop; no visible change for the owner).**
+*Progress (split into gated steps 2026-09-28): **F1.1 done** -- `fk_check.py` (read-only, runs `PRAGMA foreign_key_check` on a backup-API
+copy; exit 0 clean / 1 found / 2 unreadable; tests `tests/test_fk_check.py`): live and TEST = 33 tables, 41 declared links, **0 broken**.
+Next: F1.2 one door (connections + WAL / busy_timeout; check backup / restore / export scripts that copy the raw file, since WAL keeps
+recent writes in `-wal` until a checkpoint), F1.3 one clock, F1.4 safe writes + `doc_counters`, F1.5 `audit_logs.user_email`.*
 * Every connection through `engines/common.get_conn()` (and one `df_query` for DataFrames). No `sqlite3.connect` outside `common.py`.
   `get_conn()` sets: `foreign_keys = ON`, `journal_mode = WAL`, `busy_timeout = 10000`.
 * Write helper `common.write_tx()` (context manager: `BEGIN IMMEDIATE` ... commit / rollback). Every function that checks then writes
