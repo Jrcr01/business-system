@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from engines.bank_alerts import all_alerts
+from engines.data_health_service import open_count
 from engines.cc_service import get_statement_gap_alerts
 from engines.check_run_service import mark_batch_printed
 from engines.common import php
@@ -166,6 +167,16 @@ def render() -> None:
             show_alerts(bank_alerts)
         if b2.button("Open Bank and cash", icon=":material/account_balance_wallet:", key="pr_bank_btn", width="stretch"):
             go_to("bank-cash")
+    # Data health (2026-09-28, owner): one line when the scan of everything on file finds something not yet marked "It's fine".
+    try:
+        n_health = open_count()
+    except Exception:                                   # a database still missing a table the scan reads
+        n_health = 0
+    if n_health:
+        h1, h2 = st.columns([5, 1.6], vertical_alignment="center")
+        h1.info(f":material/health_and_safety: **{n_health} data health finding(s)** — records that look wrong. Open them to fix, or mark them fine.")
+        if h2.button("Open Data health", icon=":material/health_and_safety:", key="pr_health_btn", width="stretch"):
+            go_to("data-health")
     reprint = _stages().get("needs_reprint")
     if reprint is not None and not reprint.empty:
         rp1, rp2 = st.columns([5, 1.6], vertical_alignment="center")

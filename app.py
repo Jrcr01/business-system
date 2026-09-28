@@ -271,6 +271,7 @@ import views.checks
 import views.credit_cards
 from views.credit_cards import _card_label  # noqa: F401 -- app._card_label, used by tests
 import views.creditor_master
+import views.data_health
 import views.dashboard
 import views.lenders
 import views.order_statement
@@ -416,12 +417,13 @@ PAGES.update({
     "analytics": st.Page(views.analytics.render, title="Analytics", icon=":material/query_stats:", url_path="analytics"),
     "reports": st.Page(views.reports.render, title="Reports", icon=":material/summarize:", url_path="reports"),
     "admin": st.Page(views.admin.render, title="Admin and audit", icon=":material/admin_panel_settings:", url_path="admin"),
+    "data-health": st.Page(views.data_health.render, title="Data health", icon=":material/health_and_safety:", url_path="data-health"),
 })
 MENU = {
     "Daily work": ["payment-run", "add-data", "order-statements", "checks", "bank-cash", "planner"],
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records and reports": ["dashboard", "creditors", "analytics", "reports"],
-    "System": ["admin"],
+    "System": ["admin", "data-health"],
 }
 page = st.navigation({section: [PAGES[pid] for pid in ids] for section, ids in MENU.items()}, position="sidebar",
                      expanded=True)          # always show every page (Streamlit folds long menus behind "View more"; Alt+1..0 need the links)
