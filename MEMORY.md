@@ -53,6 +53,9 @@ follows unchanged below.
   deposits several times a day, traced in the bank statement -> light check only; affiliates = the mother's siblings' businesses
   (borrow / lend, settle by offset, payment or return); tire cost = actual received cost, a PO system will be added. Detail:
   blueprint section 9.
+* **[Sales] The brother's notebook** (owner, 2026-09-28): per item line from the invoice booklet -- date, qty, tire / battery / mags,
+  profit (price - paper price-list cost), credit customer's name; day's total qty and total. No invoice number, no payment type.
+  The system replaces it after the parallel run. Cost method: owner leans to weighted average (needs receiving + inventory).
 * **Docs re-shaped:** `CLAUDE.md` = short ERP guide; AP detail moved unchanged to `docs/modules/ap.md`; Phase F to
   `docs/foundation/phase_f.md`; the master blueprint `docs/SLICKS_ERP_BLUEPRINT.md`; one `CLAUDE.md` per module folder from now on.
 

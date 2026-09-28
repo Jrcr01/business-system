@@ -198,10 +198,17 @@ deposit → bank check → reports, with exceptions at any step); the owner mark
 | **Affiliates** | The mother's siblings' businesses help each other with tires: borrow / lend, settled by **offset, paying as a customer, or returning** the stock. | In Sales: customer type **Affiliate**, so their purchases are tagged from day one. Borrow / lend / offset = the Affiliates module. |
 | **Cost of tires** | There is a supplier price list; the encoder records what was **actually received**, at the actual cost — under, over or equal to the list. A **PO system** will be added. | Cost per tire comes from **receiving** (Purchasing / PO): actual received cost vs the supplier's list price, differences shown. Profit per sale and below-cost flags use that cost. |
 
+**Today's sales record (the brother's notebook, owner 2026-09-28):** one line per item sold, copied from the sales invoice booklet:
+date, quantity, item type (**tire, battery or mags**), profit (selling price − cost from the **paper price list**), and the customer's
+name when it is a credit sale; plus the day's total quantity and total. **Not** in the notebook: the invoice number and how it was paid.
+So the counter sale screen should feel like the notebook (fast item lines, profit shown per line, day totals) and add only what the
+notebook lacks: the booklet invoice number (one invoice, several lines) and the payment type. The notebook is replaced after the
+parallel run (S5) once the system's daily totals and profit match it.
+
 ### Sales v1 — what it does (stable first)
 * **Customers:** "walk-in" by default, plus named customers with terms and contact details; "credit allowed" set by the owner only
   (no peso limit — alerts instead); customer type Affiliate for the mother's siblings' businesses.
-* **Items and prices:** tires (brand, size, pattern, code) and services if sold; one price list (only allowed roles change it); the price
+* **Items and prices:** tires (brand, size, pattern, code), **batteries, mags**, and services if sold (item categories); one price list (only allowed roles change it); the price
   actually charged is typed per sale and recorded against the list price, with who agreed.
 * **Counter sale screen** (fast, keyboard-first): customer, item lines (quantity, price, discount), the **booklet invoice number**
   (required, unique; booklet ranges registered, so missing / duplicate / out-of-range numbers are flagged), cash or credit.
