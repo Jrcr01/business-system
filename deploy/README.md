@@ -27,8 +27,8 @@ Windows' ssh-agent keeps it unlocked); the deploy scripts use Windows' own ssh/s
 **F3.2 — the owner, guided:**
 1. Register the domain (e.g. at Cloudflare) and keep its DNS there.
 2. Create the DigitalOcean account, then a Droplet: Ubuntu 24.04, Singapore, the smallest "Basic" size that has 1 GB memory,
-   weekly backups on, and **SSH key** = the laptop's public key (Claude makes the key pair on the laptop; the private half never
-   leaves the laptop).
+   weekly backups on, and **SSH key** = the laptop's public key `slicks_erp.pub` (the owner makes the key pair with `ssh-keygen` and
+   types its passphrase; the private half never leaves the laptop).
 3. In the DNS: an `A` record `test` → the Droplet's IP address.
 
 **Then, from the laptop (Git Bash, `C:\Slicks\Slicks_ERP`):**
