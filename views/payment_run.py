@@ -10,6 +10,7 @@ import streamlit as st
 
 from engines.bank_alerts import all_alerts
 from engines.data_health_service import open_count
+from engines.bank_names import card_display_name
 from engines.cc_service import get_statement_gap_alerts
 from engines.check_run_service import mark_batch_printed
 from engines.common import php
@@ -195,7 +196,7 @@ def render() -> None:
     missing = gaps[gaps["alert"] == "Possibly missing a statement"] if not gaps.empty else gaps
     if not missing.empty:
         rc1, rc2 = st.columns([5, 1.4], vertical_alignment="center")
-        rc1.error(f":material/report: {len(missing)} credit card statement(s) may have been overlooked — " + "; ".join(missing["card_name"].astype(str)) + ".")
+        rc1.error(f":material/report: {len(missing)} credit card statement(s) may have been overlooked — " + "; ".join(card_display_name(i, n) for i, n in zip(missing["issuer"], missing["card_name"])) + ".")
         if rc2.button("Open Credit cards", icon=":material/credit_card:", key="pr_cc_gap_btn", width="stretch"):
             go_to("credit-cards")
         with st.expander("Nothing due on one of these cards? Mark it", icon=":material/event_busy:"):

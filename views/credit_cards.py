@@ -22,6 +22,7 @@ from engines.card_rules import reactivate_cardholder
 from engines.card_rules import reactivate_credit_card
 from engines.cc_rules import cc_owed_case
 from engines.cc_rules import superseded_sql
+from engines.bank_names import card_display_name
 from engines.cc_service import get_annual_fee_alerts
 from engines.cc_service import get_statement_coverage
 from engines.cc_service import get_statement_gap_alerts
@@ -102,7 +103,7 @@ def render_missing_statements(missing_df: pd.DataFrame, key: str) -> None:
         why = (f"no statement recorded for {_month_label(prev_key)} or {_month_label(this_key)}" if both
                else f"the {_month_label(this_key)} statement is not recorded" + (f" (expected by {r['expected_by']})" if r.get("expected_by") else ""))
         c1, c2 = st.columns([5, 1.6], vertical_alignment="center")
-        c1.warning(f"{r['card_name']} ({r['card_number_last4']}) — {r['cardholder_name'] or 'no cardholder set'}: {why}"
+        c1.warning(f"{card_display_name(r['issuer'], r['card_name'])} ({r['card_number_last4']}) — {r['cardholder_name'] or 'no cardholder set'}: {why}"
                    + (f" · last due date on file {r['last_due_date']}" if pd.notna(r["last_due_date"]) else ""))
         months = [prev_key, this_key] if both else [this_key]
         if c2.button("No due (both months)" if both else "No due this month", icon=":material/event_busy:", key=f"{key}_nodue_{int(r['card_id'])}",
@@ -689,7 +690,7 @@ def render() -> None:
                         st.markdown(f"#### Statements still missing — {cov_this}")
                         for holder, grp in report_df.groupby("Card holder"):
                             st.markdown(f"**{holder}**")
-                            st.markdown("\n".join(f"- {r['Issuer']} {r['Card']} · ending {r['Last 4']}" for _, r in grp.iterrows()))
+                            st.markdown("\n".join(f"- {card_display_name(r['Issuer'], r['Card'])} · ending {r['Last 4']}" for _, r in grp.iterrows()))
                 xl = io.BytesIO()
                 with pd.ExcelWriter(xl, engine="openpyxl") as writer:
                     report_df.to_excel(writer, index=False, sheet_name="Missing statements")

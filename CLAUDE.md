@@ -287,7 +287,16 @@ used by `scheduled_outflows()` (Cash forecast, Working capital, planner) and the
 and `card_week_info()` (heavy-week note) follow the marked cards; the planner's "Credit card dues ahead" still shows every card and says
 how much is counted. UI: multiselect "Cards paid from the Metrobank account" on Credit cards -> Cards & cardholders (Streamlit's
 multiselect has a 'Select all' entry). Live 2026-09-29 with none marked: 30-day low -PHP 3.41M (was -12.87M), 90-day -PHP 9.75M; the rest
-is real -- ~PHP 12.9M of supplier / lender / bank-loan payments in 30 days against ~PHP 9.6M expected deposits. First live run: 21 printed checks without numbers (printed Sep 26, dated
+is real -- ~PHP 12.9M of supplier / lender / bank-loan payments in 30 days against ~PHP 9.6M expected deposits.
+
+**Missing-statement list + short bank names (2026-09-29, owner: "just a list so i can screenshot and post to our gc", "i need short names",
+"banner include bank and card name").** Credit cards -> Missing statement check shows "List to post (screenshot it)" grouped by
+cardholder (no message text). `engines/bank_names.py` (existing module of the family's bank codes) gained `short_bank_name()` (BPI, PNB,
+MBTC, EW, SB, CB, UB, BC, BDO, RCBC = the codes already used in card names; an unknown bank is tidied, not lost) and
+`card_display_name(issuer, card_name)` ('BPI Mastercard Plat Rewards'; the bank is not repeated when the card name already starts with it,
+e.g. 'MBTC Mastercard', 'RCBC JCB'). Used by the list, `render_missing_statements` (Needs attention), and the Payment run / Dashboard
+banners; `get_statement_gap_alerts()` now also returns `issuer`. Generic card names ("Platinum", "Toyota") are expected until the owner
+learns the real card name (edit under Cards & cardholders); the last 4 digits tell cards apart. First live run: 21 printed checks without numbers (printed Sep 26, dated
 2027) + check 3992527921 (owner confirmed correct). Tests: `tests/test_data_health.py`.
 
 **Bank is the truth + capture check + double-entry guard (2026-09-28, owner: "Always remember bank statement is ultimate truth and have a

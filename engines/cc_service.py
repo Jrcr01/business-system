@@ -29,13 +29,13 @@ def get_statement_gap_alerts(today: date | None = None) -> pd.DataFrame:
     card_number_last4, cardholder_name, last_due_date, alert -- plus status and expected_by."""
     cov = get_statement_coverage(today)
     if cov.empty:
-        return pd.DataFrame(columns=["card_id", "card_name", "card_number_last4", "cardholder_name", "last_due_date", "alert", "status",
+        return pd.DataFrame(columns=["card_id", "card_name", "issuer", "card_number_last4", "cardholder_name", "last_due_date", "alert", "status",
                                      "expected_by"])
     alert = cov["status"].map({"Missing this month": "Possibly missing a statement", "Missing both months": "Possibly missing a statement",
                                "No statement ever": "No statement on file yet"})
     out = cov.assign(alert=alert, cardholder_name=cov["cardholder"].where(cov["cardholder"] != "(no holder)", None))
-    return out.loc[out["alert"].notna(), ["card_id", "card_name", "card_number_last4", "cardholder_name", "last_due_date", "alert", "status",
-                                          "expected_by"]].reset_index(drop=True)
+    return out.loc[out["alert"].notna(), ["card_id", "card_name", "issuer", "card_number_last4", "cardholder_name", "last_due_date", "alert",
+                                          "status", "expected_by"]].reset_index(drop=True)
 
 
 PAID_FROM_BANK_KEY = "cc_paid_from_bank_ids"

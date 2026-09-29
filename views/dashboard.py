@@ -8,6 +8,7 @@ import streamlit as st
 
 from datetime import date
 from datetime import timedelta
+from engines.bank_names import card_display_name
 from engines.cc_service import get_statement_gap_alerts
 from engines.check_run_service import get_pending_check_run
 from engines.checkbook_service import get_checkbook_alerts
@@ -62,7 +63,7 @@ def render() -> None:
     if not dash_missing_recent_df.empty:
         st.error(
             f":material/report: {len(dash_missing_recent_df)} credit card statement(s) may have been overlooked — "
-            + "; ".join(f"{r['card_name']} ({r['alert'].lower()})" for _, r in dash_missing_recent_df.iterrows())
+            + "; ".join(f"{card_display_name(r['issuer'], r['card_name'])} ({r['alert'].lower()})" for _, r in dash_missing_recent_df.iterrows())
             + ". Check the Credit cards page."
         )
     if not dash_never_had_df.empty:
