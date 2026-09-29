@@ -548,6 +548,23 @@ def credit_card_options_for_holder(cardholder_id) -> dict:
     return {row.card_id: f"{row.card_name} - {row.card_number_last4}" for row in df.itertuples()}
 
 
+def history_span(date_series_list: list):
+    """(earliest, latest) date across several columns of dates, or None when there is nothing to range over. Each column is read on its
+    own: the columns can be written differently ("2026-09-19 14:27:19" for a batch's created time, "2026-08-20" for an invoice or check
+    date) and pandas 3 reads a mixed lot with the FIRST entry's format, silently dropping the rest -- which collapsed the Supplier history's
+    default range to the batch dates and hid every invoice and check (found 2026-09-29)."""
+    spans = []
+    for s in date_series_list:
+        if s is None or len(s) == 0:
+            continue
+        parsed = pd.to_datetime(s, errors="coerce", format="mixed").dropna()
+        if not parsed.empty:
+            spans.append((parsed.min().date(), parsed.max().date()))
+    if not spans:
+        return None
+    return min(a for a, _ in spans), max(b for _, b in spans)
+
+
 def history_date_range(date_series_list: list, key_prefix: str):
     """Reports tab history drill-downs: a From/To date-range picker defaulting to the full span
     of whatever dates actually exist across every table for the currently-picked entity (so it
@@ -555,13 +572,10 @@ def history_date_range(date_series_list: list, key_prefix: str):
     when there's no data yet to range over. key_prefix should embed the entity's id (e.g.
     f"...{sup_id}") so switching entities gets a fresh widget instead of carrying over a stale
     date range that may not even overlap the newly-picked entity's dates."""
-    non_empty = [s for s in date_series_list if s is not None and not s.empty]
-    if not non_empty:
+    span = history_span(date_series_list)
+    if span is None:
         return None, None
-    parsed = pd.to_datetime(pd.concat(non_empty), errors="coerce").dropna()
-    if parsed.empty:
-        return None, None
-    min_d, max_d = parsed.min().date(), parsed.max().date()
+    min_d, max_d = span
     f1, f2 = st.columns(2)
     with f1:
         date_from = st.date_input("From", value=min_d, min_value=min_d, max_value=max_d, key=f"{key_prefix}_from")

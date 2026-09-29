@@ -303,7 +303,19 @@ learns the real card name (edit under Cards & cardholders); the last 4 digits te
 `set_missing_wait_days()`; `get_statement_coverage()` keeps a card at "Not yet expected" until `today >= expected_by + wait`, and the
 warnings (`get_statement_gap_alerts`) follow, so Payment run, Dashboard and Credit cards agree. "Days to wait" box on Credit cards ->
 Missing statement check. Tests: `tests/test_cc_missing_wait.py`; `test_statement_coverage.py` and `test_statement_alerts_one_rule.py`
-pin the wait to 0 (they test which cards are flagged, not when). First live run: 21 printed checks without numbers (printed Sep 26, dated
+pin the wait to 0 (they test which cards are flagged, not when).
+
+**Reports fixes (2026-09-29, owner: the Supplier history "is not showing any details", add the clearing date, add a cleared-checks report).**
+Root cause: `views/shared.py history_date_range()` parsed `pd.concat` of columns written in different formats (batch `created_at`
+"date time", invoice / check dates "date only"); pandas 3 applies the FIRST entry's format and drops the rest, so the default From/To
+collapsed to the batch-created dates and every invoice and check fell outside it. Now `history_span()` reads each column on its own
+(`format="mixed"`); it also protects the lender, bank-loan and card histories. `get_supplier_history()` / `get_lender_history()` return
+`bank_cleared_date` (shown as "Bank cleared", blank when the bank has not shown it; the bank's date only, never inferred), also in the
+Statement of Account PDFs ("Cleared" cell). New standard report "Cleared checks — from the bank" (`views/reports.py _cleared_checks`,
+engine `engines/cleared_checks_report.py`: `cleared_checks(date_from, date_to, creditor_id)`, `by_payee`, `by_week`, `cleared_span`):
+bank date, days to clear (bank date minus check date; negative when the bank paid before the check date), matched how (automatic / suggested
+match accepted / linked by hand / adjusted to the bank), bank amount vs ours, totals by payee and by week. Tests
+`tests/test_reports_history.py`, `tests/test_cleared_checks_report.py`. First live run: 21 printed checks without numbers (printed Sep 26, dated
 2027) + check 3992527921 (owner confirmed correct). Tests: `tests/test_data_health.py`.
 
 **Bank is the truth + capture check + double-entry guard (2026-09-28, owner: "Always remember bank statement is ultimate truth and have a

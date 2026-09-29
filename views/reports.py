@@ -18,6 +18,7 @@ from engines.account_history_pdf_service import generate_credit_card_statement_p
 from engines.account_history_pdf_service import generate_lender_statement_pdf
 from engines.account_history_pdf_service import generate_rundown_pdf
 from engines.account_history_pdf_service import generate_supplier_statement_pdf
+from engines.cleared_checks_report import by_payee, by_week, cleared_checks, cleared_span
 from engines.common import _pdf_money
 from engines.common import filter_by_date
 from engines.common import php
@@ -88,6 +89,7 @@ REPORT_OPTIONS = [
     "Overview — highlights & insights",
     "Possible duplicates — check everything on file",
     "Schedule of payments — all tracks",
+    "Cleared checks — from the bank",
     "Supplier — invoice & check history",
     "Supplier — rundown (paid / partial / pending)",
     "Private lender — loan note & check history",
@@ -361,6 +363,51 @@ def _parked() -> None:
     _daily_view(shown, day_label="Check date", count_label="# Checks", what="checks", key="dl_parked",
                 file_stem=f"parked_checks_{month if month != 'All months' else 'all'}",
                 pdf=lambda: generate_parked_checks_pdf(month if month != "All months" else None), pdf_label="Parked Checks PDF")
+
+
+def _cleared_checks() -> None:
+    """Checks the bank has cleared, from the bank reconciliation (owner, 2026-09-29). The bank's clearing date is the truth."""
+    st.subheader("Cleared checks — from the bank")
+    st.caption("Every check the imported Metrobank statements show as cleared: the bank's date, how many days after our check date, and how "
+               "the bank line was matched. The bank's amount is shown when it differs from our record (an adjustment on Bank and cash).")
+    span = cleared_span()
+    if span is None:
+        st.info("No cleared checks yet. Import a Metrobank statement on Bank and cash — matched checks appear here.")
+        return
+    f1, f2, f3 = st.columns([1, 1, 2])
+    date_from = f1.date_input("Cleared from", value=span[0], min_value=span[0], max_value=span[1], key="rpt_clr_from")
+    date_to = f2.date_input("Cleared to", value=span[1], min_value=span[0], max_value=span[1], key="rpt_clr_to")
+    everyone = cleared_checks()
+    payees = dict(sorted({int(c): p for c, p in zip(everyone["creditor_id"], everyone["payee"])}.items(), key=lambda kv: kv[1].lower()))
+    payee = f3.selectbox("Payee", [None] + list(payees), format_func=lambda c: "All payees" if c is None else payees[c], key="rpt_clr_payee")
+    df = cleared_checks(date_from, date_to, payee)
+    if df.empty:
+        st.caption("No cleared checks for this filter.")
+        return
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Checks cleared", len(df), border=True)
+    m2.metric("Total (our records)", php(float(df["amount"].sum())), border=True)
+    m3.metric("Average days to clear", f"{df['days_to_clear'].mean():.1f}", border=True,
+              help="Days from our check date to the date the bank cleared it. Negative = the bank cleared it before its check date.")
+    diff = df[df["difference"].abs() >= 0.005]
+    m4.metric("Different from the bank", len(diff), border=True, help="Checks where the bank's amount differs from our record.")
+    labels = {"cleared_date": "Cleared by bank", "check_number": "Check #", "amount": "Amount (ours)", "check_date": "Check date",
+              "days_to_clear": "Days to clear", "reference": "Batch / loan note", "bank_amount": "Bank paid", "difference": "Difference",
+              "matched_how": "Matched", "status": "Our status", "payee": "Payee"}
+    kinds = {"cleared_date": "date", "check_date": "date", "amount": "money", "bank_amount": "money", "difference": "money", "days_to_clear": "count"}
+    st.markdown("**Cleared checks**")
+    show_table(df, labels, hide=["check_id", "creditor_id"], kinds=kinds)
+    w1, w2 = st.columns(2)
+    with w1:
+        st.markdown("**By payee**")
+        show_table(by_payee(df), {"payee": "Payee", "checks": "Checks", "total": "Total", "avg_days": "Avg days to clear"},
+                   kinds={"total": "money", "checks": "count", "avg_days": "number"})
+    with w2:
+        st.markdown("**By week**")
+        show_table(by_week(df), {"week_start": "Week of", "checks": "Checks", "total": "Total"},
+                   kinds={"week_start": "date", "total": "money", "checks": "count"})
+    export_buttons({"Cleared checks": df.drop(columns=["check_id", "creditor_id"]), "By payee": by_payee(df), "By week": by_week(df)},
+                   "cleared_checks", key="dl_cleared", labels=labels, what="cleared checks", kinds=kinds)
 
 
 def _supplier_history() -> None:
@@ -735,8 +782,8 @@ def _bank_loan_master() -> None:
         )
 
 
-REPORTS = dict(zip(REPORT_OPTIONS, [_overview, _duplicates, _schedule, _supplier_history, _rundown, _lender_history, _bank_loan_history,
-                                    _card_history, _rollups]))
+REPORTS = dict(zip(REPORT_OPTIONS, [_overview, _duplicates, _schedule, _cleared_checks, _supplier_history, _rundown, _lender_history,
+                                    _bank_loan_history, _card_history, _rollups]))
 
 
 def render() -> None:

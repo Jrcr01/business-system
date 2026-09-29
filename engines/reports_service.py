@@ -305,7 +305,7 @@ def get_supplier_history(creditor_id: int):
             conn, params=(creditor_id,),
         )
         checks = pd.read_sql_query(
-            "SELECT c.check_date, c.check_number, c.amount, c.status, os.statement_ref "
+            "SELECT c.check_date, c.check_number, c.amount, c.status, c.bank_cleared_date, os.statement_ref "
             "FROM checks_issued c LEFT JOIN order_statements os ON os.statement_id = c.statement_id "
             "WHERE c.creditor_id = ? AND c.statement_id IS NOT NULL ORDER BY c.check_date",
             conn, params=(creditor_id,),
@@ -420,7 +420,7 @@ def get_lender_history(creditor_id: int):
             conn, params=(creditor_id,),
         )
         checks = pd.read_sql_query(
-            "SELECT c.check_date, c.check_number, c.amount, c.status, ln.note_ref "
+            "SELECT c.check_date, c.check_number, c.amount, c.status, c.bank_cleared_date, ln.note_ref "
             "FROM checks_issued c JOIN loan_notes ln ON ln.loan_note_id = c.loan_note_id "
             "WHERE ln.creditor_id = ? ORDER BY c.check_date",
             conn, params=(creditor_id,),
