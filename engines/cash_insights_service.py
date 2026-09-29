@@ -104,6 +104,7 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
             rows.append({"day": d, "track": r["track"], "payee": r["payee"], "reference": r["reference"], "amount": float(r["amount"])})
     sched = get_payment_schedule_all_tracks()
     if not sched.empty:
+        sched, _ = split_card_rows(sched)                # cards paid outside the bank do not take from this balance
         other = sched[sched["track"].isin(["Bank Loan", "Credit Card"])]
         for _, r in other.iterrows():
             d = next_banking_day(str(r["due_date"])[:10])
@@ -113,12 +114,57 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["day", "track", "payee", "reference", "amount"])
 
 
-def estimated_outflows(start: date, end: date) -> list[dict]:
-    """Estimated card dues (not yet on a statement) as outflow rows, on the next banking day like the other dues."""
+def _card_ids_by_reference() -> dict:
+    """{'Cardholder - Card - 1234': card_id} -- the label the payment schedule uses for a card statement."""
+    df = _read("""SELECT cc.card_id, CASE WHEN ch.name IS NOT NULL THEN ch.name || ' - ' || cc.card_name || ' - ' || cc.card_number_last4
+                                        ELSE cc.card_name || ' - ' || cc.card_number_last4 END AS reference
+                  FROM credit_cards cc LEFT JOIN cardholders ch ON cc.cardholder_id = ch.cardholder_id""")
+    return dict(zip(df["reference"], df["card_id"])) if not df.empty else {}
+
+
+def split_card_rows(sched: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(schedule without the credit-card rows of cards NOT paid from the Metrobank account, those rows). Owner, 2026-09-29: the planner and
+    the Cash forecast plan against the Metrobank account only; a card counts against it only when marked 'paid from Metrobank'."""
+    from engines.cc_service import paid_from_bank_ids
+
+    if sched.empty or "Credit Card" not in set(sched["track"]):
+        return sched, sched.iloc[0:0]
+    bank_cards, ref = paid_from_bank_ids(), _card_ids_by_reference()
+    outside = (sched["track"] == "Credit Card") & ~sched["reference"].map(lambda r: ref.get(r) in bank_cards)
+    return sched[~outside], sched[outside]
+
+
+def outside_card_dues(start: date, end: date) -> dict:
+    """Card dues in the window that are paid outside the Metrobank account (not deducted from its balance):
+    {'recorded': on statements, 'estimated': not yet on a statement, 'cards': how many cards}."""
     from engines.cc_forecast_service import estimated_card_dues
+    from engines.cc_service import paid_from_bank_ids
+
+    bank_cards, ref = paid_from_bank_ids(), _card_ids_by_reference()
+    recorded, cards = 0.0, set()
+    sched = get_payment_schedule_all_tracks()
+    if not sched.empty:
+        _, gone = split_card_rows(sched)
+        gone = gone[(pd.to_datetime(gone["due_date"]).dt.date >= start) & (pd.to_datetime(gone["due_date"]).dt.date <= end)]
+        recorded = float(gone["amount"].sum()) if not gone.empty else 0.0
+        cards |= {ref.get(r) for r in gone["reference"] if ref.get(r) is not None}
+    est = estimated_card_dues(start, end, today=start)
+    est = est[~est["card_id"].isin(bank_cards)] if not est.empty else est
+    cards |= set(est["card_id"]) if not est.empty else set()
+    return {"recorded": recorded, "estimated": float(est["amount"].sum()) if not est.empty else 0.0, "cards": len(cards)}
+
+
+def estimated_outflows(start: date, end: date) -> list[dict]:
+    """Estimated card dues (not yet on a statement) as outflow rows, on the next banking day like the other dues -- only for cards paid
+    from the Metrobank account (owner, 2026-09-29)."""
+    from engines.cc_forecast_service import estimated_card_dues
+    from engines.cc_service import paid_from_bank_ids
 
     rows = []
-    for _, r in estimated_card_dues(start, end, today=start).iterrows():
+    est = estimated_card_dues(start, end, today=start)
+    if not est.empty:
+        est = est[est["card_id"].isin(paid_from_bank_ids())]
+    for _, r in est.iterrows():
         d = next_banking_day(str(r["due"])[:10])
         if start <= d <= end:
             rows.append({"day": d, "track": r["track"], "payee": r["payee"], "reference": r["reference"], "amount": float(r["amount"])})

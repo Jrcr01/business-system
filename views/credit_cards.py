@@ -26,6 +26,8 @@ from engines.cc_service import get_annual_fee_alerts
 from engines.cc_service import get_statement_coverage
 from engines.cc_service import get_statement_gap_alerts
 from engines.cc_service import mark_no_due
+from engines.cc_service import paid_from_bank_ids
+from engines.cc_service import set_paid_from_bank
 from engines.cc_service import no_due_marks
 from engines.cc_service import undo_no_due
 from engines.common import php
@@ -425,6 +427,21 @@ def render() -> None:
                 "is_active": st.column_config.CheckboxColumn("Active"),
             },
         )
+
+        if not active_cards_df.empty:
+            with st.container(border=True):
+                st.markdown("**Cards paid from the Metrobank account**")
+                st.caption("The Check-date planner and the Cash forecast plan against the Metrobank account only. A card's bill takes from that "
+                           "balance only when the card is marked here; the rest are paid from other cash or accounts, so they are still "
+                           "listed in the planner's card forecast but not deducted. Nothing is marked to start.")
+                marked = paid_from_bank_ids()
+                labels = {int(cid): _card_label(cid, active_cards_df) for cid in active_cards_df["card_id"]}
+                chosen = st.multiselect("Paid from Metrobank", options=list(labels), default=[c for c in labels if c in marked],
+                                        format_func=labels.get, key="cc_bank_cards_pick", placeholder="No card marked — none is deducted from the bank balance")
+                if set(chosen) != {c for c in labels if c in marked}:
+                    if st.button("Save cards paid from Metrobank", icon=":material/save:", type="primary", key="cc_bank_cards_save"):
+                        set_paid_from_bank(set(chosen) | (marked - set(labels)))       # cards not listed (inactive) keep their mark
+                        refresh(done=f"{len(chosen)} card(s) marked as paid from the Metrobank account.")
 
         if not cards_df.empty:
             with st.expander("Edit a card (name / issuer / cardholder / credit limit / annual fee month / statement day)"):

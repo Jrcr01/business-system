@@ -8,6 +8,7 @@ and next to the checks."""
 from __future__ import annotations
 
 import hashlib
+from datetime import date, timedelta
 
 import altair as alt
 import pandas as pd
@@ -20,7 +21,7 @@ from engines.bank_statement_service import (
     preview_matches, reject_suggestion, reopen, resolve, resolved_lines, series_hints, statement_coverage, suggestions, tag_series,
 )
 from engines.cash_insights_service import (
-    cash_position, float_summary, forecast, get_buffer, inflow_trends, set_buffer, unusual_items, working_capital,
+    cash_position, float_summary, forecast, get_buffer, inflow_trends, outside_card_dues, set_buffer, unusual_items, working_capital,
 )
 from engines.common import php
 from views.shared import (
@@ -398,8 +399,11 @@ def _forecast_tab() -> None:
     if abs(buf - get_buffer()) > 0.005:
         set_buffer(buf)
     fc = forecast(int(days))
-    st.caption("Card dues whose statement is not in yet are included as estimates (the middle of each card's last 3 statements; "
-               "listed as \"Credit Card (estimated)\") -- see the Check-date planner for the card forecast by week.")
+    gone = outside_card_dues(date.today(), date.today() + timedelta(days=int(days)))
+    st.caption("This forecast follows the Metrobank account only: credit card bills count only for cards marked as paid from it (Credit cards → "
+               "Cards & cardholders), and those whose statement is not in yet are estimated from their last 3 statements. "
+               + (f"Not deducted because paid elsewhere: {php(gone['recorded'] + gone['estimated'])} of card bills in the next {int(days)} days "
+                  f"({gone['cards']} card(s))." if gone["cards"] else "Every card with a bill in this period is counted."))
     d = fc["daily"]
     m1, m2, m3 = st.columns(3)
     m1.metric(f"Bank balance ({fc['as_of']:%b %d})", php(fc["opening"]), border=True)

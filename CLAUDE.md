@@ -273,7 +273,21 @@ the estimates -- the money-in assumption (average deposits per weekday from the 
 `cc_forecast_service.card_week_info(dates)` -> per week of the typed dates: on statements + estimated card dues, heavy = at least
 `HEAVY_FACTOR` (1.5) x the average weekly card dues over the next 5 months; past dates skipped. `views/card_dues_note.py
 render_card_week_notes()` under the Issue checks, Edit parked checks and Corrections grids (views/order_statement.py) and the loan-note
-Edit parked checks / Corrections grids (views/lenders.py): a warning for a heavy week, a one-line caption otherwise; never blocks. First live run: 21 printed checks without numbers (printed Sep 26, dated
+Edit parked checks / Corrections grids (views/lenders.py): a warning for a heavy week, a one-line caption otherwise; never blocks.
+
+**Money-in check and "Metrobank account only" (2026-09-29, owner: "let's fix the money-in assumption").** Findings: money in is FINE
+(deposits ~PHP 2.15M/week = ~PHP 8.6-13M/month matched the bank's money out within 1-2% every month for 13 months); the problem was the
+outflow side: all 199 card statements are recorded "Cash / Online" (none by check) and the bank shows only ~PHP 0.04-1M/month of bills
+payments against PHP 4-5M/month of card bills, so cards are mostly paid OUTSIDE the Metrobank account. Owner's decisions: plan against
+the **Metrobank account only**; a card counts only when marked **paid from Metrobank**, none marked to start.
+`cc_service.paid_from_bank_ids()` / `set_paid_from_bank(ids)` (settings key `cc_paid_from_bank_ids`, no schema change; audited
+CC_BANK_CARDS_SET). `cash_insights_service.split_card_rows()` drops the unmarked cards' recorded rows (matched via the schedule's
+"Cardholder - Card - last4" reference), `estimated_outflows()` keeps only marked cards, `outside_card_dues()` reports what is not deducted;
+used by `scheduled_outflows()` (Cash forecast, Working capital, planner) and the planner's typed-cash path. `forecast_by_week(bank_only=)`
+and `card_week_info()` (heavy-week note) follow the marked cards; the planner's "Credit card dues ahead" still shows every card and says
+how much is counted. UI: multiselect "Cards paid from the Metrobank account" on Credit cards -> Cards & cardholders (Streamlit's
+multiselect has a 'Select all' entry). Live 2026-09-29 with none marked: 30-day low -PHP 3.41M (was -12.87M), 90-day -PHP 9.75M; the rest
+is real -- ~PHP 12.9M of supplier / lender / bank-loan payments in 30 days against ~PHP 9.6M expected deposits. First live run: 21 printed checks without numbers (printed Sep 26, dated
 2027) + check 3992527921 (owner confirmed correct). Tests: `tests/test_data_health.py`.
 
 **Bank is the truth + capture check + double-entry guard (2026-09-28, owner: "Always remember bank statement is ultimate truth and have a

@@ -38,6 +38,31 @@ def get_statement_gap_alerts(today: date | None = None) -> pd.DataFrame:
                                           "expected_by"]].reset_index(drop=True)
 
 
+PAID_FROM_BANK_KEY = "cc_paid_from_bank_ids"
+
+
+def paid_from_bank_ids() -> set:
+    """Card ids the owner marked 'paid from the Metrobank account' (owner, 2026-09-29: every card statement is paid "Cash / Online" and the
+    bank statement shows almost no card payments, so the planner and the Cash forecast plan against the Metrobank account only). Nothing is
+    marked to start. Kept in the settings table -- no schema change."""
+    from engines.settings_store import get_setting
+
+    raw = get_setting(PAID_FROM_BANK_KEY, "") or ""
+    return {int(x) for x in str(raw).split(",") if x.strip().isdigit()}
+
+
+def set_paid_from_bank(card_ids) -> None:
+    """Replace the set of cards paid from the Metrobank account. Audited."""
+    from engines.settings_store import set_setting
+
+    old, new = paid_from_bank_ids(), {int(c) for c in card_ids}
+    set_setting(PAID_FROM_BANK_KEY, ",".join(str(c) for c in sorted(new)), category="cash",
+                description="Credit cards paid from the Metrobank account (count against its balance in the forecast and planner)")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values, new_values) VALUES ('CC_BANK_CARDS_SET', "
+                     "'settings', NULL, ?, ?)", (",".join(map(str, sorted(old))) or "(none)", ",".join(map(str, sorted(new))) or "(none)"))
+
+
 NO_DUE_PREFIX = "ccnodue|"
 
 
