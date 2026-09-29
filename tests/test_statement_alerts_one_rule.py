@@ -12,6 +12,17 @@ from engines.cc_service import get_statement_coverage, get_statement_gap_alerts
 TODAY = date(2026, 9, 29)
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _flag_from_the_expected_day(db):
+    """These tests are about WHICH cards are flagged; the 7-day waiting rule (2026-09-29) has its own file: tests/test_cc_missing_wait.py."""
+    from engines.cc_service import set_missing_wait_days
+
+    set_missing_wait_days(0)
+
+
 def _card(db, issuer_id, name, last4, statement_day=None):
     with sqlite3.connect(db) as conn:
         return conn.execute("INSERT INTO credit_cards (creditor_id, card_name, card_number_last4, credit_limit, is_active, statement_day) "
@@ -78,3 +89,4 @@ def test_no_due_this_month_stops_the_warning_and_can_be_undone(db):
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT COUNT(*) FROM audit_logs WHERE user_action IN ('CC_NO_DUE_MARKED', 'CC_NO_DUE_UNDONE')").fetchone()[0] == 4
         assert conn.execute("SELECT COUNT(*) FROM cc_statements WHERE card_id IN (?, ?)", (quiet, both)).fetchone()[0] == 2   # nothing added
+

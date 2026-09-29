@@ -27,6 +27,8 @@ from engines.cc_service import get_annual_fee_alerts
 from engines.cc_service import get_statement_coverage
 from engines.cc_service import get_statement_gap_alerts
 from engines.cc_service import mark_no_due
+from engines.cc_service import missing_wait_days
+from engines.cc_service import set_missing_wait_days
 from engines.cc_service import paid_from_bank_ids
 from engines.cc_service import set_paid_from_bank
 from engines.cc_service import no_due_marks
@@ -658,12 +660,21 @@ def render() -> None:
         if cov_df.empty:
             st.caption("No active cards on file.")
         else:
+            w1, w2 = st.columns([2, 5], vertical_alignment="bottom")
+            wait = w1.number_input("Days to wait before a card counts as missing", min_value=0, max_value=60, step=1, value=missing_wait_days(),
+                                   key="cc_missing_wait_input",
+                                   help="A card's statement is expected on its Statement day. It only shows as missing (here, on Payment run and on the Dashboard) "
+                                        "once it is still not recorded this many days later. Default 7.")
+            if int(wait) != missing_wait_days():
+                set_missing_wait_days(int(wait))
+                st.rerun()
+            w2.caption("Cards inside the waiting time show as \"Not yet expected\".")
             counts = cov_df["status"].value_counts()
             with st.container(horizontal=True):
                 st.metric("Missing this month", int(counts.get("Missing this month", 0)), border=True, help=f"Had a statement in {cov_prev}, none recorded for {cov_this}.")
                 st.metric("Missing both months", int(counts.get("Missing both months", 0)), border=True, help=f"Older history, but nothing in {cov_prev} or {cov_this}.")
                 st.metric("No statement ever", int(counts.get("No statement ever", 0)), border=True, help='Active cards with no statement recorded at all — often cards not in use yet.')
-                st.metric("Not yet expected", int(counts.get("Not yet expected", 0)), border=True, help="Had one last month, but this card's statement isn't due to arrive yet this month (based on its Statement day, or last month's due day).")
+                st.metric("Not yet expected", int(counts.get("Not yet expected", 0)), border=True, help=f"Had one last month, but it is not yet {missing_wait_days()} day(s) past the day this card's statement is expected (its Statement day, or last month's statement date). After that it moves to Missing this month.")
                 st.metric("No due", int(counts.get("No due", 0)), border=True, help=f"You marked {cov_this} as having nothing due on this card.")
                 st.metric("OK", int(counts.get("OK", 0)), border=True, help=f"A statement is recorded for {cov_this}.")
             only_problems = st.toggle("Show only cards that need attention", value=True, key="cov_only_problems")

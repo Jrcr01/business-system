@@ -296,7 +296,14 @@ MBTC, EW, SB, CB, UB, BC, BDO, RCBC = the codes already used in card names; an u
 `card_display_name(issuer, card_name)` ('BPI Mastercard Plat Rewards'; the bank is not repeated when the card name already starts with it,
 e.g. 'MBTC Mastercard', 'RCBC JCB'). Used by the list, `render_missing_statements` (Needs attention), and the Payment run / Dashboard
 banners; `get_statement_gap_alerts()` now also returns `issuer`. Generic card names ("Platinum", "Toyota") are expected until the owner
-learns the real card name (edit under Cards & cardholders); the last 4 digits tell cards apart. First live run: 21 printed checks without numbers (printed Sep 26, dated
+learns the real card name (edit under Cards & cardholders); the last 4 digits tell cards apart.
+
+**Missing-statement trigger = 7 days (2026-09-29, owner: "i want the trigger of missing statement to be 7 days").**
+`cc_service.missing_wait_days()` (settings key `cc_missing_wait_days`, default 7, 0 = flag on the expected day) /
+`set_missing_wait_days()`; `get_statement_coverage()` keeps a card at "Not yet expected" until `today >= expected_by + wait`, and the
+warnings (`get_statement_gap_alerts`) follow, so Payment run, Dashboard and Credit cards agree. "Days to wait" box on Credit cards ->
+Missing statement check. Tests: `tests/test_cc_missing_wait.py`; `test_statement_coverage.py` and `test_statement_alerts_one_rule.py`
+pin the wait to 0 (they test which cards are flagged, not when). First live run: 21 printed checks without numbers (printed Sep 26, dated
 2027) + check 3992527921 (owner confirmed correct). Tests: `tests/test_data_health.py`.
 
 **Bank is the truth + capture check + double-entry guard (2026-09-28, owner: "Always remember bank statement is ultimate truth and have a

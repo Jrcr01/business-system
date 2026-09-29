@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 
@@ -36,6 +36,25 @@ def get_statement_gap_alerts(today: date | None = None) -> pd.DataFrame:
     out = cov.assign(alert=alert, cardholder_name=cov["cardholder"].where(cov["cardholder"] != "(no holder)", None))
     return out.loc[out["alert"].notna(), ["card_id", "card_name", "issuer", "card_number_last4", "cardholder_name", "last_due_date", "alert",
                                           "status", "expected_by"]].reset_index(drop=True)
+
+
+MISSING_WAIT_KEY = "cc_missing_wait_days"
+DEFAULT_MISSING_WAIT_DAYS = 7
+
+
+def missing_wait_days() -> int:
+    """Days to wait after a card's expected-by date before its statement counts as missing (owner, 2026-09-29: "i want the trigger of
+    missing statement to be 7 days"). Default 7; 0 = flag from the expected day itself."""
+    from engines.settings_store import get_number
+
+    return max(0, int(get_number(MISSING_WAIT_KEY, DEFAULT_MISSING_WAIT_DAYS)))
+
+
+def set_missing_wait_days(days: int) -> None:
+    from engines.settings_store import set_setting
+
+    set_setting(MISSING_WAIT_KEY, max(0, int(days)), category="cash",
+                description="Days to wait after a credit card statement's expected-by date before it counts as missing")
 
 
 PAID_FROM_BANK_KEY = "cc_paid_from_bank_ids"
@@ -110,6 +129,8 @@ def get_statement_coverage(today: date | None = None) -> pd.DataFrame:
     "Expected by" is the card's Statement day when one is set; otherwise it is estimated as 14
     days before last month's due day (statements typically issue ~2-3 weeks ahead of the due date),
     so a card only turns up as missing once it's actually overdue for follow-up, not on the 1st.
+    A card is flagged only WAIT days after its expected-by day (missing_wait_days(), default 7, owner 2026-09-29): until then it shows
+    "Not yet expected".
     Depends on statements actually being on file -- last month only shows up once past
     statements have been entered (or backfilled), which is why an OK/Missing verdict is only as
     good as the history behind it.
@@ -177,7 +198,8 @@ def get_statement_coverage(today: date | None = None) -> pd.DataFrame:
 
     df["status"] = df.apply(status, axis=1)
     df["expected_by"] = df.apply(expected_by, axis=1)
-    not_yet = (df["status"] != "OK") & df["expected_by"].notna() & df["expected_by"].apply(lambda d: d is not None and today < d)
+    wait = timedelta(days=missing_wait_days())        # owner, 2026-09-29: only flag after the statement is 7 days overdue
+    not_yet = (df["status"] != "OK") & df["expected_by"].notna() & df["expected_by"].apply(lambda d: d is not None and today < d + wait)
     df.loc[not_yet & (df["status"] == "Missing this month"), "status"] = "Not yet expected"
     df["expected_by"] = df["expected_by"].apply(lambda d: str(d) if d is not None and not pd.isna(d) else None)
     order = {"Missing this month": 0, "Missing both months": 1, "No statement ever": 2, "Not yet expected": 3, "No due": 4, "OK": 5}
