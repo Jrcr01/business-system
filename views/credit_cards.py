@@ -684,21 +684,12 @@ def render() -> None:
             if report_df.empty:
                 st.success("Every active card has a statement recorded for this month.")
             else:
-                with st.expander("Follow-up list by card holder (copy and send)", expanded=True):
-                    st.caption("One message per person, listing only the cards still missing a statement. Copy it and send it so the payment can be planned before the due date.")
-                    for holder, grp in report_df.groupby("Card holder"):
-                        first_name = holder.split()[0] if holder and holder != "(no holder)" else "there"
-                        card_lines = "\n".join(
-                            f"- {r['Issuer']} {r['Card']} (ending {r['Last 4']})"
-                            + (f" (last one was due {r[f'{cov_prev} statement: due']})" if pd.notna(r[f"{cov_prev} statement: due"]) else "")
-                            for _, r in grp.iterrows()
-                        )
-                        st.markdown(f"**{holder}** — {len(grp)} card(s)")
-                        st.code(
-                            f"Hi {first_name}! Can you send me your {cov_this} statement for {'this card' if len(grp) == 1 else 'these cards'}?\n{card_lines}\n"
-                            "A photo or PDF is fine, or just the amount due and the due date, so I can set aside the payment. Thanks!",
-                            language=None,
-                        )
+                with st.expander("List to post (screenshot it)", expanded=True):
+                    with st.container(border=True):
+                        st.markdown(f"#### Statements still missing — {cov_this}")
+                        for holder, grp in report_df.groupby("Card holder"):
+                            st.markdown(f"**{holder}**")
+                            st.markdown("\n".join(f"- {r['Issuer']} {r['Card']} · ending {r['Last 4']}" for _, r in grp.iterrows()))
                 xl = io.BytesIO()
                 with pd.ExcelWriter(xl, engine="openpyxl") as writer:
                     report_df.to_excel(writer, index=False, sheet_name="Missing statements")
