@@ -685,18 +685,18 @@ def render() -> None:
                 st.success("Every active card has a statement recorded for this month.")
             else:
                 with st.expander("Follow-up list by card holder (copy and send)", expanded=True):
-                    st.caption("One message per person, listing only the cards still missing a statement — send it so the bill can be paid on time and charges avoided.")
+                    st.caption("One message per person, listing only the cards still missing a statement. Copy it and send it so the payment can be planned before the due date.")
                     for holder, grp in report_df.groupby("Card holder"):
                         first_name = holder.split()[0] if holder and holder != "(no holder)" else "there"
                         card_lines = "\n".join(
                             f"- {r['Issuer']} {r['Card']} (ending {r['Last 4']})"
-                            + (f" — last month's statement was due {r[f'{cov_prev} statement: due']}" if pd.notna(r[f"{cov_prev} statement: due"]) else "")
+                            + (f" (last one was due {r[f'{cov_prev} statement: due']})" if pd.notna(r[f"{cov_prev} statement: due"]) else "")
                             for _, r in grp.iterrows()
                         )
                         st.markdown(f"**{holder}** — {len(grp)} card(s)")
                         st.code(
-                            f"Hi {first_name}, I don't have the {cov_this} statement yet for these cards:\n{card_lines}\n"
-                            "Please send me a photo or PDF of the statement (or the amount due and due date) so we can pay on time and avoid charges. Thank you!",
+                            f"Hi {first_name}! Can you send me your {cov_this} statement for {'this card' if len(grp) == 1 else 'these cards'}?\n{card_lines}\n"
+                            "A photo or PDF is fine, or just the amount due and the due date, so I can set aside the payment. Thanks!",
                             language=None,
                         )
                 xl = io.BytesIO()
