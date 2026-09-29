@@ -92,7 +92,9 @@ def expected_daily_inflow(weeks: int = INFLOW_WEEKS) -> dict[int, float]:
 def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
     """Money going out per day between start and end (inclusive): our active checks the bank has not cleared yet -- on their check date,
     or on `start` if that date is already past (the bank can take them any day) -- moved to the next banking day on weekends; plus
-    bank-loan installments and credit-card dues from the payment schedule. Columns: day, track, payee, reference, amount."""
+    bank-loan installments and credit-card dues from the payment schedule; plus ESTIMATED card dues for the months whose statement is
+    not in yet (engines/cc_forecast_service.py, owner 2026-09-29 -- track 'Credit Card (estimated)'). Columns: day, track, payee,
+    reference, amount."""
     checks = _read("""SELECT c.check_date, c.amount, cr.creditor_name AS payee, COALESCE(c.check_number, 'no number') AS reference,
                               CASE WHEN c.statement_id IS NOT NULL THEN 'Supplier' ELSE 'Lender' END AS track
                        FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
@@ -109,7 +111,20 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
             d = next_banking_day(str(r["due_date"])[:10])
             if start <= d <= end:
                 rows.append({"day": d, "track": r["track"], "payee": r["payee_name"], "reference": r["reference"], "amount": float(r["amount"])})
+    rows += estimated_outflows(start, end)
     return pd.DataFrame(rows, columns=["day", "track", "payee", "reference", "amount"])
+
+
+def estimated_outflows(start: date, end: date) -> list[dict]:
+    """Estimated card dues (not yet on a statement) as outflow rows, on the next banking day like the other dues."""
+    from engines.cc_forecast_service import estimated_card_dues
+
+    rows = []
+    for _, r in estimated_card_dues(start, end, today=start).iterrows():
+        d = next_banking_day(str(r["due"])[:10])
+        if start <= d <= end:
+            rows.append({"day": d, "track": r["track"], "payee": r["payee"], "reference": r["reference"], "amount": float(r["amount"])})
+    return rows
 
 
 def forecast(days: int = 60, today: date | None = None) -> dict:

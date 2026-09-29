@@ -398,6 +398,8 @@ def _forecast_tab() -> None:
     if abs(buf - get_buffer()) > 0.005:
         set_buffer(buf)
     fc = forecast(int(days))
+    st.caption("Card dues whose statement is not in yet are included as estimates (the middle of each card's last 3 statements; "
+               "listed as \"Credit Card (estimated)\") -- see the Check-date planner for the card forecast by week.")
     d = fc["daily"]
     m1, m2, m3 = st.columns(3)
     m1.metric(f"Bank balance ({fc['as_of']:%b %d})", php(fc["opening"]), border=True)

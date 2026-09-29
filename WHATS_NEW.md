@@ -7,6 +7,12 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 - Plain-English bullet, no jargon -- written for someone who doesn't read code.
 -->
 
+## 2026-09-29
+- **Credit card dues ahead, in the Check-date planner** - a card's bill is known only about a month before it is due, but supplier checks are dated 4-5 months ahead. The planner now shows the next 5 months of card dues week by week: amounts already on a statement, plus an **estimate** for the rest (the middle of each card's last 3 statements, with the lowest-highest as the range). The estimates **count as cash going out**, so the suggested check dates avoid the weeks when big card bills land, and the Cash forecast on Bank and cash includes them too. An estimate is replaced by the real amount as soon as you enter the statement.
+- **Card dues shown where you pick check dates** - under Issue checks, Edit parked checks and Corrections (batches and loan notes), each check date now shows the credit card dues due that week. A week with at least 1.5× the usual card dues gets a yellow **heavy credit card week** warning, so big checks can go to a lighter week. It only advises; nothing is blocked.
+- **Credit card statement check fixed** - a statement's month now follows its statement date (usually the month before the due date), the Payment run warning and the Credit cards table use the same rule, and a month with nothing due can be marked **"No due this month"** (undo any time on the Credit cards page).
+- **Data health** now also catches a credit card statement entered twice.
+
 ## 2026-09-28
 - **Who did it** - every entry in the audit log now records who made the change (for now always you; when logins come, each person's own email). Admin and audit → Audit log and the Dashboard's recent audit log have a new **Who** column; all older entries show you.
 - **Typing several check numbers is all or nothing** - on Checks and checkbook, when you type numbers for several checks at once and one of them is already used or spoiled, none are saved and the message says so. Before, the numbers typed before the bad one were kept even though the screen said it failed.

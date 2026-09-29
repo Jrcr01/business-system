@@ -136,7 +136,7 @@ def cash_source(today: date | None = None) -> dict:
 def _baseline(today: date, end: date, start_cash: float | None, inflow_per_day: float | None, blocked: set) -> dict:
     """The days from today to `end` with money in, money already going out (checks already issued, bank-loan and card dues) and the
     count of checks already dated each day, plus which supplier already has a check on which day."""
-    from engines.cash_insights_service import expected_daily_inflow, scheduled_outflows
+    from engines.cash_insights_service import estimated_outflows, expected_daily_inflow, scheduled_outflows
     from engines.reports_service import get_payment_schedule_all_tracks
 
     src = cash_source(today)
@@ -153,6 +153,9 @@ def _baseline(today: date, end: date, start_cash: float | None, inflow_per_day: 
         else:
             sched = sched.assign(day=pd.to_datetime(sched["actual_payment_date"]).dt.date)
             out = sched[(sched["day"] >= today) & (sched["day"] <= end)][["day", "track", "amount"]]
+        est = pd.DataFrame(estimated_outflows(today, end), columns=["day", "track", "payee", "reference", "amount"])
+        if not est.empty:                     # card dues whose statement is not in yet (owner, 2026-09-29): count as cash going out
+            out = pd.concat([out, est[["day", "track", "amount"]]], ignore_index=True)
     weekday_in = expected_daily_inflow() if inflow_per_day is None else {wd: (float(inflow_per_day) if wd < 5 else 0.0) for wd in range(7)}
     days = [today + timedelta(days=i) for i in range((end - today).days + 1)]
     out_by_day = out.groupby("day")["amount"].sum().to_dict() if not out.empty else {}

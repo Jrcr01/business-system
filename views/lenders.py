@@ -62,6 +62,7 @@ from views.shared import (  # noqa: F401
     status_text,
 )
 from engines.clock import manila_today
+from views.card_dues_note import render_card_week_notes
 
 
 def render_new_loan_note_form() -> None:
@@ -507,6 +508,7 @@ def render() -> None:
                             "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
                         },
                     )
+                    render_card_week_notes(edited_ln_parked["check_date"])     # card dues in those weeks (owner, 2026-09-29)
                     if (st.button("Save parked check edits", icon=":material/save:", key="ln_save_parked_edits") or dup_resume("ln_save_parked_edits")) and not dup_needs_confirm(
                         "ln_save_parked_edits",
                         loan_check_mismatches(selected_lnid, {int(r["check_id"]): (float(r["amount"]), r["check_date"]) for _, r in edited_ln_parked.iterrows()
@@ -549,6 +551,7 @@ def render() -> None:
                             "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
                         },
                     )
+                    render_card_week_notes(edited_ln_corr["check_date"])     # card dues in those weeks (owner, 2026-09-29)
                     corr_by_id = original_ln_corr.set_index("check_id")
 
                     def _ln_corr_changes():
