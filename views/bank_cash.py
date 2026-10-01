@@ -24,8 +24,10 @@ from engines.cash_insights_service import (
     cash_position, float_summary, forecast, get_buffer, inflow_trends, outside_card_dues, set_buffer, unusual_items, working_capital,
 )
 from engines.common import php
+from engines.settled_outside_bank import REASONS as SETTLE_REASONS, settle_outside_bank, settled_checks, undo_settlement
 from views.shared import (
-    LN_BROWSE, OS_BROWSE, date_col, go_to, guard_duplicate_submit, money_col, page_header, pdf_preview_and_download, q, refresh, section,
+    LN_BROWSE, OS_BROWSE, confirm_create_dialog, date_col, go_to, guard_duplicate_submit, money_col, page_header, pdf_preview_and_download, q, refresh,
+    section, show_table,
 )
 
 KIND_LABELS = {"CHECK": "Our checks clearing", "DEPOSIT": "Money in (deposits, transfers)", "RETURNED_CHECK": "Returned (bounced) deposited checks",
@@ -250,6 +252,50 @@ def _adjustments_section() -> None:
                                             "recorded_value": "Recorded", "bank_value": "Bank", "amount": money_col("Adjustment"), "reason": "Reason"})
 
 
+def _settle_form(waiting: list[dict]) -> None:
+    """Owner (2026-09-30): a check the payee gave back, who was paid in cash instead, will never clear the bank. This takes it out of the
+    not-yet-cleared list and the cash forecast without pretending the bank cleared it."""
+    with st.expander("Settled outside the bank — the payee returned the check and was paid another way", icon=":material/handshake:"):
+        st.caption("Use this when a check on the list above will never reach the bank because the payee gave it back and was paid in cash (or exchanged it). "
+                   "The check stays on file and still counts toward its batch or loan note, but it stops showing as money still to leave the bank. "
+                   "It is never marked cleared by the bank, and you can undo it below.")
+        options = {int(w["check_id"]): f"{w['check_number']} · {w['check_date']} · {php(w['amount'])} · {w['creditor_name']}" for w in waiting}
+        pick = st.selectbox("Check", list(options), format_func=options.get, key="bank_settle_pick")
+        c1, c2 = st.columns(2)
+        reason = c1.selectbox("How it was settled", SETTLE_REASONS, key="bank_settle_reason")
+        when = c2.date_input("Date it was settled", value=date.today(), max_value=date.today(), key="bank_settle_date")
+        note = st.text_input("Note (optional)", key="bank_settle_note", placeholder="e.g. payee returned the check, paid cash at the counter")
+        if st.button("Settled outside the bank", icon=":material/handshake:", key="bank_settle_btn"):
+            def _do(cid=int(pick), why=reason, on=when, n=note):
+                return settle_outside_bank(cid, why, on, n)
+
+            confirm_create_dialog(f"Mark check **{options[int(pick)]}** as **settled outside the bank** ({reason}, {when:%b %d, %Y})?"
+                                  "\n\nIt will no longer count as money still to leave the bank. You can undo this.", "bank_settle", _do)
+
+
+def _settled_section() -> None:
+    df = settled_checks()
+    if df.empty:
+        return
+    with st.expander(f"Settled outside the bank ({len(df)})", icon=":material/handshake:"):
+        paid_twice = df[df["bank_also_cleared"] != ""]
+        if not paid_twice.empty:
+            st.error("The bank ALSO cleared: " + ", ".join(str(n) for n in paid_twice["check_number"]) + " — these were settled in cash and paid by the bank. "
+                     "Ask Metrobank or the payee.", icon=":material/warning:")
+        show_table(df, {"check_number": "Check #", "check_date": "Check date", "amount": "Amount", "payee": "Payee", "reference": "Batch / loan note",
+                        "settled_on": "Settled on", "reason": "How", "note": "Note", "bank_also_cleared": "Bank paid it too?"},
+                   hide=["check_id"], kinds={"check_date": "date", "amount": "money", "settled_on": "date"})
+        r1, r2 = st.columns([5, 1.4], vertical_alignment="bottom")
+        opts = {int(r.check_id): f"{r.check_number} · {php(r.amount)} · {r.payee} · {r.reason}" for r in df.itertuples()}
+        undo_pick = r1.selectbox("Settled by mistake? Undo one", list(opts), format_func=opts.get, key="bank_unsettle_pick",
+                                 help="The check goes back to waiting for the bank.")
+        if r2.button("Undo", icon=":material/undo:", key="bank_unsettle_btn", width="stretch"):
+            ok, msg = undo_settlement(int(undo_pick))
+            if ok:
+                refresh(done=msg)
+            st.error(msg)
+
+
 def _reconcile_tab() -> None:
     first, last = statement_coverage()
     if last is None:
@@ -325,6 +371,8 @@ def _reconcile_tab() -> None:
         st.dataframe(w.assign(check_date=pd.to_datetime(w["check_date"]))[["check_number", "check_date", "days_waiting", "creditor_name", "reference", "amount"]],
                      hide_index=True, column_config={"check_number": "Check #", "check_date": date_col("Check date"), "days_waiting": "Days waiting",
                                                      "creditor_name": "Payee", "reference": "Batch / loan note", "amount": money_col("Amount")})
+        _settle_form(waiting)
+    _settled_section()
 
     with st.expander("Alert settings", icon=":material/tune:"):
         s1, s2 = st.columns(2)

@@ -29,6 +29,7 @@ from engines.check_run_service import save_chrysanth_settings
 from engines.common import PRIMARY_BANK_ACCOUNT_ID
 from engines.common import has_value
 from engines.common import php
+from engines.voided_checks_service import voided_checks
 
 from views.shared import (  # noqa: F401
     MONEY_FORMAT,
@@ -36,7 +37,9 @@ from views.shared import (  # noqa: F401
     date_col,
     dup_needs_confirm,
     dup_resume,
+    export_buttons,
     guard_duplicate_submit,
+    show_table,
     money_col,
     page_header,
     pdf_preview_and_download,
@@ -319,7 +322,41 @@ def render() -> None:
 
     with st.expander("Log a spoiled check (misprint / jam)"):
         render_log_spoiled_form()
-    spoiled_df = q("SELECT * FROM spoiled_checks ORDER BY spoiled_id DESC")
-    if not spoiled_df.empty:
-        st.markdown("**Spoiled checks on file (Error Checks Only, for control)**")
-        st.dataframe(spoiled_df, hide_index=True)
+    render_voided_checks_register()
+
+
+VOIDED_LABELS = {"what": "What", "check_number": "Check #", "check_date": "Check date", "amount": "Amount", "payee": "Payee",
+                 "reference": "Batch / loan note", "happened_at": "When", "reason": "Reason", "replaced_by": "Replaced by check #",
+                 "bank_paid_anyway": "Bank paid it anyway?", "handwritten": "Handwritten"}
+VOIDED_KINDS = {"check_date": "date", "amount": "money", "happened_at": "datetime"}
+
+
+def render_voided_checks_register() -> None:
+    """Every voided, replaced and spoiled check in one list (owner, 2026-09-30), with the date, the reason, the check that replaced it and a
+    warning when the bank paid a check we had voided."""
+    df_all = voided_checks()
+    with st.container(border=True):
+        st.subheader("Voided, replaced and spoiled checks")
+        st.caption("Every check we voided or replaced, and every spoiled leaf: when, why, and which check replaced it. "
+                   "\"Bank paid it anyway\" means the bank statement shows a payment under a number we had voided — check it with the bank.")
+        if df_all.empty:
+            st.caption("None yet.")
+            return
+        f1, f2 = st.columns([2, 3])
+        what = f1.multiselect("Show", ["Voided", "Replaced", "Spoiled"], default=["Voided", "Replaced", "Spoiled"], key="voided_what")
+        df = df_all[df_all["what"].isin(what)] if what else df_all.iloc[0:0]
+        text = f2.text_input("Search (check #, payee, reason, batch)", key="voided_search").strip().lower()
+        if text:
+            hay = df[["check_number", "payee", "reason", "reference"]].fillna("").astype(str).agg(" ".join, axis=1).str.lower()
+            df = df[hay.str.contains(text, regex=False)]
+        alert = df[df["bank_paid_anyway"] != ""]
+        if not alert.empty:
+            st.error(f"{len(alert)} voided / spoiled check(s) appear on the bank statement: "
+                     + ", ".join(str(n) for n in alert["check_number"]) + ". Check them with the bank.", icon=":material/warning:")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Voided", int((df["what"] == "Voided").sum()), border=True)
+        m2.metric("Replaced", int((df["what"] == "Replaced").sum()), border=True)
+        m3.metric("Spoiled", int((df["what"] == "Spoiled").sum()), border=True)
+        show_table(df, VOIDED_LABELS, hide=["check_id"], kinds=VOIDED_KINDS)
+        export_buttons(df.drop(columns=["check_id"]), "voided_replaced_spoiled_checks", key="dl_voided", labels=VOIDED_LABELS,
+                       what="voided checks", kinds=VOIDED_KINDS)

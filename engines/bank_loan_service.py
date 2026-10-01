@@ -183,14 +183,18 @@ def edit_bank_loan_installment(installment_id: int, due_date: date, amount: floa
 def delete_bank_loan_installment(installment_id: int) -> tuple[bool, str]:
     with _get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT bank_loan_id, due_date FROM bank_loan_installments WHERE installment_id = ?", (installment_id,))
+        cur.execute("SELECT bank_loan_id, due_date, amount, interest_portion FROM bank_loan_installments WHERE installment_id = ?", (installment_id,))
         row = cur.fetchone()
         if not row:
             return False, "Installment not found."
-        bank_loan_id, due_date = row
+        bank_loan_id, due_date, amount, interest_portion = row
         if is_installment_cleared(due_date):
             return False, "Cannot delete an installment whose due date has already passed — it's treated as paid."
         cur.execute("DELETE FROM bank_loan_installments WHERE installment_id = ?", (installment_id,))
+        cur.execute(
+            "INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('BANK_LOAN_INSTALLMENT_DELETED', 'bank_loan_installments', ?, ?)",
+            (installment_id, f"Bank loan {bank_loan_id}: installment due {str(due_date)[:10]} deleted (amount {float(amount or 0):,.2f}, interest part {float(interest_portion or 0):,.2f})"),
+        )
         _renumber_installments(cur, bank_loan_id)
         _sync_loan_status(cur, bank_loan_id)
         conn.commit()

@@ -224,14 +224,18 @@ def edit_loan_note_terms(loan_note_id: int, principal_amount: float, monthly_int
 def delete_loan_installment(installment_id: int) -> tuple[bool, str]:
     with _get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT loan_note_id, status FROM loan_installments WHERE installment_id = ?", (installment_id,))
+        cur.execute("SELECT loan_note_id, status, due_date, principal, interest FROM loan_installments WHERE installment_id = ?", (installment_id,))
         row = cur.fetchone()
         if not row:
             return False, "Installment not found."
-        loan_note_id, status = row
+        loan_note_id, status, due_date, principal, interest = row
         if status == "Active":
             return False, "Cannot delete an installment with an active check — cancel its check first."
         cur.execute("DELETE FROM loan_installments WHERE installment_id = ?", (installment_id,))
+        cur.execute(
+            "INSERT INTO audit_logs (user_action, entity_name, entity_id, old_values) VALUES ('LOAN_INSTALLMENT_DELETED', 'loan_installments', ?, ?)",
+            (installment_id, f"Loan note {loan_note_id}: installment due {str(due_date)[:10]} deleted (principal {principal:,.2f} + interest {interest:,.2f})"),
+        )
         _recompute_schedule(cur, loan_note_id)
         conn.commit()
     return True, "Installment deleted."

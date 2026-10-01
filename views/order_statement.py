@@ -1442,7 +1442,7 @@ def render() -> None:
                         if void_reissue:
                             ok, msg, new_check_id = replace_check(int(void_pick), void_new_date, void_reason)
                         else:
-                            ok, msg = cancel_check(int(void_pick))
+                            ok, msg = cancel_check(int(void_pick), void_reason)
                         (st.success if ok else st.error)(msg)
                         if ok:
                             refresh(done=msg)

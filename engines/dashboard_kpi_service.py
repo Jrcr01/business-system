@@ -107,7 +107,7 @@ def get_top_suppliers(metric: str = "outstanding", limit: int = 10) -> pd.DataFr
                 """SELECT cr.creditor_name AS supplier_name, COALESCE(SUM(c.amount), 0) AS value
                    FROM checks_issued c
                    JOIN creditors cr ON c.creditor_id = cr.creditor_id
-                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= DATE('now', 'localtime')
+                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= DATE('now', 'localtime') AND c.settled_outside_at IS NULL
                    GROUP BY cr.creditor_name
                    ORDER BY value DESC
                    LIMIT ?""",
@@ -228,7 +228,7 @@ def get_supplier_concentration(limit: int = 5) -> dict:
     with sqlite3.connect(DB_PATH) as conn:
         total_row = pd.read_sql_query(
             """SELECT COALESCE(SUM(amount), 0) AS total FROM checks_issued
-               WHERE statement_id IS NOT NULL AND status = 'Active' AND check_date >= DATE('now', 'localtime')""",
+               WHERE statement_id IS NOT NULL AND status = 'Active' AND check_date >= DATE('now', 'localtime') AND settled_outside_at IS NULL""",
             conn,
         )
     total_outstanding = float(total_row["total"][0])
@@ -273,7 +273,7 @@ def get_total_ap_outstanding() -> float:
     from engines.cc_rules import cc_owed_case
 
     with sqlite3.connect(DB_PATH) as conn:
-        checks = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date >= DATE('now', 'localtime')").fetchone()[0]
+        checks = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date >= DATE('now', 'localtime') AND settled_outside_at IS NULL").fetchone()[0]
         loans = conn.execute("""SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date >= DATE('now', 'localtime')
                                 AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)""").fetchone()[0]
         cards = conn.execute(f"SELECT COALESCE(SUM({cc_owed_case('cs')}), 0) FROM cc_statements cs WHERE cs.status NOT IN ('Paid', 'Cancelled')").fetchone()[0]
@@ -284,6 +284,6 @@ def get_stale_checks(days: int = 180) -> dict:
     """Active checks dated more than `days` ago that the bank has NOT confirmed cleared (bank_cleared_date empty) -- probably lost or never
     deposited. A check the imported bank statement shows as cleared is not stale, however old (2026-09-28: was check-date only)."""
     with sqlite3.connect(DB_PATH) as conn:
-        n, total = conn.execute("""SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND bank_cleared_date IS NULL
+        n, total = conn.execute("""SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND bank_cleared_date IS NULL AND settled_outside_at IS NULL
                                    AND check_date < DATE('now', 'localtime', ?)""", (f"-{int(days)} days",)).fetchone()
     return {"n": int(n), "total": float(total)}

@@ -598,8 +598,10 @@ def render() -> None:
                     )
                     cr_col_cancel, cr_col_replace = st.columns(2)
                     with cr_col_cancel:
+                        cr_reason = st.text_input("Reason (optional)", key="ln_cancel_reason", placeholder="e.g. wrong amount",
+                                                  help="Kept with the voided check — it shows in Checks and checkbook → Voided, replaced and spoiled checks.")
                         if st.button("Cancel this check", icon=":material/cancel:", key="ln_check_cancel_btn"):
-                            ok, msg = cancel_check(int(cr_pick))
+                            ok, msg = cancel_check(int(cr_pick), cr_reason)
                             (st.success if ok else st.error)(msg)
                             if ok:
                                 refresh(done=msg)

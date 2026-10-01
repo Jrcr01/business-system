@@ -96,7 +96,7 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
     checks = _read("""SELECT c.check_date, c.amount, cr.creditor_name AS payee, COALESCE(c.check_number, 'no number') AS reference,
                               CASE WHEN c.statement_id IS NOT NULL THEN 'Supplier' ELSE 'Lender' END AS track
                        FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
-                       WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL""")
+                       WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL AND c.settled_outside_at IS NULL""")
     rows = []
     for _, r in checks.iterrows():
         d = max(next_banking_day(str(r["check_date"])[:10]), next_banking_day(start))
@@ -205,7 +205,7 @@ def float_summary(today: date | None = None) -> dict:
     if pos is None:
         return {}
     df = _read("""SELECT c.check_number, c.check_date, c.amount, cr.creditor_name AS payee FROM checks_issued c
-                  JOIN creditors cr ON cr.creditor_id = c.creditor_id WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL""")
+                  JOIN creditors cr ON cr.creditor_id = c.creditor_id WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL AND c.settled_outside_at IS NULL""")
     if df.empty:
         return {"overdue": df, "ahead": df, "buckets": pd.DataFrame(columns=["age", "checks", "amount"]), "by_payee": pd.DataFrame(), "as_of": pos["as_of"]}
     df["check_date"] = pd.to_datetime(df["check_date"]).dt.date
@@ -339,7 +339,8 @@ def period_bank_summary(start: date, end: date, prev_start: date, prev_end: date
                    (start.isoformat(), end.isoformat())).iloc[0]
     flt = _read("""SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS t FROM checks_issued
                    WHERE status = 'Active' AND check_number IS NOT NULL AND check_number != '' AND check_date <= ?
-                     AND (bank_cleared_date IS NULL OR bank_cleared_date > ?)""", (as_of.isoformat(), as_of.isoformat())).iloc[0]
+                     AND (bank_cleared_date IS NULL OR bank_cleared_date > ?) AND (settled_outside_at IS NULL OR settled_outside_at > ?)""",
+                (as_of.isoformat(), as_of.isoformat(), as_of.isoformat())).iloc[0]
     bounced = _read("SELECT COUNT(*) AS n, COALESCE(SUM(debit), 0) AS t FROM bank_transactions WHERE kind = 'RETURNED_CHECK' AND posting_date BETWEEN ? AND ?",
                     (start.isoformat(), end.isoformat())).iloc[0]
     open_n = int(_read("SELECT COUNT(*) AS n FROM bank_transactions WHERE reviewed = 0 AND posting_date BETWEEN ? AND ? AND match_status IN (%s)"

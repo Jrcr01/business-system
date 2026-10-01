@@ -369,7 +369,9 @@ def build_dual_copy_check_pdf(payee_name: str, amount: float, check_date: date, 
     return out.getvalue()
 
 
-def cancel_check(check_id: int) -> tuple[bool, str]:
+def cancel_check(check_id: int, reason: str = "") -> tuple[bool, str]:
+    """Voids a check. The reason and the moment are kept on the check itself (and in the audit log) so the voided-checks register can show them."""
+    reason = (reason or "").strip()
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT bank_account_id, amount, status, statement_id FROM checks_issued WHERE check_id = ?", (check_id,))
@@ -381,10 +383,11 @@ def cancel_check(check_id: int) -> tuple[bool, str]:
             return False, f"Only Active checks can be cancelled (current status: {status})."
         if _batch_lock_status(cur, statement_id):
             return False, "This batch is locked. Unlock it first to cancel a check."
-        cur.execute("UPDATE checks_issued SET status = 'Cancelled' WHERE check_id = ?", (check_id,))
+        cur.execute("UPDATE checks_issued SET status = 'Cancelled', cancelled_at = CURRENT_TIMESTAMP, cancel_reason = ? WHERE check_id = ?",
+                    (reason or None, check_id))
         cur.execute(
             "INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_CANCELLED', 'checks_issued', ?, ?)",
-            (check_id, f"Cancelled check for {php(amount)}"),
+            (check_id, f"Cancelled check for {php(amount)}" + (f": {reason}" if reason else "")),
         )
         unlink_installment_for_check(cur, check_id)
         unlink_invoice_allocations_for_check(cur, check_id)

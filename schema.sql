@@ -283,6 +283,14 @@ CREATE TABLE IF NOT EXISTS checks_issued (
     -- bank statement import (migration 050): the bank's own cleared date and the matching bank line (NULL = not on a statement yet)
     bank_cleared_date DATE,
     bank_txn_id INTEGER,
+    -- migration 054 (2026-10-01): a void keeps its date and reason; a handwritten check (written outside the system, recorded afterwards) is tagged
+    cancelled_at DATETIME,
+    cancel_reason TEXT,
+    is_handwritten INTEGER NOT NULL DEFAULT 0,
+    -- migration 055 (2026-10-01): "settled outside the bank" -- the payee gave the check back and was paid in cash (never marked cleared by the bank)
+    settled_outside_at DATE,
+    settled_outside_reason TEXT,
+    settled_outside_note TEXT,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
     FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id),

@@ -48,7 +48,7 @@ def get_uncleared_checks_report() -> pd.DataFrame:
         c.amount
     FROM checks_issued c
     JOIN creditors cr ON c.creditor_id = cr.creditor_id
-    WHERE c.status = 'Active' AND c.check_date >= DATE('now', 'localtime') AND c.check_number IS NOT NULL
+    WHERE c.status = 'Active' AND c.check_date >= DATE('now', 'localtime') AND c.check_number IS NOT NULL AND c.settled_outside_at IS NULL
     ORDER BY c.check_date ASC, cr.creditor_name ASC
     """
     with sqlite3.connect(DB_PATH) as conn:
@@ -116,14 +116,14 @@ _PAYMENT_SCHEDULE_UNION = """
     SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Supplier' AS track, COALESCE(c.check_number, 'Pending') AS reference, os.statement_ref AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
     LEFT JOIN order_statements os ON os.statement_id = c.statement_id
-    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND c.check_date >= DATE('now', 'localtime')
+    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND c.check_date >= DATE('now', 'localtime') AND c.settled_outside_at IS NULL
 
     UNION ALL
 
     -- Lender checks aren't batched (Loan Notes track, not Order Statements) -- batch is NULL.
     SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Lender' AS track, COALESCE(c.check_number, 'Pending') AS reference, NULL AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND c.check_date >= DATE('now', 'localtime')
+    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND c.check_date >= DATE('now', 'localtime') AND c.settled_outside_at IS NULL
 
     UNION ALL
 
@@ -332,9 +332,9 @@ def get_payables_rundown(creditor_id: int | None = None, date_from=None, date_to
            (SELECT DATE(os.created_at, 'localtime') FROM order_statements os WHERE os.statement_id = b.statement_id) AS created,
            b.net_total AS net_total,
            COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = b.statement_id
-                     AND k.status = 'Active' AND k.check_date < DATE('now', 'localtime')), 0) AS paid,
+                     AND k.status = 'Active' AND (k.check_date < DATE('now', 'localtime') OR k.settled_outside_at IS NOT NULL)), 0) AS paid,
            COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = b.statement_id
-                     AND k.status = 'Active' AND k.check_date >= DATE('now', 'localtime')), 0) AS scheduled
+                     AND k.status = 'Active' AND k.check_date >= DATE('now', 'localtime') AND k.settled_outside_at IS NULL), 0) AS scheduled
     FROM v_batch_net_totals b
     JOIN creditors c ON c.creditor_id = b.creditor_id
     WHERE b.status = 'Issued' AND c.creditor_type = 'SUPPLIER'

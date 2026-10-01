@@ -7,6 +7,12 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 - Plain-English bullet, no jargon -- written for someone who doesn't read code.
 -->
 
+## 2026-10-01
+- **Voided, replaced and spoiled checks, all in one list** (Checks and checkbook) - every check we voided or replaced and every spoiled leaf: when, why, which check replaced it, and a warning if the bank paid a check we had voided. You can search it and download it to Excel or CSV.
+- **A void now keeps its reason and date** - the Reason box on "Void check" (batches) and "Cancel this check" (loan notes) is saved with the check instead of being thrown away.
+- **Deleting a loan or bank-loan installment is now recorded** in the audit log (it left no trace before).
+- **"Settled outside the bank"** (Bank and cash, under Checks not yet cleared) - when the payee gave a check back and was paid in cash, mark it settled: it leaves the not-yet-cleared list, the cash forecast, the float and the payment schedule, but it is never marked cleared by the bank and still counts toward its batch or loan note. You pick why, the date and a note; it asks you to confirm; Undo is one click. If the bank pays it anyway, a warning shows.
+
 ## 2026-09-29
 - **Credit card dues ahead, in the Check-date planner** - a card's bill is known only about a month before it is due, but supplier checks are dated 4-5 months ahead. The planner now shows the next 5 months of card dues week by week: amounts already on a statement, plus an **estimate** for the rest (the middle of each card's last 3 statements, with the lowest-highest as the range). The estimates **count as cash going out**, so the suggested check dates avoid the weeks when big card bills land, and the Cash forecast on Bank and cash includes them too. An estimate is replaced by the real amount as soon as you enter the statement.
 - **Supplier history report fixed** - it showed no invoices or checks because its default date range collapsed to the dates the batches were created; the range now covers every invoice and check, so e.g. AMK Auto Parts shows its 4 invoices and 46 checks. The Private lender, Bank loan and Credit card histories share the same fix.

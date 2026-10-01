@@ -586,7 +586,7 @@ def not_yet_cleared(as_of: date | None = None) -> list[dict]:
                       COALESCE(os.statement_ref, ln.note_ref) AS reference
                FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
                LEFT JOIN order_statements os ON os.statement_id = c.statement_id LEFT JOIN loan_notes ln ON ln.loan_note_id = c.loan_note_id
-               WHERE c.status = 'Active' AND c.check_number IS NOT NULL AND c.check_number != '' AND c.bank_cleared_date IS NULL
+               WHERE c.status = 'Active' AND c.check_number IS NOT NULL AND c.check_number != '' AND c.bank_cleared_date IS NULL AND c.settled_outside_at IS NULL
                  AND c.check_date <= ? ORDER BY c.check_date""", (as_of.isoformat(),)).fetchall()
     return [dict(r, days_waiting=(as_of - date.fromisoformat(str(r["check_date"])[:10])).days) for r in rows]
 
@@ -761,7 +761,7 @@ def link_candidates(txn_id: int, limit: int = 60) -> list[dict]:
         return [dict(r) for r in conn.execute(
             """SELECT c.check_id, c.check_number, c.check_date, c.amount, cr.creditor_name, ABS(c.amount - ?) < 0.005 AS same_amount
                FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
-               WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL
+               WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL AND c.settled_outside_at IS NULL
                ORDER BY same_amount DESC, ABS(JULIANDAY(c.check_date) - JULIANDAY(?)) LIMIT ?""", (t["debit"], t["posting_date"], int(limit))).fetchall()]
 
 
@@ -787,7 +787,7 @@ def suggestions() -> list[dict]:
         lines = conn.execute("""SELECT txn_id, posting_date, check_number, debit, rejected_check_ids FROM bank_transactions
                                 WHERE kind = 'CHECK' AND reviewed = 0 AND match_status IN ('amount_mismatch', 'not_in_system')""").fetchall()
         ours = conn.execute("""SELECT c.check_id, c.check_number, c.check_date, c.amount, cr.creditor_name FROM checks_issued c
-                               JOIN creditors cr ON cr.creditor_id = c.creditor_id WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL""").fetchall()
+                               JOIN creditors cr ON cr.creditor_id = c.creditor_id WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL AND c.settled_outside_at IS NULL""").fetchall()
     out = []
     for t in lines:
         rejected = {x for x in (t["rejected_check_ids"] or "").split(",") if x}
