@@ -7,6 +7,7 @@ import streamlit as st
 from engines.check_rules import assign_check_numbers_manual
 from engines.check_rules import get_booklets
 from engines.check_rules import get_check_print_calibration
+from engines.check_rules import link_replacement
 from engines.check_rules import log_spoiled_check
 from engines.check_rules import spoiled_check_problems
 from engines.check_run_service import CHRYSANTH_CROSSING_OPTIONS
@@ -36,6 +37,7 @@ from views.shared import (  # noqa: F401
     PRINT_CHECKS_IN_APP,
     date_col,
     dup_needs_confirm,
+    confirm_create_dialog,
     dup_resume,
     export_buttons,
     guard_duplicate_submit,
@@ -360,3 +362,24 @@ def render_voided_checks_register() -> None:
         show_table(df, VOIDED_LABELS, hide=["check_id"], kinds=VOIDED_KINDS)
         export_buttons(df.drop(columns=["check_id"]), "voided_replaced_spoiled_checks", key="dl_voided", labels=VOIDED_LABELS,
                        what="voided checks", kinds=VOIDED_KINDS)
+        voided_only = df_all[(df_all["what"] == "Voided") & df_all["check_id"].notna()]
+        if not voided_only.empty:
+            with st.expander("Link a voided check to the check that replaced it", icon=":material/link:"):
+                st.caption("Use this when the replacement was written by hand and recorded separately: the voided check is then shown as replaced by it.")
+                old_opts = {int(r.check_id): f"{r.check_number or 'no number'} · {php(r.amount)} · {r.payee}" for r in voided_only.itertuples()}
+                old_id = st.selectbox("Voided check", list(old_opts), format_func=old_opts.get, key="vc_link_old")
+                payee_id = int(q("SELECT creditor_id FROM checks_issued WHERE check_id = ?", (old_id,))["creditor_id"][0])
+                active = q("SELECT check_id, check_number, check_date, amount FROM checks_issued WHERE creditor_id = ? AND status = 'Active' ORDER BY check_id DESC LIMIT 150", (payee_id,))
+                if active.empty:
+                    st.info("This payee has no active check to link to. Record the replacement first (Add data → Handwritten check).")
+                else:
+                    new_opts = {int(r.check_id): f"{r.check_number or 'no number yet'} · {r.check_date} · {php(r.amount)}" for r in active.itertuples()}
+                    new_id = st.selectbox("Replaced by", list(new_opts), format_func=new_opts.get, key="vc_link_new")
+                    if st.button("Link them", icon=":material/link:", key="vc_link_btn"):
+                        def _do(o=int(old_id), n=int(new_id)):
+                            ok, msg = link_replacement(o, n, "linked by hand")
+                            if ok:
+                                st.toast(msg)
+                            return ok, msg
+
+                        confirm_create_dialog(f"Show **{old_opts[int(old_id)]}** as replaced by **{new_opts[int(new_id)]}**?", "vc_link", _do)

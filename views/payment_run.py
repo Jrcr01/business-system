@@ -12,8 +12,10 @@ from engines.bank_alerts import all_alerts
 from engines.data_health_service import open_count
 from engines.bank_names import card_display_name
 from engines.cc_service import get_statement_gap_alerts
+from engines.check_rules import get_booklets
 from engines.check_run_service import mark_batch_printed
-from engines.common import php
+from engines.checkbook_service import set_reported_up_to, unrecorded_alerts
+from engines.common import has_value, php
 from engines.drive_service import GoogleDrive
 from engines.park_draft_service import list_park_drafts
 from engines.statement_version_service import daily_link_sweep, expired_public_versions
@@ -44,6 +46,43 @@ def _quick_report() -> dict:
 @st.cache_data(ttl="15s")
 def _stages() -> dict:
     return get_run_stages()
+
+
+def _booklet_notice() -> None:
+    """Checks written by hand (owner, 2026-10-01): the owner's mother hand-writes urgent checks from her own booklet and sends photos; a forgotten
+    photo means a check missing from the system. Warns about leaves that look used but are not recorded, and takes "her booklet is up to no. ___"."""
+    try:
+        alerts = unrecorded_alerts()
+        booklets = get_booklets(statuses=("Active", "Exhausted"))
+    except Exception:                                   # a database without the booklet tables / column yet
+        return
+    if not alerts.empty:
+        st.warning(f":material/menu_book: **{int(alerts['count'].sum())} check number(s) look used but are not recorded** — "
+                   + "; ".join(f"{r.booklet}: {int(r.count)}" for r in alerts.itertuples())
+                   + ". Record them (or log them as spoiled), or open the list below.")
+    if booklets.empty:
+        return
+    with st.expander("Check booklets — checks written by hand", icon=":material/menu_book:", expanded=not alerts.empty):
+        st.caption("Type the last check number on the latest photo you received, and the app lists every number up to it that is not recorded, not logged as "
+                   "spoiled and not already on a bank statement. A voided check counts as recorded.")
+        for r in alerts.itertuples():
+            text = r.leaves if len(r.leaves) <= 600 else r.leaves[:600] + " …"
+            st.markdown(f"**{r.booklet}** — {int(r.count)} number(s) not recorded:\n\n{text}")
+        names = {int(b): (c or f"Booklet #{int(b)}") + f" ({int(s)}–{int(e)})" for b, c, s, e in zip(booklets["booklet_id"], booklets["booklet_code"], booklets["start_number"], booklets["end_number"])}
+        c1, c2, c3 = st.columns([3, 2.4, 1.6], vertical_alignment="bottom")
+        pick = c1.selectbox("Booklet", list(names), format_func=names.get, key="pr_bk_pick")
+        row = booklets[booklets["booklet_id"] == pick].iloc[0]
+        start_n, end_n = int(row["start_number"]), int(row["end_number"])
+        current = int(row["reported_up_to"]) if has_value(row.get("reported_up_to")) else start_n       # q() turns SQL NULL into ''
+        number = c2.number_input("Last check number seen on a photo", min_value=start_n, max_value=end_n, value=min(max(current, start_n), end_n), step=1,
+                                 key=f"pr_bk_num_{int(pick)}", help="The number printed on the last check you received a photo of.")
+        if c3.button("Save", icon=":material/save:", key="pr_bk_save", width="stretch"):
+            ok, msg = set_reported_up_to(int(pick), int(number))
+            if ok:
+                refresh(done=msg)
+            st.error(msg)
+        if st.button("Record a handwritten check", icon=":material/edit_note:", key="pr_bk_record"):
+            go_to("add-data", ad_kind="Handwritten check")
 
 
 def _open_schedule_row(row: pd.Series) -> None:
@@ -179,6 +218,7 @@ def render() -> None:
         h1.info(f":material/health_and_safety: **{n_health} data health finding(s)** — records that look wrong. Open them to fix, or mark them fine.")
         if h2.button("Open Data health", icon=":material/health_and_safety:", key="pr_health_btn", width="stretch"):
             go_to("data-health")
+    _booklet_notice()
     reprint = _stages().get("needs_reprint")
     if reprint is not None and not reprint.empty:
         rp1, rp2 = st.columns([5, 1.6], vertical_alignment="center")

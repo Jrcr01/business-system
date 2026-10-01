@@ -11,7 +11,7 @@ from datetime import timedelta
 from engines.bank_names import card_display_name
 from engines.cc_service import get_statement_gap_alerts
 from engines.check_run_service import get_pending_check_run
-from engines.checkbook_service import get_checkbook_alerts
+from engines.checkbook_service import get_checkbook_alerts, unrecorded_alerts
 from engines.bank_alerts import all_alerts
 from engines.cash_insights_service import dashboard_bank_summary
 from engines.common import fix_nullable_int
@@ -80,6 +80,14 @@ def render() -> None:
             + ". Check Admin and audit (Check booklets)."
         )
 
+    try:
+        dash_unrecorded = unrecorded_alerts()
+    except Exception:                                   # a database without the booklet column yet
+        dash_unrecorded = pd.DataFrame()
+    if not dash_unrecorded.empty:
+        st.error(f":material/menu_book: {int(dash_unrecorded['count'].sum())} check number(s) look used but are not recorded — "
+                 + "; ".join(f"{r.booklet}: {int(r.count)}" for r in dash_unrecorded.itertuples()) + ". See Payment run → Check booklets.")
+
     # Supplier concentration alert (2026-09-17, per user request): names the single largest
     # supplier relationship rather than a blended top-5 percentage, since that's the one whose
     # disruption would actually hurt -- 25% is a common rule-of-thumb concentration-risk
@@ -114,7 +122,7 @@ def render() -> None:
         st.metric("Total AP outstanding", php(ap_outstanding), border=True, help='Everything still owed today: supplier and lender checks dated today or later, bank-loan installments due today or later, and credit-card amounts still owed. Due today counts as still owed.')
         st.metric("Active checks in circulation", f"{int(active_checks['n'][0])} · {php(active_checks['total'][0])}", border=True, help='Every check with status Active — issued and not cancelled or replaced, whatever its date.')
         st.metric(
-            "Needs attention", str(len(critical_alerts) + len(dash_missing_recent_df) + len(dash_checkbook_alerts_df)),
+            "Needs attention", str(len(critical_alerts) + len(dash_missing_recent_df) + len(dash_checkbook_alerts_df) + len(dash_unrecorded)),
             border=True,
             help=f"{len(critical_alerts)} critical credit card alert(s), {len(dash_missing_recent_df)} possibly missed CC statement(s), {len(dash_checkbook_alerts_df)} checkbook issue(s) -- see the banners above, the Credit cards tab, and the Admin & audit tab. ({len(dash_never_had_df)} more card(s) have never had a statement recorded — routine, not counted here.)",
         )

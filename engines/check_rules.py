@@ -838,6 +838,46 @@ def replace_check(check_id: int, new_check_date: date, reason: str) -> tuple[boo
     return True, f"Check replaced. New check parked for {php(amount)} — pending (number assigned when printed).", new_check_id
 
 
+def link_replacement(old_check_id: int, new_check_id: int, reason: str = "") -> tuple[bool, str]:
+    """Links a check that is already on file to the one that took its place (owner, 2026-09-30: a voided check and the handwritten check written to
+    replace it, recorded separately). The old check must be Active or already voided (Cancelled); an Active one is voided first, which frees what it
+    was paying. The new check must be Active, belong to the same payee, and not be the old one. The old check becomes 'Replaced' with a pointer to the new."""
+    if int(old_check_id) == int(new_check_id):
+        return False, "A check can't replace itself."
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT creditor_id, status, check_number, replacement_check_id FROM checks_issued WHERE check_id = ?", (old_check_id,))
+        old = cur.fetchone()
+        cur.execute("SELECT creditor_id, status, check_number FROM checks_issued WHERE check_id = ?", (new_check_id,))
+        new = cur.fetchone()
+        if not old or not new:
+            return False, "Check not found."
+        if old[0] != new[0]:
+            return False, "The replacement must be a check to the same supplier / payee."
+        if old[3] is not None or old[1] == "Replaced":
+            return False, f"Check {old[2] or old_check_id} is already marked as replaced."
+        if old[1] not in ("Active", "Cancelled"):
+            return False, f"Check {old[2] or old_check_id} is {old[1]} — only an Active or voided check can be replaced."
+        if new[1] != "Active":
+            return False, f"The replacement check is {new[1]}, not Active."
+        was_active = old[1] == "Active"
+    if was_active:
+        ok, msg = cancel_check(old_check_id, reason or f"replaced by check {new[2] or new_check_id}")
+        if not ok:
+            return False, msg
+    with get_conn() as conn:
+        statement_id = conn.execute("SELECT statement_id FROM checks_issued WHERE check_id = ?", (old_check_id,)).fetchone()[0]
+        why = (reason or "").strip() or f"replaced by check {new[2] or new_check_id}"
+        conn.execute("""UPDATE checks_issued SET status = 'Replaced', replacement_check_id = ?, replacement_reason = ?, replaced_at = CURRENT_TIMESTAMP
+                        WHERE check_id = ?""", (new_check_id, why, old_check_id))
+        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('CHECK_REPLACED', 'checks_issued', ?, ?)",
+                     (old_check_id, f"Check {old[2] or old_check_id} linked to its replacement {new[2] or new_check_id} (check_id {new_check_id}): {why}"))
+        conn.commit()
+    if statement_id is not None:
+        sync_invoice_payment_status(statement_id)
+    return True, f"Check {old[2] or old_check_id} is now shown as replaced by {new[2] or new_check_id}."
+
+
 def retarget_invoice_allocations_for_check(cur: sqlite3.Cursor, old_check_id: int, new_check_id: int) -> None:
     """Called from replace_check() within its own transaction -- a replaced check (void+reissue,
     not a cancellation) still pays the same invoice(s), just under a new check id, so the

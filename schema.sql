@@ -235,6 +235,8 @@ CREATE TABLE IF NOT EXISTS check_booklets (
     date_received DATE NOT NULL,
     status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Exhausted', 'Archived')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- migration 056 (2026-10-01): the last leaf the person holding this booklet says they have used (from the photos the owner receives) -- see checkbook_service.unrecorded_leaves
+    reported_up_to INTEGER,
     FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
     CHECK(end_number >= start_number),
     CHECK(next_available_number >= start_number)
