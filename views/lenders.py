@@ -22,6 +22,7 @@ from engines.last_modified_sql import loan_note_modified_sql
 from engines.loan_note_rules import create_loan_note
 from engines.loan_note_rules import promote_draft_loan_note
 from engines.loan_note_rules import update_loan_note_status
+from engines.loan_edit_service import edit_loan_note_details
 from engines.loan_note_service import generate_loan_note_pdf
 from engines.loan_schedule_import_service import get_template_csv as get_schedule_template_csv
 from engines.loan_schedule_import_service import parse_loan_schedule_spreadsheet
@@ -41,6 +42,7 @@ from views.shared import (  # noqa: F401
     PRINT_CHECKS_IN_APP,
     confirm_cancel_loan_note_dialog,
     confirm_change_dialog,
+    creditor_options_all,
     confirm_create_dialog,
     flash,
     grid_risk_lines,
@@ -133,7 +135,7 @@ def render() -> None:
         st.session_state["ln_mode"] = st.session_state.pop("_ln_mode_next")
 
     loan_notes_df = q(
-        """SELECT ln.loan_note_id, c.creditor_name, ln.note_ref, ln.issue_date, ln.principal_amount,
+        """SELECT ln.loan_note_id, ln.creditor_id, c.creditor_name, ln.note_ref, ln.issue_date, ln.principal_amount,
                   ln.monthly_interest_rate, ln.total_interest, ln.total_payable,
                   ln.total_payable - COALESCE(
                       (SELECT SUM(amount) FROM checks_issued
@@ -182,6 +184,7 @@ def render() -> None:
                     "monthly_interest_rate": st.column_config.NumberColumn("Monthly rate", format="%.2f%%"),
                     "total_interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT),
                     "total_payable": st.column_config.NumberColumn("Total payable", format=MONEY_FORMAT),
+                    "creditor_id": None,          # used by the edit form, not shown
                     "outstanding": st.column_config.NumberColumn("Outstanding (uncleared)", format=MONEY_FORMAT),
                     "source": st.column_config.TextColumn("Source", help="Beginning balance (from MS Access): migrated from the old system with its interest / terms not split out yet."),
                 },
@@ -309,6 +312,33 @@ def render() -> None:
                                               f"- monthly rate: {float(ln_row['monthly_interest_rate'] or 0):g}% → **{edit_rate:g}%**\n\n"
                                               "The schedule's balances and the note's total interest / payable are recomputed.",
                                               "ln_terms_confirm", _save_ln_terms, "Yes, save the terms")
+
+            if not ln_is_cancelled:
+                with st.expander("Edit loan note details (LN No., issue date, lender)"):
+                    st.caption("For fixing what was entered wrongly or left as a placeholder (e.g. PENDING-123 → its real LN number). Changing the lender moves the note's checks to "
+                               "that lender; this is refused once the bank has cleared any of them. Principal and rate are under \"Edit loan note terms\".")
+                    lender_options = creditor_options_all("LENDER")
+                    d1, d2, d3 = st.columns(3)
+                    new_ref = d1.text_input("Loan note no.", value=str(ln_row["note_ref"]), key=f"ln_edit_ref_{selected_lnid}")
+                    new_issue = d2.date_input("Issue date", value=pd.to_datetime(ln_row["issue_date"]).date(), key=f"ln_edit_issue_{selected_lnid}")
+                    cur_lender = int(ln_row["creditor_id"])
+                    lender_ids = list(lender_options)
+                    new_lender = d3.selectbox("Lender", lender_ids, index=lender_ids.index(cur_lender) if cur_lender in lender_ids else 0,
+                                              format_func=lambda cid: lender_options[cid], key=f"ln_edit_lender_{selected_lnid}")
+                    if st.button("Save details", icon=":material/save:", key="ln_edit_details_btn"):
+                        def _save_ln_details(lnid=int(selected_lnid), ref=new_ref, issue=new_issue, lender=int(new_lender)):
+                            ok, msg = edit_loan_note_details(lnid, ref, issue, lender)
+                            if ok:
+                                flash(msg)
+                            return ok, msg
+
+                        n_checks = int(q("SELECT COUNT(*) AS n FROM checks_issued WHERE loan_note_id = ?", (selected_lnid,))["n"][0])
+                        confirm_change_dialog(f"Change the details of loan note **{ln_row['note_ref']}**?\n\n"
+                                              f"- loan note no.: {ln_row['note_ref']} → **{new_ref.strip()}**\n"
+                                              f"- issue date: {pd.to_datetime(ln_row['issue_date']):%b %d, %Y} → **{new_issue:%b %d, %Y}**\n"
+                                              f"- lender: {ln_row['creditor_name']} → **{lender_options.get(int(new_lender), '')}**",
+                                              "ln_details_confirm", _save_ln_details, "Yes, save the details",
+                                              warning=(f"Its {n_checks} check(s) will be payable to the new lender." if int(new_lender) != cur_lender and n_checks else ""))
 
         tab_schedule, tab_ln_checks = st.tabs(
             ["Repayment Schedule", "Checks"], key="ln_subtab", default="Repayment Schedule", on_change="rerun",

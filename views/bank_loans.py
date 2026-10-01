@@ -17,7 +17,9 @@ from engines.bank_loan_service import delete_bank_loan
 from engines.bank_loan_service import delete_bank_loan_installment
 from engines.bank_loan_service import edit_bank_loan_beneficiary
 from engines.bank_loan_service import edit_bank_loan_installment
+from engines.common import has_value
 from engines.common import php
+from engines.loan_edit_service import edit_bank_loan_details
 from engines.duplicate_service import bank_loan_warnings
 from engines.duplicate_service import bank_schedule_warnings
 from engines.last_modified_sql import bank_loan_modified_sql
@@ -30,6 +32,7 @@ from views.shared import (  # noqa: F401
     MONEY_FORMAT,
     confirm_cancel_bank_loan_dialog,
     confirm_change_dialog,
+    creditor_options_all,
     confirm_create_dialog,
     flash,
     grid_risk_lines,
@@ -287,7 +290,7 @@ def render() -> None:
     bl_beneficiaries_df = q("SELECT * FROM loan_beneficiaries ORDER BY name")
 
     bank_loans_df = q(
-        """SELECT bl.bank_loan_id, c.creditor_name, bl.loan_ref, bl.account_number, bl.start_date, bl.maturity_date,
+        """SELECT bl.bank_loan_id, bl.creditor_id, bl.repricing_date, bl.has_amortization, c.creditor_name, bl.loan_ref, bl.account_number, bl.start_date, bl.maturity_date,
                   bl.principal_amount,
                   CASE WHEN bl.is_cancelled = 1 THEN 0 ELSE COALESCE(
                       (SELECT SUM(amount) FROM bank_loan_installments
@@ -326,6 +329,7 @@ def render() -> None:
                 selection_mode="single-row",
                 key="bl_browser_df",
                 column_config={
+                    "creditor_id": None, "repricing_date": None, "has_amortization": None,          # used by the edit form, not shown
                     "principal_amount": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT),
                     "outstanding": st.column_config.NumberColumn("Outstanding", format=MONEY_FORMAT),
                     "beneficiary": st.column_config.TextColumn("Attributable To"),
@@ -358,6 +362,44 @@ def render() -> None:
                     confirm_change_dialog(f"Remove the beginning-balance label from bank loan **{bl_row['loan_ref']}**?  \nDo this only when its real details are known. The label is not put back.",
                                           "bl_bb_remove_confirm", _remove_bl_label, "Yes, remove the label")
             st.caption(f"Status: {bl_row['status']} · Mode of payment (informational): {bl_row['mode_of_payment']} · Outstanding: {php(bl_row['outstanding'])} · Attributable to: {bl_beneficiary_text}")
+            if not bool(bl_row["is_cancelled"]):
+                with st.expander("Edit bank loan details (bank, reference, dates, principal ...)"):
+                    st.caption("For completing the loans that came in as a schedule only, or fixing a wrong entry. Entering a start date and principal removes the "
+                               "\"Beginning balance (from MS Access)\" label. The repayment schedule is not changed.")
+                    bank_options = creditor_options_all("BANK_LOAN")
+                    bank_ids = list(bank_options)
+                    cur_bank = int(bl_row["creditor_id"])
+
+                    def _as_date(v):
+                        return pd.to_datetime(v).date() if has_value(v) else None
+
+                    e1, e2, e3 = st.columns(3)
+                    e_bank = e1.selectbox("Bank", bank_ids, index=bank_ids.index(cur_bank) if cur_bank in bank_ids else 0, format_func=lambda cid: bank_options[cid], key=f"bl_edit_bank_{selected_blid}")
+                    e_ref = e2.text_input("Loan reference", value=str(bl_row["loan_ref"]), key=f"bl_edit_ref_{selected_blid}")
+                    e_acc = e3.text_input("Account number", value=str(bl_row["account_number"] or ""), key=f"bl_edit_acc_{selected_blid}")
+                    e4, e5, e6 = st.columns(3)
+                    e_start = e4.date_input("Start date", value=_as_date(bl_row["start_date"]), key=f"bl_edit_start_{selected_blid}")
+                    e_mat = e5.date_input("Maturity date", value=_as_date(bl_row["maturity_date"]), key=f"bl_edit_mat_{selected_blid}")
+                    e_rep = e6.date_input("Repricing date (optional)", value=_as_date(bl_row["repricing_date"]), key=f"bl_edit_rep_{selected_blid}")
+                    e7, e8, e9 = st.columns(3)
+                    e_prin = e7.number_input("Principal amount (0 = not known yet)", min_value=0.0, step=10000.0,
+                                             value=float(bl_row["principal_amount"]) if has_value(bl_row["principal_amount"]) else 0.0, key=f"bl_edit_prin_{selected_blid}")
+                    e_mode = e8.text_input("Mode of payment (informational)", value=str(bl_row["mode_of_payment"] or "ADA"), key=f"bl_edit_mode_{selected_blid}")
+                    e_amort = e9.checkbox("Has an amortization schedule", value=bool(int(bl_row["has_amortization"] or 0)), key=f"bl_edit_amort_{selected_blid}")
+                    if st.button("Save details", icon=":material/save:", key="bl_edit_details_btn"):
+                        def _save_bl_details(blid=int(selected_blid), a=(int(e_bank), e_ref, e_acc, e_start, e_mat, e_rep, e_prin or None, e_mode, e_amort)):
+                            ok, msg = edit_bank_loan_details(blid, *a)
+                            if ok:
+                                flash(msg)
+                            return ok, msg
+
+                        fmt = lambda d: f"{d:%b %d, %Y}" if d else "—"  # noqa: E731
+                        confirm_change_dialog(f"Change the details of bank loan **{bl_row['loan_ref']}**?\n\n"
+                                              f"- bank: {bl_row['creditor_name']} → **{bank_options.get(int(e_bank), '')}**\n"
+                                              f"- loan reference: {bl_row['loan_ref']} → **{e_ref.strip()}**\n"
+                                              f"- start / maturity: {fmt(_as_date(bl_row['start_date']))} / {fmt(_as_date(bl_row['maturity_date']))} → **{fmt(e_start)} / {fmt(e_mat)}**\n"
+                                              f"- principal: {php(float(bl_row['principal_amount'])) if has_value(bl_row['principal_amount']) else '—'} → **{php(e_prin) if e_prin else '—'}**",
+                                              "bl_details_confirm", _save_bl_details, "Yes, save the details")
             if not bl_beneficiaries_df.empty:
                 with st.expander("Edit attribution (who this loan is for)"):
                     with st.form("edit_bl_beneficiary_form", border=False):
