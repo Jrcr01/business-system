@@ -24,7 +24,7 @@ def _findings() -> list[dict]:
         inv = pd.read_sql_query(
             """SELECT i.invoice_id, i.creditor_id, cr.creditor_name AS supplier, i.doc_ref, i.invoice_date, i.gross_amount, os.statement_ref
                FROM invoices i JOIN creditors cr ON cr.creditor_id = i.creditor_id LEFT JOIN order_statements os ON os.statement_id = i.statement_id
-               WHERE i.status != 'Cancelled'""", conn)
+               WHERE i.status != 'Cancelled' AND i.is_opening_balance = 0""", conn)
         bat = pd.read_sql_query(
             """SELECT os.statement_id, os.creditor_id, cr.creditor_name AS supplier, os.statement_ref, os.total_amount
                FROM order_statements os JOIN creditors cr ON cr.creditor_id = os.creditor_id

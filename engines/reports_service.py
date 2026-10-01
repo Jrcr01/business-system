@@ -258,7 +258,7 @@ def get_supplier_ap_aging_report() -> pd.DataFrame:
         SUM(CASE WHEN (JULIANDAY(DATE('now', 'localtime')) - JULIANDAY(i.due_date)) BETWEEN 31 AND 60 THEN i.amount ELSE 0 END) AS days_31_60,
         SUM(CASE WHEN (JULIANDAY(DATE('now', 'localtime')) - JULIANDAY(i.due_date)) > 60 THEN i.amount ELSE 0 END) AS days_over_60
     FROM creditors c
-    JOIN invoices i ON c.creditor_id = i.creditor_id AND i.status IN ('Unpaid', 'Partially Paid')
+    JOIN invoices i ON c.creditor_id = i.creditor_id AND i.status IN ('Unpaid', 'Partially Paid') AND i.is_opening_balance = 0
     WHERE c.creditor_type = 'SUPPLIER'
     GROUP BY c.creditor_id
     """

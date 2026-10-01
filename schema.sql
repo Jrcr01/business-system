@@ -122,6 +122,8 @@ CREATE TABLE IF NOT EXISTS invoices (
     statement_id INTEGER,
     paid_via_card_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- migration 058 (2026-10-01): 1 = the "Beginning balance (from MS Access)" line of a migrated batch -- a balance, not a real invoice (see engines/beginning_balance_service.py)
+    is_opening_balance INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id),
     FOREIGN KEY (paid_via_card_id) REFERENCES credit_cards(card_id),

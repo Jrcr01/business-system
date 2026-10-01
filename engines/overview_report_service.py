@@ -138,7 +138,7 @@ def _new_business(conn, start: date, end: date) -> dict:
         """SELECT COUNT(*), COALESCE(SUM(total_amount), 0) FROM order_statements
            WHERE status = 'Issued' AND statement_ref NOT LIKE 'LEGACY-%' AND DATE(created_at, 'localtime') BETWEEN ? AND ?""", (s, e)).fetchone()
     inv = conn.execute(
-        "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status != 'Cancelled' AND invoice_date BETWEEN ? AND ?", (s, e)).fetchone()
+        "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM invoices WHERE status != 'Cancelled' AND is_opening_balance = 0 AND invoice_date BETWEEN ? AND ?", (s, e)).fetchone()
     ln = conn.execute(
         "SELECT COUNT(*), COALESCE(SUM(principal_amount), 0) FROM loan_notes WHERE status != 'Cancelled' AND issue_date BETWEEN ? AND ?", (s, e)).fetchone()
     return {"batches": int(b[0]), "batches_total": float(b[1]), "invoices": int(inv[0]), "invoices_total": float(inv[1]),

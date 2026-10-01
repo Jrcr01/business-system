@@ -31,6 +31,7 @@ JOIN creditors cr ON c.creditor_id = cr.creditor_id
 JOIN (
     SELECT statement_id, SUM(JULIANDAY(due_date) * amount) / SUM(amount) AS weighted_due_julian
     FROM invoices
+    WHERE is_opening_balance = 0
     GROUP BY statement_id
 ) w ON w.statement_id = c.statement_id
 WHERE c.statement_id IS NOT NULL
