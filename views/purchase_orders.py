@@ -16,6 +16,8 @@ from engines.disbursement_trail_service import pipeline, trail_for_po
 from engines.po_rules import acknowledge_over_plan, cancel_po, cash_check, default_delivery, delivery_for_week, expected_pay_date, week_schedule, weeks_strip, get_po, list_pos, order_po, orders_over_plan, save_po, suggest_order_date
 from engines.price_list_service import item_names, price_on
 from engines.settings_registry import forecast_shown
+from engines.permissions import hide_check_details
+from views.login import current_role
 from views.po_receive import render_receive_form
 from views.shared import MONEY_FORMAT, confirm_change_dialog, flash, page_header, php, refresh, section, selectbox_creditor
 
@@ -150,7 +152,8 @@ def _schedule_panel(cid: int, order_date, delivery, edit_id, estimate: float) ->
     if sched["rows"].empty:
         st.caption("Nothing else is committed that week.")
     else:
-        st.dataframe(sched["rows"][["day", "payee", "kind", "reference", "amount"]], hide_index=True, width="stretch",
+        cols = ["day", "payee", "kind", "amount"] if hide_check_details(current_role()) else ["day", "payee", "kind", "reference", "amount"]     # check numbers are the owner's
+        st.dataframe(sched["rows"][cols], hide_index=True, width="stretch",
                      column_config={"day": st.column_config.DateColumn("Day", format="ddd, MMM D"), "payee": "Pay to", "kind": "What", "reference": "Reference",
                                     "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)})
     if estimate > 0:
@@ -180,7 +183,7 @@ def _trail(po_id: int) -> None:
         st.dataframe(tr["invoices"][["doc_ref", "invoice_date", "due_date", "batch", "est_amount", "actual_amount"]], hide_index=True, width="stretch",
                      column_config={"doc_ref": "Invoice", "invoice_date": st.column_config.DateColumn("Dated"), "due_date": st.column_config.DateColumn("Due"), "batch": "Batch",
                                     "est_amount": st.column_config.NumberColumn("Estimated", format=MONEY_FORMAT), "actual_amount": st.column_config.NumberColumn("Invoiced", format=MONEY_FORMAT)})
-    if not tr["checks"].empty:
+    if not tr["checks"].empty and not hide_check_details(current_role()):
         st.markdown("**Checks**")
         st.dataframe(tr["checks"][["check_number", "check_date", "allocated", "released_date", "released_to", "bank_cleared_date"]], hide_index=True, width="stretch",
                      column_config={"check_number": "Check no.", "check_date": st.column_config.DateColumn("Dated"), "allocated": st.column_config.NumberColumn("For this order", format=MONEY_FORMAT),

@@ -836,6 +836,8 @@ PAGES: dict = {}
 def _jump(page_id: str, **state) -> None:
     """Open another page with some state pre-set (which batch / loan is open, which sub-tab). The state is set before the
     target page draws its widgets, so plain assignment works. Switching to a page restarts the script there."""
+    if page_id not in PAGES:                      # a page this role does not have (the menu is cut down to the role)
+        return
     for k, v in state.items():
         st.session_state[k] = v
     st.switch_page(PAGES[page_id])

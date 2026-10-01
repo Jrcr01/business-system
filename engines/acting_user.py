@@ -22,6 +22,11 @@ def acting_user() -> str:
     return _acting.get() or OWNER_EMAIL
 
 
+def set_acting(email: str | None) -> None:
+    """Record everything saved for the rest of this page run as done by `email` (the sign-in sets it at the top of every run)."""
+    _acting.set((email or "").strip().lower() or None)
+
+
 @contextmanager
 def acting_as(email: str | None):
     """Record everything saved inside this block as done by `email` (None = the owner)."""
