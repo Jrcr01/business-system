@@ -17,6 +17,7 @@ from engines.check_rules import (
     _is_check_number_available, allocate_check_to_invoices, assign_check_number, cancel_check, issue_check, issue_checks_grid, link_replacement,
 )
 from engines.common import PRIMARY_BANK_ACCOUNT_ID, php
+from engines.db_engine import promote_draft_statement
 from engines.statement_rules import add_invoice, create_order_statement, get_batch_balance, resolve_due_date, sync_invoice_payment_status
 from engines.validators import calculate_trade_discount
 
@@ -191,6 +192,10 @@ def record_handwritten_checks(creditor_id: int, checks: list[dict], statement_id
             if not ok:
                 return False, f"The checks are saved, but they could not be linked to the check they replace: {msg}", check_ids
         if statement_id is not None:
+            with sqlite3.connect(DB_PATH) as conn:
+                batch_status = conn.execute("SELECT status FROM order_statements WHERE statement_id = ?", (statement_id,)).fetchone()[0]
+            if batch_status == "Draft":                          # same as the batch screen's "Park checks": a Draft batch with checks becomes Issued, with its permanent OS number
+                promote_draft_statement(statement_id, "Issued")
             sync_invoice_payment_status(statement_id)
     except sqlite3.IntegrityError as e:
         return False, f"Not everything could be saved ({e}). Check the batch and the audit log before trying again.", []
