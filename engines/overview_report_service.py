@@ -22,7 +22,9 @@ from engines.reports_service import get_combined_ap_summary, get_payment_schedul
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 PERIOD_KINDS = ["Day", "Week", "Month", "Quarter", "Year"]
 TRACKS = ["Supplier", "Private Lender", "Bank Loan", "Credit Card"]
-STALE_DAYS = 180
+def stale_days() -> int:
+    from engines.settings_registry import int_value
+    return int_value("stale_check_days")
 
 
 def _php(v) -> str:
@@ -204,9 +206,9 @@ def _watch_list() -> list[dict]:
             items.append({"item": "Loan-note checks not matching their schedule", "count": bad, "detail": ""})
         stale = conn.execute(
             "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date < DATE('now', 'localtime', ?)",
-            (f"-{STALE_DAYS} days",)).fetchone()
+            (f"-{stale_days()} days",)).fetchone()
         if stale[0]:
-            items.append({"item": f"Checks still uncleared after {STALE_DAYS} days", "count": int(stale[0]), "detail": _php(stale[1])})
+            items.append({"item": f"Checks still uncleared after {stale_days()} days", "count": int(stale[0]), "detail": _php(stale[1])})
     return items
 
 

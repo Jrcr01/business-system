@@ -18,7 +18,12 @@ DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 GROUPS = ["Checks", "Invoices and batches", "Bank vs our records", "Suppliers", "Credit cards"]
 KEY_PREFIX = "health|"
 BROWSE_BATCHES, BROWSE_LOAN_NOTES = "Browse batches", "Browse loan notes"
-STALE_CHECK_DAYS = 180          # Philippine checks go stale six months after their date
+def stale_check_days() -> int:
+    """Philippine checks go stale about six months after their date (Settings, default 180)."""
+    from engines.settings_registry import int_value
+    return int_value("stale_check_days")
+
+
 CC_GUESS_MIN_DAYS = 25          # card with no statement day: dues this far apart are two statements (its statement dates are only guessed)
 
 
@@ -97,7 +102,7 @@ def _checks(conn, today: date, out: list) -> None:
         if r["printed_at"] and not r["check_number"]:
             _f(out, g, "Printed but no check number", f"no_number|{r['check_id']}",
                f"Printed {str(r['printed_at'])[:10]}, dated {cd}: assign the leaf number so the bank statement can match it.", r["amount"], who, tgt)
-        if cd and cd < today - timedelta(days=STALE_CHECK_DAYS) and not r["bank_cleared_date"]:
+        if cd and cd < today - timedelta(days=stale_check_days()) and not r["bank_cleared_date"]:
             _f(out, g, "Stale check (over 6 months, not cleared)", f"stale|{r['check_id']}",
                f"Check {label} dated {cd} has not been cleared by the bank; a check goes stale six months after its date.", r["amount"], who, tgt)
         if cd and cd > today + timedelta(days=365):

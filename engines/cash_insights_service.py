@@ -27,7 +27,14 @@ from engines.reports_service import get_payment_schedule_all_tracks, next_bankin
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 BUFFER_KEY = "cash_buffer"
-INFLOW_WEEKS = 8                       # recent weeks of deposits used for the expected-inflow estimate
+
+
+def inflow_weeks() -> int:
+    """Recent weeks of deposits used for the expected-inflow estimate (Settings, default 8)."""
+    from engines.settings_registry import int_value
+    return int_value("inflow_weeks")
+
+
 DEPOSIT_TYPES = [("CSH DEP", "Cash deposits"), ("CHK DEP", "Check deposits"), ("IBFT", "Bank transfers"), ("WA CR", "Other credits (WA CR)"),
                  ("MO CM", "Bank credit memos")]
 
@@ -69,8 +76,9 @@ def cash_position() -> dict | None:
     return {"balance": float(df["balance"][0]), "as_of": date.fromisoformat(df["posting_date"][0])}
 
 
-def expected_daily_inflow(weeks: int = INFLOW_WEEKS) -> dict[int, float]:
+def expected_daily_inflow(weeks: int | None = None) -> dict[int, float]:
     """Average money in per weekday (0 = Monday) over the last `weeks` weeks of imported bank lines (returned checks are not money in)."""
+    weeks = inflow_weeks() if weeks is None else weeks
     pos = cash_position()
     if pos is None:
         return {}
@@ -281,7 +289,12 @@ def working_capital(today: date | None = None) -> dict:
 
 
 # ------------------------------------------------------------------ summaries for the Dashboard and the overall report (2026-09-28)
-FORECAST_FRESH_DAYS = 14               # an older bank balance is too stale to forecast from
+def forecast_fresh_days() -> int:
+    """An older bank balance is too stale to forecast from (Settings, default 14)."""
+    from engines.settings_registry import int_value
+    return int_value("forecast_fresh_days")
+
+
 
 
 def dashboard_bank_summary(today: date | None = None) -> dict | None:
@@ -301,7 +314,7 @@ def dashboard_bank_summary(today: date | None = None) -> dict | None:
                 (first.isoformat(), last.isoformat())).iloc[0]
     waiting = not_yet_cleared()
     age = (today - pos["as_of"]).days
-    fc = forecast(30, today) if age <= FORECAST_FRESH_DAYS else {}
+    fc = forecast(30, today) if age <= forecast_fresh_days() else {}
     return {"balance": pos["balance"], "as_of": pos["as_of"], "age_days": age,
             "checks_in_period": int(cov["n"]), "checks_cleared": int(cov["cleared"]),
             "pct_cleared": (float(cov["cleared"]) / int(cov["n"]) * 100.0) if int(cov["n"]) else None,

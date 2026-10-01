@@ -7,6 +7,7 @@ import base64
 import calendar
 import hashlib
 import io
+import json
 import os
 import re
 import sqlite3
@@ -272,6 +273,8 @@ import views.credit_cards
 from views.credit_cards import _card_label  # noqa: F401 -- app._card_label, used by tests
 import views.creditor_master
 import views.data_health
+import views.settings
+from engines.settings_registry import label as _hotkey_label, shortcuts as _hotkeys
 import views.dashboard
 import views.lenders
 import views.order_statement
@@ -417,13 +420,14 @@ PAGES.update({
     "analytics": st.Page(views.analytics.render, title="Analytics", icon=":material/query_stats:", url_path="analytics"),
     "reports": st.Page(views.reports.render, title="Reports", icon=":material/summarize:", url_path="reports"),
     "admin": st.Page(views.admin.render, title="Admin and audit", icon=":material/admin_panel_settings:", url_path="admin"),
+    "settings": st.Page(views.settings.render, title="Settings", icon=":material/tune:", url_path="settings"),
     "data-health": st.Page(views.data_health.render, title="Data health", icon=":material/health_and_safety:", url_path="data-health"),
 })
 MENU = {
     "Daily work": ["payment-run", "add-data", "order-statements", "checks", "bank-cash", "planner"],
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records and reports": ["dashboard", "creditors", "analytics", "reports"],
-    "System": ["admin", "data-health"],
+    "System": ["settings", "admin", "data-health"],
 }
 page = st.navigation({section: [PAGES[pid] for pid in ids] for section, ids in MENU.items()}, position="sidebar",
                      expanded=True)          # always show every page (Streamlit folds long menus behind "View more"; Alt+1..0 need the links)
@@ -608,15 +612,17 @@ with st.sidebar:
         st.caption("Hover a day for its total. Grey = holiday or marked date. Full calendar: Dashboard.")
 
     st.button("Refresh data", icon=":material/refresh:", on_click=lambda: st.cache_data.clear(), width="stretch")
-    with st.expander("Keyboard shortcuts", icon=":material/keyboard:"):
+    _hk = _hotkeys()
+    _hk_pages, _hk_search, _hk_park, _hk_new = (_hk["pages"]["mod"].replace("+", " + ") + " +", _hotkey_label(_hk["search"]), _hotkey_label(_hk["park"]), _hotkey_label(_hk["new"]))
+    with st.expander("Keyboard shortcuts (change them in Settings)", icon=":material/keyboard:"):
         st.markdown(
             "| Keys | What it does |" + chr(10) + "|---|---|" + chr(10)
             + "| **Enter** | In a confirmation pop-up: **Yes** (unless a button is focused) |" + chr(10)
             + "| **Esc** | In a pop-up: go back |" + chr(10)
-            + "| **Alt + 1 … 9, 0** | Open a menu page (1 = the first page in the menu, 0 = the tenth) — hover a menu item to see its key |" + chr(10)
-            + "| **/** | Open **Search everything** (checks, invoices, batches, loans, creditors, cards…) |" + chr(10)
-            + "| **Alt + P** | Press the screen's main **P**ark / Save / Add button (only if there is one) |" + chr(10)
-            + "| **Alt + N** | Open the **N**ew … form (New Batch, New Loan Note, New Bank Loan) |" + chr(10)
+            + "| **" + _hk_pages + " 1 … 9, 0** | Open a menu page (1 = the first page in the menu, 0 = the tenth) — hover a menu item to see its key |" + chr(10)
+            + "| **" + _hk_search + "** | Open **Search everything** (checks, invoices, batches, loans, creditors, cards…) |" + chr(10)
+            + "| **" + _hk_park + "** | Press the screen's main **P**ark / Save / Add button (only if there is one) |" + chr(10)
+            + "| **" + _hk_new + "** | Open the **N**ew … form (New Batch, New Loan Note, New Bank Loan) |" + chr(10)
             + "| **Tab / Shift+Tab** | Next / previous box or button |" + chr(10)
             + "| **Enter / Space** | Press the focused button |" + chr(10)
             + "| **↑ ↓** | Move through a dropdown (or just type to search it) |"
@@ -649,6 +655,15 @@ components.html(
 # the matching control. It replaces its own listener on every run, so it never doubles up. The list is shown in the sidebar (Keyboard shortcuts).
 components.html(r"""<script>
 (function () {
+  var CFG = __HOTKEY_CONFIG__;
+  function mods(m) { return { alt: m.indexOf('Alt') >= 0, ctrl: m.indexOf('Ctrl') >= 0, shift: m.indexOf('Shift') >= 0 }; }
+  function pressed(e, sc) {
+    var m = mods(sc.mod), k = sc.key;
+    if (e.altKey !== m.alt || e.ctrlKey !== m.ctrl || e.shiftKey !== m.shift) return false;
+    if (/^[A-Za-z]$/.test(k)) return e.code === 'Key' + k.toUpperCase();
+    if (/^[0-9]$/.test(k)) return e.code === 'Digit' + k;
+    return e.key === k;
+  }
   var P = window.parent, D = P.document;
   if (P.__apHotkeys) D.removeEventListener('keydown', P.__apHotkeys, true);
   function visible(el) { return el && el.offsetParent !== null; }
@@ -676,13 +691,13 @@ components.html(r"""<script>
       }
       return;
     }
-    if (e.altKey && !e.ctrlKey && !e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
+    if (mods(CFG.pages.mod).alt === e.altKey && mods(CFG.pages.mod).ctrl === e.ctrlKey && mods(CFG.pages.mod).shift === e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
       var n = e.code === 'Digit0' ? 9 : parseInt(e.code.slice(5), 10) - 1;
       var links = menuLinks();
       if (links[n]) { links[n].click(); e.preventDefault(); }
       return;
     }
-    if (e.key === '/' && !e.altKey && !e.ctrlKey && !isTyping(e.target)) {
+    if (pressed(e, CFG.search) && (CFG.search.mod !== 'None' || !isTyping(e.target))) {
       var opener = D.querySelector('.st-key-global_search_open_main button');
       if (opener) {
         opener.click();
@@ -694,7 +709,7 @@ components.html(r"""<script>
       e.preventDefault();
       return;
     }
-    if (e.altKey && !e.ctrlKey && !e.shiftKey && e.code === 'KeyP') {
+    if (pressed(e, CFG.park)) {
       var area = D.querySelector('[data-testid="stMain"]') || D;
       var re = /Park Metrobank checks|Save invoice changes|Save statement changes|Add statement|Assign check number|Save changes|Save parked check edits|Save check corrections|Add installment|Add invoice|Create schedule rows/i;
       var cands = buttons(area).filter(function (b) { return re.test(b.innerText || ''); });
@@ -704,7 +719,7 @@ components.html(r"""<script>
       e.preventDefault();
       return;
     }
-    if (e.altKey && !e.ctrlKey && !e.shiftKey && e.code === 'KeyN') {
+    if (pressed(e, CFG.new)) {
       var area2 = D.querySelector('[data-testid="stMain"]') || D;
       var nb = buttons(area2).find(function (b) { return /New (Batch|Loan Note|Bank Loan)/i.test(b.innerText || ''); });
       if (nb) { nb.click(); } else { flash('No "New ..." form on this screen.'); }
@@ -727,7 +742,7 @@ components.html(r"""<script>
   // hovering a menu item shows its hotkey (Streamlit redraws the menu now and then, so this is re-applied every second)
   function labelTabs() {
     menuLinks().slice(0, 10).forEach(function (t, i) {
-      var tip = 'Alt+' + ((i + 1) % 10);
+      var tip = CFG.pages.mod + '+' + ((i + 1) % 10);
       if (t.title !== tip) t.title = tip;
     });
   }
@@ -735,4 +750,4 @@ components.html(r"""<script>
   P.__apHotkeyTimer = P.setInterval(labelTabs, 1000);
   labelTabs();
 })();
-</script>""", height=0)
+</script>""".replace("__HOTKEY_CONFIG__", json.dumps(_hotkeys())), height=0)

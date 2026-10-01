@@ -8,6 +8,8 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 -->
 
 ## 2026-10-01
+- **New Settings page (System menu)** - every adjustable number in one place with a plain explanation and its default: stale-check days, old bank statement reminder, large debit alert, how old a bank balance may be to forecast from, weeks of deposits averaged, cash buffer, heavy card week, missing card statement wait, smallest amount accepted, and the check-date planner limits. Each change is saved to the audit log and "Back to default" undoes it.
+- **Keyboard shortcuts are now yours to change** (Settings, second tab) - pick the keys for Search, the main Save button, New form and the menu-page digits. Clashes and keys the browser keeps for itself are refused; "Reset to defaults" brings the old keys back.
 - **Voided, replaced and spoiled checks, all in one list** (Checks and checkbook) - every check we voided or replaced and every spoiled leaf: when, why, which check replaced it, and a warning if the bank paid a check we had voided. You can search it and download it to Excel or CSV.
 - **A void now keeps its reason and date** - the Reason box on "Void check" (batches) and "Cancel this check" (loan notes) is saved with the check instead of being thrown away.
 - **Deleting a loan or bank-loan installment is now recorded** in the audit log (it left no trace before).

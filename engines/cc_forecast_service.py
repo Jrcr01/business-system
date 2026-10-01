@@ -125,12 +125,17 @@ def forecast_by_week(today: date | None = None, months: int = MONTHS_AHEAD, bank
     return pd.DataFrame(out, columns=["week_start", "recorded", "estimated", "low", "high", "cards"])
 
 
-HEAVY_FACTOR = 1.5               # a week with at least this times the average weekly card dues is "heavy"
+def heavy_factor() -> float:
+    """A week with at least this times the average weekly card dues is "heavy" (Settings, default 1.5)."""
+    from engines.settings_registry import value
+    return value("heavy_card_factor")
+
+
 
 
 def card_week_info(check_dates, today: date | None = None) -> list[dict]:
     """For typed check dates (owner, 2026-09-29: "the objective here is to help me plan for checks"): the card dues due in the week of
-    each date -- on statements + estimated, for the cards paid from the Metrobank account -- and whether that week is HEAVY (at least HEAVY_FACTOR x the average weekly card dues over
+    each date -- on statements + estimated, for the cards paid from the Metrobank account -- and whether that week is HEAVY (at least heavy_factor() x the average weekly card dues over
     the next MONTHS_AHEAD months). One entry per week, in date order; past dates are skipped.
     Each: {week_start, dates, recorded, estimated, total, average, heavy}."""
     today = today or date.today()
@@ -156,6 +161,6 @@ def card_week_info(check_dates, today: date | None = None) -> list[dict]:
             r = by_week.get(wk)
             rec, est = (float(r["recorded"]), float(r["estimated"])) if r is not None else (0.0, 0.0)
             out[wk] = {"week_start": wk, "dates": [], "recorded": rec, "estimated": est, "total": rec + est, "average": average,
-                       "heavy": average > 0 and (rec + est) >= HEAVY_FACTOR * average}
+                       "heavy": average > 0 and (rec + est) >= heavy_factor() * average}
         out[wk]["dates"].append(d)
     return [out[k] for k in sorted(out)]

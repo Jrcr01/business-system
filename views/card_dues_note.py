@@ -7,7 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from engines.cc_forecast_service import HEAVY_FACTOR, card_week_info
+from engines.cc_forecast_service import card_week_info, heavy_factor
 from engines.common import php
 
 
@@ -39,4 +39,4 @@ def render_card_week_notes(check_dates) -> None:
             quiet.append(f"{when}: {detail if w['total'] else 'no card dues'}")
     if quiet:
         st.caption(":material/credit_card: Card dues (cards paid from Metrobank) in the week of each check date — " + " · ".join(quiet)
-                   + f". A week is flagged when it is at least {HEAVY_FACTOR:g}× a normal week.")
+                   + f". A week is flagged when it is at least {heavy_factor():g}× a normal week.")

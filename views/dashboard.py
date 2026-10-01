@@ -16,6 +16,7 @@ from engines.bank_alerts import all_alerts
 from engines.cash_insights_service import dashboard_bank_summary
 from engines.common import fix_nullable_int
 from engines.common import php
+from engines.data_health_service import stale_check_days
 from engines.common import prospective_year
 from engines.common import remove_blocked_date
 from engines.common import set_blocked_date
@@ -114,7 +115,7 @@ def render() -> None:
     critical_alerts = cc_alerts[cc_alerts["urgency_status"] == "CRITICAL (0-3 Days)"] if not cc_alerts.empty else cc_alerts
     # Same 180-day cutoff v_effective_checks (schema.sql) uses to call a check "Stale" -- but a check the imported bank statement shows as
     # cleared is not stale (2026-09-28, reconciliation).
-    stale_checks = get_stale_checks(180)
+    stale_checks = get_stale_checks(stale_check_days())
     pending_checks_df = get_pending_check_run()
     pending_week_df = (
         pending_checks_df[pd.to_datetime(pending_checks_df["check_date"]).dt.date <= (date.today() + timedelta(days=7))]
