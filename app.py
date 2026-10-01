@@ -280,6 +280,7 @@ import views.lenders
 import views.order_statement
 import views.payment_run
 import views.price_lists
+import views.purchase_orders
 import views.reports
 from views.shared import (  # noqa: F401
     BL_BROWSE,
@@ -425,13 +426,14 @@ PAGES.update({
     "settings": st.Page(views.settings.render, title="Settings", icon=":material/tune:", url_path="settings"),
     "data-health": st.Page(views.data_health.render, title="Data health", icon=":material/health_and_safety:", url_path="data-health"),
     "price-lists": st.Page(views.price_lists.render, title="Price lists", icon=":material/sell:", url_path="price-lists"),
+    "purchase-orders": st.Page(views.purchase_orders.render, title="Purchase orders", icon=":material/shopping_cart:", url_path="purchase-orders"),
 })
 MENU = {
     "Daily work": ["payment-run", "add-data", "order-statements", "checks", "bank-cash", "planner"],
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records and reports": ["dashboard", "creditors", "analytics", "reports"],
     "System": ["settings", "admin", "data-health"],
-    "Purchasing": ["price-lists"],          # last, so the Alt+number shortcuts of the existing pages do not move
+    "Purchasing": ["purchase-orders", "price-lists"],          # last, so the Alt+number shortcuts of the existing pages do not move
 }
 page = st.navigation({section: [PAGES[pid] for pid in ids] for section, ids in MENU.items()}, position="sidebar",
                      expanded=True)          # always show every page (Streamlit folds long menus behind "View more"; Alt+1..0 need the links)
