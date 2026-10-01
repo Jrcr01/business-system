@@ -10,7 +10,9 @@ import streamlit as st
 from engines.clock import manila_today
 from engines.po_pdf import build_po_pdf
 from engines.cash_insights_service import scheduled_outflows
-from engines.po_rules import acknowledge_over_plan, cancel_po, cash_check, committed_load, expected_pay_date, get_po, list_pos, order_po, orders_over_plan, save_po, suggest_order_date
+import altair as alt
+
+from engines.po_rules import acknowledge_over_plan, cancel_po, cash_check, default_delivery, delivery_for_week, expected_pay_date, week_schedule, weeks_strip, get_po, list_pos, order_po, orders_over_plan, save_po, suggest_order_date
 from engines.price_list_service import item_names, price_on
 from engines.settings_registry import forecast_shown
 from views.po_receive import render_receive_form
@@ -31,7 +33,7 @@ def _start_edit(po_id: int) -> None:
     st.session_state.update({
         "po_mode": "New order", "po_edit_id": po_id, "po_supplier": int(h["creditor_id"]), "po_order_date": pd.to_datetime(h["order_date"]).date(),
         "po_delivery": pd.to_datetime(h["expected_delivery_date"]).date() if h["expected_delivery_date"] else None, "po_notes": h["notes"] or "",
-        "po_lines": po["lines"][LINE_COLS].copy()})
+        "po_lines": po["lines"][LINE_COLS].copy(), "_po_sig": (int(h["creditor_id"]), pd.to_datetime(h["order_date"]).date())})
 
 
 def _save(also_order: bool, edit_id, cid, order_date, delivery, lines, notes) -> None:
@@ -59,12 +61,7 @@ def _cash_panel(cid: int, estimate: float, order_date, delivery, edit_id) -> Non
     """Does the cash on the pay date cover this order? Says so, or says how far short and offers the first later order date that fits."""
     if estimate <= 0 or delivery is None:
         return
-    if not forecast_shown():                                # no cash verdict while the forecast is hidden: show what is already committed that week
-        load = committed_load(expected_pay_date(cid, delivery), estimate, exclude_po_id=edit_id)
-        if load:
-            st.info(f"**Already falling due the week of {load['week_start']:%b %d}:** {php(load['total'])} "
-                    f"(checks {php(load['checks'])}, loans and cards {php(load['loans_cards'])}, other orders {php(load['orders'])}). "
-                    f"This order adds {php(load['adds'])}.", icon=":material/event_upcoming:")
+    if not forecast_shown():                                # no cash verdict while the forecast is hidden: the payables schedule above shows what is committed
         return
     chk = cash_check(cid, estimate, delivery, exclude_po_id=edit_id)
     if not chk["known"]:
@@ -116,6 +113,49 @@ def _price_differences() -> None:
                                 "difference_pct": st.column_config.NumberColumn("%", format="%+.1f%%")})
 
 
+def _pick_week(cid: int, week_start, order_date) -> None:
+    """Button callback: move the delivery date so the order falls due in the chosen week."""
+    d = delivery_for_week(cid, week_start, order_date)
+    if d:
+        st.session_state["po_delivery"] = d
+
+
+def _schedule_panel(cid: int, order_date, delivery, edit_id, estimate: float) -> None:
+    """Payables when this order falls due (shown before any item is added): the week's schedule day by day, an 8-week strip with a total per week (press a week to
+    order for it), and what this order adds. Everything already committed counts: checks, loan and card dues, other orders. No deposits are guessed."""
+    section("Payables when this order falls due", help="What is already committed in the week this order would be paid (delivery date + the supplier's terms). Choose a lighter week by pressing it.")
+    pay = expected_pay_date(cid, delivery)
+    if pay is None:
+        st.info("Pick the expected delivery date to see the payables for that week.")
+        return
+    st.markdown(f"This order would fall due on **{pay:%a, %b %d, %Y}** (delivery {delivery:%b %d} plus the supplier's terms).")
+    strip = weeks_strip(pay, exclude_po_id=edit_id)
+    strip = strip.assign(label=[f"{w:%b %d}" for w in strip["week_start"]],
+                         role=["This order's week" if sel else ("Lightest week" if lt else "Other weeks") for sel, lt in zip(strip["selected"], strip["lightest"])])
+    chart = alt.Chart(strip.assign(week=pd.to_datetime(strip["week_start"]))).mark_bar().encode(
+        x=alt.X("label:N", title="Week of", sort=list(strip["label"])), y=alt.Y("total:Q", title="Already committed (PHP)"),
+        color=alt.Color("role:N", title=None, scale=alt.Scale(domain=["This order's week", "Lightest week", "Other weeks"], range=["#C26A00", "#2E7D32", "#9FB3D1"])),
+        tooltip=[alt.Tooltip("label:N", title="Week of"), alt.Tooltip("total:Q", title="Committed", format=",.2f")])
+    st.altair_chart(chart.properties(height=170), width="stretch")
+    cols = st.columns(len(strip))
+    for col, r in zip(cols, strip.itertuples()):
+        reachable = delivery_for_week(cid, r.week_start, order_date) is not None
+        col.button(f"{r.label}\n\n₱{r.total / 1000:,.0f}K" + (" ★" if r.lightest else ""), key=f"po_wk_{r.week_start}", disabled=not reachable or bool(r.selected), width="stretch",
+                   help=("The order's week." if r.selected else "This week is before the order could be paid." if not reachable else
+                         f"Order for the week of {r.week_start:%b %d}: moves the delivery date so it falls due then. ★ = the lightest week."),
+                   on_click=_pick_week, args=(cid, r.week_start, order_date))
+    sched = week_schedule(pay, exclude_po_id=edit_id)
+    st.markdown(f"**The week of {sched['week_start']:%b %d} to {sched['week_end']:%b %d}: {php(sched['total'])} already committed**")
+    if sched["rows"].empty:
+        st.caption("Nothing else is committed that week.")
+    else:
+        st.dataframe(sched["rows"][["day", "payee", "kind", "reference", "amount"]], hide_index=True, width="stretch",
+                     column_config={"day": st.column_config.DateColumn("Day", format="ddd, MMM D"), "payee": "Pay to", "kind": "What", "reference": "Reference",
+                                    "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)})
+    if estimate > 0:
+        st.info(f"This order adds **{php(estimate)}**, so the week becomes **{php(sched['total'] + estimate)}**.", icon=":material/event_upcoming:")
+
+
 def _lines_df() -> pd.DataFrame:
     if "po_lines" not in st.session_state:
         st.session_state["po_lines"] = pd.DataFrame(columns=LINE_COLS)
@@ -132,10 +172,16 @@ def _form() -> None:
     st.session_state.setdefault("po_order_date", manila_today())
     st.session_state.setdefault("po_delivery", manila_today() + timedelta(days=7))
     order_date = d1.date_input("Order date", key="po_order_date")
-    delivery = d2.date_input("Expected delivery", key="po_delivery", help="When the goods should arrive. The payment falls due after this, by the supplier's terms.")
+    if cid is not None and st.session_state.get("_po_sig") != (int(cid), order_date):       # a new supplier or order date: start from the supplier's usual delivery
+        st.session_state["_po_sig"] = (int(cid), order_date)
+        if not edit_id:
+            st.session_state["po_delivery"] = default_delivery(int(cid), order_date)
+    delivery = d2.date_input("Expected delivery", key="po_delivery", help="Starts at the order date plus the supplier's usual delivery days (Creditors page). The payment falls due after this, by the supplier's terms.")
     if cid is None:
         return
     cid = int(cid)
+    schedule_box = st.container()                           # filled below, once the order's estimate is known
+
 
     section("Add an item")
     names = item_names(cid)
@@ -168,6 +214,8 @@ def _form() -> None:
     m1, m2 = st.columns(2)
     m1.metric("Estimated total", php(estimate), border=True, help="From the price list. When the invoice comes, the actual price prevails.")
     m2.metric("Payment falls due", f"{pay:%b %d, %Y}" if pay else "Needs a delivery date", border=True, help="Delivery date + the supplier's terms, on a bank day.")
+    with schedule_box:
+        _schedule_panel(cid, order_date, delivery, edit_id, estimate)
     _cash_panel(cid, estimate, order_date, delivery, edit_id)
     notes = st.text_area("Notes for the supplier (optional)", key="po_notes", height=70)
 

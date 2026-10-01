@@ -69,6 +69,7 @@ def render_new_creditor_form() -> None:
 
 def render() -> None:
     page_header("Creditors")
+    render_lead_days()
     st.caption("Master registry of payees tagged supplier, lender, lessor (rent), or bank loan. Credit card payees stay in their own track (Credit cards page).")
 
     creditor_master_df = q(
@@ -223,3 +224,27 @@ def render() -> None:
                 ok, msg = _save_creditors()
                 if msg:
                     (st.info if ok else st.error)(msg)
+
+
+def render_lead_days() -> None:
+    """Usual delivery days per supplier: the default delivery date on a new purchase order is the order date plus this (a week when not set)."""
+    from engines.creditor_rules import set_lead_days
+
+    with st.expander("Usual delivery days (for purchase orders)", icon=":material/local_shipping:"):
+        st.caption("How many days this supplier usually takes to deliver. A new purchase order starts its expected delivery date this many days after the order date; empty means a week.")
+        df = q("SELECT creditor_id, creditor_name, lead_days FROM creditors WHERE creditor_type = 'SUPPLIER' AND is_active = 1 ORDER BY creditor_name")
+        if df.empty:
+            st.caption("No suppliers yet.")
+            return
+        opts = {int(r.creditor_id): f"{r.creditor_name} — {int(r.lead_days)} day(s)" if r.lead_days == r.lead_days and r.lead_days is not None else f"{r.creditor_name} — not set"
+                for r in df.itertuples()}
+        pick = st.selectbox("Supplier", list(opts), format_func=opts.get, key="lead_pick")
+        cur = df.set_index("creditor_id").loc[pick, "lead_days"]
+        days = st.number_input("Usual delivery days (0 = same day; clear with 'Not set')", min_value=0, max_value=365, value=int(cur) if cur == cur and cur is not None else 7, step=1, key=f"lead_days_{pick}")
+        c1, c2, _ = st.columns([1, 1, 3])
+        if c1.button("Save", icon=":material/save:", key="lead_save"):
+            ok, msg = set_lead_days(int(pick), int(days))
+            (refresh(done=msg) if ok else st.error(msg))
+        if c2.button("Not set", key="lead_clear", help="Back to the default of a week."):
+            ok, msg = set_lead_days(int(pick), None)
+            (refresh(done=msg) if ok else st.error(msg))

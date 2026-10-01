@@ -8,6 +8,7 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 -->
 
 ## 2026-10-02
+- **Purchase orders show the payables schedule before you order:** choose the supplier and the page lists what is already committed in the week the order would fall due, day by day, plus an 8-week strip with a total per week (the lightest week is marked ★). Press a week and the delivery date moves so the order falls due then. As you add items it shows what the week becomes. The delivery date now starts from each supplier's usual delivery days (set on the Creditors page; a week when empty).
 - **Payables due (new page):** shows what is already committed to go out and when — checks the suppliers hold, loan and card dues from entered statements, and ordered purchase orders — by week, by supplier, and the checks past their date. It makes no guess about deposits.
 - **Cash forecast and Check-date planner hidden for now:** until the Sales / AR cycle brings real deposits. One setting (Settings → Cash forecast → Show the cash forecast) brings them back. While hidden, a purchase order shows what is already falling due that week instead of a cash verdict.
 - **Estimated credit card bills removed everywhere:** only statements you have entered count. The heavy-card-week note under check-date grids and the 'Credit card dues ahead' section are gone.

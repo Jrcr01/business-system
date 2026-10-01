@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS creditors (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     -- migration 060 (2026-10-01): a LESSOR is a creditor we pay rent to. Stored as a LENDER-type creditor flagged here (the type list is a CHECK constraint on a table
     -- used everywhere); screens and reports show it as "Lessor" and keep it out of the lender lists.
-    is_lessor INTEGER NOT NULL DEFAULT 0 CHECK(is_lessor IN (0, 1))
+    is_lessor INTEGER NOT NULL DEFAULT 0 CHECK(is_lessor IN (0, 1)),
+    -- migration 064 (2026-10-02): the supplier's usual delivery days; the default delivery date on a new purchase order is the order date plus this (empty = 7).
+    lead_days INTEGER CHECK(lead_days IS NULL OR (lead_days >= 0 AND lead_days <= 365))
 );
 
 -- Bank cash is not tracked in this system (abolished 2026-09-06, migration 016) -- this table

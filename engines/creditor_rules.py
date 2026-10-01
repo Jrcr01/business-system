@@ -118,3 +118,23 @@ def deactivate_creditor(creditor_id: int) -> None:
     with get_conn() as conn:
         conn.execute("UPDATE creditors SET is_active = 0 WHERE creditor_id = ?", (creditor_id,))
         conn.commit()
+
+
+def set_lead_days(creditor_id: int, days: int | None) -> tuple[bool, str]:
+    """The supplier's usual delivery days (0-365), or None for 'not set' (a new purchase order then starts at a week). Audited."""
+    if days is not None:
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            return False, "Enter a whole number of days."
+        if days < 0 or days > 365:
+            return False, "Usual delivery days must be between 0 and 365."
+    with get_conn() as conn:
+        row = conn.execute("SELECT creditor_name, lead_days FROM creditors WHERE creditor_id = ?", (creditor_id,)).fetchone()
+        if not row:
+            return False, "Supplier not found."
+        conn.execute("UPDATE creditors SET lead_days = ? WHERE creditor_id = ?", (days, creditor_id))
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values, new_values) VALUES (acting_user(), 'CREDITOR_LEAD_DAYS', 'creditors', ?, ?, ?)",
+                     (creditor_id, str(row[1]), f"{row[0]}: {days if days is not None else 'not set'}"))
+        conn.commit()
+    return True, f"{row[0]}: usual delivery " + (f"{days} day(s)." if days is not None else "not set (a week is assumed).")

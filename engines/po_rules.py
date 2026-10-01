@@ -347,25 +347,110 @@ def acknowledge_over_plan(po_id: int) -> tuple[bool, str]:
     return True, f"{row[0]} noted."
 
 
-def committed_load(pay_date, new_amount: float = 0.0, exclude_po_id: int | None = None) -> dict | None:
-    """What is already committed to fall due in the Monday-to-Sunday week of `pay_date`, so whoever orders can see the load before adding to it (no judgement,
-    no deposits). {'week_start', 'week_end', 'checks', 'loans_cards', 'orders', 'total', 'adds'}. An order being changed does not count itself."""
+DEFAULT_LEAD_DAYS = 7
+KIND_ORDER = ["Supplier checks", "Lender checks", "Bank loans", "Credit cards", "Purchase orders"]
+
+
+def default_delivery(creditor_id: int, order_date) -> date:
+    """The delivery date a new order starts with: the order date plus the supplier's usual delivery days (7 when not set)."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT lead_days FROM creditors WHERE creditor_id = ?", (creditor_id,)).fetchone()
+    return _as_date(order_date) + timedelta(days=int(row[0]) if row and row[0] is not None else DEFAULT_LEAD_DAYS)
+
+
+def _week_of(day: date) -> tuple[date, date]:
+    start = day - timedelta(days=day.weekday())
+    return start, start + timedelta(days=6)
+
+
+def _committed_rows(end: date, exclude_po_id: int | None = None) -> pd.DataFrame:
+    """Everything committed from today to `end`, as scheduled_outflows() counts it (a check already past its date sits on today), with a kind label.
+    Columns: day, payee, kind, reference, amount. An order being changed is left out."""
+    from engines.cash_insights_service import scheduled_outflows
+    from engines.payables_due_service import KINDS
+
+    out = scheduled_outflows(manila_today(), max(end, manila_today()))
+    cols = ["day", "payee", "kind", "reference", "amount"]
+    if out.empty:
+        return pd.DataFrame(columns=cols)
+    out = out.assign(kind=out["track"].map(KINDS).fillna(out["track"]), day=pd.to_datetime(out["day"]).dt.date)
+    if exclude_po_id:
+        po = get_po(exclude_po_id)
+        if po:
+            out = out[~((out["kind"] == "Purchase orders") & (out["reference"] == po["header"]["po_no"]))]
+    return out[cols].reset_index(drop=True)
+
+
+def week_schedule(pay_date, exclude_po_id: int | None = None) -> dict | None:
+    """The Monday-to-Sunday week of `pay_date`, day by day: {'week_start', 'week_end', 'rows' (day, payee, kind, reference, amount), 'total'}."""
     day = _as_date(pay_date)
     if day is None:
         return None
-    start, end = day - timedelta(days=day.weekday()), day + timedelta(days=6 - day.weekday())
-    from engines.cash_insights_service import scheduled_outflows
+    start, end = _week_of(day)
+    rows = _committed_rows(end, exclude_po_id)
+    rows = rows[(rows["day"] >= start) & (rows["day"] <= end)].sort_values(["day", "amount"], ascending=[True, False]).reset_index(drop=True)
+    return {"week_start": start, "week_end": end, "rows": rows, "total": float(rows["amount"].sum())}
 
-    out = scheduled_outflows(manila_today(), end)          # from today, so a check already past its date lands in THIS week, not in a later one
-    out = out[(pd.to_datetime(out["day"]).dt.date >= start) & (pd.to_datetime(out["day"]).dt.date <= end)] if not out.empty else out
-    own = _own_commitment(exclude_po_id, manila_today())
-    sums = out.groupby("track")["amount"].sum().to_dict() if not out.empty else {}
-    checks = float(sums.get("Supplier", 0.0) + sums.get("Lender", 0.0))
-    loans_cards = float(sums.get("Bank Loan", 0.0) + sums.get("Credit Card", 0.0))
-    orders = float(sums.get("Purchase order", 0.0))
-    if own and start <= own[0] <= end:
-        orders = max(orders - own[1], 0.0)
-    return {"week_start": start, "week_end": end, "checks": checks, "loans_cards": loans_cards, "orders": orders,
+
+def weeks_strip(pay_date, before: int = 3, after: int = 4, exclude_po_id: int | None = None) -> pd.DataFrame:
+    """Eight weeks around the week the order would fall due (never starting before this week): week_start, week_end, total, one column per kind,
+    selected (the pay week), lightest (the week with the least already committed)."""
+    day = _as_date(pay_date) or manila_today()
+    this_week = _week_of(manila_today())[0]
+    first = max(_week_of(day)[0] - timedelta(weeks=before), this_week)
+    count = before + after + 1
+    starts = [first + timedelta(weeks=i) for i in range(count)]
+    rows = _committed_rows(starts[-1] + timedelta(days=6), exclude_po_id)
+    table = pd.DataFrame({"week_start": starts, "week_end": [w + timedelta(days=6) for w in starts]})
+    for kind in KIND_ORDER:
+        table[kind] = 0.0
+    if not rows.empty:
+        wk = rows["day"].map(lambda d: d - timedelta(days=d.weekday()))
+        sums = rows.assign(week=wk).pivot_table(index="week", columns="kind", values="amount", aggfunc="sum", fill_value=0.0)
+        for kind in KIND_ORDER:
+            if kind in sums.columns:
+                table[kind] = table["week_start"].map(sums[kind]).fillna(0.0)
+    table["total"] = table[KIND_ORDER].sum(axis=1)
+    table["selected"] = table["week_start"] == _week_of(day)[0]
+    table["lightest"] = table["total"] == table["total"].min()
+    if table["lightest"].sum() > 1:                               # ties: mark the earliest only
+        first_idx = table[table["lightest"]].index[0]
+        table["lightest"] = table.index == first_idx
+    return table
+
+
+def delivery_for_week(creditor_id: int, week_start, order_date) -> date | None:
+    """The earliest delivery date (on or after the order date) whose expected pay date, by the supplier's terms and on a bank day, falls in the week starting
+    `week_start`. None when that week cannot be reached (it is before the order could be paid)."""
+    wk = _as_date(week_start)
+    order = _as_date(order_date)
+    if wk is None or order is None:
+        return None
+    end = wk + timedelta(days=6)
+    with get_conn() as conn:
+        terms = (conn.execute("SELECT terms FROM creditors WHERE creditor_id = ?", (creditor_id,)).fetchone() or [None])[0]
+    blocked = _blocked_days()
+    for k in range(0, 900):
+        d = order + timedelta(days=k)
+        pay = next_bank_day(resolve_due_date(d, terms), blocked)
+        if wk <= pay <= end:
+            return d
+        if pay > end:
+            return None
+    return None
+
+
+def committed_load(pay_date, new_amount: float = 0.0, exclude_po_id: int | None = None) -> dict | None:
+    """What is already committed to fall due in the week of `pay_date` (see week_schedule), as one summary: week_start, week_end, checks, loans_cards, orders,
+    total, adds. An order being changed does not count itself."""
+    sched = week_schedule(pay_date, exclude_po_id)
+    if sched is None:
+        return None
+    by = sched["rows"].groupby("kind")["amount"].sum().to_dict()
+    checks = float(by.get("Supplier checks", 0.0) + by.get("Lender checks", 0.0))
+    loans_cards = float(by.get("Bank loans", 0.0) + by.get("Credit cards", 0.0))
+    orders = float(by.get("Purchase orders", 0.0))
+    return {"week_start": sched["week_start"], "week_end": sched["week_end"], "checks": checks, "loans_cards": loans_cards, "orders": orders,
             "total": checks + loans_cards + orders, "adds": float(new_amount)}
 
 
