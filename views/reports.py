@@ -96,6 +96,8 @@ REPORT_OPTIONS = [
     "Bank loan — installment history",
     "Credit card — statement history",
     "Master rollups — aging and exposure",
+    "Lists — suppliers, lenders, banks, batches and more",
+    "Decision reports — answers for choices",
 ]
 # the old menu names (a browser tab left open on one of them) -> (new report, sub-view state to set)
 OLD_REPORTS = {
@@ -782,8 +784,20 @@ def _bank_loan_master() -> None:
         )
 
 
+def _lists() -> None:
+    from views.lists_and_decisions import render_lists
+
+    render_lists()
+
+
+def _decisions() -> None:
+    from views.lists_and_decisions import render_decisions
+
+    render_decisions()
+
+
 REPORTS = dict(zip(REPORT_OPTIONS, [_overview, _duplicates, _schedule, _cleared_checks, _supplier_history, _rundown, _lender_history,
-                                    _bank_loan_history, _card_history, _rollups]))
+                                    _bank_loan_history, _card_history, _rollups, _lists, _decisions]))
 
 
 def render() -> None:
