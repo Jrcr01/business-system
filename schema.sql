@@ -310,6 +310,9 @@ CREATE TABLE IF NOT EXISTS checks_issued (
     settled_outside_at DATE,
     settled_outside_reason TEXT,
     settled_outside_note TEXT,
+    -- migration 065 (2026-10-02, PDC release): the day the supplier COLLECTED this printed check, and who took it. NULL = still in the office.
+    released_date DATE,
+    released_to TEXT,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
     FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id),

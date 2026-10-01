@@ -136,7 +136,9 @@ def _order_statements():
 
 def _checks():
     from engines.check_run_service import get_pending_check_run
-    return _waiting(len(get_pending_check_run()), "to print")
+    from engines.pdc_release_service import release_summary
+    n, rel = len(get_pending_check_run()), release_summary()["waiting"]
+    return _waiting(n + rel, f"{n} to print · {rel} to release")
 
 
 def _bank_cash():

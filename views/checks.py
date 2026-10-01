@@ -28,6 +28,7 @@ from engines.check_run_service import mark_checks_printed
 from engines.check_run_service import print_batch_tag
 from engines.check_run_service import save_chrysanth_settings
 from engines.common import PRIMARY_BANK_ACCOUNT_ID
+from engines.pdc_release_service import for_release, mark_released, preview_release_before, recent_releases, release_before, undo_release
 from engines.common import has_value
 from engines.common import php
 from engines.voided_checks_service import voided_checks
@@ -90,8 +91,71 @@ def render_log_spoiled_form() -> None:
             st.warning("Duplicate submission ignored — identical to the click just before it.")
 
 
+def render_for_release() -> None:
+    """Printed post-dated checks the supplier has not collected yet, and the ones released lately (with Undo). Engine: engines/pdc_release_service.py."""
+    from datetime import timedelta
+
+    from engines.clock import manila_today
+
+    with st.container(border=True):
+        st.subheader("For release")
+        st.caption("Printed checks still in the office. When a supplier collects theirs, tick them here and say who took them: from then the supplier can deposit on the check date. "
+                   "Checks written by hand are handed over when recorded, so they are not listed.")
+        waiting = for_release()
+        if waiting.empty:
+            st.caption("Nothing is waiting: every printed check has been collected.")
+        else:
+            st.metric("Printed, not collected", f"{len(waiting)} · {php(waiting['amount'].sum())}", f"oldest {int(waiting['days_waiting'].max())} day(s) in the office",
+                      delta_color="off", delta_arrow="off", border=True)
+            grid = waiting.assign(collect=False)[["collect", "supplier", "check_number", "check_date", "amount", "days_waiting"]]
+            edited = st.data_editor(
+                grid, hide_index=True, width="stretch", key="release_grid", disabled=["supplier", "check_number", "check_date", "amount", "days_waiting"],
+                column_config={"collect": st.column_config.CheckboxColumn("Collected"), "supplier": "Supplier", "check_number": "Check no.",
+                               "check_date": st.column_config.DateColumn("Check date"), "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
+                               "days_waiting": st.column_config.NumberColumn("Days in office", format="%d")})
+            ticked = [int(waiting.loc[i, "check_id"]) for i in edited.index[edited["collect"]]]
+            c1, c2, c3 = st.columns([2, 1.4, 1.4], vertical_alignment="bottom")
+            who = c1.text_input("Collected by", key="release_who", placeholder="e.g. the supplier's collector")
+            when = c2.date_input("Collected on", value=manila_today(), key="release_date")
+            if c3.button(f"Mark {len(ticked)} released" if ticked else "Mark released", icon=":material/outbox:", type="primary", key="release_go", disabled=not ticked, width="stretch"):
+                ok, msg = mark_released(ticked, when, who)
+                (refresh(done=msg) if ok else st.error(msg))
+        with st.expander("Checks already with their suppliers (one-time catch-up)", icon=":material/inventory:"):
+            st.caption("Checks printed before release tracking began are already in the suppliers' hands. Pick the last print date to treat as collected: every waiting check printed on or "
+                       "before it is marked released on its print date. Do this once, then use the list above for new checks.")
+            cut = st.date_input("Printed on or before", value=manila_today() - timedelta(days=14), key="release_cut")
+            pv = preview_release_before(cut)
+            st.write(f"This would mark **{pv['checks']}** check(s), {php(pv['amount'])}, as already collected.")
+            if st.button("Mark them as collected", icon=":material/done_all:", key="release_cut_go", disabled=not pv["checks"]):
+                def _cut():
+                    ok, msg = release_before(cut)
+                    if ok:
+                        flash(msg)
+                    return ok, msg
+
+                confirm_change_dialog(f"Mark **{pv['checks']}** check(s) ({php(pv['amount'])}) printed on or before {cut:%b %d, %Y} as already collected by their suppliers?",
+                                      "release_cut_confirm", _cut, "Yes, mark them", warning="Use this only for checks the suppliers really hold. Each can still be taken back one by one.")
+        recent = recent_releases(30)
+        if not recent.empty:
+            with st.expander(f"Released in the last 30 days ({len(recent)})", icon=":material/history:"):
+                st.dataframe(recent.assign(state=["Cleared by the bank" if c else "With the supplier" for c in recent["cleared"]])[
+                    ["released_date", "supplier", "check_number", "check_date", "amount", "released_to", "state"]], hide_index=True, width="stretch",
+                    column_config={"released_date": st.column_config.DateColumn("Released"), "supplier": "Supplier", "check_number": "Check no.",
+                                   "check_date": st.column_config.DateColumn("Check date"), "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
+                                   "released_to": "Collected by", "state": "Now"})
+                undoable = recent[recent["cleared"] == 0]
+                if not undoable.empty:
+                    labels = {int(r.check_id): f"{r.supplier} · {r.check_number or 'no number'} · {php(r.amount)} · released {r.released_date}" for r in undoable.itertuples()}
+                    pick = st.selectbox("Marked by mistake?", list(labels), format_func=labels.get, key="release_undo_pick", index=None, placeholder="Pick a check to take back")
+                    if pick is not None and st.button("Undo this release", icon=":material/undo:", key="release_undo"):
+                        ok, msg = undo_release(int(pick))
+                        (refresh(done=msg) if ok else st.error(msg))
+
+
 def render() -> None:
     page_header("Checks and checkbook")
+
+    render_for_release()
 
     with st.container(border=True):
         st.subheader("Checks to print")
