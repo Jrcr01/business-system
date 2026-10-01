@@ -74,8 +74,10 @@ def _problems(creditor_id, checks, statement_id, loan_note_id, invoice, replaces
                 return "That batch does not belong to this supplier.", {}
             if st_row[1] == "Cancelled":
                 return "That batch is cancelled.", {}
-            if st_row[2]:
-                return "That batch is locked. Unlock it first (Order statements), then record the check.", {}
+            # A fully covered batch is locked by itself (engines/lock_rules.py). Checks that fit its balance -- a replacement for a voided check -- are still
+            # fine, and the lock follows the money again once they are saved; but a NEW invoice belongs in a new batch.
+            if st_row[2] and invoice is not None:
+                return "That batch is locked (its checks cover it in full). Put the invoice in a new batch, or unlock it first from Order statements.", {}
         if invoice is not None:
             doc = str(invoice.get("doc_ref") or "").strip()
             if not doc:

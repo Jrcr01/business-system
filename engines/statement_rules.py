@@ -29,6 +29,12 @@ def _batch_lock_status(cur: sqlite3.Cursor, statement_id: int | None) -> bool:
     return bool(row and row[0] == 1)
 
 
+def _resync_lock(statement_id: int | None) -> None:
+    """After an invoice or credit-memo change: lock the batch if its checks now cover it, reopen it if they no longer do (engines/lock_rules.py)."""
+    from engines.lock_rules import sync_batch_lock
+    sync_batch_lock(statement_id)
+
+
 def add_credit_memo(statement_id: int, memo_ref: str, memo_date: date, amount: float, reason: str) -> tuple[bool, str]:
     with get_conn() as conn:
         cur = conn.cursor()
@@ -57,6 +63,7 @@ def add_credit_memo(statement_id: int, memo_ref: str, memo_date: date, amount: f
         )
         conn.commit()
     sync_invoice_payment_status(statement_id)
+    _resync_lock(statement_id)
     return True, f"Credit memo {memo_ref} for {php(amount)} applied to the batch."
 
 
@@ -75,6 +82,7 @@ def add_invoice(creditor_id: int, doc_ref: str, invoice_date: date, due_date: da
     if statement_id is not None:
         recompute_statement_total(statement_id)
         sync_invoice_payment_status(statement_id)
+        _resync_lock(statement_id)
     return net_amount, total_discount, warnings
 
 
@@ -138,6 +146,7 @@ def delete_credit_memo(credit_memo_id: int) -> tuple[bool, str]:
             cur.execute("UPDATE order_statements SET credit_memos_confirmed = 1 WHERE statement_id = ?", (statement_id,))
         conn.commit()
     sync_invoice_payment_status(statement_id)
+    _resync_lock(statement_id)
     return True, f"Deleted credit memo {memo_ref}."
 
 
@@ -173,6 +182,7 @@ def delete_invoice(invoice_id: int) -> tuple[bool, str]:
     if statement_id is not None:
         recompute_statement_total(statement_id)
         sync_invoice_payment_status(statement_id)
+        _resync_lock(statement_id)
     return True, f"Deleted invoice {doc_ref}."
 
 
@@ -226,6 +236,7 @@ def edit_credit_memo(credit_memo_id: int, memo_ref: str, memo_date: date, amount
         )
         conn.commit()
     sync_invoice_payment_status(statement_id)
+    _resync_lock(statement_id)
     return True, f"Credit memo updated ({len(changes)} field(s) changed)."
 
 
@@ -294,6 +305,7 @@ def edit_invoice(invoice_id: int, doc_ref: str, invoice_date: date, due_date: da
     if statement_id is not None:
         recompute_statement_total(statement_id)
         sync_invoice_payment_status(statement_id)
+        _resync_lock(statement_id)
     return True, f"Invoice updated ({len(changes)} field(s) changed)."
 
 
@@ -352,7 +364,7 @@ def get_invoices_with_remaining(statement_id: int) -> pd.DataFrame:
     return df[df["remaining"] > 0.005].reset_index(drop=True)
 
 
-def lock_statement(statement_id: int) -> tuple[bool, str]:
+def lock_statement(statement_id: int, note: str = "Batch re-locked") -> tuple[bool, str]:
     """Hard rule: a batch can never be locked while its active checks exceed the net total —
     overpayment must be corrected (or the offending check cancelled) first, not locked past."""
     with write_tx() as conn:          # Phase F1.4: the overpaid check and the lock in ONE locked step
@@ -363,7 +375,7 @@ def lock_statement(statement_id: int) -> tuple[bool, str]:
         cur.execute("UPDATE order_statements SET is_locked = 1 WHERE statement_id = ?", (statement_id,))
         cur.execute(
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BATCH_LOCKED', 'order_statements', ?, ?)",
-            (statement_id, "Batch re-locked"),
+            (statement_id, note),
         )
     # Thermal statement printing, step 3: edited after an unlock and re-locked -> a new statement version, and "Needs reprint" if an
     # earlier version was already printed. Imported here (not at the top) to avoid a circular import.
@@ -520,7 +532,7 @@ def sync_invoice_payment_status(statement_id: int) -> None:
         conn.commit()
 
 
-def unlock_statement(statement_id: int) -> tuple[bool, str]:
+def unlock_statement(statement_id: int, note: str = "Batch unlocked for correction/replacement") -> tuple[bool, str]:
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT status FROM order_statements WHERE statement_id = ?", (statement_id,))
@@ -532,7 +544,7 @@ def unlock_statement(statement_id: int) -> tuple[bool, str]:
         cur.execute("UPDATE order_statements SET is_locked = 0 WHERE statement_id = ?", (statement_id,))
         cur.execute(
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BATCH_UNLOCKED', 'order_statements', ?, ?)",
-            (statement_id, "Batch unlocked for correction/replacement"),
+            (statement_id, note),
         )
         conn.commit()
     return True, "Batch unlocked."

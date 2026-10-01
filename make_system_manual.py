@@ -305,7 +305,7 @@ def ch_record_supplier():
                   "Open the batch (Order statements) > <b>Checks</b> > <b>Issue checks</b>. Choose how many checks or the dates, and the amounts. The total must equal the batch's balance.",
                   "Press <b>Park Metrobank checks</b> and confirm. The batch becomes 'Issued' and gets its permanent OS number.",
                   "Continue on the Payment run page from stage 2."])
-    out += [callout("Remember", ["A check can never be for more than the batch still owes. If you need to change an invoice after checks exist, unlock the batch first (Order statements > Unlock), change it, and it locks again."])]
+    out += [callout("Remember", ["A check can never be for more than the batch still owes. A batch locks by itself once its checks cover the full amount, and opens again by itself when you void or replace a check. To change an invoice after that, use Order statements > Edit this batch, give a short reason, change it, and it closes again when you save."])]
     out += [P("B. Credit memos and corrections", "h2")]
     out += bullets(["<b>Credit memo</b> (supplier gives a discount or return): Add data > Invoices / credit memos > credit memo. It lowers what the batch owes.",
                     "<b>Edit parked checks</b>: while a check has no number you can change its date and amount.",
@@ -399,7 +399,7 @@ def ch_wrong():
           ["The batch does not balance (a few pesos left).", "Compare the checks with the invoices; usually one check was typed a little short. Correct that check."],
           ["A check shows in the bank but not in the program.", "Probably a handwritten check not yet recorded. Add data > Handwritten check."],
           ["'Possible double recording' appears.", "The same supplier, number or amount was seen before. Read it; if it is really different, continue."],
-          ["The program says the batch is locked.", "Order statements > Unlock, make the change, and it locks again. Locking protects printed checks."],
+          ["The program says the batch is closed (locked).", "Order statements > Edit this batch, give a reason, make the change. It closes again when you save."],
           ["What does 'Beginning balance (from MS Access)' mean?", "Old checks brought from the previous system with no invoice detail. It makes the batch add up and is not a purchase."],
           ["The calendar day is green / blue / grey.", "Green = already paid, blue = still to pay (darker = more), outlined = today, grey = holiday or a marked day."],
           ["A check was never cashed.", "After the stale-check days (Settings, normally 180) the Dashboard warns. Ask the payee; void and reissue, or Settled outside the bank."],

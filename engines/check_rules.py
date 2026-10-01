@@ -22,7 +22,8 @@ try:
 except ImportError:  # same guard as app.py had: the dual-copy check PDF is simply unavailable without pypdf
     PdfReader = PdfWriter = None
 from engines.common import PRIMARY_BANK_ACCOUNT_ID, get_conn, php, q_live, write_tx
-from engines.statement_rules import _batch_lock_status, get_batch_balance, sync_invoice_payment_status
+from engines.lock_rules import batch_is_cancelled, reopen_in_tx, sync_batch_lock
+from engines.statement_rules import get_batch_balance, sync_invoice_payment_status
 
 
 class _BulkAssignError(Exception):
@@ -147,8 +148,8 @@ def apply_check_correction(check_id: int, correction_type: str, new_value: str, 
             return False, "This check has no number yet — use 'Assign a check number' instead of correcting one."
         if correction_type in ("Amount", "Check Date") and printed_at is None:
             return False, "This check hasn't been printed yet — edit it via 'Edit parked checks' instead."
-        if _batch_lock_status(cur, statement_id):
-            return False, "This batch is locked. Unlock it first to apply a correction."
+        if batch_is_cancelled(cur, statement_id):
+            return False, "This batch is cancelled, so its checks can't be corrected."
 
         if correction_type == "Check Number":
             new_number = (new_value or "").strip()
@@ -209,8 +210,10 @@ def apply_check_correction(check_id: int, correction_type: str, new_value: str, 
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_CORRECTION', 'checks_issued', ?, ?)",
             (check_id, f"{correction_type}: {old_value} -> {new_value} ({reason or 'no reason given'})"),
         )
+        reopen_in_tx(cur, statement_id, "a check was corrected")     # a locked batch no longer has to be unlocked by hand first
     if correction_type == "Amount" and statement_id is not None:
         sync_invoice_payment_status(statement_id)
+    sync_batch_lock(statement_id)                                    # still fully covered -> closed again; a balance now -> stays open
     return True, "Correction applied and logged."
 
 
@@ -407,8 +410,8 @@ def cancel_check(check_id: int, reason: str = "") -> tuple[bool, str]:
         bank_account_id, amount, status, statement_id = row
         if status != "Active":
             return False, f"Only Active checks can be cancelled (current status: {status})."
-        if _batch_lock_status(cur, statement_id):
-            return False, "This batch is locked. Unlock it first to cancel a check."
+        if batch_is_cancelled(cur, statement_id):
+            return False, "This batch is cancelled, so its checks can't be changed."
         cur.execute("UPDATE checks_issued SET status = 'Cancelled', cancelled_at = CURRENT_TIMESTAMP, cancel_reason = ? WHERE check_id = ?",
                     (reason or None, check_id))
         cur.execute(
@@ -417,9 +420,11 @@ def cancel_check(check_id: int, reason: str = "") -> tuple[bool, str]:
         )
         unlink_installment_for_check(cur, check_id)
         unlink_invoice_allocations_for_check(cur, check_id)
+        reopen_in_tx(cur, statement_id, "a check was cancelled")
         conn.commit()
     if statement_id is not None:
         sync_invoice_payment_status(statement_id)
+    sync_batch_lock(statement_id)
     return True, f"Check cancelled ({php(amount)})."
 
 
@@ -545,6 +550,8 @@ def edit_parked_check(check_id: int, new_amount: float, new_check_date: date) ->
             return True, "No changes to save."
 
         cur.execute("UPDATE checks_issued SET amount = ?, check_date = ? WHERE check_id = ?", (new_amount, new_date_s, check_id))
+        if abs(new_amount - old_amount) > 0.001:                  # a new amount moves the balance, so a locked batch has to open
+            reopen_in_tx(cur, statement_id, "a parked check's amount was edited")
         for field, old_v, new_v in changes:
             cur.execute(
                 """INSERT INTO check_corrections (check_id, statement_id, correction_type, old_value, new_value, reason)
@@ -558,6 +565,7 @@ def edit_parked_check(check_id: int, new_amount: float, new_check_date: date) ->
         conn.commit()
     if statement_id is not None:
         sync_invoice_payment_status(statement_id)
+        sync_batch_lock(statement_id)
     return True, f"{len(changes)} field(s) updated."
 
 
@@ -681,6 +689,7 @@ def issue_check(
             mark_installment_active(cur, installment_id, check_id)
     if statement_id is not None:
         sync_invoice_payment_status(statement_id)
+        sync_batch_lock(statement_id)                  # the check that covers the whole batch closes it
     return True, f"Check parked for {php(amount)} — pending (number assigned when printed).", check_id
 
 
@@ -725,6 +734,7 @@ def issue_checks_grid(
             )
 
     sync_invoice_payment_status(statement_id)
+    sync_batch_lock(statement_id)
     total = sum(r["amount"] for r in cleaned)
     return True, f"Parked {len(cleaned)} check(s) totaling {php(total)} — pending (numbers assigned when printed).", check_ids
 
@@ -833,8 +843,8 @@ def replace_check(check_id: int, new_check_date: date, reason: str) -> tuple[boo
         creditor_id, bank_account_id, statement_id, loan_note_id, amount, status = row
         if status != "Active":
             return False, f"Only Active checks can be replaced (current status: {status}).", None
-        if _batch_lock_status(cur, statement_id):
-            return False, "This batch is locked. Unlock it first to replace a check.", None
+        if batch_is_cancelled(cur, statement_id):
+            return False, "This batch is cancelled, so its checks can't be changed.", None
 
         cur.execute(
             """INSERT INTO checks_issued
@@ -856,9 +866,11 @@ def replace_check(check_id: int, new_check_date: date, reason: str) -> tuple[boo
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_REPLACED', 'checks_issued', ?, ?)",
             (check_id, f"Replaced by a new parked check (check_id {new_check_id}): {reason or 'no reason given'}"),
         )
+        reopen_in_tx(cur, statement_id, "a check was replaced")
         conn.commit()
     if statement_id is not None:
         sync_invoice_payment_status(statement_id)
+    sync_batch_lock(statement_id)
     return True, f"Check replaced. New check parked for {php(amount)} — pending (number assigned when printed).", new_check_id
 
 
@@ -926,8 +938,8 @@ def retract_check_number(check_id: int) -> tuple[bool, str]:
             return False, f"Only Active checks can have a number retracted (current status: {status})."
         if number is None:
             return False, "This check has no number to retract."
-        if _batch_lock_status(cur, statement_id):
-            return False, "This batch is locked. Unlock it first to retract a number."
+        if batch_is_cancelled(cur, statement_id):
+            return False, "This batch is cancelled, so its checks can't be changed."
         cur.execute("UPDATE checks_issued SET check_number = NULL, booklet_id = NULL WHERE check_id = ?", (check_id,))
         pointer_note = ""
         if booklet_id is not None:
@@ -949,6 +961,8 @@ def retract_check_number(check_id: int) -> tuple[bool, str]:
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values, new_values) VALUES (acting_user(), 'CHECK_NUMBER_RETRACTED', 'checks_issued', ?, ?, ?)",
             (check_id, f"check_number {number}", "number removed" + (" (booklet leaf returned)" if booklet_id else "") + pointer_note),
         )
+        reopen_in_tx(cur, statement_id, "a check number was retracted")
+    sync_batch_lock(statement_id)
     return True, f"Number {number} retracted" + (" — the booklet leaf is available again." if booklet_id else ".")
 
 
@@ -1015,8 +1029,8 @@ def unpark_checks(statement_id: int, check_ids: list[int]) -> tuple[bool, str]:
         return False, "Pick at least one parked check."
     with get_conn() as conn:
         cur = conn.cursor()
-        if _batch_lock_status(cur, statement_id):
-            return False, "This batch is locked — unlock it first."
+        if batch_is_cancelled(cur, statement_id):
+            return False, "This batch is cancelled, so its checks can't be changed."
         details, exported, print_batches = [], 0, set()
         for cid in ids:
             cur.execute("SELECT print_batch_id FROM checks_issued WHERE check_id = ?", (cid,))
@@ -1071,7 +1085,9 @@ def unpark_checks(statement_id: int, check_ids: list[int]) -> tuple[bool, str]:
                 (statement_id, f"no active checks left after un-park; {batch_ref} is a Draft again (number kept)"),
             )
             back_to_draft = f" The batch has no active checks left, so it is a Draft again (it keeps {batch_ref})."
+        reopen_in_tx(cur, statement_id, "checks were un-parked")
         conn.commit()
     sync_invoice_payment_status(statement_id)
+    sync_batch_lock(statement_id)
     chrysanth_note = f" {exported} of them had already been exported to Chrysanth — remove them there too." if exported else ""
     return True, f"Un-parked {len(details)} check(s) totaling {php(sum(d[1] for d in details))}; the balance is available again." + chrysanth_note + back_to_draft
