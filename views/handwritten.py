@@ -13,19 +13,31 @@ from engines.handwritten_check_service import problems_with, record_handwritten_
 from views.shared import MONEY_FORMAT, confirm_create_dialog, flash, q, selectbox_creditor
 
 
-def _replace_options(creditor_id: int) -> dict:
-    """The payee's checks that could be the one being replaced: voided ones first (the usual case), then still-active ones. Already replaced are left out."""
+def _scope_sql(statement_id, loan_note_id) -> tuple[str, tuple]:
+    """Only the checks of the batch / loan note picked above (a new invoice in a new batch has no scope: any of the payee's checks)."""
+    if loan_note_id is not None:
+        return " AND loan_note_id = ?", (int(loan_note_id),)
+    if statement_id is not None:
+        return " AND statement_id = ?", (int(statement_id),)
+    return "", ()
+
+
+def _replace_options(creditor_id: int, statement_id=None, loan_note_id=None) -> dict:
+    """The checks that could be the one being replaced -- those of the batch / loan note picked above, or all of the payee's when none is picked yet:
+    voided ones first (the usual case), then still-active ones. Already replaced are left out."""
+    scope, params = _scope_sql(statement_id, loan_note_id)
     df = q("""SELECT check_id, check_number, check_date, amount, status FROM checks_issued
-              WHERE creditor_id = ? AND status IN ('Active', 'Cancelled') AND replacement_check_id IS NULL
-              ORDER BY (status = 'Cancelled') DESC, check_id DESC LIMIT 200""", (int(creditor_id),))
+              WHERE creditor_id = ? AND status IN ('Active', 'Cancelled') AND replacement_check_id IS NULL""" + scope + """
+              ORDER BY (status = 'Cancelled') DESC, check_id DESC LIMIT 200""", (int(creditor_id),) + params)
     label = {"Cancelled": "voided", "Active": "still active — will be voided"}
     return {int(r["check_id"]): f"{r['check_number'] or 'no number'} · {r['check_date']} · {php(r['amount'])} · {label[r['status']]}" for _, r in df.iterrows()}
 
 
-def _old_check_terms(creditor_id: int) -> dict:
+def _old_check_terms(creditor_id: int, statement_id=None, loan_note_id=None) -> dict:
     """check_id -> (date, amount) of the checks in _replace_options, so a replacement starts with the same date and amount."""
-    df = q("""SELECT check_id, check_date, amount FROM checks_issued WHERE creditor_id = ? AND status IN ('Active', 'Cancelled') AND replacement_check_id IS NULL
-              ORDER BY check_id DESC LIMIT 200""", (int(creditor_id),))
+    scope, params = _scope_sql(statement_id, loan_note_id)
+    df = q("""SELECT check_id, check_date, amount FROM checks_issued WHERE creditor_id = ? AND status IN ('Active', 'Cancelled') AND replacement_check_id IS NULL"""
+           + scope + """ ORDER BY check_id DESC LIMIT 200""", (int(creditor_id),) + params)
     return {int(r["check_id"]): (pd.to_datetime(r["check_date"]).date(), float(r["amount"])) for _, r in df.iterrows()}
 
 
@@ -87,11 +99,11 @@ def render_handwritten_form() -> None:
         loan_note_id = st.selectbox("Loan note", list(opts), format_func=opts.get, key=f"hw_ln_{cid}_{n}")
         _show_loan_note_checks(int(loan_note_id))
 
-    repl = _replace_options(cid)
-    replaces = st.selectbox("Does this replace an earlier check?", [None] + list(repl), format_func=lambda c: "No" if c is None else repl[c], key=f"hw_repl_{cid}_{n}",
+    repl = _replace_options(cid, statement_id, loan_note_id)
+    replaces = st.selectbox("Does this replace an earlier check?", [None] + list(repl), format_func=lambda c: "No" if c is None else repl[c], key=f"hw_repl_{cid}_{statement_id}_{loan_note_id}_{n}",
                             help="Pick the voided (or wrong) check this one takes the place of; the two are linked, and a still-active one is voided first. "
                                  "The new check starts with the same date and amount — change them if they differ.")
-    start_date, start_amount = _old_check_terms(cid).get(replaces, (date.today(), 0.0)) if replaces else (date.today(), 0.0)
+    start_date, start_amount = _old_check_terms(cid, statement_id, loan_note_id).get(replaces, (date.today(), 0.0)) if replaces else (date.today(), 0.0)
 
     st.markdown("**The handwritten check(s)**")
     grid = st.data_editor(
@@ -118,7 +130,7 @@ def render_handwritten_form() -> None:
                       + (" in a new batch" if statement_id is None else "") + "." if invoice else "")
                    + (f"\n\nThis replaces **{repl[replaces]}**." if replaces else ""))
         if replaces:
-            old_amount = _old_check_terms(cid).get(replaces, (None, None))[1]
+            old_amount = _old_check_terms(cid, statement_id, loan_note_id).get(replaces, (None, None))[1]
             new_total = sum(c["amount"] for c in checks)
             if old_amount is not None and abs(new_total - old_amount) > 0.005:
                 summary += f"\n\n:warning: **The amount differs from the check it replaces:** {php(old_amount)} → {php(new_total)} (difference {php(abs(new_total - old_amount))}). Make sure that is right."
