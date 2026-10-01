@@ -135,7 +135,7 @@ def render() -> None:
         st.session_state["ln_mode"] = st.session_state.pop("_ln_mode_next")
 
     loan_notes_df = q(
-        """SELECT ln.loan_note_id, ln.creditor_id, c.creditor_name, ln.note_ref, ln.issue_date, ln.principal_amount,
+        """SELECT ln.loan_note_id, ln.creditor_id, c.creditor_name, ln.note_ref, CASE WHEN ln.is_lease = 1 THEN 'Lease' ELSE 'Loan' END AS kind, ln.issue_date, ln.principal_amount,
                   ln.monthly_interest_rate, ln.total_interest, ln.total_payable,
                   ln.total_payable - COALESCE(
                       (SELECT SUM(amount) FROM checks_issued
@@ -185,6 +185,7 @@ def render() -> None:
                     "total_interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT),
                     "total_payable": st.column_config.NumberColumn("Total payable", format=MONEY_FORMAT),
                     "creditor_id": None,          # used by the edit form, not shown
+                    "kind": st.column_config.TextColumn("Kind", help="Loan = money we borrowed. Lease = rent we pay a lessor (no interest; the rent checks are its schedule)."),
                     "outstanding": st.column_config.NumberColumn("Outstanding (uncleared)", format=MONEY_FORMAT),
                     "source": st.column_config.TextColumn("Source", help="Beginning balance (from MS Access): migrated from the old system with its interest / terms not split out yet."),
                 },

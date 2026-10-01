@@ -113,7 +113,16 @@ def debt_due_by_month(months: int = 12, today: date | None = None) -> pd.DataFra
     flow = flow[(flow["state"] == "Due") & (flow["track"] != "Supplier")]
     names = {"Lender": "Private loans", "Bank Loan": "Bank loans", "Credit Card": "Credit cards"}
     out = flow.assign(source=flow["track"].map(names))[["month", "source", "amount"]]
-    return out.groupby(["month", "source"], as_index=False)["amount"].sum()
+    out = out.groupby(["month", "source"], as_index=False)["amount"].sum()
+    # rent paid to lessors is checked like a loan but is not debt: take it out of "Private loans"
+    with sqlite3.connect(DB_PATH) as conn:
+        rent = pd.read_sql_query(
+            """SELECT substr(k.check_date, 1, 7) AS m, SUM(k.amount) AS rent FROM checks_issued k JOIN loan_notes n ON n.loan_note_id = k.loan_note_id
+               WHERE n.is_lease = 1 AND k.status = 'Active' AND k.check_date >= ? AND k.check_date <= ? AND k.settled_outside_at IS NULL GROUP BY m""", conn, params=(str(start), str(end)))
+    for r in rent.itertuples():
+        hit = (out["source"] == "Private loans") & (pd.to_datetime(out["month"]).dt.strftime("%Y-%m") == r.m)
+        out.loc[hit, "amount"] = (out.loc[hit, "amount"] - r.rent).clip(lower=0)
+    return out[out["amount"] > 0.005].reset_index(drop=True)
 
 
 def cash_ahead_weeks(weeks: int = 13, today: date | None = None) -> pd.DataFrame:

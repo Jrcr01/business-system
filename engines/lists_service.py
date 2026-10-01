@@ -41,9 +41,22 @@ _add("lenders", "Private lenders", "Everyone we borrow from, with their loan not
          COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.creditor_id = c.creditor_id AND k.loan_note_id IS NOT NULL AND k.status = 'Active'
                    AND k.check_date >= {TODAY} AND k.settled_outside_at IS NULL), 0) AS open_balance,
          (SELECT MAX(k.check_date) FROM checks_issued k WHERE k.creditor_id = c.creditor_id AND k.status = 'Active') AS last_check
-         FROM creditors c WHERE c.creditor_type = 'LENDER' ORDER BY c.creditor_name""",
+         FROM creditors c WHERE c.creditor_type = 'LENDER' AND c.is_lessor = 0 ORDER BY c.creditor_name""",
      {"name": "Lender", "tin": "TIN", "contact_person": "Contact person", "contact_number": "Number", "email": "Email", "active": "Active", "notes": "Loan notes",
       "principal": "Total principal", "open_balance": "Still to pay (checks)", "last_check": "Last check date"}, "active")
+
+_add("lessors", "Lessors (rent)", "Everyone we pay rent to, with their rent checks (paid like loans, no contract).",
+     f"""SELECT c.creditor_name AS name, c.tin, c.contact_person, c.contact_number, c.email, {YES.format(c='c.is_active')} AS active,
+         COALESCE((SELECT GROUP_CONCAT(n.note_ref, ', ') FROM loan_notes n WHERE n.creditor_id = c.creditor_id AND n.is_lease = 1 AND n.status != 'Cancelled'), '') AS leases,
+         COALESCE((SELECT GROUP_CONCAT(DISTINCT n.lease_description) FROM loan_notes n WHERE n.creditor_id = c.creditor_id AND n.is_lease = 1 AND n.lease_description IS NOT NULL), '') AS what_is_rented,
+         (SELECT COUNT(*) FROM checks_issued k WHERE k.creditor_id = c.creditor_id AND k.loan_note_id IS NOT NULL AND k.status = 'Active') AS rent_checks,
+         COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.creditor_id = c.creditor_id AND k.loan_note_id IS NOT NULL AND k.status = 'Active'
+                   AND k.check_date >= {TODAY} AND k.settled_outside_at IS NULL), 0) AS open_balance,
+         (SELECT MIN(k.check_date) FROM checks_issued k WHERE k.creditor_id = c.creditor_id AND k.loan_note_id IS NOT NULL AND k.status = 'Active' AND k.check_date >= {TODAY}) AS next_check,
+         (SELECT k.amount FROM checks_issued k WHERE k.creditor_id = c.creditor_id AND k.loan_note_id IS NOT NULL AND k.status = 'Active' ORDER BY k.check_date DESC, k.check_id DESC LIMIT 1) AS last_rent
+         FROM creditors c WHERE c.is_lessor = 1 ORDER BY c.creditor_name""",
+     {"name": "Lessor", "tin": "TIN", "contact_person": "Contact person", "contact_number": "Number", "email": "Email", "active": "Active", "leases": "Lease folders",
+      "what_is_rented": "What is rented", "rent_checks": "Rent checks", "open_balance": "Still to pay", "next_check": "Next check date", "last_rent": "Latest rent check"}, "active")
 
 _add("banks", "Banks", "Banks we have loans or cards with (a bank used for both appears once).",
      f"""SELECT c.creditor_name AS name, MAX(c.contact_person) AS contact_person, MAX(c.contact_number) AS contact_number, MAX(c.email) AS email,
@@ -171,9 +184,9 @@ def all_lists(active_only: bool = False) -> dict[str, pd.DataFrame]:
     return {LISTS[k]["title"]: get_list(k, active_only) for k in LISTS}
 
 
-_MONEY = {"open_balance", "principal", "interest", "total_payable", "outstanding", "owed", "gross", "credit_memos", "net", "paid_by_checks", "balance", "credit_limit", "amount",
+_MONEY = {"last_rent", "open_balance", "principal", "interest", "total_payable", "outstanding", "owed", "gross", "credit_memos", "net", "paid_by_checks", "balance", "credit_limit", "amount",
           "total", "closing_balance"}
-_DATES = {"last_invoice", "last_check", "created", "issue_date", "start_date", "maturity_date", "date_received", "logged", "date", "exported", "printed", "period_from", "period_to",
+_DATES = {"next_check", "last_invoice", "last_check", "created", "issue_date", "start_date", "maturity_date", "date_received", "logged", "date", "exported", "printed", "period_from", "period_to",
           "imported", "reconciled"}
 
 

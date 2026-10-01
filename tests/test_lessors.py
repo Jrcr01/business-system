@@ -114,3 +114,27 @@ def test_a_real_loan_with_interest_or_a_supplier_is_not_converted(db):
     assert fetchone(db, "SELECT is_lessor FROM creditors WHERE creditor_id = ?", (lender,))[0] == 0
     sup = make_creditor(db, name="Sup")
     assert not convert_to_lessors([sup])[0]
+
+
+def test_rent_is_not_counted_as_debt_and_lessors_are_not_in_the_lenders_list(db):
+    from engines.analytics_flow_service import debt_due_by_month
+    from engines.lists_service import get_list
+
+    lessor = add_creditor("Papruz", "LESSOR", "", "", "", "")
+    real = make_creditor(db, name="Richie", creditor_type="LENDER")
+    d = date.today() + timedelta(days=10)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    ok, _, rent_note = create_lease(lessor, "Store", [(d, 25000.0)])
+    assert ok
+    ok, _, lnid = app.create_loan_note(real, date.today(), 10000.0, 0.0)
+    assert add_loan_installment(lnid, d, 10000.0, 0.0)[0]
+    inst = fetchone(db, "SELECT installment_id FROM loan_installments WHERE loan_note_id = ?", (lnid,))[0]
+    assert issue_check(real, 10000.0, d, loan_note_id=lnid, installment_id=inst)[0]
+
+    due = debt_due_by_month(12)
+
+    assert due["amount"].sum() == 10000.0                                         # only Richie's loan check is debt; the 25,000 rent is not
+    assert list(get_list("lenders")["name"]) == ["Richie"]
+    lessors = get_list("lessors")
+    assert list(lessors["name"]) == ["Papruz"] and lessors.iloc[0]["rent_checks"] == 1 and lessors.iloc[0]["last_rent"] == 25000.0 and lessors.iloc[0]["what_is_rented"] == "Store"

@@ -356,6 +356,10 @@ def ch_other_payees():
     out += steps(["Credit cards > Statements > <b>Add statement</b> once a month for each card, when the statement arrives. The statement month is the month of the statement date.",
                   "Enter the amounts exactly as printed. Pay by the due date (a check, or the bank). A card with no bill that month: press <b>No due this month</b>.",
                   "The Dashboard list warns if a statement seems overlooked."])
+    out += [P("Lessors (rent)", "h2"),
+            P("A lessor is someone we pay rent to. It is a creditor with <b>Type = Lessor</b> (Creditors page). Rent is paid with checks <b>like a loan</b> - there is no contract record: on the Lenders page choose "
+              "'Lender or lessor', make the note with no interest, and issue the rent checks as usual (or record handwritten ones). The note shows as a <b>Lease</b>, rent is not counted as debt in the debt "
+              "reports, and Reports > Lists has a Lessors list.")]
     out += [P("Guarantee checks (held by lenders)", "h2")]
     out += bullets(["A lender sometimes keeps an undated check as security. It is <b>not a payment</b>. Add data > <b>Guarantee check</b>: number, lender, optional loan note, amount if known, date given.",
                     "It is never counted as money going out. The Dashboard shows how much lenders hold. If the bank ever pays one, the program raises an alert.",
