@@ -43,12 +43,24 @@ def list_park_drafts() -> list[dict]:
     """Every batch that has typed-but-not-parked checks: [{'statement_id', 'label', 'n', 'total'}], newest first."""
     with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute(
-            """SELECT d.statement_id, d.payload, os.statement_ref, cr.creditor_name FROM park_drafts d
+            """SELECT d.statement_id, d.payload, os.statement_ref, cr.creditor_name,
+                      COALESCE((SELECT v.net_total FROM v_batch_net_totals v WHERE v.statement_id = d.statement_id), 0) AS net,
+                      COALESCE((SELECT v.net_total FROM v_batch_net_totals v WHERE v.statement_id = d.statement_id), 0)
+                        - COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = d.statement_id AND k.status = 'Active'), 0) AS remaining
+               FROM park_drafts d
                JOIN order_statements os ON os.statement_id = d.statement_id JOIN creditors cr ON cr.creditor_id = os.creditor_id
                WHERE os.status != 'Cancelled' ORDER BY d.updated_at DESC"""
         ).fetchall()
+        # A draft for a batch with nothing left to pay (its checks were recorded another way, e.g. as handwritten checks) can never be parked: drop it
+        # instead of nagging forever.
+        stale = [r[0] for r in rows if r[4] > 0.005 and r[5] <= 0.005]
+        for sid in stale:
+            conn.execute("DELETE FROM park_drafts WHERE statement_id = ?", (sid,))
+        conn.commit()
     out = []
-    for sid, payload, ref, name in rows:
+    for sid, payload, ref, name, net, remaining in rows:
+        if net > 0.005 and remaining <= 0.005:
+            continue
         r = json.loads(payload)["rows"]
         out.append({"statement_id": sid, "label": f"{ref} · {name}", "n": len(r), "total": sum(float(x[1]) for x in r)})
     return out

@@ -9,7 +9,7 @@ from engines.check_rules import apply_check_correction
 from engines.check_rules import cancel_check
 from engines.check_rules import edit_parked_check
 from engines.check_rules import issue_check
-from engines.check_rules import replace_check
+from engines.handwritten_check_service import replace_check_with_number
 from engines.beginning_balance_service import remove_beginning_label
 from engines.common import cell_text
 from engines.common import has_value
@@ -710,10 +710,14 @@ def render() -> None:
                                                   "ln_cancel_confirm", _cancel_ln_check, "Yes, void it",
                                                   warning="A voided check is cancelled for good. If it was already handed out, make sure the payee gives it back.")
                     with cr_col_replace:
-                        new_date = st.date_input("New check date", value=date.today(), key="ln_replace_date", help="The replacement check's date. The old check is cancelled; the new one is parked (no number yet).")
-                        if st.button("Replace this check (new one parked)", icon=":material/sync_alt:", key="ln_replace_btn"):
-                            def _replace_ln_check(pick=int(cr_pick), on=new_date):
-                                ok, msg, *_ = replace_check(pick, on, "")
+                        rep_old = active_ln_checks.set_index("check_id").loc[int(cr_pick)]
+                        rep_old_date = pd.to_datetime(rep_old.get("check_date")).date() if has_value(rep_old.get("check_date")) else date.today()
+                        new_number = st.text_input("New check number (optional)", key=f"ln_replace_number_{int(cr_pick)}",
+                                                   help="If the replacement was already written by hand, type its number: it is saved with that number, marked printed and handwritten. Leave blank to park it.")
+                        new_date = st.date_input("New check date", value=rep_old_date, key=f"ln_replace_date_{int(cr_pick)}", help="The replacement check's date. The old check is cancelled; the new one is parked (no number yet).")
+                        if st.button("Replace this check", icon=":material/sync_alt:", key="ln_replace_btn"):
+                            def _replace_ln_check(pick=int(cr_pick), on=new_date, number=new_number):
+                                ok, msg, *_ = replace_check_with_number(pick, on, number, "")
                                 if ok:
                                     flash(msg)
                                 return ok, msg

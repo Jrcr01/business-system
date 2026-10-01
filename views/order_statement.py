@@ -21,7 +21,7 @@ from engines.check_rules import edit_parked_check
 from engines.check_rules import get_existing_check_dates_for_creditor
 from engines.check_rules import get_latest_check_for_creditor
 from engines.check_rules import issue_checks_grid
-from engines.check_rules import replace_check
+from engines.handwritten_check_service import replace_check_with_number
 from engines.check_rules import unpark_checks
 from engines.common import cell_text
 from engines.common import has_value
@@ -1478,12 +1478,21 @@ def render() -> None:
                     )
                     void_reissue = st.checkbox("Reissue as a new (parked) check", key=batch_scoped_key("void_reissue_toggle"), help='Also create a replacement check for the same amount — parked, no number yet, dated as you choose.')
                     if void_reissue:
-                        void_new_date = st.date_input("New check date", value=date.today(), key=batch_scoped_key("void_new_date"), help="The replacement check's date.")
+                        void_old = active_checks_df.set_index("check_id").loc[int(void_pick)]
+                        void_old_date = pd.to_datetime(void_old.get("check_date")).date() if has_value(void_old.get("check_date")) else date.today()
+                        v1, v2 = st.columns(2)
+                        void_new_date = v1.date_input("New check date", value=void_old_date, key=batch_scoped_key(f"void_new_date_{int(void_pick)}"),
+                                                      help="The replacement check's date — the same as the old check's until you change it.")
+                        void_new_number = v2.text_input("New check number (optional)", key=batch_scoped_key(f"void_new_number_{int(void_pick)}"),
+                                                        help="If the replacement was already written by hand, type its number: it is saved with that number, marked printed and handwritten. "
+                                                             "Leave blank to park it (numbered later).")
+                    else:
+                        void_new_number = ""
                     void_reason = st.text_input("Reason (optional)", placeholder="e.g. postdated past new due date", key=batch_scoped_key("void_reason"), help='Kept with the voided check in its history.')
                     if st.button("Void & reissue" if void_reissue else "Void check", icon=":material/cancel:", key=batch_scoped_key("void_submit_btn")):
-                        def _do_void(pick=int(void_pick), reissue=bool(void_reissue), new_date=(void_new_date if void_reissue else None), why=void_reason):
+                        def _do_void(pick=int(void_pick), reissue=bool(void_reissue), new_date=(void_new_date if void_reissue else None), why=void_reason, number=void_new_number):
                             if reissue:
-                                ok, msg, _new_id = replace_check(pick, new_date, why)
+                                ok, msg, _new_id = replace_check_with_number(pick, new_date, number, why)
                             else:
                                 ok, msg = cancel_check(pick, why)
                             if ok:
@@ -1493,7 +1502,8 @@ def render() -> None:
                         vrow = active_checks_df.set_index("check_id").loc[int(void_pick)]
                         confirm_change_dialog(
                             f"{'Void and reissue' if void_reissue else 'Void'} check **{vrow['check_number'] or 'no number yet'}** for **{php(vrow['amount'])}**?"
-                            + (f"  \nA replacement is parked for {php(vrow['amount'])}, dated {void_new_date:%b %d, %Y}, with no number yet." if void_reissue else "  \nThe money goes back to the batch's available balance.")
+                            + (f"  \nThe replacement is {'check **' + void_new_number.strip() + '** (handwritten, already printed)' if void_new_number.strip() else 'parked, with no number yet'}, "
+                               f"for {php(vrow['amount'])}, dated {void_new_date:%b %d, %Y}." if void_reissue else "  \nThe money goes back to the batch's available balance.")
                             + (f"  \nReason: {void_reason.strip()}" if void_reason.strip() else ""),
                             batch_scoped_key("void_confirm"), _do_void, "Yes, void & reissue" if void_reissue else "Yes, void it",
                             warning="A voided check is cancelled for good. If it was already handed out, make sure the payee gives it back.")

@@ -14,10 +14,11 @@ import sqlite3
 from datetime import date
 
 from engines.check_rules import (
-    _is_check_number_available, allocate_check_to_invoices, assign_check_number, cancel_check, issue_check, issue_checks_grid, link_replacement,
+    _is_check_number_available, allocate_check_to_invoices, assign_check_number, cancel_check, issue_check, issue_checks_grid, link_replacement, replace_check,
 )
 from engines.common import PRIMARY_BANK_ACCOUNT_ID, php
 from engines.db_engine import promote_draft_statement
+from engines.park_draft_service import clear_park_draft
 from engines.statement_rules import add_invoice, create_order_statement, get_batch_balance, resolve_due_date, sync_invoice_payment_status
 from engines.validators import calculate_trade_discount
 
@@ -197,7 +198,35 @@ def record_handwritten_checks(creditor_id: int, checks: list[dict], statement_id
             if batch_status == "Draft":                          # same as the batch screen's "Park checks": a Draft batch with checks becomes Issued, with its permanent OS number
                 promote_draft_statement(statement_id, "Issued")
             sync_invoice_payment_status(statement_id)
+            clear_park_draft(statement_id)               # the same checks typed earlier in the batch's grid are now real; the "typed but not parked" reminder would be stale
     except sqlite3.IntegrityError as e:
         return False, f"Not everything could be saved ({e}). Check the batch and the audit log before trying again.", []
     total = sum(float(c["amount"]) for c in checks)
     return True, f"Recorded {len(check_ids)} handwritten check(s) totaling {php(total)}" + (f" and invoice {str(invoice['doc_ref']).strip()}" if invoice else "") + ".", check_ids
+
+
+def replace_check_with_number(check_id: int, new_check_date, new_check_number: str = "", reason: str = "") -> tuple[bool, str, int | None]:
+    """Void & reissue in ONE step (owner, 2026-10-01: "how can I replace a check without parking it"). With no number it is the old behaviour: the
+    replacement is parked. With a number (the replacement was handwritten) the number is checked FIRST -- on file, spoiled or a guarantee leaf is refused
+    before anything is voided -- and the replacement is saved with that number, marked printed and handwritten (never goes to Chrysanth), same amount."""
+    number = (new_check_number or "").strip()
+    if not number:
+        return replace_check(check_id, new_check_date, reason)
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        if not cur.execute("SELECT 1 FROM checks_issued WHERE check_id = ?", (check_id,)).fetchone():
+            return False, "Check not found.", None
+        if not _is_check_number_available(cur, PRIMARY_BANK_ACCOUNT_ID, number):
+            return False, f"Check number {number} is already on file or logged as spoiled.", None
+        booklet_id = _booklet_for(cur, number)
+    ok, msg, new_id = replace_check(check_id, new_check_date, reason)
+    if not ok:
+        return False, msg, None
+    ok, msg2 = assign_check_number(new_id, booklet_id, int(number) if booklet_id else None, None if booklet_id else number)
+    if not ok:
+        return False, f"The check was replaced, but its number could not be saved ({msg2}). The replacement is parked; give it its number on the Checks page.", new_id
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE checks_issued SET printed_at = COALESCE(printed_at, CURRENT_TIMESTAMP), is_handwritten = 1 WHERE check_id = ?", (new_id,))
+        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('HANDWRITTEN_CHECKS_RECORDED', 'checks_issued', ?, ?)",
+                     (new_id, f"Replacement recorded with its number: {number} replaces check_id {check_id}"))
+    return True, f"Check replaced by handwritten check {number}.", new_id
