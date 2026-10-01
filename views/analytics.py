@@ -22,6 +22,7 @@ from engines.dashboard_kpi_service import get_average_dpo_suppliers
 from engines.dashboard_kpi_service import get_overdue_cancelled_checks
 from engines.dashboard_kpi_service import get_supplier_concentration
 
+from views.supplier_debt_detail import render_supplier_debt_detail
 from views.shared import (  # noqa: F401
     page_header,
     section,
@@ -41,10 +42,11 @@ def render() -> None:
         "-- everything below is grounded in checks, loans, and credit cards actually on file."
     )
 
-    analytics_composition_tab, analytics_payment_tab, analytics_debt_tab = st.tabs([
+    analytics_composition_tab, analytics_payment_tab, analytics_debt_tab, analytics_detail_tab = st.tabs([
         ":material/stacked_bar_chart: AP Composition & Trend",
         ":material/speed: Payment Behavior",
         ":material/percent: Cost of Debt",
+        ":material/groups: Supplier & debt detail",
     ])
 
     _TRACK_COLORS = alt.Scale(domain=["Supplier", "Lender", "Bank Loan", "Credit Card"], scheme="tableau10")
@@ -328,3 +330,7 @@ def render() -> None:
                 hide_index=True,
                 column_config={"outstanding": st.column_config.NumberColumn("Outstanding", format=MONEY_FORMAT)},
             )
+
+    with analytics_detail_tab:
+        st.caption("Moved here from the Dashboard (2026-10-01): aging, payment health, top suppliers, payables trend and the interest tracker.")
+        render_supplier_debt_detail()

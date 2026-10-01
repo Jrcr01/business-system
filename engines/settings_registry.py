@@ -37,6 +37,8 @@ NUMBERS = [
      "After a card's statement date, wait this many days before warning that its statement has not been entered."),
     ("min_money_amount", "Entry checks", "Smallest loan / limit amount accepted", 1, 0.01, 1000, 2, "₱",
      "A loan principal or card limit below this is refused as a likely typo (for example a missed zero)."),
+    ("supplier_concentration_pct", "Dashboard alerts", "Supplier concentration alert at", 25, 5, 100, 0, "% of supplier debt",
+     "The Dashboard warns when one supplier alone is at least this share of everything owed to suppliers."),
     ("planner_max_days_late", "Check-date planner", "Planner may push a check at most", 7, 0, 60, 0, "days later",
      "How far the Check-date planner may move a check past its supplier's due date."),
     ("planner_daily_limit", "Check-date planner", "Planner daily limit (0 = none)", 0, 0, 1_000_000_000, 2, "₱",
