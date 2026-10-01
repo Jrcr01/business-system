@@ -266,7 +266,7 @@ def ch_map():
             ["Records and reports", "Dashboard", "Today: key figures, ONE list of what needs attention, the payment calendar and the next 7 days."],
             ["", "Creditors", "The list of suppliers, lenders and banks (name, TIN, contact, terms)."],
             ["", "Analytics", "Charts: where the money goes, who we owe, how we pay, cost of borrowing, cash ahead."],
-            ["", "Reports", "Printable and downloadable reports: Overview, Schedule of payments, Cleared checks, histories, rollups, 'My reports'."],
+            ["", "Reports", "Printable and downloadable reports: Overview, Schedule of payments, Cleared checks, histories, rollups, <b>Lists</b> (who are our suppliers, lenders, banks, batches, cards, booklets... with one download for all) and <b>Decision reports</b> (are we paying late, which debt costs most, where did the money go...), plus 'My reports'."],
             ["System", "Settings", "Change the numbers the program uses (stale days, cash buffer...) and the keyboard shortcuts."],
             ["", "Admin and audit", "Check booklets, backup and restore, the audit log, printer set-up."],
             ["", "Data health", "A scan for things that look wrong: double numbers, odd dates, unmatched bank lines."]]
@@ -455,7 +455,7 @@ def ch_words():
            table([["I want to...", "Go to..."], ["record a supplier invoice", "Add data > Invoices / credit memos"], ["record a photo from Mom", "Add data > Handwritten check"],
                   ["send checks to print", "Payment run > stage 2"], ["give checks their numbers", "Payment run > stage 4"], ["void or replace a check", "Order statements > Checks > Void a check"],
                   ["log a torn leaf", "Checks and checkbook > Log a spoiled check"], ["import the bank statement", "Bank and cash > Import a statement"],
-                  ["see what is due this week", "Dashboard > Next 7 days"], ["see all checks of a supplier", "Reports > Supplier - invoice and check history"],
+                  ["see what is due this week", "Dashboard > Next 7 days"], ["see all checks of a supplier", "Reports > Supplier - invoice and check history"], ["list all suppliers / lenders / banks", "Reports > Lists"], ["answer a question about spending, late payments or cost of debt", "Reports > Decision reports (has a question guide)"],
                   ["change a loan's details", "Lenders / Bank loans > Edit ... details"], ["change a setting or shortcut", "Settings"], ["find anything", "Press / (Search everything)"]], [0.5, 0.5])]
     return out
 
