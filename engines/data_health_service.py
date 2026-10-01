@@ -20,7 +20,12 @@ DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 GROUPS = ["Checks", "Invoices and batches", "Bank vs our records", "Suppliers", "Credit cards", "Audit log"]
 KEY_PREFIX = "health|"
 BROWSE_BATCHES, BROWSE_LOAN_NOTES = "Browse batches", "Browse loan notes"
-STALE_CHECK_DAYS = 180          # Philippine checks go stale six months after their date
+def stale_check_days() -> int:
+    """Philippine checks go stale about six months after their date (Settings, default 180)."""
+    from engines.settings_registry import int_value
+    return int_value("stale_check_days")
+
+
 CC_GUESS_MIN_DAYS = 25          # card with no statement day: dues this far apart are two statements (its statement dates are only guessed)
 
 
@@ -99,7 +104,7 @@ def _checks(conn, today: date, out: list) -> None:
         if r["printed_at"] and not r["check_number"]:
             _f(out, g, "Printed but no check number", f"no_number|{r['check_id']}",
                f"Printed {str(r['printed_at'])[:10]}, dated {cd}: assign the leaf number so the bank statement can match it.", r["amount"], who, tgt)
-        if cd and cd < today - timedelta(days=STALE_CHECK_DAYS) and not r["bank_cleared_date"]:
+        if cd and cd < today - timedelta(days=stale_check_days()) and not r["bank_cleared_date"]:
             _f(out, g, "Stale check (over 6 months, not cleared)", f"stale|{r['check_id']}",
                f"Check {label} dated {cd} has not been cleared by the bank; a check goes stale six months after its date.", r["amount"], who, tgt)
         if cd and cd > today + timedelta(days=365):
@@ -108,6 +113,24 @@ def _checks(conn, today: date, out: list) -> None:
         if (r["amount"] or 0) <= 0:
             _f(out, g, "Zero or negative amount", f"zero_check|{r['check_id']}", f"Check {label} dated {cd} is for PHP {r['amount'] or 0:,.2f}.",
                r["amount"], who, tgt)
+
+
+def _guarantee_checks(conn, out: list) -> None:
+    """Guarantee checks (owner, 2026-10-01): one still marked Held after its loan note was settled / cancelled should have been taken back; one the bank paid needs a look."""
+    if not _has_table(conn, "guarantee_checks"):
+        return
+    g = "Checks"
+    for r in conn.execute("""SELECT g.guarantee_id, g.check_number, g.face_amount, cr.creditor_name, ln.note_ref, ln.status AS loan_status, ln.loan_note_id
+                            FROM guarantee_checks g JOIN creditors cr ON cr.creditor_id = g.creditor_id JOIN loan_notes ln ON ln.loan_note_id = g.loan_note_id
+                            WHERE g.status = 'Held' AND ln.status IN ('Settled', 'Cancelled')"""):
+        _f(out, g, "Guarantee check still held after the loan ended", f"guarantee_held|{r['guarantee_id']}",
+           f"Guarantee check {r['check_number']} is still marked held by {r['creditor_name']}, but loan note {r['note_ref']} is {r['loan_status']}. Was it taken back?",
+           r["face_amount"], r["creditor_name"], ("lenders", {"selected_loan_note_id": int(r["loan_note_id"]), "ln_mode": BROWSE_LOAN_NOTES}))
+    for r in conn.execute("""SELECT g.guarantee_id, g.check_number, g.face_amount, g.presented_on, cr.creditor_name FROM guarantee_checks g
+                            JOIN creditors cr ON cr.creditor_id = g.creditor_id WHERE g.status = 'Presented'"""):
+        _f(out, g, "A guarantee check was paid by the bank", f"guarantee_presented|{r['guarantee_id']}",
+           f"The bank paid / received guarantee check {r['check_number']} held by {r['creditor_name']} on {r['presented_on']}. It was only a guarantee — find out why.",
+           r["face_amount"], r["creditor_name"], ("bank-cash", {}))
 
 
 def _invoices_and_batches(conn, today: date, out: list) -> None:
@@ -275,6 +298,7 @@ def findings(include_fine: bool = False, today: date | None = None) -> list[dict
     with _conn() as conn:
         for part in (_checks, _invoices_and_batches, _bank, _suppliers, _credit_cards, _audit_log):
             part(conn, today, out)
+        _guarantee_checks(conn, out)
         fine = {r["dup_key"]: r["note"] for r in conn.execute("SELECT dup_key, note FROM duplicate_dismissals WHERE dup_key LIKE ?", (KEY_PREFIX + "%",))}
     for f in out:
         f["fine"], f["note"] = f["key"] in fine, fine.get(f["key"]) or ""

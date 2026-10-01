@@ -35,9 +35,10 @@ def test_overview_splits_paid_from_scheduled_and_compares_with_previous_period(d
 
     o = get_overview("Month", today)
 
-    assert o["current"]["paid"] == 1000
+    on_the_first = first_of_month == today                      # due today = still owed (owner, 2026-09-28): on the 1st that check is scheduled, not paid
+    assert o["current"]["paid"] == (0 if on_the_first else 1000)
     assert o["previous"]["paid"] == 500
-    assert o["current"]["scheduled"] == (250 if future.month == today.month else 0)
+    assert o["current"]["scheduled"] == (1000 if on_the_first else 0) + (250 if future.month == today.month else 0)
     assert any("Paid out" in h for h in o["highlights"])
     assert o["current"]["payees"].iloc[0]["payee"] == "Acom Trading"
 

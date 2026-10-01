@@ -21,7 +21,7 @@ from engines.check_rules import edit_parked_check
 from engines.check_rules import get_existing_check_dates_for_creditor
 from engines.check_rules import get_latest_check_for_creditor
 from engines.check_rules import issue_checks_grid
-from engines.check_rules import replace_check
+from engines.handwritten_check_service import replace_check_with_number
 from engines.check_rules import unpark_checks
 from engines.common import cell_text
 from engines.common import has_value
@@ -70,7 +70,11 @@ from views.shared import (  # noqa: F401
     PdfWriter,
     batch_scoped_key,
     confirm_cancel_dialog,
+    confirm_change_dialog,
     confirm_create_dialog,
+    flash,
+    grid_risk_lines,
+    grid_risk_summary,
     confirm_unlock_dialog,
     creditor_options,
     date_col,
@@ -328,66 +332,77 @@ def render_batch_invoices(statement_id: int) -> None:
           elif not guard_duplicate_submit("save_invoice_changes", int(batch_scope_pick), edited_invoices_df.to_csv(index=False)):
             st.warning("Duplicate submission ignored — identical to the click just before it.")
           else:
-            original_by_id = original_invoices_df.set_index("invoice_id")
-            seen_ids, added, updated, row_errors = set(), 0, 0, []
-            for _, r in edited_invoices_df.iterrows():
-                if pd.isna(r["invoice_id"]):
-                    doc_ref, gross = cell_text(r["doc_ref"]).strip(), float(r["gross_amount"] or 0)
-                    if not doc_ref and gross <= 0:
-                        continue  # untouched blank template row
-                    if not doc_ref or gross <= 0:
-                        row_errors.append("New invoice row needs a Doc Ref and a positive Amount.")
+            def _save_invoices():
+                original_by_id = original_invoices_df.set_index("invoice_id")
+                seen_ids, added, updated, row_errors = set(), 0, 0, []
+                for _, r in edited_invoices_df.iterrows():
+                    if pd.isna(r["invoice_id"]):
+                        doc_ref, gross = cell_text(r["doc_ref"]).strip(), float(r["gross_amount"] or 0)
+                        if not doc_ref and gross <= 0:
+                            continue  # untouched blank template row
+                        if not doc_ref or gross <= 0:
+                            row_errors.append("New invoice row needs a Doc Ref and a positive Amount.")
+                            continue
+                        resolved_due = resolve_due_date(r["invoice_date"], supplier_terms)
+                        try:
+                            add_invoice(
+                                scoped_creditor_id, doc_ref, r["invoice_date"], resolved_due,
+                                gross, [float(r["less_pct"])] if r["less_pct"] else [], int(batch_scope_pick),
+                            )
+                            added += 1
+                        except sqlite3.IntegrityError:
+                            row_errors.append(f"'{doc_ref}' already exists for this supplier.")
                         continue
+
+                    inv_id = int(r["invoice_id"])
+                    seen_ids.add(inv_id)
+                    orig = original_by_id.loc[inv_id]
                     resolved_due = resolve_due_date(r["invoice_date"], supplier_terms)
-                    try:
-                        add_invoice(
-                            scoped_creditor_id, doc_ref, r["invoice_date"], resolved_due,
-                            gross, [float(r["less_pct"])] if r["less_pct"] else [], int(batch_scope_pick),
-                        )
-                        added += 1
-                    except sqlite3.IntegrityError:
-                        row_errors.append(f"'{doc_ref}' already exists for this supplier.")
-                    continue
+                    is_changed = (
+                        cell_text(r["doc_ref"]) != cell_text(orig["doc_ref"])
+                        or str(r["invoice_date"]) != str(orig["invoice_date"])
+                        or str(resolved_due) != str(orig["due_date"])
+                        or abs(float(r["gross_amount"]) - float(orig["gross_amount"])) > 0.001
+                        or abs(float(r["less_pct"]) - float(orig["less_pct"])) > 0.001
+                    )
+                    if not is_changed:
+                        continue
+                    ok, msg = edit_invoice(
+                        inv_id, cell_text(r["doc_ref"]), r["invoice_date"], resolved_due,
+                        float(r["gross_amount"]), float(r["less_pct"]),
+                    )
+                    if ok:
+                        updated += 1
+                    else:
+                        row_errors.append(f"Invoice {inv_id}: {msg}")
 
-                inv_id = int(r["invoice_id"])
-                seen_ids.add(inv_id)
-                orig = original_by_id.loc[inv_id]
-                resolved_due = resolve_due_date(r["invoice_date"], supplier_terms)
-                is_changed = (
-                    cell_text(r["doc_ref"]) != cell_text(orig["doc_ref"])
-                    or str(r["invoice_date"]) != str(orig["invoice_date"])
-                    or str(resolved_due) != str(orig["due_date"])
-                    or abs(float(r["gross_amount"]) - float(orig["gross_amount"])) > 0.001
-                    or abs(float(r["less_pct"]) - float(orig["less_pct"])) > 0.001
-                )
-                if not is_changed:
-                    continue
-                ok, msg = edit_invoice(
-                    inv_id, cell_text(r["doc_ref"]), r["invoice_date"], resolved_due,
-                    float(r["gross_amount"]), float(r["less_pct"]),
-                )
-                if ok:
-                    updated += 1
-                else:
-                    row_errors.append(f"Invoice {inv_id}: {msg}")
+                deleted = 0
+                for removed_id in set(original_by_id.index) - seen_ids:
+                    ok, msg = delete_invoice(int(removed_id))
+                    if ok:
+                        deleted += 1
+                    else:
+                        row_errors.append(msg)
 
-            deleted = 0
-            for removed_id in set(original_by_id.index) - seen_ids:
-                ok, msg = delete_invoice(int(removed_id))
-                if ok:
-                    deleted += 1
-                else:
-                    row_errors.append(msg)
-
-            summary = [f"{n} {label}" for n, label in [(added, "added"), (updated, "updated"), (deleted, "deleted")] if n]
-            if summary:
-                st.success("Invoices: " + ", ".join(summary) + ".")
-            for e in row_errors:
-                st.error(e)
-            if not summary and not row_errors:
-                st.info("No changes to save.")
-            if summary:
+                summary = [f"{n} {label}" for n, label in [(added, "added"), (updated, "updated"), (deleted, "deleted")] if n]
+                if row_errors:
+                    if summary:
+                        st.cache_data.clear()
+                    return False, "\n\n".join(row_errors) + (f"\n\nSaved before stopping: {', '.join(summary)}." if summary else "")
+                if not summary:
+                    return True, "No changes to save."
                 refresh(done="Invoices: " + ", ".join(summary) + ".")
+                return True, ""
+
+            # Second look (owner, 2026-09-30) only for what is hard to take back: invoices removed from the table, or an amount / discount changed.
+            removed, changed = grid_risk_lines(original_invoices_df, edited_invoices_df, "invoice_id",
+                                               lambda r: f"{cell_text(r['doc_ref'])} · {php(r['gross_amount'])}", ["gross_amount", "less_pct"])
+            if removed or changed:
+                confirm_change_dialog(grid_risk_summary("invoice(s)", removed, changed), batch_scoped_key("save_invoices_confirm"), _save_invoices, "Yes, save the changes")
+            else:
+                ok, msg = _save_invoices()
+                if msg:
+                    (st.info if ok else st.error)(msg)
 
 
 def render_batch_memos(statement_id: int) -> None:
@@ -437,57 +452,67 @@ def render_batch_memos(statement_id: int) -> None:
           elif not guard_duplicate_submit("save_memo_changes", int(batch_scope_pick), edited_memos_df.to_csv(index=False)):
             st.warning("Duplicate submission ignored — identical to the click just before it.")
           else:
-            original_by_id = original_memos_df.set_index("credit_memo_id")
-            seen_ids, added, updated, row_errors = set(), 0, 0, []
-            for _, r in edited_memos_df.iterrows():
-                if pd.isna(r["credit_memo_id"]):
-                    memo_ref, amount = cell_text(r["memo_ref"]).strip(), float(r["amount"] or 0)
-                    if not memo_ref and amount <= 0:
-                        continue  # untouched blank template row
-                    if not memo_ref or amount <= 0:
-                        row_errors.append("New credit memo row needs a reference and a positive Amount.")
+            def _save_memos():
+                original_by_id = original_memos_df.set_index("credit_memo_id")
+                seen_ids, added, updated, row_errors = set(), 0, 0, []
+                for _, r in edited_memos_df.iterrows():
+                    if pd.isna(r["credit_memo_id"]):
+                        memo_ref, amount = cell_text(r["memo_ref"]).strip(), float(r["amount"] or 0)
+                        if not memo_ref and amount <= 0:
+                            continue  # untouched blank template row
+                        if not memo_ref or amount <= 0:
+                            row_errors.append("New credit memo row needs a reference and a positive Amount.")
+                            continue
+                        ok, msg = add_credit_memo(int(batch_scope_pick), memo_ref, r["memo_date"], amount, cell_text(r["reason"]))
+                        if ok:
+                            added += 1
+                        else:
+                            row_errors.append(msg)
                         continue
-                    ok, msg = add_credit_memo(int(batch_scope_pick), memo_ref, r["memo_date"], amount, cell_text(r["reason"]))
+
+                    memo_id = int(r["credit_memo_id"])
+                    seen_ids.add(memo_id)
+                    orig = original_by_id.loc[memo_id]
+                    is_changed = (
+                        cell_text(r["memo_ref"]) != cell_text(orig["memo_ref"])
+                        or str(r["memo_date"]) != str(orig["memo_date"])
+                        or abs(float(r["amount"]) - float(orig["amount"])) > 0.001
+                        or cell_text(r["reason"]) != cell_text(orig["reason"])
+                    )
+                    if not is_changed:
+                        continue
+                    ok, msg = edit_credit_memo(memo_id, cell_text(r["memo_ref"]), r["memo_date"], float(r["amount"]), cell_text(r["reason"]))
                     if ok:
-                        added += 1
+                        updated += 1
+                    else:
+                        row_errors.append(f"Credit memo {memo_id}: {msg}")
+
+                deleted = 0
+                for removed_id in set(original_by_id.index) - seen_ids:
+                    ok, msg = delete_credit_memo(int(removed_id))
+                    if ok:
+                        deleted += 1
                     else:
                         row_errors.append(msg)
-                    continue
 
-                memo_id = int(r["credit_memo_id"])
-                seen_ids.add(memo_id)
-                orig = original_by_id.loc[memo_id]
-                is_changed = (
-                    cell_text(r["memo_ref"]) != cell_text(orig["memo_ref"])
-                    or str(r["memo_date"]) != str(orig["memo_date"])
-                    or abs(float(r["amount"]) - float(orig["amount"])) > 0.001
-                    or cell_text(r["reason"]) != cell_text(orig["reason"])
-                )
-                if not is_changed:
-                    continue
-                ok, msg = edit_credit_memo(memo_id, cell_text(r["memo_ref"]), r["memo_date"], float(r["amount"]), cell_text(r["reason"]))
-                if ok:
-                    updated += 1
-                else:
-                    row_errors.append(f"Credit memo {memo_id}: {msg}")
-
-            deleted = 0
-            for removed_id in set(original_by_id.index) - seen_ids:
-                ok, msg = delete_credit_memo(int(removed_id))
-                if ok:
-                    deleted += 1
-                else:
-                    row_errors.append(msg)
-
-            summary = [f"{n} {label}" for n, label in [(added, "added"), (updated, "updated"), (deleted, "deleted")] if n]
-            if summary:
-                st.success("Credit memos: " + ", ".join(summary) + ".")
-            for e in row_errors:
-                st.error(e)
-            if not summary and not row_errors:
-                st.info("No changes to save.")
-            if summary:
+                summary = [f"{n} {label}" for n, label in [(added, "added"), (updated, "updated"), (deleted, "deleted")] if n]
+                if row_errors:
+                    if summary:
+                        st.cache_data.clear()
+                    return False, "\n\n".join(row_errors) + (f"\n\nSaved before stopping: {', '.join(summary)}." if summary else "")
+                if not summary:
+                    return True, "No changes to save."
                 refresh(done="Credit memos: " + ", ".join(summary) + ".")
+                return True, ""
+
+            removed, changed = grid_risk_lines(original_memos_df, edited_memos_df, "credit_memo_id",
+                                               lambda r: f"{cell_text(r['memo_ref'])} · {php(r['amount'])}", ["amount"])
+            if removed or changed:
+                confirm_change_dialog(grid_risk_summary("credit memo(s)", removed, changed), batch_scoped_key("save_memos_confirm"), _save_memos, "Yes, save the changes")
+            else:
+                ok, msg = _save_memos()
+                if msg:
+                    (st.info if ok else st.error)(msg)
 
 
 def render() -> None:
@@ -1197,11 +1222,15 @@ def render() -> None:
                                     key=batch_scoped_key("remove_memo_pick"),
                                 )
                                 if st.button("Confirm removal", key=batch_scoped_key("remove_memo_confirm_btn")):
-                                    ok, msg = delete_credit_memo(int(memo_pick))
-                                    (st.success if ok else st.error)(msg)
-                                    if ok:
-                                        st.session_state.pop(batch_scoped_key("show_remove_memo_form"), None)
-                                        refresh(done=msg)
+                                    def _remove_memo(mid=int(memo_pick), toggle=batch_scoped_key("show_remove_memo_form")):
+                                        ok, msg = delete_credit_memo(mid)
+                                        if ok:
+                                            st.session_state.pop(toggle, None)
+                                            flash(msg)
+                                        return ok, msg
+
+                                    confirm_change_dialog(f"Remove credit memo **{memo_options[int(memo_pick)]}** from this batch?  \nThe batch's net total goes back up by that amount.",
+                                                          batch_scoped_key("remove_memo_confirm"), _remove_memo, "Yes, remove it")
 
                     if st.button(
                         "Park Metrobank checks", icon=":material/payments:", type="primary",
@@ -1297,24 +1326,34 @@ def render() -> None:
                     render_card_week_notes(edited_parked_df["check_date"])     # card dues in those weeks (owner, 2026-09-29)
                     if st.button("Save parked check edits", icon=":material/save:", key=batch_scoped_key("save_parked_edits")):
                         original_by_id = original_parked_df.set_index("check_id")
-                        updated, row_errors = 0, []
+                        pending = []
                         for _, r in edited_parked_df.iterrows():
                             chk_id = int(r["check_id"])
                             orig = original_by_id.loc[chk_id]
                             if str(r["check_date"]) != str(orig["check_date"]) or abs(float(r["amount"]) - float(orig["amount"])) > 0.001:
-                                ok, msg = edit_parked_check(chk_id, float(r["amount"]), r["check_date"])
-                                if ok:
-                                    updated += 1
-                                else:
-                                    row_errors.append(f"Check {chk_id}: {msg}")
-                        if updated:
-                            st.success(f"{updated} parked check(s) updated.")
-                        for e in row_errors:
-                            st.error(e)
-                        if not updated and not row_errors:
+                                pending.append({"id": chk_id, "amount": float(r["amount"]), "date": r["check_date"],
+                                                "old_amount": float(orig["amount"]), "old_date": orig["check_date"]})
+                        if not pending:
                             st.info("No changes to save.")
-                        if updated:
-                            refresh()
+                        else:
+                            def _save_parked(rows=pending):
+                                updated, row_errors = 0, []
+                                for x in rows:
+                                    ok, msg = edit_parked_check(x["id"], x["amount"], x["date"])
+                                    if ok:
+                                        updated += 1
+                                    else:
+                                        row_errors.append(f"Check {x['id']}: {msg}")
+                                if row_errors:
+                                    if updated:
+                                        st.cache_data.clear()
+                                    return False, "\n\n".join(row_errors) + (f"\n\n{updated} other change(s) were saved." if updated else "")
+                                flash(f"{updated} parked check(s) updated.")
+                                return True, ""
+
+                            confirm_change_dialog(f"Change **{len(pending)} parked check(s)**?\n\n" + "\n".join(
+                                f"- check ID {x['id']}: date {x['old_date']} → **{x['date']}** · amount {php(x['old_amount'])} → **{php(x['amount'])}**" for x in pending),
+                                batch_scoped_key("save_parked_confirm"), _save_parked, "Yes, save the changes")
 
                 section("Un-park checks")
                 unparkable_df = parked_active_df[~parked_active_df["check_number"].apply(has_value)] if not parked_active_df.empty else parked_active_df
@@ -1373,37 +1412,40 @@ def render() -> None:
                     render_card_week_notes(edited_active_df["check_date"])     # card dues in those weeks (owner, 2026-09-29)
                     if st.button("Save check corrections", icon=":material/save:", key=batch_scoped_key("save_check_corrections")):
                         original_by_id = original_active_df.set_index("check_id")
-                        updated, row_errors = 0, []
+                        pending = []                                   # (check id, what, value to save, old shown, new shown, check number)
                         for _, r in edited_active_df.iterrows():
                             chk_id = int(r["check_id"])
                             orig = original_by_id.loc[chk_id]
+                            shown_no = str(orig["check_number"]).strip()
                             new_number = cell_text(r["check_number"]).strip()
-                            if new_number != str(orig["check_number"]).strip():
-                                ok, msg = apply_check_correction(chk_id, "Check Number", new_number, "")
-                                if ok:
-                                    updated += 1
-                                else:
-                                    row_errors.append(f"Check {chk_id}: {msg}")
+                            if new_number != shown_no:
+                                pending.append((chk_id, "Check Number", new_number, shown_no, new_number, shown_no))
                             if str(r["check_date"]) != str(orig["check_date"]):
-                                ok, msg = apply_check_correction(chk_id, "Check Date", str(r["check_date"]), "")
-                                if ok:
-                                    updated += 1
-                                else:
-                                    row_errors.append(f"Check {chk_id}: {msg}")
+                                pending.append((chk_id, "Check Date", str(r["check_date"]), str(orig["check_date"]), str(r["check_date"]), shown_no))
                             if abs(float(r["amount"]) - float(orig["amount"])) > 0.001:
-                                ok, msg = apply_check_correction(chk_id, "Amount", str(float(r["amount"])), "")
-                                if ok:
-                                    updated += 1
-                                else:
-                                    row_errors.append(f"Check {chk_id}: {msg}")
-                        if updated:
-                            st.success(f"{updated} correction(s) saved.")
-                        for e in row_errors:
-                            st.error(e)
-                        if not updated and not row_errors:
+                                pending.append((chk_id, "Amount", str(float(r["amount"])), php(float(orig["amount"])), php(float(r["amount"])), shown_no))
+                        if not pending:
                             st.info("No changes to save.")
-                        if updated:
-                            refresh()
+                        else:
+                            def _save_corrections(rows=pending):
+                                updated, row_errors = 0, []
+                                for chk_id, what, value, *_ in rows:
+                                    ok, msg = apply_check_correction(chk_id, what, value, "")
+                                    if ok:
+                                        updated += 1
+                                    else:
+                                        row_errors.append(f"Check {chk_id}: {msg}")
+                                if row_errors:
+                                    if updated:
+                                        st.cache_data.clear()
+                                    return False, "\n\n".join(row_errors) + (f"\n\n{updated} other correction(s) were saved." if updated else "")
+                                flash(f"{updated} correction(s) saved.")
+                                return True, ""
+
+                            confirm_change_dialog(f"Correct **{len(pending)} item(s)** on printed check(s)?\n\n" + "\n".join(
+                                f"- check **{no or x[0]}** · {x[1]}: {x[3]} → **{x[4]}**" for x in pending for no in [x[5]]),
+                                batch_scoped_key("save_corrections_confirm"), _save_corrections, "Yes, correct it",
+                                warning="These checks are already printed. Every change is logged (old → new, with the time) and cannot be undone from the screen.")
 
                     with st.expander("Add a note to a check"):
                         note_pick = st.selectbox(
@@ -1437,16 +1479,35 @@ def render() -> None:
                     )
                     void_reissue = st.checkbox("Reissue as a new (parked) check", key=batch_scoped_key("void_reissue_toggle"), help='Also create a replacement check for the same amount — parked, no number yet, dated as you choose.')
                     if void_reissue:
-                        void_new_date = st.date_input("New check date", value=manila_today(), key=batch_scoped_key("void_new_date"), help="The replacement check's date.")
+                        void_old = active_checks_df.set_index("check_id").loc[int(void_pick)]
+                        void_old_date = pd.to_datetime(void_old.get("check_date")).date() if has_value(void_old.get("check_date")) else manila_today()
+                        v1, v2 = st.columns(2)
+                        void_new_date = v1.date_input("New check date", value=void_old_date, key=batch_scoped_key(f"void_new_date_{int(void_pick)}"),
+                                                      help="The replacement check's date — the same as the old check's until you change it.")
+                        void_new_number = v2.text_input("New check number (optional)", key=batch_scoped_key(f"void_new_number_{int(void_pick)}"),
+                                                        help="If the replacement was already written by hand, type its number: it is saved with that number, marked printed and handwritten. "
+                                                             "Leave blank to park it (numbered later).")
+                    else:
+                        void_new_number = ""
                     void_reason = st.text_input("Reason (optional)", placeholder="e.g. postdated past new due date", key=batch_scoped_key("void_reason"), help='Kept with the voided check in its history.')
                     if st.button("Void & reissue" if void_reissue else "Void check", icon=":material/cancel:", key=batch_scoped_key("void_submit_btn")):
-                        if void_reissue:
-                            ok, msg, new_check_id = replace_check(int(void_pick), void_new_date, void_reason)
-                        else:
-                            ok, msg = cancel_check(int(void_pick))
-                        (st.success if ok else st.error)(msg)
-                        if ok:
-                            refresh(done=msg)
+                        def _do_void(pick=int(void_pick), reissue=bool(void_reissue), new_date=(void_new_date if void_reissue else None), why=void_reason, number=void_new_number):
+                            if reissue:
+                                ok, msg, _new_id = replace_check_with_number(pick, new_date, number, why)
+                            else:
+                                ok, msg = cancel_check(pick, why)
+                            if ok:
+                                flash(msg)
+                            return ok, msg
+
+                        vrow = active_checks_df.set_index("check_id").loc[int(void_pick)]
+                        confirm_change_dialog(
+                            f"{'Void and reissue' if void_reissue else 'Void'} check **{vrow['check_number'] or 'no number yet'}** for **{php(vrow['amount'])}**?"
+                            + (f"  \nThe replacement is {'check **' + void_new_number.strip() + '** (handwritten, already printed)' if void_new_number.strip() else 'parked, with no number yet'}, "
+                               f"for {php(vrow['amount'])}, dated {void_new_date:%b %d, %Y}." if void_reissue else "  \nThe money goes back to the batch's available balance.")
+                            + (f"  \nReason: {void_reason.strip()}" if void_reason.strip() else ""),
+                            batch_scoped_key("void_confirm"), _do_void, "Yes, void & reissue" if void_reissue else "Yes, void it",
+                            warning="A voided check is cancelled for good. If it was already handed out, make sure the payee gives it back.")
 
     # Rarely used tools, kept together at the bottom so the browser and the open batch sit near the top (2026-09-27).
     section("More tools")
@@ -1466,14 +1527,15 @@ def render() -> None:
                     key=batch_scoped_key("stmt_choice"),
                 )
             if st.form_submit_button("Promote to Issued", icon=":material/arrow_upward:") and stmt_choice is not None:
-                if guard_duplicate_submit("promote_statement", int(stmt_choice)):
+                def _promote_stmt(sid=int(stmt_choice)):
                     try:
-                        new_ref = promote_draft_statement(int(stmt_choice), "Issued")
-                        refresh(done=f"Promoted to Issued as {new_ref}.")
+                        flash(f"Promoted to Issued as {promote_draft_statement(sid, 'Issued')}.")
+                        return True, ""
                     except ValueError as e:
-                        st.error(str(e))
-                else:
-                    st.warning("Duplicate submission ignored — identical to the click just before it.")
+                        return False, str(e)
+
+                confirm_change_dialog(f"Promote this draft batch to **Issued**?  \nIt gets its permanent OS number, and the next number in the sequence cannot be given back.",
+                                      "promote_statement_confirm", _promote_stmt, "Yes, promote it")
 
     with st.expander("Vendor SOA matcher"):
         soa_creditor = selectbox_creditor("Supplier", "SUPPLIER", "soa_creditor")

@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS creditors (
     -- TblPayee.PayeeId for any creditor migrated from the legacy system; NULL for one created
     -- directly in the new system.
     legacy_payee_id INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- migration 060 (2026-10-01): a LESSOR is a creditor we pay rent to. Stored as a LENDER-type creditor flagged here (the type list is a CHECK constraint on a table
+    -- used everywhere); screens and reports show it as "Lessor" and keep it out of the lender lists.
+    is_lessor INTEGER NOT NULL DEFAULT 0 CHECK(is_lessor IN (0, 1))
 );
 
 -- Bank cash is not tracked in this system (abolished 2026-09-06, migration 016) -- this table
@@ -122,6 +125,8 @@ CREATE TABLE IF NOT EXISTS invoices (
     statement_id INTEGER,
     paid_via_card_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- migration 058 (2026-10-01): 1 = the "Beginning balance (from MS Access)" line of a migrated batch -- a balance, not a real invoice (see engines/beginning_balance_service.py)
+    is_opening_balance INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id),
     FOREIGN KEY (paid_via_card_id) REFERENCES credit_cards(card_id),
@@ -142,6 +147,13 @@ CREATE TABLE IF NOT EXISTS loan_notes (
     total_payable REAL,
     status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Settled', 'Defaulted', 'Cancelled', 'Pending Setup')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- migration 059 (2026-10-01): "Beginning balance (from MS Access)" label on a migrated placeholder note (interest / terms not split out yet)
+    is_beginning_balance INTEGER NOT NULL DEFAULT 0,
+    beginning_label_removed INTEGER NOT NULL DEFAULT 0,
+    -- migration 060 (2026-10-01): a LEASE is rent paid to a lessor: a loan note with no interest whose schedule is the rent checks. is_lease = 1 keeps it off the Lenders
+    -- page and out of debt figures; lease_description is the property / what is rented.
+    is_lease INTEGER NOT NULL DEFAULT 0 CHECK(is_lease IN (0, 1)),
+    lease_description TEXT,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id)
 );
 
@@ -194,6 +206,9 @@ CREATE TABLE IF NOT EXISTS bank_loans (
     status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Closed')),
     is_cancelled INTEGER NOT NULL DEFAULT 0 CHECK(is_cancelled IN (0, 1)),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- migration 059 (2026-10-01): "Beginning balance (from MS Access)" label on a bank loan imported as a schedule only (no start date, no principal)
+    is_beginning_balance INTEGER NOT NULL DEFAULT 0,
+    beginning_label_removed INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (beneficiary_id) REFERENCES loan_beneficiaries(beneficiary_id)
 );
@@ -235,6 +250,8 @@ CREATE TABLE IF NOT EXISTS check_booklets (
     date_received DATE NOT NULL,
     status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Exhausted', 'Archived')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- migration 056 (2026-10-01): the last leaf the person holding this booklet says they have used (from the photos the owner receives) -- see checkbook_service.unrecorded_leaves
+    reported_up_to INTEGER,
     FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
     CHECK(end_number >= start_number),
     CHECK(next_available_number >= start_number)
@@ -283,6 +300,14 @@ CREATE TABLE IF NOT EXISTS checks_issued (
     -- bank statement import (migration 050): the bank's own cleared date and the matching bank line (NULL = not on a statement yet)
     bank_cleared_date DATE,
     bank_txn_id INTEGER,
+    -- migration 054 (2026-10-01): a void keeps its date and reason; a handwritten check (written outside the system, recorded afterwards) is tagged
+    cancelled_at DATETIME,
+    cancel_reason TEXT,
+    is_handwritten INTEGER NOT NULL DEFAULT 0,
+    -- migration 055 (2026-10-01): "settled outside the bank" -- the payee gave the check back and was paid in cash (never marked cleared by the bank)
+    settled_outside_at DATE,
+    settled_outside_reason TEXT,
+    settled_outside_note TEXT,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
     FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id),
@@ -299,6 +324,30 @@ CREATE TABLE IF NOT EXISTS checks_issued (
 -- since SQLite treats every NULL as distinct under a UNIQUE index, so any number of parked checks
 -- can coexist.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_checks_issued_unique_number ON checks_issued(bank_account_id, check_number);
+
+-- guarantee_checks (migration 057, 2026-10-01): a check given to a lender as security, usually with no date, later cancelled or taken back once the loan is
+-- settled (owner: "guarantee checks"). It is NOT a payment: it never enters checks_issued, payables, the schedule or the cash forecast. face_amount may be
+-- unknown. status: Held (the lender has it) / Returned (taken back or cancelled) / Presented (the bank paid or received it -- an alert).
+CREATE TABLE IF NOT EXISTS guarantee_checks (
+    guarantee_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_account_id INTEGER NOT NULL DEFAULT 1,
+    check_number TEXT NOT NULL,
+    creditor_id INTEGER NOT NULL,
+    loan_note_id INTEGER,
+    face_amount REAL CHECK(face_amount IS NULL OR face_amount >= 0),
+    given_on DATE,
+    status TEXT NOT NULL DEFAULT 'Held' CHECK(status IN ('Held', 'Returned', 'Presented')),
+    returned_on DATE,
+    return_note TEXT,
+    presented_on DATE,
+    bank_txn_id INTEGER,
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (bank_account_id, check_number),
+    FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
+    FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
+    FOREIGN KEY (loan_note_id) REFERENCES loan_notes(loan_note_id)
+);
 
 CREATE TABLE IF NOT EXISTS credit_memos (
     credit_memo_id INTEGER PRIMARY KEY AUTOINCREMENT,

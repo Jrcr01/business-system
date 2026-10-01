@@ -55,6 +55,12 @@ def audit_booklet_gaps(booklet_id: int) -> dict:
         # Leaves logged as spoiled / error checks (Log a spoiled check) -- accounted for, so they are neither open stock nor a gap.
         df_spoiled = pd.read_sql_query(
             "SELECT check_number, reason FROM spoiled_checks WHERE bank_account_id = ?", conn, params=(bank_account_id,))
+        try:                                                              # a guarantee check held by a lender is accounted for (migration 057)
+            df_guarantee = pd.read_sql_query(
+                "SELECT check_number, 'Guarantee check held by a lender' AS reason FROM guarantee_checks WHERE bank_account_id = ?", conn, params=(bank_account_id,))
+            df_spoiled = pd.concat([df_spoiled, df_guarantee], ignore_index=True)
+        except Exception:
+            pass
 
     # A booklet range is normally the FULL check number as printed (e.g. 3992554301-3992554400),
     # and a check is stored under that same number. Older raw-sequence ranges (1000-1050 with
@@ -145,3 +151,96 @@ def get_checkbook_alerts() -> pd.DataFrame:
                 'duplicate_numbers_count': result['duplicate_numbers_count'],
             })
     return pd.DataFrame(rows, columns=['booklet_id', 'booklet_code', 'missing_gaps_count', 'duplicate_numbers_count'])
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------------
+# Leaves used but not recorded (owner, 2026-10-01). The owner's mother hand-writes urgent checks from her own booklet and sends photos on
+# Messenger; the owner records them. A forgotten photo = a check missing from the system until the bank clears it (months, for post-dated
+# checks). audit_booklet_gaps() only sees gaps BELOW the highest recorded leaf, and flags leaves the bank cleared before the system started.
+# This one also takes "she is up to no. ___" and counts a leaf as accounted for when it is recorded (any status, voided included), logged
+# spoiled, or already on a bank statement line.
+# ---------------------------------------------------------------------------------------------------------------------------------------
+def compress_leaf_ranges(numbers) -> str:
+    """[1, 2, 3, 7, 9, 10] -> '1-3, 7, 9-10'."""
+    nums = sorted(set(int(n) for n in numbers))
+    parts, i = [], 0
+    while i < len(nums):
+        j = i
+        while j + 1 < len(nums) and nums[j + 1] == nums[j] + 1:
+            j += 1
+        parts.append(str(nums[i]) if i == j else f"{nums[i]}-{nums[j]}")
+        i = j + 1
+    return ", ".join(parts)
+
+
+def _booklet_leaf_context(conn, booklet_id: int):
+    row = conn.execute("SELECT bank_account_id, start_number, end_number, booklet_code, reported_up_to FROM check_booklets WHERE booklet_id = ?", (booklet_id,)).fetchone()
+    if not row:
+        return None
+    bank_account_id, start_num, end_num, code, reported = row
+    branch = conn.execute("SELECT branch_code FROM bank_accounts WHERE bank_account_id = ?", (bank_account_id,)).fetchone()[0]
+    return bank_account_id, int(start_num), int(end_num), code or f"Booklet #{booklet_id}", reported, branch
+
+
+def unrecorded_leaves(booklet_id: int) -> list[int]:
+    """Leaves of this booklet (full numbers) known to be used -- up to the highest recorded leaf, or the number the owner reported -- that are
+    not recorded, not logged spoiled and not on any bank statement line. Empty when nothing is known to be used yet."""
+    from engines.bank_statement_service import norm_check_number
+
+    with get_conn(DB_PATH) as conn:
+        ctx = _booklet_leaf_context(conn, booklet_id)
+        if ctx is None:
+            raise ValueError(f"Booklet ID {booklet_id} not found.")
+        bank_account_id, start_num, end_num, _code, reported, branch = ctx
+        recorded = [r[0] for r in conn.execute("SELECT check_number FROM checks_issued WHERE bank_account_id = ? AND check_number IS NOT NULL AND check_number != ''", (bank_account_id,))]
+        spoiled = [r[0] for r in conn.execute("SELECT check_number FROM spoiled_checks WHERE bank_account_id = ?", (bank_account_id,))]
+        on_bank = {norm_check_number(r[0]) for r in conn.execute("SELECT DISTINCT check_number FROM bank_transactions WHERE check_number IS NOT NULL AND check_number != ''")}
+        try:                                                              # guarantee checks given to lenders (migration 057) are accounted for too
+            spoiled = spoiled + [r[0] for r in conn.execute("SELECT check_number FROM guarantee_checks WHERE bank_account_id = ?", (bank_account_id,))]
+        except sqlite3.OperationalError:
+            pass
+
+    def leaf(text):
+        t = (text or "").strip()
+        if t.isdigit() and start_num <= int(t) <= end_num:
+            return int(t)
+        stripped = _raw_sequence_number(t, branch)
+        return stripped if stripped is not None and start_num <= stripped <= end_num else None
+
+    recorded_leaves = {n for n in (leaf(c) for c in recorded) if n is not None}
+    accounted = recorded_leaves | {n for n in (leaf(c) for c in spoiled) if n is not None}
+    limit = max(max(recorded_leaves, default=start_num - 1), int(reported) if reported else start_num - 1)
+    limit = min(limit, end_num)
+    return [n for n in range(start_num, limit + 1) if n not in accounted and norm_check_number(str(n)) not in on_bank]
+
+
+def set_reported_up_to(booklet_id: int, number: int) -> tuple[bool, str]:
+    """The owner types the last leaf number on the latest photo ("Mom's booklet is up to no. ___")."""
+    with get_conn(DB_PATH) as conn:
+        ctx = _booklet_leaf_context(conn, booklet_id)
+        if ctx is None:
+            return False, "Booklet not found."
+        _acct, start_num, end_num, code, _rep, _branch = ctx
+        number = int(number)
+        if not start_num <= number <= end_num:
+            return False, f"{number} is outside this booklet ({start_num}-{end_num})."
+        conn.execute("UPDATE check_booklets SET reported_up_to = ? WHERE booklet_id = ?", (number, booklet_id))
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BOOKLET_REPORTED_UP_TO', 'check_booklets', ?, ?)",
+                     (booklet_id, f"{code}: leaves reported used up to {number}"))
+    return True, f"{code}: used up to {number}."
+
+
+def unrecorded_alerts() -> pd.DataFrame:
+    """One row per Active / Exhausted booklet that has leaves used but not recorded: booklet, how many, which (short ranges), up to which number."""
+    with get_conn(DB_PATH) as conn:
+        booklets = conn.execute("SELECT booklet_id FROM check_booklets WHERE status IN ('Active', 'Exhausted') ORDER BY booklet_id").fetchall()
+    rows = []
+    for (bid,) in booklets:
+        missing = unrecorded_leaves(int(bid))
+        if missing:
+            with get_conn(DB_PATH) as conn:
+                _a, start_num, end_num, code, reported, _b = _booklet_leaf_context(conn, int(bid))
+                highest = conn.execute("SELECT MAX(CAST(check_number AS INTEGER)) FROM checks_issued WHERE CAST(check_number AS INTEGER) BETWEEN ? AND ?", (start_num, end_num)).fetchone()[0]
+            rows.append({"booklet_id": int(bid), "booklet": code, "count": len(missing), "leaves": compress_leaf_ranges(missing),
+                         "up_to": max(int(highest or 0), int(reported or 0))})
+    return pd.DataFrame(rows, columns=["booklet_id", "booklet", "count", "leaves", "up_to"])

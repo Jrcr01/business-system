@@ -74,6 +74,9 @@ def _is_check_number_available(cur: sqlite3.Cursor, bank_account_id: int, number
     cur.execute(f"SELECT 1 FROM spoiled_checks WHERE bank_account_id = ? AND check_number IN ({marks})", (bank_account_id, *variants))
     if cur.fetchone():
         return False
+    cur.execute(f"SELECT 1 FROM guarantee_checks WHERE bank_account_id = ? AND check_number IN ({marks})", (bank_account_id, *variants))
+    if cur.fetchone():
+        return False
     return True
 
 
@@ -100,6 +103,26 @@ def allocate_check_to_invoices(check_id: int, allocations: list[tuple[int, float
                 (invoice_id, check_id, round(amount, 2)),
             )
     return True, "Allocated."
+
+
+def _resize_allocations(cur, check_id: int, old_amount: float, new_amount: float) -> None:
+    """A corrected check amount must carry its invoice allocations with it (found 2026-10-01: a check corrected from 169,282 to 169,292 still allocated 169,282, so its
+    invoice stayed 10.00 short). The difference goes to / comes off the check's LAST allocation (a reduction never takes an allocation below zero, working back
+    through earlier ones). A check with no allocations is left alone."""
+    rows = cur.execute("SELECT allocation_id, amount FROM invoice_check_allocations WHERE check_id = ? ORDER BY allocation_id", (check_id,)).fetchall()
+    if not rows:
+        return
+    delta = round(new_amount - old_amount, 2)
+    if delta > 0:
+        cur.execute("UPDATE invoice_check_allocations SET amount = ? WHERE allocation_id = ?", (round(rows[-1][1] + delta, 2), rows[-1][0]))
+        return
+    left = -delta
+    for allocation_id, amount in reversed(rows):
+        take = min(left, amount)
+        cur.execute("UPDATE invoice_check_allocations SET amount = ? WHERE allocation_id = ?", (round(amount - take, 2), allocation_id))
+        left = round(left - take, 2)
+        if left <= 0:
+            break
 
 
 def apply_check_correction(check_id: int, correction_type: str, new_value: str, reason: str) -> tuple[bool, str]:
@@ -166,6 +189,7 @@ def apply_check_correction(check_id: int, correction_type: str, new_value: str, 
 
             old_value = str(old_amount)
             cur.execute("UPDATE checks_issued SET amount = ? WHERE check_id = ?", (new_amount, check_id))
+            _resize_allocations(cur, check_id, float(old_amount), new_amount)
         elif correction_type == "Check Date":
             try:
                 datetime.strptime(new_value.strip(), "%Y-%m-%d")
@@ -371,7 +395,9 @@ def build_dual_copy_check_pdf(payee_name: str, amount: float, check_date: date, 
     return out.getvalue()
 
 
-def cancel_check(check_id: int) -> tuple[bool, str]:
+def cancel_check(check_id: int, reason: str = "") -> tuple[bool, str]:
+    """Voids a check. The reason and the moment are kept on the check itself (and in the audit log) so the voided-checks register can show them."""
+    reason = (reason or "").strip()
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT bank_account_id, amount, status, statement_id FROM checks_issued WHERE check_id = ?", (check_id,))
@@ -383,10 +409,11 @@ def cancel_check(check_id: int) -> tuple[bool, str]:
             return False, f"Only Active checks can be cancelled (current status: {status})."
         if _batch_lock_status(cur, statement_id):
             return False, "This batch is locked. Unlock it first to cancel a check."
-        cur.execute("UPDATE checks_issued SET status = 'Cancelled' WHERE check_id = ?", (check_id,))
+        cur.execute("UPDATE checks_issued SET status = 'Cancelled', cancelled_at = CURRENT_TIMESTAMP, cancel_reason = ? WHERE check_id = ?",
+                    (reason or None, check_id))
         cur.execute(
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_CANCELLED', 'checks_issued', ?, ?)",
-            (check_id, f"Cancelled check for {php(amount)}"),
+            (check_id, f"Cancelled check for {php(amount)}" + (f": {reason}" if reason else "")),
         )
         unlink_installment_for_check(cur, check_id)
         unlink_invoice_allocations_for_check(cur, check_id)
@@ -835,6 +862,46 @@ def replace_check(check_id: int, new_check_date: date, reason: str) -> tuple[boo
     return True, f"Check replaced. New check parked for {php(amount)} — pending (number assigned when printed).", new_check_id
 
 
+def link_replacement(old_check_id: int, new_check_id: int, reason: str = "") -> tuple[bool, str]:
+    """Links a check that is already on file to the one that took its place (owner, 2026-09-30: a voided check and the handwritten check written to
+    replace it, recorded separately). The old check must be Active or already voided (Cancelled); an Active one is voided first, which frees what it
+    was paying. The new check must be Active, belong to the same payee, and not be the old one. The old check becomes 'Replaced' with a pointer to the new."""
+    if int(old_check_id) == int(new_check_id):
+        return False, "A check can't replace itself."
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT creditor_id, status, check_number, replacement_check_id FROM checks_issued WHERE check_id = ?", (old_check_id,))
+        old = cur.fetchone()
+        cur.execute("SELECT creditor_id, status, check_number FROM checks_issued WHERE check_id = ?", (new_check_id,))
+        new = cur.fetchone()
+        if not old or not new:
+            return False, "Check not found."
+        if old[0] != new[0]:
+            return False, "The replacement must be a check to the same supplier / payee."
+        if old[3] is not None or old[1] == "Replaced":
+            return False, f"Check {old[2] or old_check_id} is already marked as replaced."
+        if old[1] not in ("Active", "Cancelled"):
+            return False, f"Check {old[2] or old_check_id} is {old[1]} — only an Active or voided check can be replaced."
+        if new[1] != "Active":
+            return False, f"The replacement check is {new[1]}, not Active."
+        was_active = old[1] == "Active"
+    if was_active:
+        ok, msg = cancel_check(old_check_id, reason or f"replaced by check {new[2] or new_check_id}")
+        if not ok:
+            return False, msg
+    with get_conn() as conn:
+        statement_id = conn.execute("SELECT statement_id FROM checks_issued WHERE check_id = ?", (old_check_id,)).fetchone()[0]
+        why = (reason or "").strip() or f"replaced by check {new[2] or new_check_id}"
+        conn.execute("""UPDATE checks_issued SET status = 'Replaced', replacement_check_id = ?, replacement_reason = ?, replaced_at = CURRENT_TIMESTAMP
+                        WHERE check_id = ?""", (new_check_id, why, old_check_id))
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_REPLACED', 'checks_issued', ?, ?)",
+                     (old_check_id, f"Check {old[2] or old_check_id} linked to its replacement {new[2] or new_check_id} (check_id {new_check_id}): {why}"))
+        conn.commit()
+    if statement_id is not None:
+        sync_invoice_payment_status(statement_id)
+    return True, f"Check {old[2] or old_check_id} is now shown as replaced by {new[2] or new_check_id}."
+
+
 def retarget_invoice_allocations_for_check(cur: sqlite3.Cursor, old_check_id: int, new_check_id: int) -> None:
     """Called from replace_check() within its own transaction -- a replaced check (void+reissue,
     not a cancellation) still pays the same invoice(s), just under a new check id, so the
@@ -914,6 +981,10 @@ def spoiled_check_problems(check_number: str, bank_account_id: int = PRIMARY_BAN
         ).fetchone()
         if row:
             blocking.append(f"Check {canonical} is already the number of a {row[1]} check to {row[3]} ({php(row[2])}) — it can't also be spoiled.")
+        row = cur.execute(f"SELECT g.status, cr.creditor_name FROM guarantee_checks g JOIN creditors cr ON cr.creditor_id = g.creditor_id "
+                          f"WHERE g.bank_account_id = ? AND g.check_number IN ({marks}) LIMIT 1", (bank_account_id, *variants)).fetchone()
+        if row:
+            blocking.append(f"Check {canonical} is recorded as a guarantee check ({row[0]}) held by {row[1]} — it can't also be spoiled.")
         key = int(_check_number_key(canonical))
         in_range = False
         for start, end in cur.execute("SELECT start_number, end_number FROM check_booklets WHERE bank_account_id = ?", (bank_account_id,)).fetchall():

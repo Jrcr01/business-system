@@ -136,7 +136,7 @@ def cash_source(today: date | None = None) -> dict:
 def _baseline(today: date, end: date, start_cash: float | None, inflow_per_day: float | None, blocked: set) -> dict:
     """The days from today to `end` with money in, money already going out (checks already issued, bank-loan and card dues) and the
     count of checks already dated each day, plus which supplier already has a check on which day."""
-    from engines.cash_insights_service import estimated_outflows, expected_daily_inflow, scheduled_outflows
+    from engines.cash_insights_service import estimated_outflows, expected_daily_inflow, scheduled_outflows, split_card_rows
     from engines.reports_service import get_payment_schedule_all_tracks
 
     src = cash_source(today)
@@ -148,6 +148,8 @@ def _baseline(today: date, end: date, start_cash: float | None, inflow_per_day: 
     else:
         start, source = float(start_cash), "the cash you typed in"
         sched = get_payment_schedule_all_tracks()
+        if not sched.empty:
+            sched, _ = split_card_rows(sched)            # cards paid outside the Metrobank account take nothing from this cash
         if sched.empty:
             out = pd.DataFrame(columns=["day", "track", "amount"])
         else:

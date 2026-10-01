@@ -10,9 +10,12 @@ import streamlit as st
 
 from engines.bank_alerts import all_alerts
 from engines.data_health_service import open_count
+from engines.bank_names import card_display_name
 from engines.cc_service import get_statement_gap_alerts
+from engines.check_rules import get_booklets
 from engines.check_run_service import mark_batch_printed
-from engines.common import php
+from engines.checkbook_service import set_reported_up_to, unrecorded_alerts
+from engines.common import has_value, php
 from engines.drive_service import GoogleDrive
 from engines.park_draft_service import list_park_drafts
 from engines.statement_version_service import daily_link_sweep, expired_public_versions
@@ -21,8 +24,11 @@ from engines.today_report_pdf import generate_today_report_pdf
 
 from views.bank_cash import show_alerts
 from views.credit_cards import render_missing_statements
+from views.guarantee import guarantee_notice
 from views.shared import (  # noqa: F401
     LN_BROWSE,
+    confirm_change_dialog,
+    flash,
     OS_BROWSE,
     date_col,
     go_to,
@@ -43,6 +49,43 @@ def _quick_report() -> dict:
 @st.cache_data(ttl="15s")
 def _stages() -> dict:
     return get_run_stages()
+
+
+def _booklet_notice() -> None:
+    """Checks written by hand (owner, 2026-10-01): the owner's mother hand-writes urgent checks from her own booklet and sends photos; a forgotten
+    photo means a check missing from the system. Warns about leaves that look used but are not recorded, and takes "her booklet is up to no. ___"."""
+    try:
+        alerts = unrecorded_alerts()
+        booklets = get_booklets(statuses=("Active", "Exhausted"))
+    except Exception:                                   # a database without the booklet tables / column yet
+        return
+    if not alerts.empty:
+        st.warning(f":material/menu_book: **{int(alerts['count'].sum())} check number(s) look used but are not recorded** — "
+                   + "; ".join(f"{r.booklet}: {int(r.count)}" for r in alerts.itertuples())
+                   + ". Record them (or log them as spoiled), or open the list below.")
+    if booklets.empty:
+        return
+    with st.expander("Check booklets — checks written by hand", icon=":material/menu_book:", expanded=not alerts.empty):
+        st.caption("Type the last check number on the latest photo you received, and the app lists every number up to it that is not recorded, not logged as "
+                   "spoiled and not already on a bank statement. A voided check counts as recorded.")
+        for r in alerts.itertuples():
+            text = r.leaves if len(r.leaves) <= 600 else r.leaves[:600] + " …"
+            st.markdown(f"**{r.booklet}** — {int(r.count)} number(s) not recorded:\n\n{text}")
+        names = {int(b): (c or f"Booklet #{int(b)}") + f" ({int(s)}–{int(e)})" for b, c, s, e in zip(booklets["booklet_id"], booklets["booklet_code"], booklets["start_number"], booklets["end_number"])}
+        c1, c2, c3 = st.columns([3, 2.4, 1.6], vertical_alignment="bottom")
+        pick = c1.selectbox("Booklet", list(names), format_func=names.get, key="pr_bk_pick")
+        row = booklets[booklets["booklet_id"] == pick].iloc[0]
+        start_n, end_n = int(row["start_number"]), int(row["end_number"])
+        current = int(row["reported_up_to"]) if has_value(row.get("reported_up_to")) else start_n       # q() turns SQL NULL into ''
+        number = c2.number_input("Last check number seen on a photo", min_value=start_n, max_value=end_n, value=min(max(current, start_n), end_n), step=1,
+                                 key=f"pr_bk_num_{int(pick)}", help="The number printed on the last check you received a photo of.")
+        if c3.button("Save", icon=":material/save:", key="pr_bk_save", width="stretch"):
+            ok, msg = set_reported_up_to(int(pick), int(number))
+            if ok:
+                refresh(done=msg)
+            st.error(msg)
+        if st.button("Record a handwritten check", icon=":material/edit_note:", key="pr_bk_record"):
+            go_to("add-data", ad_kind="Handwritten check")
 
 
 def _open_schedule_row(row: pd.Series) -> None:
@@ -178,6 +221,8 @@ def render() -> None:
         h1.info(f":material/health_and_safety: **{n_health} data health finding(s)** — records that look wrong. Open them to fix, or mark them fine.")
         if h2.button("Open Data health", icon=":material/health_and_safety:", key="pr_health_btn", width="stretch"):
             go_to("data-health")
+    _booklet_notice()
+    guarantee_notice()
     reprint = _stages().get("needs_reprint")
     if reprint is not None and not reprint.empty:
         rp1, rp2 = st.columns([5, 1.6], vertical_alignment="center")
@@ -195,7 +240,7 @@ def render() -> None:
     missing = gaps[gaps["alert"] == "Possibly missing a statement"] if not gaps.empty else gaps
     if not missing.empty:
         rc1, rc2 = st.columns([5, 1.4], vertical_alignment="center")
-        rc1.error(f":material/report: {len(missing)} credit card statement(s) may have been overlooked — " + "; ".join(missing["card_name"].astype(str)) + ".")
+        rc1.error(f":material/report: {len(missing)} credit card statement(s) may have been overlooked — " + "; ".join(card_display_name(i, n) for i, n in zip(missing["issuer"], missing["card_name"])) + ".")
         if rc2.button("Open Credit cards", icon=":material/credit_card:", key="pr_cc_gap_btn", width="stretch"):
             go_to("credit-cards")
         with st.expander("Nothing due on one of these cards? Mark it", icon=":material/event_busy:"):
@@ -231,10 +276,14 @@ def render() -> None:
                        None if runs.empty else "In Chrysanth, search the Remark box for the run number, print, then mark it printed here.")
     for _, r in runs.iterrows():
         if right.button(f"Mark {r['tag']} as printed", icon=":material/print:", key=f"pr_mark_{int(r['print_batch_id'])}", width="stretch"):
-            ok, msg = mark_batch_printed(int(r["print_batch_id"]), True)
-            if ok:
-                refresh(done=msg)
-            st.error(msg)
+            def _mark_run(pb=int(r["print_batch_id"])):
+                ok, msg = mark_batch_printed(pb, True)
+                if ok:
+                    flash(msg)
+                return ok, msg
+
+            confirm_change_dialog(f"Mark **{r['tag']}** as printed ({int(r['check_count'])} check(s), {php(float(r['total_amount']))})?  \nOnly do this once the run is really printed in Chrysanth.",
+                                  f"pr_mark_confirm_{int(r['print_batch_id'])}", _mark_run, "Yes, it is printed")
 
     num = stg["to_number"]
     right = _stage_row("4 · Numbers", "blue", num.empty,

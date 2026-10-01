@@ -86,9 +86,12 @@ def estimated_card_dues(start: date, end: date, today: date | None = None) -> pd
     return pd.DataFrame(rows, columns=COLUMNS).sort_values(["due", "payee"]).reset_index(drop=True) if rows else pd.DataFrame(columns=COLUMNS)
 
 
-def forecast_by_week(today: date | None = None, months: int = MONTHS_AHEAD) -> pd.DataFrame:
+def forecast_by_week(today: date | None = None, months: int = MONTHS_AHEAD, bank_only: bool = False) -> pd.DataFrame:
     """Week by week (weeks start on Monday) for `months` ahead: card dues already recorded (unpaid statements), estimated, the estimate's
-    low-high, and how many cards. Columns: week_start, recorded, estimated, low, high, cards."""
+    low-high, and how many cards. Columns: week_start, recorded, estimated, low, high, cards.
+    bank_only (owner, 2026-09-29): only the cards marked 'paid from the Metrobank account' -- what really takes from that balance."""
+    from engines.cc_service import paid_from_bank_ids
+
     today = today or manila_today()
     end = _add_month(today, months)
     with get_conn(DB_PATH) as conn:
@@ -97,6 +100,10 @@ def forecast_by_week(today: date | None = None, months: int = MONTHS_AHEAD) -> p
                WHERE cc.is_active = 1 AND s.status IN ('Unpaid', 'Partially Paid') AND s.due_date BETWEEN ? AND ?""",
             conn, params=(today.isoformat(), end.isoformat()))
     est = estimated_card_dues(today, end, today=today)
+    if bank_only:
+        keep = paid_from_bank_ids()
+        rec = rec[rec["card_id"].isin(keep)]
+        est = est[est["card_id"].isin(keep)] if not est.empty else est
     weeks: dict = {}
 
     def bucket(d: date) -> dict:
@@ -119,12 +126,17 @@ def forecast_by_week(today: date | None = None, months: int = MONTHS_AHEAD) -> p
     return pd.DataFrame(out, columns=["week_start", "recorded", "estimated", "low", "high", "cards"])
 
 
-HEAVY_FACTOR = 1.5               # a week with at least this times the average weekly card dues is "heavy"
+def heavy_factor() -> float:
+    """A week with at least this times the average weekly card dues is "heavy" (Settings, default 1.5)."""
+    from engines.settings_registry import value
+    return value("heavy_card_factor")
+
+
 
 
 def card_week_info(check_dates, today: date | None = None) -> list[dict]:
     """For typed check dates (owner, 2026-09-29: "the objective here is to help me plan for checks"): the card dues due in the week of
-    each date -- on statements + estimated -- and whether that week is HEAVY (at least HEAVY_FACTOR x the average weekly card dues over
+    each date -- on statements + estimated, for the cards paid from the Metrobank account -- and whether that week is HEAVY (at least heavy_factor() x the average weekly card dues over
     the next MONTHS_AHEAD months). One entry per week, in date order; past dates are skipped.
     Each: {week_start, dates, recorded, estimated, total, average, heavy}."""
     today = today or manila_today()
@@ -135,7 +147,7 @@ def card_week_info(check_dates, today: date | None = None) -> list[dict]:
     months = MONTHS_AHEAD
     while _add_month(today, months) < max(dates) + timedelta(days=7):
         months += 1
-    weeks = forecast_by_week(today, months=months)
+    weeks = forecast_by_week(today, months=months, bank_only=True)
     if weeks.empty:
         return []
     weeks = weeks.assign(total=weeks["recorded"] + weeks["estimated"])
@@ -150,6 +162,6 @@ def card_week_info(check_dates, today: date | None = None) -> list[dict]:
             r = by_week.get(wk)
             rec, est = (float(r["recorded"]), float(r["estimated"])) if r is not None else (0.0, 0.0)
             out[wk] = {"week_start": wk, "dates": [], "recorded": rec, "estimated": est, "total": rec + est, "average": average,
-                       "heavy": average > 0 and (rec + est) >= HEAVY_FACTOR * average}
+                       "heavy": average > 0 and (rec + est) >= heavy_factor() * average}
         out[wk]["dates"].append(d)
     return [out[k] for k in sorted(out)]

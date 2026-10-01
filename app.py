@@ -7,6 +7,7 @@ import base64
 import calendar
 import hashlib
 import io
+import json
 import os
 import re
 import sqlite3
@@ -102,7 +103,7 @@ from engines.reports_service import (
     get_credit_card_history,
     get_lender_history,
     get_payment_schedule_all_tracks,
-    get_payment_schedule_daily_totals,
+    attach_calendar_totals,
     get_private_lender_master_report,
     get_supplier_ap_aging_report,
     get_supplier_history,
@@ -272,6 +273,8 @@ import views.credit_cards
 from views.credit_cards import _card_label  # noqa: F401 -- app._card_label, used by tests
 import views.creditor_master
 import views.data_health
+import views.settings
+from engines.settings_registry import label as _hotkey_label, shortcuts as _hotkeys
 import views.dashboard
 import views.lenders
 import views.order_statement
@@ -418,13 +421,14 @@ PAGES.update({
     "analytics": st.Page(views.analytics.render, title="Analytics", icon=":material/query_stats:", url_path="analytics"),
     "reports": st.Page(views.reports.render, title="Reports", icon=":material/summarize:", url_path="reports"),
     "admin": st.Page(views.admin.render, title="Admin and audit", icon=":material/admin_panel_settings:", url_path="admin"),
+    "settings": st.Page(views.settings.render, title="Settings", icon=":material/tune:", url_path="settings"),
     "data-health": st.Page(views.data_health.render, title="Data health", icon=":material/health_and_safety:", url_path="data-health"),
 })
 MENU = {
     "Daily work": ["payment-run", "add-data", "order-statements", "checks", "bank-cash", "planner"],
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records and reports": ["dashboard", "creditors", "analytics", "reports"],
-    "System": ["admin", "data-health"],
+    "System": ["settings", "admin", "data-health"],
 }
 page = st.navigation({section: [PAGES[pid] for pid in ids] for section, ids in MENU.items()}, position="sidebar",
                      expanded=True)          # always show every page (Streamlit folds long menus behind "View more"; Alt+1..0 need the links)
@@ -556,16 +560,7 @@ with st.sidebar:
                     "week": side_cal_week_idx, "weekday": side_cal_weekday_names[side_cal_day_idx], "day": side_cal_day_num,
                 })
         side_cal_grid_df = pd.DataFrame(side_cal_rows)
-        side_cal_daily_df = get_payment_schedule_daily_totals()
-        if not side_cal_daily_df.empty:
-            side_cal_daily_df = side_cal_daily_df.copy()
-            side_cal_daily_df["actual_payment_date"] = pd.to_datetime(side_cal_daily_df["actual_payment_date"]).dt.date
-        side_cal_merged_df = (
-            side_cal_grid_df.merge(side_cal_daily_df, left_on="date", right_on="actual_payment_date", how="left")
-            if not side_cal_daily_df.empty else side_cal_grid_df.assign(total_amount=0.0, num_items=0)
-        )
-        side_cal_merged_df["total_amount"] = side_cal_merged_df["total_amount"].fillna(0.0)
-        side_cal_merged_df["num_items"] = side_cal_merged_df["num_items"].fillna(0).astype(int)
+        side_cal_merged_df = attach_calendar_totals(side_cal_grid_df)
 
         # Both layers must share the exact same Axis object, not one Axis(orient="top") and one
         # axis=None (2026-09-17 -- this was the actual bug, not a missing-label rendering issue as
@@ -580,13 +575,20 @@ with st.sidebar:
         side_cal_merged_df["is_blocked"] = side_cal_merged_df["date"].isin(side_cal_blocked.keys())
         side_cal_merged_df["blocked_label"] = side_cal_merged_df["date"].apply(
             lambda d: side_cal_blocked.get(d, {}).get("label") or side_cal_blocked.get(d, {}).get("kind", "").title())
-        side_cal_normal_df = side_cal_merged_df[~side_cal_merged_df["is_blocked"]]
+        side_cal_normal_df = side_cal_merged_df[~side_cal_merged_df["is_blocked"] & ~side_cal_merged_df["is_paid"]]
+        side_cal_paid_df = side_cal_merged_df[~side_cal_merged_df["is_blocked"] & side_cal_merged_df["is_paid"]]
         side_cal_blocked_df = side_cal_merged_df[side_cal_merged_df["is_blocked"]]
-        side_cal_tooltip = [alt.Tooltip("date:T", title="Date"), alt.Tooltip("total_amount:Q", title="Total", format=",.2f"), alt.Tooltip("num_items:Q", title="Items")]
+        side_cal_tooltip = [alt.Tooltip("date:T", title="Date"), alt.Tooltip("total_amount:Q", title="Total", format=",.2f"), alt.Tooltip("num_items:Q", title="Items"), alt.Tooltip("status:N", title="Status")]
         side_cal_heat = alt.Chart(side_cal_normal_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3).encode(
             x=alt.X("weekday:N", title=None, sort=side_cal_weekday_names, axis=side_cal_weekday_axis),
             y=alt.Y("week:O", title=None, axis=None),
-            color=alt.Color("total_amount:Q", scale=alt.Scale(scheme="blues", type="sqrt"), legend=None),
+            color=alt.Color("total_amount:Q", scale=alt.Scale(scheme="blues", type="sqrt", domain=[0, max(1.0, float(side_cal_merged_df["total_amount"].max()))]), legend=None),
+            tooltip=side_cal_tooltip,
+        )
+        side_cal_paid_heat = alt.Chart(side_cal_paid_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3).encode(
+            x=alt.X("weekday:N", title=None, sort=side_cal_weekday_names, axis=side_cal_weekday_axis),
+            y=alt.Y("week:O", title=None, axis=None),
+            color=alt.Color("total_amount:Q", scale=alt.Scale(scheme="greens", type="sqrt", domain=[0, max(1.0, float(side_cal_merged_df["total_amount"].max()))]), legend=None),
             tooltip=side_cal_tooltip,
         )
         side_cal_grey = alt.Chart(side_cal_blocked_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3, color="#C4C4C4").encode(
@@ -605,19 +607,21 @@ with st.sidebar:
             ),
             tooltip=side_cal_tooltip,
         )
-        st.altair_chart((side_cal_heat + side_cal_grey + side_cal_text).properties(height=150), width="stretch")
-        st.caption("Hover a day for its total. Grey = holiday or marked date. Full calendar: Dashboard.")
+        st.altair_chart((side_cal_heat + side_cal_paid_heat + side_cal_grey + side_cal_text).resolve_scale(color="independent").properties(height=150), width="stretch")
+        st.caption("Hover a day for its total. Blue = to pay, green = paid, grey = holiday or marked date. Full calendar: Dashboard.")
 
     st.button("Refresh data", icon=":material/refresh:", on_click=lambda: st.cache_data.clear(), width="stretch")
-    with st.expander("Keyboard shortcuts", icon=":material/keyboard:"):
+    _hk = _hotkeys()
+    _hk_pages, _hk_search, _hk_park, _hk_new = (_hk["pages"]["mod"].replace("+", " + ") + " +", _hotkey_label(_hk["search"]), _hotkey_label(_hk["park"]), _hotkey_label(_hk["new"]))
+    with st.expander("Keyboard shortcuts (change them in Settings)", icon=":material/keyboard:"):
         st.markdown(
             "| Keys | What it does |" + chr(10) + "|---|---|" + chr(10)
             + "| **Enter** | In a confirmation pop-up: **Yes** (unless a button is focused) |" + chr(10)
             + "| **Esc** | In a pop-up: go back |" + chr(10)
-            + "| **Alt + 1 … 9, 0** | Open a menu page (1 = the first page in the menu, 0 = the tenth) — hover a menu item to see its key |" + chr(10)
-            + "| **/** | Open **Search everything** (checks, invoices, batches, loans, creditors, cards…) |" + chr(10)
-            + "| **Alt + P** | Press the screen's main **P**ark / Save / Add button (only if there is one) |" + chr(10)
-            + "| **Alt + N** | Open the **N**ew … form (New Batch, New Loan Note, New Bank Loan) |" + chr(10)
+            + "| **" + _hk_pages + " 1 … 9, 0** | Open a menu page (1 = the first page in the menu, 0 = the tenth) — hover a menu item to see its key |" + chr(10)
+            + "| **" + _hk_search + "** | Open **Search everything** (checks, invoices, batches, loans, creditors, cards…) |" + chr(10)
+            + "| **" + _hk_park + "** | Press the screen's main **P**ark / Save / Add button (only if there is one) |" + chr(10)
+            + "| **" + _hk_new + "** | Open the **N**ew … form (New Batch, New Loan Note, New Bank Loan) |" + chr(10)
             + "| **Tab / Shift+Tab** | Next / previous box or button |" + chr(10)
             + "| **Enter / Space** | Press the focused button |" + chr(10)
             + "| **↑ ↓** | Move through a dropdown (or just type to search it) |"
@@ -650,6 +654,15 @@ components.html(
 # the matching control. It replaces its own listener on every run, so it never doubles up. The list is shown in the sidebar (Keyboard shortcuts).
 components.html(r"""<script>
 (function () {
+  var CFG = __HOTKEY_CONFIG__;
+  function mods(m) { return { alt: m.indexOf('Alt') >= 0, ctrl: m.indexOf('Ctrl') >= 0, shift: m.indexOf('Shift') >= 0 }; }
+  function pressed(e, sc) {
+    var m = mods(sc.mod), k = sc.key;
+    if (e.altKey !== m.alt || e.ctrlKey !== m.ctrl || e.shiftKey !== m.shift) return false;
+    if (/^[A-Za-z]$/.test(k)) return e.code === 'Key' + k.toUpperCase();
+    if (/^[0-9]$/.test(k)) return e.code === 'Digit' + k;
+    return e.key === k;
+  }
   var P = window.parent, D = P.document;
   if (P.__apHotkeys) D.removeEventListener('keydown', P.__apHotkeys, true);
   function visible(el) { return el && el.offsetParent !== null; }
@@ -677,13 +690,13 @@ components.html(r"""<script>
       }
       return;
     }
-    if (e.altKey && !e.ctrlKey && !e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
+    if (mods(CFG.pages.mod).alt === e.altKey && mods(CFG.pages.mod).ctrl === e.ctrlKey && mods(CFG.pages.mod).shift === e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
       var n = e.code === 'Digit0' ? 9 : parseInt(e.code.slice(5), 10) - 1;
       var links = menuLinks();
       if (links[n]) { links[n].click(); e.preventDefault(); }
       return;
     }
-    if (e.key === '/' && !e.altKey && !e.ctrlKey && !isTyping(e.target)) {
+    if (pressed(e, CFG.search) && (CFG.search.mod !== 'None' || !isTyping(e.target))) {
       var opener = D.querySelector('.st-key-global_search_open_main button');
       if (opener) {
         opener.click();
@@ -695,7 +708,7 @@ components.html(r"""<script>
       e.preventDefault();
       return;
     }
-    if (e.altKey && !e.ctrlKey && !e.shiftKey && e.code === 'KeyP') {
+    if (pressed(e, CFG.park)) {
       var area = D.querySelector('[data-testid="stMain"]') || D;
       var re = /Park Metrobank checks|Save invoice changes|Save statement changes|Add statement|Assign check number|Save changes|Save parked check edits|Save check corrections|Add installment|Add invoice|Create schedule rows/i;
       var cands = buttons(area).filter(function (b) { return re.test(b.innerText || ''); });
@@ -705,7 +718,7 @@ components.html(r"""<script>
       e.preventDefault();
       return;
     }
-    if (e.altKey && !e.ctrlKey && !e.shiftKey && e.code === 'KeyN') {
+    if (pressed(e, CFG.new)) {
       var area2 = D.querySelector('[data-testid="stMain"]') || D;
       var nb = buttons(area2).find(function (b) { return /New (Batch|Loan Note|Bank Loan)/i.test(b.innerText || ''); });
       if (nb) { nb.click(); } else { flash('No "New ..." form on this screen.'); }
@@ -728,7 +741,7 @@ components.html(r"""<script>
   // hovering a menu item shows its hotkey (Streamlit redraws the menu now and then, so this is re-applied every second)
   function labelTabs() {
     menuLinks().slice(0, 10).forEach(function (t, i) {
-      var tip = 'Alt+' + ((i + 1) % 10);
+      var tip = CFG.pages.mod + '+' + ((i + 1) % 10);
       if (t.title !== tip) t.title = tip;
     });
   }
@@ -736,4 +749,4 @@ components.html(r"""<script>
   P.__apHotkeyTimer = P.setInterval(labelTabs, 1000);
   labelTabs();
 })();
-</script>""", height=0)
+</script>""".replace("__HOTKEY_CONFIG__", json.dumps(_hotkeys())), height=0)

@@ -455,7 +455,21 @@ def match_checks() -> dict:
         pending = conn.execute("""SELECT txn_id, check_number, debit, posting_date FROM bank_transactions
                                   WHERE kind = 'CHECK' AND reviewed = 0
                                     AND (match_status IS NULL OR match_status IN ('amount_mismatch', 'not_in_system'))""").fetchall()
+        try:                                                              # guarantee checks (migration 057): given to a lender as security, never meant to be paid
+            guarantees = {norm_check_number(r["check_number"]): int(r["guarantee_id"]) for r in conn.execute(
+                "SELECT guarantee_id, check_number FROM guarantee_checks WHERE status IN ('Held', 'Presented')")}
+        except sqlite3.OperationalError:                                  # database without the table yet
+            guarantees = {}
         for t in pending:
+            gid = guarantees.get(norm_check_number(t["check_number"]))
+            if gid is not None and norm_check_number(t["check_number"]) not in ours:
+                conn.execute("UPDATE bank_transactions SET match_status = 'guarantee_check_presented' WHERE txn_id = ?", (t["txn_id"],))
+                conn.execute("UPDATE guarantee_checks SET status = 'Presented', presented_on = ?, bank_txn_id = ? WHERE guarantee_id = ?",
+                             (t["posting_date"], t["txn_id"], gid))
+                conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'GUARANTEE_CHECK_PRESENTED', 'guarantee_checks', ?, ?)",
+                             (gid, f"The bank paid / received guarantee check {t['check_number']} on {t['posting_date']} for PHP {float(t['debit']):,.2f}"))
+                exceptions += 1
+                continue
             cands = ours.get(norm_check_number(t["check_number"]), [])
             same_amount = [c for c in cands if abs(float(c["amount"]) - float(t["debit"])) < 0.005]
             free = [c for c in same_amount if not c["bank_txn_id"] or int(c["bank_txn_id"]) == int(t["txn_id"])]
@@ -544,7 +558,7 @@ def _set_aside_before_system(conn) -> None:
                         WHERE match_status = ? AND reviewed = 0 AND posting_date < ?""", (resolution, note, start, status, start))
 
 
-EXCEPTION_STATUSES = ("cleared_twice", "amount_mismatch", "cancelled_check_cleared", "returned_check", "not_in_system", "unmatched_debit")
+EXCEPTION_STATUSES = ("guarantee_check_presented", "cleared_twice", "amount_mismatch", "cancelled_check_cleared", "returned_check", "not_in_system", "unmatched_debit")
 RESOLUTIONS = ["Linked by hand", "Adjusted to the bank", "Corrected to the bank", "Not recorded in the system", "Bank error", "Legacy record", "Customer bounced check", "Expected bank debit", "Before the system", "Other"]
 
 
@@ -597,7 +611,7 @@ def not_yet_cleared(as_of: date | None = None) -> list[dict]:
                       COALESCE(os.statement_ref, ln.note_ref) AS reference
                FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
                LEFT JOIN order_statements os ON os.statement_id = c.statement_id LEFT JOIN loan_notes ln ON ln.loan_note_id = c.loan_note_id
-               WHERE c.status = 'Active' AND c.check_number IS NOT NULL AND c.check_number != '' AND c.bank_cleared_date IS NULL
+               WHERE c.status = 'Active' AND c.check_number IS NOT NULL AND c.check_number != '' AND c.bank_cleared_date IS NULL AND c.settled_outside_at IS NULL
                  AND c.check_date <= ? ORDER BY c.check_date""", (as_of.isoformat(),)).fetchall()
     return [dict(r, days_waiting=(as_of - date.fromisoformat(str(r["check_date"])[:10])).days) for r in rows]
 
@@ -772,7 +786,7 @@ def link_candidates(txn_id: int, limit: int = 60) -> list[dict]:
         return [dict(r) for r in conn.execute(
             """SELECT c.check_id, c.check_number, c.check_date, c.amount, cr.creditor_name, ABS(c.amount - ?) < 0.005 AS same_amount
                FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
-               WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL
+               WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL AND c.settled_outside_at IS NULL
                ORDER BY same_amount DESC, ABS(JULIANDAY(c.check_date) - JULIANDAY(?)) LIMIT ?""", (t["debit"], t["posting_date"], int(limit))).fetchall()]
 
 
@@ -798,7 +812,7 @@ def suggestions() -> list[dict]:
         lines = conn.execute("""SELECT txn_id, posting_date, check_number, debit, rejected_check_ids FROM bank_transactions
                                 WHERE kind = 'CHECK' AND reviewed = 0 AND match_status IN ('amount_mismatch', 'not_in_system')""").fetchall()
         ours = conn.execute("""SELECT c.check_id, c.check_number, c.check_date, c.amount, cr.creditor_name FROM checks_issued c
-                               JOIN creditors cr ON cr.creditor_id = c.creditor_id WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL""").fetchall()
+                               JOIN creditors cr ON cr.creditor_id = c.creditor_id WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL AND c.settled_outside_at IS NULL""").fetchall()
     out = []
     for t in lines:
         rejected = {x for x in (t["rejected_check_ids"] or "").split(",") if x}

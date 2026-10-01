@@ -1,0 +1,226 @@
+"""One place for the owner's adjustable numbers and keyboard shortcuts (2026-10-01, plan D1 / C / D6).
+
+Every number that used to be fixed in the code is listed here with a plain label, its default (= the behaviour before this page existed), limits and a
+help line. `value(key)` reads the saved number or the default; `save()` validates, writes and audits (old -> new); `reset()` goes back to the default.
+The engines read these through `value()`, so changing a number here changes the system without touching code. Keys that already existed
+(stale_deposit_days, recon_debit_alert_factor, cc_missing_wait_days, cash_buffer, planner_*) keep their names, so nothing saved before is lost.
+
+Keyboard shortcuts are stored as one JSON setting. Actions: search, park, new (a key, optionally with modifiers) and pages (the modifier that goes with
+the digits 1..0 to open a menu page). Conflicts and keys the browser keeps for itself are refused; `reset_shortcuts()` restores the defaults."""
+from __future__ import annotations
+
+from engines.common import get_conn
+import json
+import os
+import sqlite3
+
+from engines.settings_store import get_setting
+
+DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
+
+# key, group, label, default, minimum, maximum, decimals (0 = whole number), unit, help
+NUMBERS = [
+    ("stale_check_days", "Checks", "A check is stale after", 180, 30, 720, 0, "days",
+     "Philippine checks go stale about six months after their date. Checks the bank has not cleared by then are flagged in Data health, the Overview and the Dashboard."),
+    ("stale_deposit_days", "Bank", "Old bank statement reminder after", 7, 0, 60, 0, "days",
+     "Reminder when a check is still not cleared by the bank this many days after its check date, or the newest imported statement is this old."),
+    ("recon_debit_alert_factor", "Bank", "Large bank debit alert at", 5, 1, 50, 1, "× usual",
+     "An unexpected bank debit this many times larger than the usual size is shown as an alert."),
+    ("forecast_fresh_days", "Cash forecast", "Bank balance is too old to forecast from after", 14, 1, 60, 0, "days",
+     "When the latest bank balance is older than this, the cash forecast does not use it (import a newer statement)."),
+    ("inflow_weeks", "Cash forecast", "Expected deposits are averaged over the last", 8, 2, 52, 0, "weeks",
+     "The forecast estimates future deposits from this many recent weeks of bank deposits."),
+    ("cash_buffer", "Cash forecast", "Cash buffer to keep in the bank", 0, 0, 1_000_000_000, 2, "₱",
+     "The Dashboard, forecast and planner warn when the balance would go below this amount."),
+    ("heavy_card_factor", "Credit cards", "A week is 'heavy' for card dues at", 1.5, 1, 10, 1, "× average",
+     "A week whose card dues are at least this many times the average week is flagged when you pick a check date."),
+    ("cc_missing_wait_days", "Credit cards", "Wait before a card statement counts as missing", 7, 0, 60, 0, "days",
+     "After a card's statement date, wait this many days before warning that its statement has not been entered."),
+    ("min_money_amount", "Entry checks", "Smallest loan / limit amount accepted", 1, 0.01, 1000, 2, "₱",
+     "A loan principal or card limit below this is refused as a likely typo (for example a missed zero)."),
+    ("supplier_concentration_pct", "Dashboard alerts", "Supplier concentration alert at", 25, 5, 100, 0, "% of supplier debt",
+     "The Dashboard warns when one supplier alone is at least this share of everything owed to suppliers."),
+    ("planner_max_days_late", "Check-date planner", "Planner may push a check at most", 7, 0, 60, 0, "days later",
+     "How far the Check-date planner may move a check past its supplier's due date."),
+    ("planner_daily_limit", "Check-date planner", "Planner daily limit (0 = none)", 0, 0, 1_000_000_000, 2, "₱",
+     "Most money the planner puts on one check date. 0 means no limit."),
+    ("planner_daily_max_checks", "Check-date planner", "Planner most checks per day (0 = none)", 0, 0, 500, 0, "checks",
+     "Most checks the planner puts on one date. 0 means no limit."),
+]
+_BY_KEY = {n[0]: n for n in NUMBERS}
+GROUPS = list(dict.fromkeys(n[1] for n in NUMBERS))
+
+
+def _meta(key: str) -> dict:
+    n = _BY_KEY[key]
+    return {"key": n[0], "group": n[1], "label": n[2], "default": n[3], "min": n[4], "max": n[5], "decimals": n[6], "unit": n[7], "help": n[8]}
+
+
+def registry() -> list[dict]:
+    return [_meta(n[0]) for n in NUMBERS]
+
+
+def default(key: str) -> float:
+    return float(_BY_KEY[key][3])
+
+
+def value(key: str) -> float:
+    """The saved number, or the default when none is saved (or it is unreadable / outside its limits)."""
+    m = _meta(key)
+    try:
+        v = float(get_setting(key, m["default"]))
+    except (TypeError, ValueError):
+        return float(m["default"])
+    if v < m["min"] or v > m["max"]:
+        return float(m["default"])
+    return v
+
+
+def int_value(key: str) -> int:
+    return int(round(value(key)))
+
+
+def _audit(conn, action: str, key: str, text: str) -> None:
+    conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), ?, 'settings', NULL, ?)", (action, text))
+
+
+def _write(conn, key: str, new_value: str, category: str, description: str) -> None:
+    if conn.execute("SELECT 1 FROM settings WHERE key = ?", (key,)).fetchone():
+        conn.execute("UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?", (new_value, key))
+    else:
+        conn.execute("INSERT INTO settings (key, value, category, description) VALUES (?, ?, ?, ?)", (key, new_value, category, description))
+
+
+def _fmt(v: float, decimals: int) -> str:
+    return f"{v:,.{decimals}f}" if decimals else f"{int(round(v)):,}"
+
+
+def save(key: str, new_value) -> tuple[bool, str]:
+    if key not in _BY_KEY:
+        return False, "Unknown setting."
+    m = _meta(key)
+    try:
+        v = float(new_value)
+    except (TypeError, ValueError):
+        return False, f"{m['label']}: enter a number."
+    if v < m["min"] or v > m["max"]:
+        return False, f"{m['label']}: must be between {_fmt(m['min'], m['decimals'])} and {_fmt(m['max'], m['decimals'])} {m['unit']}."
+    old = value(key)
+    if abs(old - v) < 1e-9:
+        return True, f"{m['label']}: unchanged."
+    stored = str(int(round(v))) if m["decimals"] == 0 else str(round(v, m["decimals"]))
+    with get_conn(DB_PATH) as conn:
+        _write(conn, key, stored, "settings", m["label"])
+        _audit(conn, "SETTING_CHANGED", key, f"{m['label']}: {_fmt(old, m['decimals'])} -> {_fmt(v, m['decimals'])} {m['unit']}")
+    return True, f"{m['label']}: {_fmt(old, m['decimals'])} -> {_fmt(v, m['decimals'])} {m['unit']}."
+
+
+def reset(key: str) -> tuple[bool, str]:
+    if key not in _BY_KEY:
+        return False, "Unknown setting."
+    m = _meta(key)
+    old = value(key)
+    with get_conn(DB_PATH) as conn:
+        conn.execute("DELETE FROM settings WHERE key = ?", (key,))
+        if abs(old - m["default"]) > 1e-9:
+            _audit(conn, "SETTING_RESET", key, f"{m['label']}: {_fmt(old, m['decimals'])} -> {_fmt(float(m['default']), m['decimals'])} {m['unit']} (back to the default)")
+    return True, f"{m['label']}: back to the default ({_fmt(float(m['default']), m['decimals'])} {m['unit']})."
+
+
+def changed_from_default() -> list[dict]:
+    return [m for m in registry() if abs(value(m["key"]) - m["default"]) > 1e-9]
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------------
+# Keyboard shortcuts
+# ---------------------------------------------------------------------------------------------------------------------------------------
+SHORTCUT_KEY = "keyboard_shortcuts"
+MODIFIERS = ["Alt", "Ctrl+Alt", "Alt+Shift", "None"]
+SHORTCUT_ACTIONS = {
+    "search": "Open Search everything",
+    "park": "Press the screen's main Park / Save / Add button",
+    "new": "Open the New ... form (batch, loan note, bank loan)",
+}
+DEFAULT_SHORTCUTS = {"search": {"mod": "None", "key": "/"}, "park": {"mod": "Alt", "key": "P"}, "new": {"mod": "Alt", "key": "N"}, "pages": {"mod": "Alt"}}
+SYMBOL_KEYS = ["/", "?", ".", ",", ";", "[", "]", "-", "="]
+BROWSER_ALT_LETTERS = "FED"          # Alt+F / E / D open browser menus
+
+
+def _norm_key(k) -> str:
+    k = (k or "").strip() if isinstance(k, str) else ""
+    return k.upper() if len(k) == 1 and k.isalpha() else k
+
+
+def shortcuts() -> dict:
+    """The saved shortcuts merged over the defaults (a damaged value falls back to the defaults)."""
+    out = json.loads(json.dumps(DEFAULT_SHORTCUTS))
+    try:
+        saved = json.loads(get_setting(SHORTCUT_KEY, "") or "{}")
+    except (TypeError, ValueError):
+        return out
+    if not isinstance(saved, dict):
+        return out
+    for a in SHORTCUT_ACTIONS:
+        s = saved.get(a)
+        if isinstance(s, dict) and s.get("mod") in MODIFIERS and isinstance(s.get("key"), str) and s["key"]:
+            out[a] = {"mod": s["mod"], "key": _norm_key(s["key"])}
+    if isinstance(saved.get("pages"), dict) and saved["pages"].get("mod") in MODIFIERS and saved["pages"]["mod"] != "None":
+        out["pages"] = {"mod": saved["pages"]["mod"]}
+    return out
+
+
+def label(sc: dict) -> str:
+    return sc["key"] if sc["mod"] == "None" else f"{sc['mod']}+{sc['key']}"
+
+
+def problems(config: dict) -> list[str]:
+    """Why this whole shortcut set cannot be used (empty = fine)."""
+    out: list[str] = []
+    seen: dict[tuple[str, str], str] = {}
+    pages_mod = config["pages"]["mod"]
+    if pages_mod not in MODIFIERS or pages_mod == "None":
+        out.append("Menu pages: choose Alt, Ctrl+Alt or Alt+Shift for the number keys.")
+    for a, text in SHORTCUT_ACTIONS.items():
+        mod, key = config[a]["mod"], _norm_key(config[a]["key"])
+        if mod not in MODIFIERS:
+            out.append(f"{text}: unknown modifier.")
+        elif len(key) != 1 or not ((key.isascii() and key.isalnum()) or key in SYMBOL_KEYS):
+            out.append(f"{text}: use one letter, one digit or one of {' '.join(SYMBOL_KEYS)}.")
+        elif mod == "None" and key.isalnum():
+            out.append(f"{text}: a plain letter or digit would fire while you type -- add Alt, or use a symbol such as /.")
+        elif mod == "Alt" and key in BROWSER_ALT_LETTERS:
+            out.append(f"{text}: Alt+{key} opens a browser menu -- pick another letter.")
+        elif mod == pages_mod and key.isdigit():
+            out.append(f"{text}: {label({'mod': mod, 'key': key})} is already used to open a menu page.")
+        elif (mod, key) in seen:
+            out.append(f"{text}: {label({'mod': mod, 'key': key})} is already used for \"{seen[(mod, key)]}\".")
+        else:
+            seen[(mod, key)] = text
+    return out
+
+
+def save_shortcuts(config: dict) -> tuple[bool, str]:
+    cfg = {a: {"mod": config[a]["mod"], "key": _norm_key(config[a]["key"])} for a in SHORTCUT_ACTIONS}
+    cfg["pages"] = {"mod": config["pages"]["mod"]}
+    bad = problems(cfg)
+    if bad:
+        return False, " ".join(bad)
+    old = shortcuts()
+    if cfg == old:
+        return True, "Shortcuts unchanged."
+    changes = [f"{text}: {label(old[a])} -> {label(cfg[a])}" for a, text in SHORTCUT_ACTIONS.items() if old[a] != cfg[a]]
+    if old["pages"] != cfg["pages"]:
+        changes.append(f"Menu pages: {old['pages']['mod']}+1..0 -> {cfg['pages']['mod']}+1..0")
+    with get_conn(DB_PATH) as conn:
+        _write(conn, SHORTCUT_KEY, json.dumps(cfg), "settings", "Keyboard shortcuts")
+        _audit(conn, "SHORTCUTS_CHANGED", SHORTCUT_KEY, "; ".join(changes))
+    return True, "Shortcuts saved: " + "; ".join(changes) + "."
+
+
+def reset_shortcuts() -> tuple[bool, str]:
+    with get_conn(DB_PATH) as conn:
+        had = conn.execute("SELECT 1 FROM settings WHERE key = ?", (SHORTCUT_KEY,)).fetchone()
+        conn.execute("DELETE FROM settings WHERE key = ?", (SHORTCUT_KEY,))
+        if had:
+            _audit(conn, "SHORTCUTS_RESET", SHORTCUT_KEY, "Keyboard shortcuts back to the defaults")
+    return True, "Keyboard shortcuts are back to the defaults."

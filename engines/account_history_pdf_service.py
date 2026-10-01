@@ -169,12 +169,13 @@ def _invoices_table(df, with_batch_col: bool = True):
 
 
 def _checks_table(df, with_batch_col: bool = True, batch_col_label: str = "Batch"):
-    headers = ["Check Date", "Check #", "Amount", "Status"] + ([batch_col_label] if with_batch_col else [])
-    widths = [CONTENT_WIDTH * w for w in ((0.2, 0.24, 0.2, 0.16, 0.2) if with_batch_col else (0.25, 0.3, 0.25, 0.2))]
+    headers = ["Check Date", "Check #", "Amount", "Status", "Cleared"] + ([batch_col_label] if with_batch_col else [])
+    widths = [CONTENT_WIDTH * w for w in ((0.15, 0.2, 0.16, 0.12, 0.15, 0.22) if with_batch_col else (0.2, 0.26, 0.2, 0.16, 0.18))]
     ref_field = "note_ref" if batch_col_label == "Loan Note" else "statement_ref"
     rows = []
     for r in df.itertuples():
-        row = [str(r.check_date), r.check_number or "—", _money(r.amount), r.status]
+        cleared = getattr(r, "bank_cleared_date", None)
+        row = [str(r.check_date), r.check_number or "—", _money(r.amount), r.status, str(cleared)[:10] if cleared and str(cleared) not in ("nan", "None", "NaT") else "—"]
         if with_batch_col:
             row.append(getattr(r, ref_field, None) or "—")
         rows.append(row)

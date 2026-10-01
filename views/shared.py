@@ -482,10 +482,22 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
     _render_retract_number_section(active_df, key_prefix)
 
 
+def _type_filter(creditor_type: str) -> tuple[str, tuple]:
+    """'LESSOR' = the lenders flagged as lessors; 'LENDER' = the others (a lessor is not a lender on any picker)."""
+    if creditor_type == "LESSOR":
+        return "creditor_type = 'LENDER' AND is_lessor = 1", ()
+    if creditor_type == "LENDER":
+        return "creditor_type = 'LENDER' AND is_lessor = 0", ()
+    if creditor_type == "LENDER_OR_LESSOR":                 # where a loan note or a lease can be made (Lenders page, handwritten checks)
+        return "creditor_type = 'LENDER'", ()
+    return "creditor_type = ?", (creditor_type,)
+
+
 def creditor_options(creditor_type: str) -> dict:
+    cond, params = _type_filter(creditor_type)
     df = q(
-        "SELECT creditor_id, creditor_name FROM creditors WHERE creditor_type = ? AND is_active = 1 ORDER BY creditor_name",
-        (creditor_type,),
+        f"SELECT creditor_id, creditor_name FROM creditors WHERE {cond} AND is_active = 1 ORDER BY creditor_name",
+        params,
     )
     return dict(zip(df.creditor_id, df.creditor_name))
 
@@ -505,9 +517,10 @@ def selectbox_creditor_label(creditor_type: str, creditor_id: int) -> str:
 def creditor_options_all(creditor_type: str) -> dict:
     """Same as creditor_options() but including inactive creditors -- a history/report picker
     still needs to find a supplier or lender that's since been deactivated."""
+    cond, params = _type_filter(creditor_type)
     df = q(
-        "SELECT creditor_id, creditor_name FROM creditors WHERE creditor_type = ? ORDER BY creditor_name",
-        (creditor_type,),
+        f"SELECT creditor_id, creditor_name FROM creditors WHERE {cond} ORDER BY creditor_name",
+        params,
     )
     return dict(zip(df.creditor_id, df.creditor_name))
 
@@ -549,6 +562,23 @@ def credit_card_options_for_holder(cardholder_id) -> dict:
     return {row.card_id: f"{row.card_name} - {row.card_number_last4}" for row in df.itertuples()}
 
 
+def history_span(date_series_list: list):
+    """(earliest, latest) date across several columns of dates, or None when there is nothing to range over. Each column is read on its
+    own: the columns can be written differently ("2026-09-19 14:27:19" for a batch's created time, "2026-08-20" for an invoice or check
+    date) and pandas 3 reads a mixed lot with the FIRST entry's format, silently dropping the rest -- which collapsed the Supplier history's
+    default range to the batch dates and hid every invoice and check (found 2026-09-29)."""
+    spans = []
+    for s in date_series_list:
+        if s is None or len(s) == 0:
+            continue
+        parsed = pd.to_datetime(s, errors="coerce", format="mixed").dropna()
+        if not parsed.empty:
+            spans.append((parsed.min().date(), parsed.max().date()))
+    if not spans:
+        return None
+    return min(a for a, _ in spans), max(b for _, b in spans)
+
+
 def history_date_range(date_series_list: list, key_prefix: str):
     """Reports tab history drill-downs: a From/To date-range picker defaulting to the full span
     of whatever dates actually exist across every table for the currently-picked entity (so it
@@ -556,13 +586,10 @@ def history_date_range(date_series_list: list, key_prefix: str):
     when there's no data yet to range over. key_prefix should embed the entity's id (e.g.
     f"...{sup_id}") so switching entities gets a fresh widget instead of carrying over a stale
     date range that may not even overlap the newly-picked entity's dates."""
-    non_empty = [s for s in date_series_list if s is not None and not s.empty]
-    if not non_empty:
+    span = history_span(date_series_list)
+    if span is None:
         return None, None
-    parsed = pd.to_datetime(pd.concat(non_empty), errors="coerce").dropna()
-    if parsed.empty:
-        return None, None
-    min_d, max_d = parsed.min().date(), parsed.max().date()
+    min_d, max_d = span
     f1, f2 = st.columns(2)
     with f1:
         date_from = st.date_input("From", value=min_d, min_value=min_d, max_value=max_d, key=f"{key_prefix}_from")
@@ -641,6 +668,61 @@ def confirm_create_dialog(summary: str, action_key: str, action) -> None:
                 st.error(msg)
     if c2.button("Go back and edit  [Esc]", width="stretch", key=f"{action_key}_back"):
         st.rerun()
+
+
+@st.dialog("Please confirm")
+def confirm_change_dialog(summary: str, action_key: str, action, yes_label: str = "Yes, do it", warning: str = "") -> None:
+    """The same second look as confirm_create_dialog, for changes to records that already exist (void a check, correct a printed check, delete rows,
+    ...), with its own wording on the Yes button. Enter = Yes and Esc = Go back (app.py's keyboard script looks for a button starting with 'Yes' and one
+    saying 'Go back'). action() does the real work and returns (ok, message); it may also st.rerun() itself (refresh()). A double-clicked Yes is ignored."""
+    st.markdown(summary)
+    if warning:
+        st.warning(warning, icon=":material/warning:")
+    c1, c2 = st.columns(2)
+    if c1.button(f"{yes_label}  [Enter]", icon=":material/check:", width="stretch", key=f"{action_key}_yes"):
+        if guard_duplicate_submit(action_key + "_yes", summary):
+            ok, msg = action()
+            if ok:
+                st.cache_data.clear()
+                st.rerun()
+            else:
+                st.error(msg)
+    if c2.button("Go back  [Esc]", width="stretch", key=f"{action_key}_back"):
+        st.rerun()
+
+
+def grid_risk_lines(original: pd.DataFrame, edited: pd.DataFrame, id_col: str, label, money_cols: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """What a grid Save would do that is hard to take back: (rows removed, money values changed on existing rows), as plain lines for a pop-up.
+    `label(row)` names a row; `money_cols` are the columns whose change deserves a second look (amounts, rates). New rows and edits to other columns
+    are not listed -- typing in new records stays fast. Both lists empty = nothing risky, save straight away."""
+    removed, changed = [], []
+    if original is None or original.empty:
+        return removed, changed
+    new_ids = {int(v) for v in edited[id_col].dropna()} if id_col in edited.columns and not edited.empty else set()
+    edited_by_id = edited.dropna(subset=[id_col]).assign(**{id_col: lambda d: d[id_col].astype(int)}).set_index(id_col) if new_ids else None
+    for _, row in original.iterrows():
+        rid = int(row[id_col])
+        if rid not in new_ids:
+            removed.append(f"- **{label(row)}**")
+            continue
+        now = edited_by_id.loc[rid]
+        for col in money_cols or []:
+            try:
+                old_v, new_v = float(row[col] or 0), float(now[col] or 0)
+            except (TypeError, ValueError):
+                continue
+            if abs(old_v - new_v) > 0.001:
+                changed.append(f"- **{label(row)}** — {col.replace('_', ' ')}: {old_v:,.2f} → **{new_v:,.2f}**")
+    return removed, changed
+
+
+def grid_risk_summary(what: str, removed: list[str], changed: list[str]) -> str:
+    parts = []
+    if removed:
+        parts.append(f"**{len(removed)} {what} will be deleted** (they were removed from the table):\n" + "\n".join(removed))
+    if changed:
+        parts.append(f"**{len(changed)} amount(s) will change:**\n" + "\n".join(changed))
+    return "\n\n".join(parts) + "\n\nSave these changes?"
 
 
 @st.dialog("Confirm cancel loan note")

@@ -46,7 +46,8 @@ def create_loan_note(creditor_id: int, issue_date: date, principal_amount: float
                VALUES (?, ?, ?, ?, ?, 0, ?, 'Active') RETURNING loan_note_id""",
             (creditor_id, note_ref, str(issue_date), principal_amount, monthly_interest_rate, principal_amount),
         ).fetchone()[0]
-    return True, "Draft loan note created.", loan_note_id
+        conn.execute("UPDATE loan_notes SET is_lease = 1 WHERE loan_note_id = ? AND (SELECT is_lessor FROM creditors WHERE creditor_id = ?) = 1", (loan_note_id, creditor_id))   # rent, not a loan
+        return True, "Draft loan note created.", loan_note_id
 
 
 def promote_draft_loan_note(loan_note_id: int) -> str:

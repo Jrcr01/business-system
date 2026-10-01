@@ -22,10 +22,15 @@ from engines.card_rules import reactivate_cardholder
 from engines.card_rules import reactivate_credit_card
 from engines.cc_rules import cc_owed_case
 from engines.cc_rules import superseded_sql
+from engines.bank_names import card_display_name
 from engines.cc_service import get_annual_fee_alerts
 from engines.cc_service import get_statement_coverage
 from engines.cc_service import get_statement_gap_alerts
 from engines.cc_service import mark_no_due
+from engines.cc_service import missing_wait_days
+from engines.cc_service import set_missing_wait_days
+from engines.cc_service import paid_from_bank_ids
+from engines.cc_service import set_paid_from_bank
 from engines.cc_service import no_due_marks
 from engines.cc_service import undo_no_due
 from engines.common import php
@@ -38,7 +43,9 @@ from engines.validators import money_amount_error
 
 from views.shared import (  # noqa: F401
     MONEY_FORMAT,
+    confirm_change_dialog,
     confirm_create_dialog,
+    flash,
     creditor_options,
     date_col,
     dup_needs_confirm,
@@ -101,7 +108,7 @@ def render_missing_statements(missing_df: pd.DataFrame, key: str) -> None:
         why = (f"no statement recorded for {_month_label(prev_key)} or {_month_label(this_key)}" if both
                else f"the {_month_label(this_key)} statement is not recorded" + (f" (expected by {r['expected_by']})" if r.get("expected_by") else ""))
         c1, c2 = st.columns([5, 1.6], vertical_alignment="center")
-        c1.warning(f"{r['card_name']} ({r['card_number_last4']}) — {r['cardholder_name'] or 'no cardholder set'}: {why}"
+        c1.warning(f"{card_display_name(r['issuer'], r['card_name'])} ({r['card_number_last4']}) — {r['cardholder_name'] or 'no cardholder set'}: {why}"
                    + (f" · last due date on file {r['last_due_date']}" if pd.notna(r["last_due_date"]) else ""))
         months = [prev_key, this_key] if both else [this_key]
         if c2.button("No due (both months)" if both else "No due this month", icon=":material/event_busy:", key=f"{key}_nodue_{int(r['card_id'])}",
@@ -401,17 +408,28 @@ def render() -> None:
                 ec1, ec2 = st.columns(2)
                 with ec1:
                     if st.button("Save statement changes", icon=":material/save:", key=f"save_stmt_{edit_stmt_id}"):
-                        ok, msg = edit_cc_statement(int(edit_stmt_id), edit_stmt_due, edit_stmt_prev, edit_stmt_new, edit_stmt_int, edit_stmt_paid)
-                        (st.success if ok else st.error)(msg)
-                        if ok:
-                            refresh(done=msg)
+                        def _save_stmt(sid=int(edit_stmt_id), due=edit_stmt_due, prev=edit_stmt_prev, new=edit_stmt_new, intr=edit_stmt_int, paid=edit_stmt_paid):
+                            ok, msg = edit_cc_statement(sid, due, prev, new, intr, paid)
+                            if ok:
+                                flash(msg)
+                            return ok, msg
+
+                        _new_total = round(edit_stmt_prev + edit_stmt_new + edit_stmt_int, 2)
+                        confirm_change_dialog(f"Save these changes to the statement due **{cur_stmt['due_date']}**?\n\n"
+                                              f"- due date: {cur_stmt['due_date']} → **{edit_stmt_due}**\n"
+                                              f"- total amount due: {php(stored_total)} → **{php(_new_total)}**\n"
+                                              f"- amount paid: {php(float(cur_stmt['amount_paid']))} → **{php(edit_stmt_paid)}**",
+                                              f"save_stmt_confirm_{edit_stmt_id}", _save_stmt, "Yes, save the changes")
                 with ec2:
-                    confirm_delete_stmt = st.checkbox("Yes, delete this statement", key=f"confirm_delete_stmt_{edit_stmt_id}")
-                    if st.button("Delete this statement", icon=":material/delete:", key=f"delete_stmt_{edit_stmt_id}", disabled=not confirm_delete_stmt):
-                        ok, msg = delete_cc_statement(int(edit_stmt_id))
-                        (st.success if ok else st.error)(msg)
-                        if ok:
-                            refresh(done=msg)
+                    if st.button("Delete this statement", icon=":material/delete:", key=f"delete_stmt_{edit_stmt_id}"):
+                        def _delete_stmt(sid=int(edit_stmt_id)):
+                            ok, msg = delete_cc_statement(sid)
+                            if ok:
+                                flash(msg)
+                            return ok, msg
+
+                        confirm_change_dialog(f"Delete the statement due **{cur_stmt['due_date']}** for **{php(stored_total)}**?  \nIt is removed completely, not just marked cancelled.",
+                                              f"delete_stmt_confirm_{edit_stmt_id}", _delete_stmt, "Yes, delete it")
 
     # ----------------------------------------------------------------------
     with sub_cards:
@@ -426,6 +444,21 @@ def render() -> None:
                 "is_active": st.column_config.CheckboxColumn("Active"),
             },
         )
+
+        if not active_cards_df.empty:
+            with st.container(border=True):
+                st.markdown("**Cards paid from the Metrobank account**")
+                st.caption("The Check-date planner and the Cash forecast plan against the Metrobank account only. A card's bill takes from that "
+                           "balance only when the card is marked here; the rest are paid from other cash or accounts, so they are still "
+                           "listed in the planner's card forecast but not deducted. Nothing is marked to start.")
+                marked = paid_from_bank_ids()
+                labels = {int(cid): _card_label(cid, active_cards_df) for cid in active_cards_df["card_id"]}
+                chosen = st.multiselect("Paid from Metrobank", options=list(labels), default=[c for c in labels if c in marked],
+                                        format_func=labels.get, key="cc_bank_cards_pick", placeholder="No card marked — none is deducted from the bank balance")
+                if set(chosen) != {c for c in labels if c in marked}:
+                    if st.button("Save cards paid from Metrobank", icon=":material/save:", type="primary", key="cc_bank_cards_save"):
+                        set_paid_from_bank(set(chosen) | (marked - set(labels)))       # cards not listed (inactive) keep their mark
+                        refresh(done=f"{len(chosen)} card(s) marked as paid from the Metrobank account.")
 
         if not cards_df.empty:
             with st.expander("Edit a card (name / issuer / cardholder / credit limit / annual fee month / statement day)"):
@@ -524,8 +557,13 @@ def render() -> None:
 
                     if int(current["is_active"]):
                         if st.button("Deactivate this card", icon=":material/block:", key=f"deactivate_card_{edit_card_id}"):
-                            deactivate_credit_card(int(edit_card_id))
-                            refresh(done="Card deactivated — its statement history stays intact, but it won't appear when adding a new statement.")
+                            def _deactivate_card(cid=int(edit_card_id)):
+                                deactivate_credit_card(cid)
+                                flash("Card deactivated — its statement history stays intact, but it won't appear when adding a new statement.")
+                                return True, ""
+
+                            confirm_change_dialog(f"Deactivate this card?  \nIts statement history stays, but it will not be offered when adding a new statement. You can reactivate it any time.",
+                                                  f"deactivate_card_confirm_{edit_card_id}", _deactivate_card, "Yes, deactivate it")
                     else:
                         st.caption("This card is currently inactive.")
                         if st.button("Reactivate this card", icon=":material/refresh:", key=f"reactivate_card_{edit_card_id}"):
@@ -618,8 +656,13 @@ def render() -> None:
 
                     if int(current_holder_row["is_active"]):
                         if st.button("Deactivate this cardholder", icon=":material/block:", key=f"deactivate_holder_{edit_holder_id}"):
-                            deactivate_cardholder(int(edit_holder_id))
-                            refresh(done="Cardholder deactivated — their card/statement history stays intact, but they won't appear when adding a new card or statement.")
+                            def _deactivate_holder(hid=int(edit_holder_id)):
+                                deactivate_cardholder(hid)
+                                flash("Cardholder deactivated — their card/statement history stays intact, but they won't appear when adding a new card or statement.")
+                                return True, ""
+
+                            confirm_change_dialog("Deactivate this cardholder?  \nTheir card and statement history stays, but they will not be offered when adding a new card or statement. You can reactivate them any time.",
+                                                  f"deactivate_holder_confirm_{edit_holder_id}", _deactivate_holder, "Yes, deactivate")
                     else:
                         st.caption("This cardholder is currently inactive.")
                         if st.button("Reactivate this cardholder", icon=":material/refresh:", key=f"reactivate_holder_{edit_holder_id}"):
@@ -641,12 +684,21 @@ def render() -> None:
         if cov_df.empty:
             st.caption("No active cards on file.")
         else:
+            w1, w2 = st.columns([2, 5], vertical_alignment="bottom")
+            wait = w1.number_input("Days to wait before a card counts as missing", min_value=0, max_value=60, step=1, value=missing_wait_days(),
+                                   key="cc_missing_wait_input",
+                                   help="A card's statement is expected on its Statement day. It only shows as missing (here, on Payment run and on the Dashboard) "
+                                        "once it is still not recorded this many days later. Default 7.")
+            if int(wait) != missing_wait_days():
+                set_missing_wait_days(int(wait))
+                st.rerun()
+            w2.caption("Cards inside the waiting time show as \"Not yet expected\".")
             counts = cov_df["status"].value_counts()
             with st.container(horizontal=True):
                 st.metric("Missing this month", int(counts.get("Missing this month", 0)), border=True, help=f"Had a statement in {cov_prev}, none recorded for {cov_this}.")
                 st.metric("Missing both months", int(counts.get("Missing both months", 0)), border=True, help=f"Older history, but nothing in {cov_prev} or {cov_this}.")
                 st.metric("No statement ever", int(counts.get("No statement ever", 0)), border=True, help='Active cards with no statement recorded at all — often cards not in use yet.')
-                st.metric("Not yet expected", int(counts.get("Not yet expected", 0)), border=True, help="Had one last month, but this card's statement isn't due to arrive yet this month (based on its Statement day, or last month's due day).")
+                st.metric("Not yet expected", int(counts.get("Not yet expected", 0)), border=True, help=f"Had one last month, but it is not yet {missing_wait_days()} day(s) past the day this card's statement is expected (its Statement day, or last month's statement date). After that it moves to Missing this month.")
                 st.metric("No due", int(counts.get("No due", 0)), border=True, help=f"You marked {cov_this} as having nothing due on this card.")
                 st.metric("OK", int(counts.get("OK", 0)), border=True, help=f"A statement is recorded for {cov_this}.")
             only_problems = st.toggle("Show only cards that need attention", value=True, key="cov_only_problems")
@@ -668,21 +720,12 @@ def render() -> None:
             if report_df.empty:
                 st.success("Every active card has a statement recorded for this month.")
             else:
-                with st.expander("Follow-up list by card holder (copy and send)", expanded=True):
-                    st.caption("One message per person, listing only the cards still missing a statement — send it so the bill can be paid on time and charges avoided.")
-                    for holder, grp in report_df.groupby("Card holder"):
-                        first_name = holder.split()[0] if holder and holder != "(no holder)" else "there"
-                        card_lines = "\n".join(
-                            f"- {r['Issuer']} {r['Card']} (ending {r['Last 4']})"
-                            + (f" — last month's statement was due {r[f'{cov_prev} statement: due']}" if pd.notna(r[f"{cov_prev} statement: due"]) else "")
-                            for _, r in grp.iterrows()
-                        )
-                        st.markdown(f"**{holder}** — {len(grp)} card(s)")
-                        st.code(
-                            f"Hi {first_name}, I don't have the {cov_this} statement yet for these cards:\n{card_lines}\n"
-                            "Please send me a photo or PDF of the statement (or the amount due and due date) so we can pay on time and avoid charges. Thank you!",
-                            language=None,
-                        )
+                with st.expander("List to post (screenshot it)", expanded=True):
+                    with st.container(border=True):
+                        st.markdown(f"#### Statements still missing — {cov_this}")
+                        for holder, grp in report_df.groupby("Card holder"):
+                            st.markdown(f"**{holder}**")
+                            st.markdown("\n".join(f"- {card_display_name(r['Issuer'], r['Card'])} · ending {r['Last 4']}" for _, r in grp.iterrows()))
                 xl = io.BytesIO()
                 with pd.ExcelWriter(xl, engine="openpyxl") as writer:
                     report_df.to_excel(writer, index=False, sheet_name="Missing statements")

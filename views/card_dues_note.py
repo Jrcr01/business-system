@@ -7,11 +7,17 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from engines.cc_forecast_service import HEAVY_FACTOR, card_week_info
+from engines.cc_forecast_service import card_week_info, heavy_factor
 from engines.common import php
 
 
 def render_card_week_notes(check_dates) -> None:
+    from engines.cc_service import paid_from_bank_ids
+
+    if not paid_from_bank_ids():
+        st.caption(":material/credit_card: No credit card is marked as paid from the Metrobank account, so card bills are not counted against "
+                   "these check dates (Credit cards → Cards & cardholders).")
+        return
     dates = [d for d in (pd.to_datetime(pd.Series(list(check_dates)), errors="coerce").dt.date if len(check_dates) else []) if pd.notna(d)]
     try:
         info = card_week_info(dates)
@@ -32,5 +38,5 @@ def render_card_week_notes(check_dates) -> None:
         else:
             quiet.append(f"{when}: {detail if w['total'] else 'no card dues'}")
     if quiet:
-        st.caption(":material/credit_card: Card dues in the week of each check date — " + " · ".join(quiet)
-                   + f". A week is flagged when it is at least {HEAVY_FACTOR:g}× a normal week.")
+        st.caption(":material/credit_card: Card dues (cards paid from Metrobank) in the week of each check date — " + " · ".join(quiet)
+                   + f". A week is flagged when it is at least {heavy_factor():g}× a normal week.")

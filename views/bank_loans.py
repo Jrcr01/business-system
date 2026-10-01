@@ -6,6 +6,7 @@ import sqlite3
 import streamlit as st
 
 from datetime import date
+from engines.beginning_balance_service import remove_beginning_label
 from engines.bank_loan_import_service import get_template_csv as get_bank_loan_template_csv
 from engines.bank_loan_import_service import parse_bank_loan_spreadsheet
 from engines.bank_loan_report_service import generate_bank_loan_pdf
@@ -16,7 +17,9 @@ from engines.bank_loan_service import delete_bank_loan
 from engines.bank_loan_service import delete_bank_loan_installment
 from engines.bank_loan_service import edit_bank_loan_beneficiary
 from engines.bank_loan_service import edit_bank_loan_installment
+from engines.common import has_value
 from engines.common import php
+from engines.loan_edit_service import edit_bank_loan_details
 from engines.duplicate_service import bank_loan_warnings
 from engines.duplicate_service import bank_schedule_warnings
 from engines.last_modified_sql import bank_loan_modified_sql
@@ -28,7 +31,12 @@ from views.shared import (  # noqa: F401
     BL_NEW,
     MONEY_FORMAT,
     confirm_cancel_bank_loan_dialog,
+    confirm_change_dialog,
+    creditor_options_all,
     confirm_create_dialog,
+    flash,
+    grid_risk_lines,
+    grid_risk_summary,
     date_col,
     date_preset_filter,
     dup_needs_confirm,
@@ -217,47 +225,60 @@ def render_bank_loan_schedule(selected_blid: int) -> None:
     if (st.button("Save schedule changes", icon=":material/save:", key="bl_save_schedule_btn") or dup_resume("bl_save_schedule")) and not dup_needs_confirm("bl_save_schedule", bank_schedule_warnings(selected_blid, [
         (r["due_date"], float(r["amount"] or 0)) for _, r in bl_edited_schedule_df.iterrows() if pd.isna(r["installment_id"]) and not pd.isna(r["due_date"])
     ])):
-        bl_original_by_id = bl_schedule_df.set_index("installment_id") if not bl_schedule_df.empty else pd.DataFrame()
-        bl_seen_ids, bl_added_n, bl_updated_n, bl_deleted_n, bl_sched_errors = set(), 0, 0, 0, []
-        for _, r in bl_edited_schedule_df.iterrows():
-            if pd.isna(r["due_date"]):
-                continue
-            amount = float(r["amount"] or 0)
-            interest_portion = float(r.get("interest_portion") or 0)
+        def _save_bl_schedule():
+            bl_original_by_id = bl_schedule_df.set_index("installment_id") if not bl_schedule_df.empty else pd.DataFrame()
+            bl_seen_ids, bl_added_n, bl_updated_n, bl_deleted_n, bl_sched_errors = set(), 0, 0, 0, []
+            for _, r in bl_edited_schedule_df.iterrows():
+                if pd.isna(r["due_date"]):
+                    continue
+                amount = float(r["amount"] or 0)
+                interest_portion = float(r.get("interest_portion") or 0)
 
-            if pd.isna(r["installment_id"]):
-                ok, msg = add_bank_loan_installment(selected_blid, r["due_date"], amount, interest_portion)
-                if ok:
-                    bl_added_n += 1
-                else:
-                    bl_sched_errors.append(msg)
-                continue
+                if pd.isna(r["installment_id"]):
+                    ok, msg = add_bank_loan_installment(selected_blid, r["due_date"], amount, interest_portion)
+                    if ok:
+                        bl_added_n += 1
+                    else:
+                        bl_sched_errors.append(msg)
+                    continue
 
-            iid = int(r["installment_id"])
-            bl_seen_ids.add(iid)
-            orig = bl_original_by_id.loc[iid]
-            if (str(r["due_date"]) != str(orig["due_date"]) or abs(amount - float(orig["amount"])) > 0.001
-                    or abs(interest_portion - float(orig.get("interest_portion") or 0)) > 0.001):
-                ok, msg = edit_bank_loan_installment(iid, r["due_date"], amount, interest_portion)
-                if ok:
-                    bl_updated_n += 1
-                else:
-                    bl_sched_errors.append(f"Installment {iid}: {msg}")
+                iid = int(r["installment_id"])
+                bl_seen_ids.add(iid)
+                orig = bl_original_by_id.loc[iid]
+                if (str(r["due_date"]) != str(orig["due_date"]) or abs(amount - float(orig["amount"])) > 0.001
+                        or abs(interest_portion - float(orig.get("interest_portion") or 0)) > 0.001):
+                    ok, msg = edit_bank_loan_installment(iid, r["due_date"], amount, interest_portion)
+                    if ok:
+                        bl_updated_n += 1
+                    else:
+                        bl_sched_errors.append(f"Installment {iid}: {msg}")
 
-        if not bl_original_by_id.empty:
-            for removed_id in set(bl_original_by_id.index) - bl_seen_ids:
-                ok, msg = delete_bank_loan_installment(int(removed_id))
-                if ok:
-                    bl_deleted_n += 1
-                else:
-                    bl_sched_errors.append(f"Installment {removed_id}: {msg}")
+            if not bl_original_by_id.empty:
+                for removed_id in set(bl_original_by_id.index) - bl_seen_ids:
+                    ok, msg = delete_bank_loan_installment(int(removed_id))
+                    if ok:
+                        bl_deleted_n += 1
+                    else:
+                        bl_sched_errors.append(f"Installment {removed_id}: {msg}")
 
-        if bl_added_n or bl_updated_n or bl_deleted_n:
-            st.success(f"Saved — {bl_added_n} added, {bl_updated_n} updated, {bl_deleted_n} deleted.")
-        for e in bl_sched_errors:
-            st.error(e)
-        if bl_added_n or bl_updated_n or bl_deleted_n:
+            saved = bl_added_n or bl_updated_n or bl_deleted_n
+            if bl_sched_errors:
+                if saved:
+                    st.cache_data.clear()
+                return False, "\n\n".join(bl_sched_errors) + (f"\n\nSaved before stopping: {bl_added_n} added, {bl_updated_n} updated, {bl_deleted_n} deleted." if saved else "")
+            if not saved:
+                return True, "No changes to save."
             refresh(done=f"Schedule saved — {bl_added_n} added, {bl_updated_n} updated, {bl_deleted_n} deleted.")
+            return True, ""
+
+        removed, changed = grid_risk_lines(bl_schedule_df, bl_edited_schedule_df, "installment_id",
+                                           lambda r: f"installment #{r['installment_no']} due {str(r['due_date'])[:10]}", ["amount", "interest_portion"])
+        if removed or changed:
+            confirm_change_dialog(grid_risk_summary("installment(s)", removed, changed), "bl_save_schedule_confirm", _save_bl_schedule, "Yes, save the changes")
+        else:
+            ok, msg = _save_bl_schedule()
+            if msg:
+                (st.info if ok else st.error)(msg)
 
 
 def render() -> None:
@@ -270,13 +291,14 @@ def render() -> None:
     bl_beneficiaries_df = q("SELECT * FROM loan_beneficiaries ORDER BY name")
 
     bank_loans_df = q(
-        """SELECT bl.bank_loan_id, c.creditor_name, bl.loan_ref, bl.account_number, bl.start_date, bl.maturity_date,
+        """SELECT bl.bank_loan_id, bl.creditor_id, bl.repricing_date, bl.has_amortization, c.creditor_name, bl.loan_ref, bl.account_number, bl.start_date, bl.maturity_date,
                   bl.principal_amount,
                   CASE WHEN bl.is_cancelled = 1 THEN 0 ELSE COALESCE(
                       (SELECT SUM(amount) FROM bank_loan_installments
                        WHERE bank_loan_id = bl.bank_loan_id AND due_date >= manila_today()), 0
                   ) END AS outstanding,
                   bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, bl.is_cancelled, lb.name AS beneficiary, lb.beneficiary_type, bl.beneficiary_id,
+                  CASE WHEN bl.is_beginning_balance = 1 THEN 'Beginning balance (from MS Access)' ELSE '' END AS source,
                   """ + bank_loan_modified_sql("bl") + """ AS last_modified
            FROM bank_loans bl JOIN creditors c ON bl.creditor_id = c.creditor_id
            LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id
@@ -308,10 +330,12 @@ def render() -> None:
                 selection_mode="single-row",
                 key="bl_browser_df",
                 column_config={
+                    "creditor_id": None, "repricing_date": None, "has_amortization": None,          # used by the edit form, not shown
                     "principal_amount": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT),
                     "outstanding": st.column_config.NumberColumn("Outstanding", format=MONEY_FORMAT),
                     "beneficiary": st.column_config.TextColumn("Attributable To"),
                     "beneficiary_type": st.column_config.TextColumn("Type"),
+                    "source": st.column_config.TextColumn("Source", help="Beginning balance (from MS Access): imported as a repayment schedule only, with no start date or principal yet."),
                 },
             )
             bl_selected_rows = bl_browser_event.selection.rows if bl_browser_event and bl_browser_event.selection else []
@@ -326,7 +350,57 @@ def render() -> None:
         with st.container(border=True):
             st.markdown(f"#### {bl_row['loan_ref']} — {bl_row['creditor_name']}  " + status_text(bl_row["status"]))
             bl_beneficiary_text = f"{bl_row['beneficiary']} ({bl_row['beneficiary_type']})" if pd.notna(bl_row["beneficiary_id"]) and bl_row["beneficiary_id"] != "" else "not set"
+            if bl_row["source"]:
+                bb1, bb2 = st.columns([5, 1.8], vertical_alignment="center")
+                bb1.info(f":material/history: **{bl_row['source']}** — imported from the old system as a repayment schedule only (no start date or principal yet).")
+                if bb2.button("Remove the label", icon=":material/label_off:", key="bl_bb_remove_btn", width="stretch"):
+                    def _remove_bl_label(blid=int(selected_blid)):
+                        ok, msg = remove_beginning_label("bank_loan", blid)
+                        if ok:
+                            flash(msg)
+                        return ok, msg
+
+                    confirm_change_dialog(f"Remove the beginning-balance label from bank loan **{bl_row['loan_ref']}**?  \nDo this only when its real details are known. The label is not put back.",
+                                          "bl_bb_remove_confirm", _remove_bl_label, "Yes, remove the label")
             st.caption(f"Status: {bl_row['status']} · Mode of payment (informational): {bl_row['mode_of_payment']} · Outstanding: {php(bl_row['outstanding'])} · Attributable to: {bl_beneficiary_text}")
+            if not bool(bl_row["is_cancelled"]):
+                with st.expander("Edit bank loan details (bank, reference, dates, principal ...)"):
+                    st.caption("For completing the loans that came in as a schedule only, or fixing a wrong entry. Entering a start date and principal removes the "
+                               "\"Beginning balance (from MS Access)\" label. The repayment schedule is not changed.")
+                    bank_options = creditor_options_all("BANK_LOAN")
+                    bank_ids = list(bank_options)
+                    cur_bank = int(bl_row["creditor_id"])
+
+                    def _as_date(v):
+                        return pd.to_datetime(v).date() if has_value(v) else None
+
+                    e1, e2, e3 = st.columns(3)
+                    e_bank = e1.selectbox("Bank", bank_ids, index=bank_ids.index(cur_bank) if cur_bank in bank_ids else 0, format_func=lambda cid: bank_options[cid], key=f"bl_edit_bank_{selected_blid}")
+                    e_ref = e2.text_input("Loan reference", value=str(bl_row["loan_ref"]), key=f"bl_edit_ref_{selected_blid}")
+                    e_acc = e3.text_input("Account number", value=str(bl_row["account_number"] or ""), key=f"bl_edit_acc_{selected_blid}")
+                    e4, e5, e6 = st.columns(3)
+                    e_start = e4.date_input("Start date", value=_as_date(bl_row["start_date"]), key=f"bl_edit_start_{selected_blid}")
+                    e_mat = e5.date_input("Maturity date", value=_as_date(bl_row["maturity_date"]), key=f"bl_edit_mat_{selected_blid}")
+                    e_rep = e6.date_input("Repricing date (optional)", value=_as_date(bl_row["repricing_date"]), key=f"bl_edit_rep_{selected_blid}")
+                    e7, e8, e9 = st.columns(3)
+                    e_prin = e7.number_input("Principal amount (0 = not known yet)", min_value=0.0, step=10000.0,
+                                             value=float(bl_row["principal_amount"]) if has_value(bl_row["principal_amount"]) else 0.0, key=f"bl_edit_prin_{selected_blid}")
+                    e_mode = e8.text_input("Mode of payment (informational)", value=str(bl_row["mode_of_payment"] or "ADA"), key=f"bl_edit_mode_{selected_blid}")
+                    e_amort = e9.checkbox("Has an amortization schedule", value=bool(int(bl_row["has_amortization"] or 0)), key=f"bl_edit_amort_{selected_blid}")
+                    if st.button("Save details", icon=":material/save:", key="bl_edit_details_btn"):
+                        def _save_bl_details(blid=int(selected_blid), a=(int(e_bank), e_ref, e_acc, e_start, e_mat, e_rep, e_prin or None, e_mode, e_amort)):
+                            ok, msg = edit_bank_loan_details(blid, *a)
+                            if ok:
+                                flash(msg)
+                            return ok, msg
+
+                        fmt = lambda d: f"{d:%b %d, %Y}" if d else "—"  # noqa: E731
+                        confirm_change_dialog(f"Change the details of bank loan **{bl_row['loan_ref']}**?\n\n"
+                                              f"- bank: {bl_row['creditor_name']} → **{bank_options.get(int(e_bank), '')}**\n"
+                                              f"- loan reference: {bl_row['loan_ref']} → **{e_ref.strip()}**\n"
+                                              f"- start / maturity: {fmt(_as_date(bl_row['start_date']))} / {fmt(_as_date(bl_row['maturity_date']))} → **{fmt(e_start)} / {fmt(e_mat)}**\n"
+                                              f"- principal: {php(float(bl_row['principal_amount'])) if has_value(bl_row['principal_amount']) else '—'} → **{php(e_prin) if e_prin else '—'}**",
+                                              "bl_details_confirm", _save_bl_details, "Yes, save the details")
             if not bl_beneficiaries_df.empty:
                 with st.expander("Edit attribution (who this loan is for)"):
                     with st.form("edit_bl_beneficiary_form", border=False):
@@ -358,11 +432,15 @@ def render() -> None:
                         confirm_cancel_bank_loan_dialog(selected_blid, bl_row["loan_ref"], bl_installment_count)
                 if not int(bl_row["is_cancelled"]) and bl_installment_count == 0:
                     if st.button("Delete this bank loan (no schedule rows entered yet)", icon=":material/delete:", key="bl_delete_btn"):
-                        ok, msg = delete_bank_loan(selected_blid)
-                        (st.success if ok else st.error)(msg)
-                        if ok:
-                            st.session_state["selected_bank_loan_id"] = None
-                            refresh(done=msg)
+                        def _delete_bank_loan(blid=int(selected_blid)):
+                            ok, msg = delete_bank_loan(blid)
+                            if ok:
+                                st.session_state["selected_bank_loan_id"] = None
+                                flash(msg)
+                            return ok, msg
+
+                        confirm_change_dialog(f"Delete bank loan **{bl_row['loan_ref']}**?  \nIt has no repayment rows yet, so it is removed completely (not just marked cancelled).",
+                                              "bl_delete_confirm", _delete_bank_loan, "Yes, delete it")
 
         render_bank_loan_schedule(int(selected_blid))
     with st.expander("Bank loan servicing report"):

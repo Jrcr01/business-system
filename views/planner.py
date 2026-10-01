@@ -9,8 +9,9 @@ import streamlit as st
 
 from engines import check_date_planner as cp
 from engines.cc_forecast_service import MONTHS_AHEAD, estimated_card_dues, forecast_by_week
+from engines.cc_service import paid_from_bank_ids
 from engines.common import php
-from views.shared import OS_BROWSE, creditor_options_all, export_buttons, go_to, page_header, refresh, section, show_table
+from views.shared import OS_BROWSE, confirm_change_dialog, creditor_options_all, export_buttons, go_to, page_header, refresh, section, show_table
 
 STATUS_ICON = {"On time": "🟢", "Moved": "🟠", "Overdue": "🔴", "Doesn't fit": "⛔"}
 
@@ -64,6 +65,9 @@ def _card_dues_ahead() -> None:
     if weeks.empty:
         st.caption("No card history to estimate from yet.")
         return
+    bank_weeks = forecast_by_week(bank_only=True)
+    bank_total = float((bank_weeks["recorded"] + bank_weeks["estimated"]).sum()) if not bank_weeks.empty else 0.0
+    all_total = float((weeks["recorded"] + weeks["estimated"]).sum())
     total_rec, total_est = float(weeks["recorded"].sum()), float(weeks["estimated"].sum())
     peak = weeks.assign(total=weeks["recorded"] + weeks["estimated"]).sort_values("total", ascending=False).iloc[0]
     m1, m2, m3 = st.columns(3)
@@ -72,6 +76,13 @@ def _card_dues_ahead() -> None:
               help=f"Likely range {php(float(weeks['low'].sum()) - total_rec)} – {php(float(weeks['high'].sum()) - total_rec)}.")
     m3.metric("Heaviest week", f"{peak['week_start']:%b %d}", php(float(peak["total"])), delta_color="off", delta_arrow="off", border=True,
               help="The week with the most card dues -- avoid dating big supplier checks around it.")
+    if not paid_from_bank_ids():
+        st.info(f"No card is marked as paid from the Metrobank account, so **none of these {php(all_total)} is deducted from the bank balance** "
+                "in the suggested dates. Mark the cards you pay through Metrobank on the Credit cards page → Cards & cardholders.",
+                icon=":material/account_balance:")
+    else:
+        st.caption(f"Counted against the Metrobank balance (cards marked as paid from it): {php(bank_total)} of the {php(all_total)} below; "
+                   f"the other {php(all_total - bank_total)} is paid from other cash or accounts.")
     chart = weeks.melt(id_vars=["week_start"], value_vars=["recorded", "estimated"], var_name="kind", value_name="amount")
     chart = chart.assign(week_start=pd.to_datetime(chart["week_start"]), kind=chart["kind"].map({"recorded": "On a statement", "estimated": "Estimated"}))
     st.altair_chart(alt.Chart(chart).mark_bar().encode(
@@ -93,8 +104,8 @@ def _card_dues_ahead() -> None:
                        {"due": "Likely due", "payee": "Card", "cardholder": "Cardholder", "amount": "Estimate", "low": "Lowest",
                         "high": "Highest", "based_on": "From statements"},
                        kinds={"due": "date", "amount": "money", "low": "money", "high": "money", "based_on": "count"})
-    st.caption("Estimates are replaced by the real amount as soon as the statement is entered. They already count as cash going out in "
-               "the suggested check dates above and in Bank and cash → Cash forecast. A month with nothing due can be marked \"No due\" "
+    st.caption("Estimates are replaced by the real amount as soon as the statement is entered. For the cards marked as paid from Metrobank "
+               "they already count as cash going out in the suggested check dates above and in Bank and cash → Cash forecast. A month with nothing due can be marked \"No due\" "
                "on the Credit cards page, and its estimate disappears.")
 
 
@@ -183,13 +194,18 @@ def _render_plan() -> None:
         st.error(msg)
     if b3.button("Send to every batch", icon=":material/done_all:", key="pl_send_all", width="stretch",
                  help="Fills every batch's Issue checks grid. Each one still waits for you to review and park it (see the reminder in the sidebar)."):
-        results = [cp.send_to_batch(p, sid) for sid in opts]
-        for sid in opts:
-            for base in ("issue_split_mode", "issue_checks_count", "issue_checks_editor", "issue_checks_last_signature"):
-                st.session_state.pop(f"{base}__{sid}", None)
-        bad = [m for ok, m in results if not ok]
-        refresh(done=f"Sent to {len(results) - len(bad)} batch(es)." + (f" {len(bad)} not sent: {bad[0]}" if bad else "")
-                + " Open each batch's Issue checks to review and park.")
+        def _send_all():
+            results = [cp.send_to_batch(p, sid) for sid in opts]
+            for sid in opts:
+                for base in ("issue_split_mode", "issue_checks_count", "issue_checks_editor", "issue_checks_last_signature"):
+                    st.session_state.pop(f"{base}__{sid}", None)
+            bad = [m for ok, m in results if not ok]
+            refresh(done=f"Sent to {len(results) - len(bad)} batch(es)." + (f" {len(bad)} not sent: {bad[0]}" if bad else "")
+                    + " Open each batch's Issue checks to review and park.")
+            return True, ""
+
+        confirm_change_dialog(f"Fill the Issue checks grid of **{len(opts)} batch(es)** with the planned dates?  \nNothing is parked: each batch still waits for you to review and park it, "
+                              "and any dates you typed in those grids are replaced.", "pl_send_all_confirm", _send_all, "Yes, send to every batch")
 
     with st.expander("Every invoice and why it got its date", icon=":material/list_alt:"):
         it = p.items.assign(status=[f"{STATUS_ICON.get(x, '')} {x}" for x in p.items["status"]])

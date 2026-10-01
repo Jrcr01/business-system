@@ -10,6 +10,17 @@ from engines.cc_service import get_statement_coverage
 TODAY = date(2026, 9, 19)
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _flag_from_the_expected_day(db):
+    """These tests are about WHICH cards are flagged; the 7-day waiting rule (2026-09-29) has its own file: tests/test_cc_missing_wait.py."""
+    from engines.cc_service import set_missing_wait_days
+
+    set_missing_wait_days(0)
+
+
 def _card(db, issuer_id, name, last4, active=1):
     conn = sqlite3.connect(db)
     cur = conn.execute(

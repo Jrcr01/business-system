@@ -200,7 +200,7 @@ def edit_loan_note_terms(loan_note_id: int, principal_amount: float, monthly_int
     try:
         with _get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT status FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
+            cur.execute("SELECT status, is_beginning_balance, note_ref FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
             row = cur.fetchone()
             if not row:
                 return False, "Loan note not found."
@@ -211,6 +211,10 @@ def edit_loan_note_terms(loan_note_id: int, principal_amount: float, monthly_int
                 "UPDATE loan_notes SET principal_amount = ?, monthly_interest_rate = ?, status = ? WHERE loan_note_id = ?",
                 (principal_amount, monthly_interest_rate, new_status, loan_note_id),
             )
+            if row[1]:                       # real terms entered: the "Beginning balance (from MS Access)" label has done its job (and is never put back)
+                cur.execute("UPDATE loan_notes SET is_beginning_balance = 0, beginning_label_removed = 1 WHERE loan_note_id = ?", (loan_note_id,))
+                cur.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BEGINNING_BALANCE_LABEL_REMOVED', 'loan_notes', ?, ?)",
+                            (loan_note_id, f"{row[2]}: beginning-balance label removed because its terms were entered"))
             _recompute_schedule(cur, loan_note_id)
             _assert_no_negative_balance(cur, loan_note_id)
             cur.execute(
@@ -225,14 +229,18 @@ def edit_loan_note_terms(loan_note_id: int, principal_amount: float, monthly_int
 def delete_loan_installment(installment_id: int) -> tuple[bool, str]:
     with _get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT loan_note_id, status FROM loan_installments WHERE installment_id = ?", (installment_id,))
+        cur.execute("SELECT loan_note_id, status, due_date, principal, interest FROM loan_installments WHERE installment_id = ?", (installment_id,))
         row = cur.fetchone()
         if not row:
             return False, "Installment not found."
-        loan_note_id, status = row
+        loan_note_id, status, due_date, principal, interest = row
         if status == "Active":
             return False, "Cannot delete an installment with an active check — cancel its check first."
         cur.execute("DELETE FROM loan_installments WHERE installment_id = ?", (installment_id,))
+        cur.execute(
+            "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'LOAN_INSTALLMENT_DELETED', 'loan_installments', ?, ?)",
+            (installment_id, f"Loan note {loan_note_id}: installment due {str(due_date)[:10]} deleted (principal {principal:,.2f} + interest {interest:,.2f})"),
+        )
         _recompute_schedule(cur, loan_note_id)
         conn.commit()
     return True, "Installment deleted."

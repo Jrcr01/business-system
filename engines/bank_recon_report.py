@@ -48,7 +48,8 @@ def recon_statement(import_id: int) -> dict | None:
            LEFT JOIN order_statements os ON os.statement_id = c.statement_id LEFT JOIN loan_notes ln ON ln.loan_note_id = c.loan_note_id
            WHERE c.status = 'Active' AND ((c.check_number IS NOT NULL AND c.check_number != '') OR c.printed_at IS NOT NULL)
              AND c.check_date <= ? AND (c.bank_cleared_date IS NULL OR c.bank_cleared_date > ?)
-           ORDER BY c.check_date, c.check_number""", (as_of.isoformat(), as_of.isoformat()))
+             AND (c.settled_outside_at IS NULL OR c.settled_outside_at > ?)
+           ORDER BY c.check_date, c.check_number""", (as_of.isoformat(), as_of.isoformat(), as_of.isoformat()))
     items = lines[lines["kind"].isin(["DEBIT_MEMO", "BILLS_PAYMENT", "RETURNED_CHECK", "OTHER"]) & (lines["debit"] > 0)].copy()
     items["how"] = [
         {"matched_loan": "Bank-loan installment (matched)", "matched_card": "Credit-card payment (matched)"}.get(ms)

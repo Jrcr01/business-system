@@ -29,7 +29,14 @@ from engines.clock import manila_today
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 BUFFER_KEY = "cash_buffer"
-INFLOW_WEEKS = 8                       # recent weeks of deposits used for the expected-inflow estimate
+
+
+def inflow_weeks() -> int:
+    """Recent weeks of deposits used for the expected-inflow estimate (Settings, default 8)."""
+    from engines.settings_registry import int_value
+    return int_value("inflow_weeks")
+
+
 DEPOSIT_TYPES = [("CSH DEP", "Cash deposits"), ("CHK DEP", "Check deposits"), ("IBFT", "Bank transfers"), ("WA CR", "Other credits (WA CR)"),
                  ("MO CM", "Bank credit memos")]
 
@@ -71,8 +78,9 @@ def cash_position() -> dict | None:
     return {"balance": float(df["balance"][0]), "as_of": date.fromisoformat(df["posting_date"][0])}
 
 
-def expected_daily_inflow(weeks: int = INFLOW_WEEKS) -> dict[int, float]:
+def expected_daily_inflow(weeks: int | None = None) -> dict[int, float]:
     """Average money in per weekday (0 = Monday) over the last `weeks` weeks of imported bank lines (returned checks are not money in)."""
+    weeks = inflow_weeks() if weeks is None else weeks
     pos = cash_position()
     if pos is None:
         return {}
@@ -98,7 +106,7 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
     checks = _read("""SELECT c.check_date, c.amount, cr.creditor_name AS payee, COALESCE(c.check_number, 'no number') AS reference,
                               CASE WHEN c.statement_id IS NOT NULL THEN 'Supplier' ELSE 'Lender' END AS track
                        FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
-                       WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL""")
+                       WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL AND c.settled_outside_at IS NULL""")
     rows = []
     for _, r in checks.iterrows():
         d = max(next_banking_day(str(r["check_date"])[:10]), next_banking_day(start))
@@ -106,6 +114,7 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
             rows.append({"day": d, "track": r["track"], "payee": r["payee"], "reference": r["reference"], "amount": float(r["amount"])})
     sched = get_payment_schedule_all_tracks()
     if not sched.empty:
+        sched, _ = split_card_rows(sched)                # cards paid outside the bank do not take from this balance
         other = sched[sched["track"].isin(["Bank Loan", "Credit Card"])]
         for _, r in other.iterrows():
             d = next_banking_day(str(r["due_date"])[:10])
@@ -115,12 +124,57 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["day", "track", "payee", "reference", "amount"])
 
 
-def estimated_outflows(start: date, end: date) -> list[dict]:
-    """Estimated card dues (not yet on a statement) as outflow rows, on the next banking day like the other dues."""
+def _card_ids_by_reference() -> dict:
+    """{'Cardholder - Card - 1234': card_id} -- the label the payment schedule uses for a card statement."""
+    df = _read("""SELECT cc.card_id, CASE WHEN ch.name IS NOT NULL THEN ch.name || ' - ' || cc.card_name || ' - ' || cc.card_number_last4
+                                        ELSE cc.card_name || ' - ' || cc.card_number_last4 END AS reference
+                  FROM credit_cards cc LEFT JOIN cardholders ch ON cc.cardholder_id = ch.cardholder_id""")
+    return dict(zip(df["reference"], df["card_id"])) if not df.empty else {}
+
+
+def split_card_rows(sched: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(schedule without the credit-card rows of cards NOT paid from the Metrobank account, those rows). Owner, 2026-09-29: the planner and
+    the Cash forecast plan against the Metrobank account only; a card counts against it only when marked 'paid from Metrobank'."""
+    from engines.cc_service import paid_from_bank_ids
+
+    if sched.empty or "Credit Card" not in set(sched["track"]):
+        return sched, sched.iloc[0:0]
+    bank_cards, ref = paid_from_bank_ids(), _card_ids_by_reference()
+    outside = (sched["track"] == "Credit Card") & ~sched["reference"].map(lambda r: ref.get(r) in bank_cards)
+    return sched[~outside], sched[outside]
+
+
+def outside_card_dues(start: date, end: date) -> dict:
+    """Card dues in the window that are paid outside the Metrobank account (not deducted from its balance):
+    {'recorded': on statements, 'estimated': not yet on a statement, 'cards': how many cards}."""
     from engines.cc_forecast_service import estimated_card_dues
+    from engines.cc_service import paid_from_bank_ids
+
+    bank_cards, ref = paid_from_bank_ids(), _card_ids_by_reference()
+    recorded, cards = 0.0, set()
+    sched = get_payment_schedule_all_tracks()
+    if not sched.empty:
+        _, gone = split_card_rows(sched)
+        gone = gone[(pd.to_datetime(gone["due_date"]).dt.date >= start) & (pd.to_datetime(gone["due_date"]).dt.date <= end)]
+        recorded = float(gone["amount"].sum()) if not gone.empty else 0.0
+        cards |= {ref.get(r) for r in gone["reference"] if ref.get(r) is not None}
+    est = estimated_card_dues(start, end, today=start)
+    est = est[~est["card_id"].isin(bank_cards)] if not est.empty else est
+    cards |= set(est["card_id"]) if not est.empty else set()
+    return {"recorded": recorded, "estimated": float(est["amount"].sum()) if not est.empty else 0.0, "cards": len(cards)}
+
+
+def estimated_outflows(start: date, end: date) -> list[dict]:
+    """Estimated card dues (not yet on a statement) as outflow rows, on the next banking day like the other dues -- only for cards paid
+    from the Metrobank account (owner, 2026-09-29)."""
+    from engines.cc_forecast_service import estimated_card_dues
+    from engines.cc_service import paid_from_bank_ids
 
     rows = []
-    for _, r in estimated_card_dues(start, end, today=start).iterrows():
+    est = estimated_card_dues(start, end, today=start)
+    if not est.empty:
+        est = est[est["card_id"].isin(paid_from_bank_ids())]
+    for _, r in est.iterrows():
         d = next_banking_day(str(r["due"])[:10])
         if start <= d <= end:
             rows.append({"day": d, "track": r["track"], "payee": r["payee"], "reference": r["reference"], "amount": float(r["amount"])})
@@ -161,7 +215,7 @@ def float_summary(today: date | None = None) -> dict:
     if pos is None:
         return {}
     df = _read("""SELECT c.check_number, c.check_date, c.amount, cr.creditor_name AS payee FROM checks_issued c
-                  JOIN creditors cr ON cr.creditor_id = c.creditor_id WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL""")
+                  JOIN creditors cr ON cr.creditor_id = c.creditor_id WHERE c.status = 'Active' AND c.bank_cleared_date IS NULL AND c.settled_outside_at IS NULL""")
     if df.empty:
         return {"overdue": df, "ahead": df, "buckets": pd.DataFrame(columns=["age", "checks", "amount"]), "by_payee": pd.DataFrame(), "as_of": pos["as_of"]}
     df["check_date"] = pd.to_datetime(df["check_date"]).dt.date
@@ -237,7 +291,12 @@ def working_capital(today: date | None = None) -> dict:
 
 
 # ------------------------------------------------------------------ summaries for the Dashboard and the overall report (2026-09-28)
-FORECAST_FRESH_DAYS = 14               # an older bank balance is too stale to forecast from
+def forecast_fresh_days() -> int:
+    """An older bank balance is too stale to forecast from (Settings, default 14)."""
+    from engines.settings_registry import int_value
+    return int_value("forecast_fresh_days")
+
+
 
 
 def dashboard_bank_summary(today: date | None = None) -> dict | None:
@@ -257,7 +316,7 @@ def dashboard_bank_summary(today: date | None = None) -> dict | None:
                 (first.isoformat(), last.isoformat())).iloc[0]
     waiting = not_yet_cleared()
     age = (today - pos["as_of"]).days
-    fc = forecast(30, today) if age <= FORECAST_FRESH_DAYS else {}
+    fc = forecast(30, today) if age <= forecast_fresh_days() else {}
     return {"balance": pos["balance"], "as_of": pos["as_of"], "age_days": age,
             "checks_in_period": int(cov["n"]), "checks_cleared": int(cov["cleared"]),
             "pct_cleared": (float(cov["cleared"]) / int(cov["n"]) * 100.0) if int(cov["n"]) else None,
@@ -295,7 +354,8 @@ def period_bank_summary(start: date, end: date, prev_start: date, prev_end: date
                    (start.isoformat(), end.isoformat())).iloc[0]
     flt = _read("""SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS t FROM checks_issued
                    WHERE status = 'Active' AND check_number IS NOT NULL AND check_number != '' AND check_date <= ?
-                     AND (bank_cleared_date IS NULL OR bank_cleared_date > ?)""", (as_of.isoformat(), as_of.isoformat())).iloc[0]
+                     AND (bank_cleared_date IS NULL OR bank_cleared_date > ?) AND (settled_outside_at IS NULL OR settled_outside_at > ?)""",
+                (as_of.isoformat(), as_of.isoformat(), as_of.isoformat())).iloc[0]
     bounced = _read("SELECT COUNT(*) AS n, COALESCE(SUM(debit), 0) AS t FROM bank_transactions WHERE kind = 'RETURNED_CHECK' AND posting_date BETWEEN ? AND ?",
                     (start.isoformat(), end.isoformat())).iloc[0]
     open_n = int(_read("SELECT COUNT(*) AS n FROM bank_transactions WHERE reviewed = 0 AND posting_date BETWEEN ? AND ? AND match_status IN (%s)"

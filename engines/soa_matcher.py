@@ -30,7 +30,7 @@ def reconcile_vendor_soa(creditor_id: int, file_bytes: bytes, file_name: str) ->
         return {"success": False, "error": "Unsupported file format."}
 
     with get_conn(DB_PATH) as conn:
-        internal_df = pd.read_sql_query("SELECT doc_ref, amount AS internal_amount, status FROM invoices WHERE creditor_id = ?", conn, params=(creditor_id,))
+        internal_df = pd.read_sql_query("SELECT doc_ref, amount AS internal_amount, status FROM invoices WHERE creditor_id = ? AND is_opening_balance = 0", conn, params=(creditor_id,))
 
     internal_df['clean_ref'] = internal_df['doc_ref'].astype(str).str.strip().str.upper()
     merged = pd.merge(soa_df[['clean_ref', 'soa_amount']], internal_df, on='clean_ref', how='outer')

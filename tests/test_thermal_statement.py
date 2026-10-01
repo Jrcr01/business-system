@@ -52,7 +52,7 @@ def test_missing_values_print_a_dash_never_none_or_a_false_zero(monkeypatch):
     data = {
         "statement": {"statement_ref": "OS 0001", "creditor_name": None, "status": "Draft"},
         "invoices": [{"doc_ref": "INV-9", "invoice_date": None, "due_date": "2027-02-01", "amount": None, "status": "Unpaid", "display_status": "Unpaid"},
-                     {"doc_ref": "INV-10", "invoice_date": "2026-09-01", "due_date": "2026-10-01", "amount": 500.0, "status": "Unpaid", "display_status": "Unpaid"}],
+                     {"doc_ref": "INV-10", "invoice_date": "2026-09-01", "due_date": "2026-10-15", "amount": 500.0, "status": "Unpaid", "display_status": "Unpaid"}],
         "memos": [], "checks": [], "payment_ledger": [],
     }
     t = statement_totals(data)
@@ -65,7 +65,7 @@ def test_missing_values_print_a_dash_never_none_or_a_false_zero(monkeypatch):
     assert next(line for line in text.split("\n") if line.startswith("NET AMOUNT DUE")).rstrip().endswith(DASH)
     assert "Supplier: " + DASH in text and inv9.split()[1] == DASH                              # missing date received -> dash
     assert "Sep 01, 2026" in text                                                              # INV-10's date received is shown
-    assert "2027-02-01" not in text and "Feb 01, 2027" not in text and "Oct 01, 2026" not in text  # due dates are not on the slip
+    assert "2027-02-01" not in text and "Feb 01, 2027" not in text and "Oct 15, 2026" not in text  # due dates are not on the slip
     assert fmt_text(None) == fmt_text("") == fmt_text(float("nan")) == DASH and fmt_money(None) == DASH and fmt_money(0) == "PHP 0.00"
 
 

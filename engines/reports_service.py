@@ -50,7 +50,7 @@ def get_uncleared_checks_report() -> pd.DataFrame:
         c.amount
     FROM checks_issued c
     JOIN creditors cr ON c.creditor_id = cr.creditor_id
-    WHERE c.status = 'Active' AND c.check_date >= manila_today() AND c.check_number IS NOT NULL
+    WHERE c.status = 'Active' AND c.check_date >= manila_today() AND c.check_number IS NOT NULL AND c.settled_outside_at IS NULL
     ORDER BY c.check_date ASC, cr.creditor_name ASC
     """
     with get_conn(DB_PATH) as conn:
@@ -113,19 +113,19 @@ def get_parked_checks_daily_totals() -> pd.DataFrame:
     return grouped.sort_values("actual_payment_date").reset_index(drop=True)
 
 
-_PAYMENT_SCHEDULE_UNION = """
+_PAYMENT_SCHEDULE_TEMPLATE = """
     -- 2026-09-22: 'today and future' -- an item due TODAY is still to be paid, so >= (it used to start tomorrow).
     SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Supplier' AS track, COALESCE(c.check_number, 'Pending') AS reference, os.statement_ref AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
     LEFT JOIN order_statements os ON os.statement_id = c.statement_id
-    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND c.check_date >= manila_today()
+    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND c.check_date __CMP__ manila_today() AND c.settled_outside_at IS NULL
 
     UNION ALL
 
     -- Lender checks aren't batched (Loan Notes track, not Order Statements) -- batch is NULL.
     SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Lender' AS track, COALESCE(c.check_number, 'Pending') AS reference, NULL AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND c.check_date >= manila_today()
+    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND c.check_date __CMP__ manila_today() AND c.settled_outside_at IS NULL
 
     UNION ALL
 
@@ -138,7 +138,7 @@ _PAYMENT_SCHEDULE_UNION = """
     JOIN bank_loans bl ON bli.bank_loan_id = bl.bank_loan_id
     JOIN creditors cr ON bl.creditor_id = cr.creditor_id
     LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id
-    WHERE bli.due_date >= manila_today() AND bl.is_cancelled = 0
+    WHERE bli.due_date __CMP__ manila_today() AND bl.is_cancelled = 0
 
     UNION ALL
 
@@ -152,9 +152,15 @@ _PAYMENT_SCHEDULE_UNION = """
     JOIN credit_cards cc ON cs.card_id = cc.card_id
     JOIN creditors cr ON cc.creditor_id = cr.creditor_id
     LEFT JOIN cardholders ch ON cc.cardholder_id = ch.cardholder_id
-    WHERE cs.status IN ('Unpaid', 'Partially Paid') AND cs.due_date >= manila_today()
+    WHERE __CARD_STATUS__ AND cs.due_date __CMP__ manila_today()
       AND NOT (cs.unpaid_balance_next > 0 AND """ + superseded_sql("cs") + """)
 """
+
+# Still owed (today or later) -- the Schedule of payments, forecasts and reports. Unchanged.
+_PAYMENT_SCHEDULE_UNION = _PAYMENT_SCHEDULE_TEMPLATE.replace("__CMP__", ">=").replace("__CARD_STATUS__", "cs.status IN ('Unpaid', 'Partially Paid')")
+# What fell due on a day that has already passed (owner, 2026-09-30: "the calendar shows 0 on past days"): same four tracks, same references, so the
+# calendar can show what was paid. A card statement counts whether or not it was marked paid (past dues are treated as paid, like everywhere else).
+_PAYMENT_PAST_UNION = _PAYMENT_SCHEDULE_TEMPLATE.replace("__CMP__", "<").replace("__CARD_STATUS__", "cs.status != 'Cancelled'")
 
 
 PAYMENT_SCHEDULE_TRACK_ORDER = {"Lender": 0, "Bank Loan": 1, "Supplier": 2, "Credit Card": 3}
@@ -196,6 +202,60 @@ def get_payment_schedule_daily_totals() -> pd.DataFrame:
         return pd.DataFrame(columns=["actual_payment_date", "num_items", "total_amount"])
     grouped = detail.groupby("actual_payment_date").agg(num_items=("amount", "count"), total_amount=("amount", "sum")).reset_index()
     return grouped.sort_values("actual_payment_date").reset_index(drop=True)
+
+
+def get_payment_calendar_items() -> pd.DataFrame:
+    """Every payment on the calendar, past and future, one row each: the still-owed schedule (state "Due", today and later) plus what fell due on past
+    days (state "Paid" -- checks dated that day, bank-loan installments, card statements). Columns as get_payment_schedule_all_tracks() + state."""
+    with get_conn(DB_PATH) as conn:
+        past = pd.read_sql_query(f"SELECT * FROM ({_PAYMENT_PAST_UNION}) ORDER BY due_date ASC, track ASC", conn)
+    due = get_payment_schedule_all_tracks()
+    if not past.empty:
+        past["actual_payment_date"] = past["due_date"].apply(next_banking_day)
+        past["state"] = "Paid"
+    if not due.empty:
+        due["state"] = "Due"
+    frames = [f for f in (past, due) if not f.empty]
+    if not frames:
+        return pd.DataFrame(columns=["due_date", "payee_name", "track", "reference", "batch", "amount", "actual_payment_date", "state"])
+    out = pd.concat(frames, ignore_index=True)
+    out["_rank"] = out["track"].map(PAYMENT_SCHEDULE_TRACK_ORDER).fillna(len(PAYMENT_SCHEDULE_TRACK_ORDER))
+    return out.sort_values(["actual_payment_date", "_rank", "amount"], kind="stable").drop(columns="_rank").reset_index(drop=True)
+
+
+def get_payment_calendar_daily_totals() -> pd.DataFrame:
+    """Per-day totals for the calendars, one row per day: actual_payment_date, due_amount / due_items (still owed: today and later) and paid_amount /
+    paid_items (fell due on a day that has passed). A weekend due date lands on the next banking day, as everywhere else, so a day can in rare cases
+    hold both (a Sunday item landing on Monday, the day it is viewed)."""
+    cols = ["actual_payment_date", "due_amount", "due_items", "paid_amount", "paid_items"]
+    detail = get_payment_calendar_items()
+    if detail.empty:
+        return pd.DataFrame(columns=cols)
+    g = detail.groupby(["actual_payment_date", "state"]).agg(items=("amount", "count"), amount=("amount", "sum")).reset_index()
+    out = pd.DataFrame({"actual_payment_date": sorted(g["actual_payment_date"].unique())})
+    for state, name in (("Due", "due"), ("Paid", "paid")):
+        part = g[g["state"] == state].rename(columns={"amount": f"{name}_amount", "items": f"{name}_items"}).drop(columns="state")
+        out = out.merge(part, on="actual_payment_date", how="left")
+    out[["due_amount", "paid_amount"]] = out[["due_amount", "paid_amount"]].fillna(0.0)
+    out[["due_items", "paid_items"]] = out[["due_items", "paid_items"]].fillna(0).astype(int)
+    return out[cols]
+
+
+def attach_calendar_totals(grid_df: pd.DataFrame) -> pd.DataFrame:
+    """Add the calendar figures to a month grid (a frame with a `date` column): total_amount / num_items (paid + due that day), `status` ("Paid" for a day that
+    has passed, "Due" for today and later, "" when nothing), and is_paid (the cell is drawn green)."""
+    daily = get_payment_calendar_daily_totals()
+    out = grid_df.merge(daily, left_on="date", right_on="actual_payment_date", how="left") if not daily.empty else grid_df.assign(
+        due_amount=0.0, due_items=0, paid_amount=0.0, paid_items=0)
+    for c in ("due_amount", "paid_amount"):
+        out[c] = out[c].fillna(0.0)
+    for c in ("due_items", "paid_items"):
+        out[c] = out[c].fillna(0).astype(int)
+    out["total_amount"] = out["due_amount"] + out["paid_amount"]
+    out["num_items"] = out["due_items"] + out["paid_items"]
+    out["is_paid"] = (out["paid_amount"] > 0) & (out["due_amount"] == 0)
+    out["status"] = out.apply(lambda r: "" if r["num_items"] == 0 else ("Paid" if r["is_paid"] else ("Due" if r["paid_amount"] == 0 else "Paid + due")), axis=1)
+    return out
 
 
 def get_combined_ap_summary() -> pd.DataFrame:
@@ -260,7 +320,7 @@ def get_supplier_ap_aging_report() -> pd.DataFrame:
         SUM(CASE WHEN (JULIANDAY(manila_today()) - JULIANDAY(i.due_date)) BETWEEN 31 AND 60 THEN i.amount ELSE 0 END) AS days_31_60,
         SUM(CASE WHEN (JULIANDAY(manila_today()) - JULIANDAY(i.due_date)) > 60 THEN i.amount ELSE 0 END) AS days_over_60
     FROM creditors c
-    JOIN invoices i ON c.creditor_id = i.creditor_id AND i.status IN ('Unpaid', 'Partially Paid')
+    JOIN invoices i ON c.creditor_id = i.creditor_id AND i.status IN ('Unpaid', 'Partially Paid') AND i.is_opening_balance = 0
     WHERE c.creditor_type = 'SUPPLIER'
     GROUP BY c.creditor_id
     """
@@ -280,7 +340,8 @@ def get_private_lender_master_report() -> pd.DataFrame:
             (SELECT SUM(amount) FROM checks_issued
              WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < manila_today()), 0
         ) AS outstanding_uncleared,
-        ln.status
+        ln.status,
+        CASE WHEN ln.is_beginning_balance = 1 THEN 'Beginning balance (from MS Access)' ELSE '' END AS source
     FROM loan_notes ln
     JOIN creditors c ON ln.creditor_id = c.creditor_id
     WHERE c.creditor_type = 'LENDER'
@@ -307,7 +368,7 @@ def get_supplier_history(creditor_id: int):
             conn, params=(creditor_id,),
         )
         checks = pd.read_sql_query(
-            "SELECT c.check_date, c.check_number, c.amount, c.status, os.statement_ref "
+            "SELECT c.check_date, c.check_number, c.amount, c.status, c.bank_cleared_date, os.statement_ref "
             "FROM checks_issued c LEFT JOIN order_statements os ON os.statement_id = c.statement_id "
             "WHERE c.creditor_id = ? AND c.statement_id IS NOT NULL ORDER BY c.check_date",
             conn, params=(creditor_id,),
@@ -334,9 +395,9 @@ def get_payables_rundown(creditor_id: int | None = None, date_from=None, date_to
            (SELECT DATE(os.created_at, '+8 hours') FROM order_statements os WHERE os.statement_id = b.statement_id) AS created,
            b.net_total AS net_total,
            COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = b.statement_id
-                     AND k.status = 'Active' AND k.check_date < manila_today()), 0) AS paid,
+                     AND k.status = 'Active' AND (k.check_date < manila_today() OR k.settled_outside_at IS NOT NULL)), 0) AS paid,
            COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = b.statement_id
-                     AND k.status = 'Active' AND k.check_date >= manila_today()), 0) AS scheduled
+                     AND k.status = 'Active' AND k.check_date >= manila_today() AND k.settled_outside_at IS NULL), 0) AS scheduled
     FROM v_batch_net_totals b
     JOIN creditors c ON c.creditor_id = b.creditor_id
     WHERE b.status = 'Issued' AND c.creditor_type = 'SUPPLIER'
@@ -422,7 +483,7 @@ def get_lender_history(creditor_id: int):
             conn, params=(creditor_id,),
         )
         checks = pd.read_sql_query(
-            "SELECT c.check_date, c.check_number, c.amount, c.status, ln.note_ref "
+            "SELECT c.check_date, c.check_number, c.amount, c.status, c.bank_cleared_date, ln.note_ref "
             "FROM checks_issued c JOIN loan_notes ln ON ln.loan_note_id = c.loan_note_id "
             "WHERE ln.creditor_id = ? ORDER BY c.check_date",
             conn, params=(creditor_id,),
@@ -516,7 +577,8 @@ def get_bank_loan_servicing_report() -> pd.DataFrame:
             (SELECT SUM(amount) FROM bank_loan_installments
              WHERE bank_loan_id = bl.bank_loan_id AND due_date >= manila_today()), 0
         ) END AS outstanding,
-        bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, lb.name AS beneficiary, lb.beneficiary_type
+        bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, lb.name AS beneficiary, lb.beneficiary_type,
+        CASE WHEN bl.is_beginning_balance = 1 THEN 'Beginning balance (from MS Access)' ELSE '' END AS source
     FROM bank_loans bl
     JOIN creditors c ON bl.creditor_id = c.creditor_id
     LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id

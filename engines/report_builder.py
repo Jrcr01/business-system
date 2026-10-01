@@ -98,6 +98,7 @@ DATASETS: dict[str, Dataset] = {
         ("doc_ref", "supplier", "invoice_date", "due_date", "amount", "status"), ("invoice_date", "due_date"),
         sql="""SELECT i.doc_ref, cr.creditor_name AS supplier, i.invoice_date, i.due_date, i.gross_amount, i.amount, i.status, os.statement_ref AS batch
                FROM invoices i JOIN creditors cr ON cr.creditor_id = i.creditor_id LEFT JOIN order_statements os ON os.statement_id = i.statement_id
+               WHERE i.is_opening_balance = 0
                ORDER BY i.invoice_date, i.invoice_id"""),
     "payables": Dataset(
         "Payables, all tracks", "Everything paid and scheduled across suppliers, lenders, bank loans and credit cards, past and future "
