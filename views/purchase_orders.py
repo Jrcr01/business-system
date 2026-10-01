@@ -12,6 +12,7 @@ from engines.po_pdf import build_po_pdf
 from engines.cash_insights_service import scheduled_outflows
 import altair as alt
 
+from engines.disbursement_trail_service import pipeline, trail_for_po
 from engines.po_rules import acknowledge_over_plan, cancel_po, cash_check, default_delivery, delivery_for_week, expected_pay_date, week_schedule, weeks_strip, get_po, list_pos, order_po, orders_over_plan, save_po, suggest_order_date
 from engines.price_list_service import item_names, price_on
 from engines.settings_registry import forecast_shown
@@ -156,6 +157,47 @@ def _schedule_panel(cid: int, order_date, delivery, edit_id, estimate: float) ->
         st.info(f"This order adds **{php(estimate)}**, so the week becomes **{php(sched['total'] + estimate)}**.", icon=":material/event_upcoming:")
 
 
+STATE_MARK = {"done": ":green[:material/check_circle:]", "partly": ":orange[:material/timelapse:]", "late": ":red[:material/error:]", "waiting": ":gray[:material/radio_button_unchecked:]"}
+
+
+def _trail(po_id: int) -> None:
+    """Follow this order to the bank: the stages with what happened at each, the planned dates beside the actual ones, the invoices and the checks."""
+    tr = trail_for_po(po_id)
+    if tr is None:
+        return
+    cols = st.columns(len(tr["stages"]))
+    for col, stg in zip(cols, tr["stages"]):
+        col.markdown(f"{STATE_MARK[stg['state']]} **{stg['title']}**" + (f"  \n:gray[{stg['date']:%b %d}]" if stg["date"] else ""))
+    nxt = next((x for x in tr["stages"] if x["key"] == tr["current"]), None)
+    st.markdown((f"**Next:** {nxt['title']}. {nxt['detail']}" if nxt else "**Complete:** the order has been paid and cleared by the bank."))
+    for stg in tr["stages"]:
+        st.markdown(f"{STATE_MARK[stg['state']]} **{stg['title']}** — {stg['detail']}")
+    if not tr["dates"].empty:
+        st.markdown("**Planned against actual**")
+        st.dataframe(tr["dates"], hide_index=True, width="stretch", column_config={"what": "What", "date": st.column_config.DateColumn("Date")})
+    if not tr["invoices"].empty:
+        st.markdown("**Invoices**")
+        st.dataframe(tr["invoices"][["doc_ref", "invoice_date", "due_date", "batch", "est_amount", "actual_amount"]], hide_index=True, width="stretch",
+                     column_config={"doc_ref": "Invoice", "invoice_date": st.column_config.DateColumn("Dated"), "due_date": st.column_config.DateColumn("Due"), "batch": "Batch",
+                                    "est_amount": st.column_config.NumberColumn("Estimated", format=MONEY_FORMAT), "actual_amount": st.column_config.NumberColumn("Invoiced", format=MONEY_FORMAT)})
+    if not tr["checks"].empty:
+        st.markdown("**Checks**")
+        st.dataframe(tr["checks"][["check_number", "check_date", "allocated", "released_date", "released_to", "bank_cleared_date"]], hide_index=True, width="stretch",
+                     column_config={"check_number": "Check no.", "check_date": st.column_config.DateColumn("Dated"), "allocated": st.column_config.NumberColumn("For this order", format=MONEY_FORMAT),
+                                    "released_date": st.column_config.DateColumn("Released"), "released_to": "Collected by", "bank_cleared_date": st.column_config.DateColumn("Cleared")})
+
+
+def _pipeline() -> None:
+    only_open = st.toggle("Only orders not yet cleared by the bank", value=True, key="po_pipe_open")
+    df = pipeline(only_open=only_open)
+    if df.empty:
+        st.caption("No orders to show.")
+        return
+    st.dataframe(df.assign(late=df["late"].map({True: "Late", False: ""})), hide_index=True, width="stretch",
+                 column_config={"po_id": None, "po_no": "PO", "supplier": "Supplier", "estimated": st.column_config.NumberColumn("Estimated", format=MONEY_FORMAT),
+                                "invoiced": st.column_config.NumberColumn("Invoiced", format=MONEY_FORMAT), "stage": "Reached", "next_step": "Next", "late": ""})
+
+
 def _lines_df() -> pd.DataFrame:
     if "po_lines" not in st.session_state:
         st.session_state["po_lines"] = pd.DataFrame(columns=LINE_COLS)
@@ -257,6 +299,8 @@ def _orders() -> None:
     _over_plan_section()
     with st.expander("What is going out, week by week (orders included)"):
         _by_week()
+    with st.expander("Where every order stands (order to bank)", icon=":material/route:"):
+        _pipeline()
     with st.expander("Price differences: estimated against what the suppliers charged"):
         _price_differences()
     f1, f2 = st.columns(2)
@@ -298,6 +342,9 @@ def _orders() -> None:
                                     "est_unit_price": st.column_config.NumberColumn("Unit price", format=MONEY_FORMAT),
                                     "est_amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)})
         status = h["status"]
+        if status != "DRAFT":
+            with st.expander("Follow this order to the bank", icon=":material/route:"):
+                _trail(int(pick))
         c1, c2, c3, c4 = st.columns(4)
         if status == "DRAFT":
             if c1.button("Order it", icon=":material/send:", key="po_order_btn", type="primary", help="Gives it its PO number and makes the PDF available."):
