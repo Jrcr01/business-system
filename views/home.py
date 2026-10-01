@@ -8,7 +8,7 @@ from html import escape
 
 import streamlit as st
 
-from engines.home_tiles import GROUPS, evaluate, layout
+from engines.home_tiles import GROUPS, TILES, evaluate, layout
 from views.shared import PAGES
 
 ACCENT = {"none": "#6b7280", "ok": "#0b6e4f", "warn": "#d97706", "alert": "#c62828"}
@@ -23,8 +23,11 @@ div[class*="st-key-grid_"] > div { width: 100% !important; }
 [class*="st-key-tile_"] { position: relative; background: #ffffff; border-radius: 10px; height: 124px; min-height: 124px; box-shadow: 0 1px 4px rgba(0,0,0,.25);
                           transition: transform .12s ease, box-shadow .12s ease; overflow: hidden; }
 [class*="st-key-tile_"]:hover { transform: translateY(-3px); box-shadow: 0 6px 14px rgba(0,0,0,.3); }
-[class*="st-key-tile_"] .stElementContainer:has([data-testid="stPageLink"]) { position: static !important; }   /* so the link below can stretch over the whole tile */
-[class*="st-key-tile_"] [data-testid="stPageLink"], [class*="st-key-tile_"] [data-testid="stPageLink"] a { position: absolute; inset: 0; z-index: 5; opacity: 0; width: 100%; height: 100%; }
+[class*="st-key-tile_"] .stElementContainer:has([data-testid="stPageLink"]), [class*="st-key-tile_"] .stElementContainer:has(button) { position: static !important; }   /* so the link / button below can stretch over the whole tile */
+[class*="st-key-tile_"] [data-testid="stPageLink"], [class*="st-key-tile_"] [data-testid="stPageLink"] a,
+[class*="st-key-tile_"] .stButton, [class*="st-key-tile_"] .stButton button { position: absolute; inset: 0; z-index: 5; opacity: 0; width: 100%; height: 100%; }
+.home-panel-fig { font-size: .95rem; margin: -6px 0 10px 0; }
+.home-panel-fig b { font-size: 1.3rem; }
 [class*="st-key-tile_"] [data-testid="stHtml"], [class*="st-key-tile_"] [data-testid="stHtml"] > div { height: 100%; }
 .home-tile { height: 124px; box-sizing: border-box; padding: 12px 12px 10px 12px; display: flex; flex-direction: column; justify-content: space-between; border-top: 4px solid transparent; }
 .home-tile .t { font-size: .85rem; line-height: 1.2; color: #1f2937; font-weight: 500; }
@@ -60,6 +63,28 @@ def _tile_html(title: str, icon: str, info: dict) -> str:
             f'<div class="b"><div class="i">{_icon_name(icon)}</div><div class="f">{figure}</div></div></div>')
 
 
+def _open(page_id: str, state: dict | None = None) -> None:
+    """Open a page with some widgets pre-set, through the same hand-over go_to() and the search pop-up use. A button inside a pop-up only re-runs the
+    pop-up, so the whole app is re-run here (app.py reads the hand-over before any page draws)."""
+    st.session_state["_global_jump"] = {"page": page_id, "state": dict(state or {})}
+    st.rerun()
+
+
+@st.dialog("What do you want to do?", width="small")
+def _panel(page_id: str) -> None:
+    """The tile's action panel: one wide button per action, each opening its page with the right mode already chosen, and the whole page last."""
+    tile = next(t for t in TILES if t.page_id == page_id)
+    info = _figures((page_id,)).get(page_id) or evaluate(tile)
+    st.markdown(f"**{escape(tile.title)}**" + (f" — {escape(info['figure'])} {escape(info['unit'])}" if info["figure"] else ""))
+    for i, a in enumerate(tile.actions):
+        hint = ((("\n\n" + a.hint) if i == 0 else ("\n\n:gray[" + a.hint + "]")) if a.hint else "")
+        if st.button(f"**{a.label}**" + hint, key=f"act_{page_id}_{i}", icon=a.icon or None, width="stretch", type="primary" if i == 0 else "secondary"):
+            _open(a.page_id or page_id, dict(a.state))
+    st.divider()
+    if st.button("Open the whole page", key=f"act_{page_id}_all", icon=":material/open_in_new:", width="stretch"):
+        _open(page_id)
+
+
 def render() -> None:
     st.markdown(CSS, unsafe_allow_html=True)
     st.header("Home", divider="blue")
@@ -76,4 +101,8 @@ def render() -> None:
                     with st.container(key=f"tile_{t.page_id}"):
                         page = PAGES[t.page_id]
                         st.html(_tile_html(t.title, t.icon or getattr(page, "icon", "") or "", figures.get(t.page_id, {"figure": "—", "unit": "", "level": "none"})))
-                        st.page_link(page, label=t.title)
+                        if t.has_panel:
+                            if st.button(t.title, key=f"open_{t.page_id}"):
+                                _panel(t.page_id)
+                        else:
+                            st.page_link(page, label=t.title)

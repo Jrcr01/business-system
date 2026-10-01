@@ -75,3 +75,57 @@ def test_layout_keeps_group_order_and_drops_empty_groups():
 @pytest.mark.parametrize("amount,text", [(0, "₱0"), (950, "₱950"), (287_943.21, "₱288K"), (1_480_000, "₱1.48M"), (-3_726_506, "-₱3.73M")])
 def test_money_is_short_on_a_tile(amount, text):
     assert peso_short(amount) == text
+
+
+# --- tile actions (Home v2) ---------------------------------------------------------------------------------------------------------------------
+
+def _page_files() -> dict[str, str]:
+    """{page id: views file text}, read from app.py's page list so nothing has to run."""
+    text = (ROOT / "app.py").read_text(encoding="utf-8")
+    block = text[text.index("PAGES.update({"):text.index("})", text.index("PAGES.update({"))]
+    out = {}
+    for pid, mod in re.findall(r'"([a-z-]+)": st\.Page\(views\.(\w+)\.render', block):
+        out[pid] = (ROOT / "views" / f"{mod}.py").read_text(encoding="utf-8")
+    return out
+
+
+def test_every_action_opens_a_real_page_and_sets_a_widget_that_page_really_has():
+    files = _page_files()
+    for t in TILES:
+        for a in t.actions:
+            target = a.page_id or t.page_id
+            assert target in files, (t.page_id, a.label)
+            for key, _ in a.state:
+                assert f'"{key}"' in files[target], f"{t.title} / {a.label}: widget key {key} is not on the {target} page"
+
+
+def test_the_mode_values_the_actions_set_are_the_pages_own_constants_and_labels():
+    from views import shared
+    from views.add_data import KINDS
+    from views.reports import REPORT_OPTIONS
+    for t in TILES:
+        for a in t.actions:
+            st_ = dict(a.state)
+            if "ad_kind" in st_:
+                assert st_["ad_kind"] in KINDS
+            if "report_type_picker" in st_:
+                assert st_["report_type_picker"] in REPORT_OPTIONS
+    assert {"Browse batches", "New batch"} == {shared.OS_BROWSE, shared.OS_NEW}
+    assert {"Browse loan notes", "New loan note"} == {shared.LN_BROWSE, shared.LN_NEW}
+    assert {"Browse bank loans", "New bank loan"} == {shared.BL_BROWSE, shared.BL_NEW}
+
+
+def test_only_tiles_with_two_or_more_actions_get_a_panel_and_the_daily_ones_are_in_priority_order():
+    by = {t.page_id: t for t in TILES}
+    assert not by["payment-run"].has_panel and not by["checks"].has_panel and not by["dashboard"].has_panel
+    assert by["add-data"].has_panel and by["order-statements"].has_panel and by["bank-cash"].has_panel
+    assert by["add-data"].actions[0].label == "Enter an invoice"                    # invoice entry first, as the owner uses it most
+    assert all(len(t.actions) != 1 for t in TILES)                                  # one action would just be the page itself
+
+
+def test_a_module_can_bring_its_own_actions(monkeypatch):
+    from engines.home_tiles import act
+    monkeypatch.setattr(home_tiles, "TILES", list(home_tiles.TILES))
+    register_tile(Tile("sales", "daily", "Sales", actions=[act("New sale", sales_mode="New"), act("Day sheet", sales_mode="Day")]))
+    t = next(x for x in home_tiles.TILES if x.page_id == "sales")
+    assert t.has_panel and dict(t.actions[0].state) == {"sales_mode": "New"}

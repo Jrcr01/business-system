@@ -90,7 +90,7 @@ def render() -> None:
     cid = selectbox_creditor("Supplier", "SUPPLIER", "pl_supplier")
     if cid is None:
         return
-    tab_current, tab_add, tab_import = st.tabs(["Current prices", "Add a price", "Import a file"])
+    tab_current, tab_add, tab_import = st.tabs(["Current prices", "Add a price", "Import a file"], key="pl_tab", default="Current prices", on_change="rerun")
     with tab_current:
         _current_tab(int(cid))
     with tab_add:

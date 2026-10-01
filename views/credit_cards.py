@@ -296,7 +296,7 @@ def render() -> None:
 
     sub_statements, sub_cards, sub_check = st.tabs([
         ":material/receipt_long: Statements", ":material/credit_card: Cards & cardholders", ":material/fact_check: Missing statement check",
-    ])
+    ], key="cc_tab", default=":material/receipt_long: Statements", on_change="rerun")
 
     # ----------------------------------------------------------------------
     with sub_statements:

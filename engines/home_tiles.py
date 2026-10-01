@@ -9,7 +9,7 @@ A tile's figure is a small function returning (figure, unit, level):
 evaluate() runs one safely: a failing source gives a dash and never breaks Home."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 LEVELS = ("none", "ok", "warn", "alert")
@@ -22,6 +22,21 @@ class Group:
     hint: str = ""
 
 
+@dataclass(frozen=True)
+class Action:
+    """One button in a tile's 'What do you want to do?' panel: it opens `page_id` (default: the tile's page) with these page widgets pre-set
+    (`state` = the session keys views.shared.go_to() already sets for the global search)."""
+    label: str
+    hint: str = ""
+    icon: str = ""
+    state: tuple = ()                                # ((widget key, value), ...) -- a tuple so the dataclass stays hashable
+    page_id: str | None = None
+
+
+def act(label: str, hint: str = "", icon: str = "", page_id: str | None = None, **state) -> Action:
+    return Action(label, hint, icon, tuple(state.items()), page_id)
+
+
 @dataclass
 class Tile:
     page_id: str                                     # the page's id in app.py (PAGES / menu)
@@ -30,6 +45,11 @@ class Tile:
     figure: Callable[[], tuple[str, str, str]] | None = None
     icon: str = ""                                   # Material icon, ':material/...:'; empty = the page's own menu icon
     hint: str = ""                                   # shown under the title when there is no figure
+    actions: list = field(default_factory=list)      # Action buttons; two or more make the tile open a panel, fewer open the page straight away
+
+    @property
+    def has_panel(self) -> bool:
+        return len(self.actions) >= 2
 
 
 GROUPS: list[Group] = [
@@ -180,22 +200,55 @@ def _data_health():
     return _waiting(open_count(), "to look at")
 
 
+A = act
 for _t in (
     Tile("payment-run", "daily", "Payment run", _payment_run),
-    Tile("add-data", "daily", "Add data", hint="Invoices, checks, memos"),
-    Tile("order-statements", "daily", "Order statements", _order_statements),
+    Tile("add-data", "daily", "Add data", hint="Invoices, checks, memos", actions=[
+        A("Enter an invoice", "Supplier invoice into a batch", ":material/receipt:", ad_kind="Invoices / credit memos", ad_inv_what="Invoices"),
+        A("Credit memo", "A discount or return from a supplier", ":material/undo:", ad_kind="Invoices / credit memos", ad_inv_what="Credit memos"),
+        A("Handwritten check", "Record a check written by hand", ":material/edit_note:", ad_kind="Handwritten check"),
+        A("Guarantee check", "An undated check held as security", ":material/verified_user:", ad_kind="Guarantee check"),
+        A("Credit card statement", "Enter a card's statement", ":material/credit_card:", ad_kind="Credit card statement"),
+        A("Loan note or bank loan", "New loan, installment or schedule", ":material/handshake:", ad_kind="Loans"),
+        A("Supplier, booklet or spoiled check", "Records and checkbook", ":material/contacts:", ad_kind="Records and checkbook")]),
+    Tile("order-statements", "daily", "Order statements", _order_statements, actions=[
+        A("Find a batch", "Open a supplier's batch: invoices, checks, void, print", ":material/search:", os_mode="Browse batches"),
+        A("New batch", "Start a batch for a supplier", ":material/add:", os_mode="New batch"),
+        A("Print statements in bulk", "One PDF for many batches", ":material/picture_as_pdf:", os_mode="Browse batches", bulk_print_exp=True)]),
     Tile("checks", "daily", "Checks and checkbook", _checks),
-    Tile("bank-cash", "daily", "Bank and cash", _bank_cash),
+    Tile("bank-cash", "daily", "Bank and cash", _bank_cash, actions=[
+        A("Import a bank statement", "Match your checks to the bank", ":material/upload_file:", bank_cash_tab=":material/upload_file: Import a statement"),
+        A("Reconciliation", "What still needs a look", ":material/rule:", bank_cash_tab=":material/rule: Reconciliation"),
+        A("Cash forecast", "Day by day, orders included", ":material/trending_up:", bank_cash_tab=":material/trending_up: Cash forecast"),
+        A("Checks not yet cleared", "Waiting to be deposited", ":material/hourglass_top:", bank_cash_tab=":material/hourglass_top: Checks not yet cleared")]),
     Tile("planner", "daily", "Check-date planner", _planner),
-    Tile("purchase-orders", "purchasing", "Purchase orders", _purchase_orders),
-    Tile("price-lists", "purchasing", "Price lists", _price_lists),
-    Tile("lenders", "other", "Lenders", _lenders),
-    Tile("bank-loans", "other", "Bank loans", _bank_loans),
-    Tile("credit-cards", "other", "Credit cards", _credit_cards),
+    Tile("purchase-orders", "purchasing", "Purchase orders", _purchase_orders, actions=[
+        A("New order", "From a supplier's price list", ":material/add_shopping_cart:", po_mode="New order"),
+        A("Orders", "Open, late and over-plan orders; PO PDF", ":material/list_alt:", po_mode="Orders")]),
+    Tile("price-lists", "purchasing", "Price lists", _price_lists, actions=[
+        A("Current prices", "What each supplier charges", ":material/sell:", pl_tab="Current prices"),
+        A("Add a price", "Type one in", ":material/edit:", pl_tab="Add a price"),
+        A("Import a supplier file", "CSV or Excel", ":material/upload_file:", pl_tab="Import a file")]),
+    Tile("lenders", "other", "Lenders", _lenders, actions=[
+        A("Browse loan notes", "Schedule, checks, status", ":material/search:", ln_mode="Browse loan notes"),
+        A("New loan note", "", ":material/add:", ln_mode="New loan note")]),
+    Tile("bank-loans", "other", "Bank loans", _bank_loans, actions=[
+        A("Browse bank loans", "Schedule and servicing", ":material/search:", bl_mode="Browse bank loans"),
+        A("New bank loan", "", ":material/add:", bl_mode="New bank loan")]),
+    Tile("credit-cards", "other", "Credit cards", _credit_cards, actions=[
+        A("Statements", "Who, how much, when due", ":material/receipt_long:", cc_tab=":material/receipt_long: Statements"),
+        A("Cards and cardholders", "", ":material/credit_card:", cc_tab=":material/credit_card: Cards & cardholders"),
+        A("Missing statement check", "", ":material/fact_check:", cc_tab=":material/fact_check: Missing statement check")]),
     Tile("dashboard", "records", "Dashboard", _dashboard),
     Tile("creditors", "records", "Creditors", _creditors),
     Tile("analytics", "records", "Analytics", hint="Trends and mix"),
-    Tile("reports", "records", "Reports", hint="Lists and decisions"),
+    Tile("reports", "records", "Reports", hint="Lists and decisions", actions=[
+        A("Overview", "Highlights and insights", ":material/insights:", rpt_mode="Standard reports", report_type_picker="Overview — highlights & insights"),
+        A("Schedule of payments", "Everything still owed, by date", ":material/event:", rpt_mode="Standard reports", report_type_picker="Schedule of payments — all tracks"),
+        A("Cleared checks", "From the bank", ":material/done_all:", rpt_mode="Standard reports", report_type_picker="Cleared checks — from the bank"),
+        A("Supplier history", "Invoices and checks of one supplier", ":material/history:", rpt_mode="Standard reports", report_type_picker="Supplier — invoice & check history"),
+        A("Possible duplicates", "Check everything on file", ":material/content_copy:", rpt_mode="Standard reports", report_type_picker="Possible duplicates — check everything on file"),
+        A("Decision reports", "Answers for choices", ":material/lightbulb:", rpt_mode="Standard reports", report_type_picker="Decision reports — answers for choices")]),
     Tile("settings", "system", "Settings", hint="Numbers and shortcuts"),
     Tile("admin", "system", "Admin and audit", hint="Booklets, backup"),
     Tile("data-health", "system", "Data health", _data_health),
