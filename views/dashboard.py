@@ -35,6 +35,7 @@ from engines.reports_service import get_payment_schedule_daily_totals
 from engines.reports_service import get_supplier_ap_aging_report
 
 from views.bank_cash import show_alerts
+from views.guarantee import guarantee_notice
 from views.shared import (  # noqa: F401
     MONEY_FORMAT,
     date_col,
@@ -87,6 +88,8 @@ def render() -> None:
     if not dash_unrecorded.empty:
         st.error(f":material/menu_book: {int(dash_unrecorded['count'].sum())} check number(s) look used but are not recorded — "
                  + "; ".join(f"{r.booklet}: {int(r.count)}" for r in dash_unrecorded.itertuples()) + ". See Payment run → Check booklets.")
+
+    guarantee_notice(show_button=False)
 
     # Supplier concentration alert (2026-09-17, per user request): names the single largest
     # supplier relationship rather than a blended top-5 percentage, since that's the one whose

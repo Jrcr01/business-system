@@ -54,6 +54,12 @@ def audit_booklet_gaps(booklet_id: int) -> dict:
         # Leaves logged as spoiled / error checks (Log a spoiled check) -- accounted for, so they are neither open stock nor a gap.
         df_spoiled = pd.read_sql_query(
             "SELECT check_number, reason FROM spoiled_checks WHERE bank_account_id = ?", conn, params=(bank_account_id,))
+        try:                                                              # a guarantee check held by a lender is accounted for (migration 057)
+            df_guarantee = pd.read_sql_query(
+                "SELECT check_number, 'Guarantee check held by a lender' AS reason FROM guarantee_checks WHERE bank_account_id = ?", conn, params=(bank_account_id,))
+            df_spoiled = pd.concat([df_spoiled, df_guarantee], ignore_index=True)
+        except Exception:
+            pass
 
     # A booklet range is normally the FULL check number as printed (e.g. 3992554301-3992554400),
     # and a check is stored under that same number. Older raw-sequence ranges (1000-1050 with
@@ -188,6 +194,10 @@ def unrecorded_leaves(booklet_id: int) -> list[int]:
         recorded = [r[0] for r in conn.execute("SELECT check_number FROM checks_issued WHERE bank_account_id = ? AND check_number IS NOT NULL AND check_number != ''", (bank_account_id,))]
         spoiled = [r[0] for r in conn.execute("SELECT check_number FROM spoiled_checks WHERE bank_account_id = ?", (bank_account_id,))]
         on_bank = {norm_check_number(r[0]) for r in conn.execute("SELECT DISTINCT check_number FROM bank_transactions WHERE check_number IS NOT NULL AND check_number != ''")}
+        try:                                                              # guarantee checks given to lenders (migration 057) are accounted for too
+            spoiled = spoiled + [r[0] for r in conn.execute("SELECT check_number FROM guarantee_checks WHERE bank_account_id = ?", (bank_account_id,))]
+        except sqlite3.OperationalError:
+            pass
 
     def leaf(text):
         t = (text or "").strip()

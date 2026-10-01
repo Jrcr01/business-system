@@ -444,7 +444,21 @@ def match_checks() -> dict:
         pending = conn.execute("""SELECT txn_id, check_number, debit, posting_date FROM bank_transactions
                                   WHERE kind = 'CHECK' AND reviewed = 0
                                     AND (match_status IS NULL OR match_status IN ('amount_mismatch', 'not_in_system'))""").fetchall()
+        try:                                                              # guarantee checks (migration 057): given to a lender as security, never meant to be paid
+            guarantees = {norm_check_number(r["check_number"]): int(r["guarantee_id"]) for r in conn.execute(
+                "SELECT guarantee_id, check_number FROM guarantee_checks WHERE status IN ('Held', 'Presented')")}
+        except sqlite3.OperationalError:                                  # database without the table yet
+            guarantees = {}
         for t in pending:
+            gid = guarantees.get(norm_check_number(t["check_number"]))
+            if gid is not None and norm_check_number(t["check_number"]) not in ours:
+                conn.execute("UPDATE bank_transactions SET match_status = 'guarantee_check_presented' WHERE txn_id = ?", (t["txn_id"],))
+                conn.execute("UPDATE guarantee_checks SET status = 'Presented', presented_on = ?, bank_txn_id = ? WHERE guarantee_id = ?",
+                             (t["posting_date"], t["txn_id"], gid))
+                conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('GUARANTEE_CHECK_PRESENTED', 'guarantee_checks', ?, ?)",
+                             (gid, f"The bank paid / received guarantee check {t['check_number']} on {t['posting_date']} for PHP {float(t['debit']):,.2f}"))
+                exceptions += 1
+                continue
             cands = ours.get(norm_check_number(t["check_number"]), [])
             same_amount = [c for c in cands if abs(float(c["amount"]) - float(t["debit"])) < 0.005]
             free = [c for c in same_amount if not c["bank_txn_id"] or int(c["bank_txn_id"]) == int(t["txn_id"])]
@@ -533,7 +547,7 @@ def _set_aside_before_system(conn) -> None:
                         WHERE match_status = ? AND reviewed = 0 AND posting_date < ?""", (resolution, note, start, status, start))
 
 
-EXCEPTION_STATUSES = ("cleared_twice", "amount_mismatch", "cancelled_check_cleared", "returned_check", "not_in_system", "unmatched_debit")
+EXCEPTION_STATUSES = ("guarantee_check_presented", "cleared_twice", "amount_mismatch", "cancelled_check_cleared", "returned_check", "not_in_system", "unmatched_debit")
 RESOLUTIONS = ["Linked by hand", "Adjusted to the bank", "Corrected to the bank", "Not recorded in the system", "Bank error", "Legacy record", "Customer bounced check", "Expected bank debit", "Before the system", "Other"]
 
 

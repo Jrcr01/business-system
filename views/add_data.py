@@ -12,6 +12,7 @@ from views.admin import render_new_booklet_form
 from views.bank_loans import render_bank_loan_schedule, render_new_bank_loan_form
 from views.checks import render_log_spoiled_form
 from views.credit_cards import render_add_cc_statement_form
+from views.guarantee import render_guarantee_form
 from views.handwritten import render_handwritten_form
 from views.creditor_master import render_new_creditor_form
 from views.lenders import render_add_installment_form, render_new_loan_note_form
@@ -36,6 +37,7 @@ KINDS = {
     "Loans": ":material/handshake: Loans",
     "Records and checkbook": ":material/contacts: Records and checkbook",
     "Handwritten check": ":material/edit_note: Handwritten check",
+    "Guarantee check": ":material/verified_user: Guarantee check",
 }
 
 
@@ -149,5 +151,7 @@ def render() -> None:
             _loans()
         elif kind == "Handwritten check":
             render_handwritten_form()
+        elif kind == "Guarantee check":
+            render_guarantee_form()
         else:
             _records()

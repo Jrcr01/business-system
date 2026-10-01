@@ -31,6 +31,7 @@ from engines.common import PRIMARY_BANK_ACCOUNT_ID
 from engines.common import has_value
 from engines.common import php
 from engines.voided_checks_service import voided_checks
+from views.guarantee import render_guarantee_list
 
 from views.shared import (  # noqa: F401
     MONEY_FORMAT,
@@ -325,6 +326,7 @@ def render() -> None:
     with st.expander("Log a spoiled check (misprint / jam)"):
         render_log_spoiled_form()
     render_voided_checks_register()
+    render_guarantee_list()
 
 
 VOIDED_LABELS = {"what": "What", "check_number": "Check #", "check_date": "Check date", "amount": "Amount", "payee": "Payee",

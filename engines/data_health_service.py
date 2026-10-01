@@ -108,6 +108,24 @@ def _checks(conn, today: date, out: list) -> None:
                r["amount"], who, tgt)
 
 
+def _guarantee_checks(conn, out: list) -> None:
+    """Guarantee checks (owner, 2026-10-01): one still marked Held after its loan note was settled / cancelled should have been taken back; one the bank paid needs a look."""
+    if not _has_table(conn, "guarantee_checks"):
+        return
+    g = "Checks"
+    for r in conn.execute("""SELECT g.guarantee_id, g.check_number, g.face_amount, cr.creditor_name, ln.note_ref, ln.status AS loan_status, ln.loan_note_id
+                            FROM guarantee_checks g JOIN creditors cr ON cr.creditor_id = g.creditor_id JOIN loan_notes ln ON ln.loan_note_id = g.loan_note_id
+                            WHERE g.status = 'Held' AND ln.status IN ('Settled', 'Cancelled')"""):
+        _f(out, g, "Guarantee check still held after the loan ended", f"guarantee_held|{r['guarantee_id']}",
+           f"Guarantee check {r['check_number']} is still marked held by {r['creditor_name']}, but loan note {r['note_ref']} is {r['loan_status']}. Was it taken back?",
+           r["face_amount"], r["creditor_name"], ("lenders", {"selected_loan_note_id": int(r["loan_note_id"]), "ln_mode": BROWSE_LOAN_NOTES}))
+    for r in conn.execute("""SELECT g.guarantee_id, g.check_number, g.face_amount, g.presented_on, cr.creditor_name FROM guarantee_checks g
+                            JOIN creditors cr ON cr.creditor_id = g.creditor_id WHERE g.status = 'Presented'"""):
+        _f(out, g, "A guarantee check was paid by the bank", f"guarantee_presented|{r['guarantee_id']}",
+           f"The bank paid / received guarantee check {r['check_number']} held by {r['creditor_name']} on {r['presented_on']}. It was only a guarantee — find out why.",
+           r["face_amount"], r["creditor_name"], ("bank-cash", {}))
+
+
 def _invoices_and_batches(conn, today: date, out: list) -> None:
     from engines.check_rules import get_batch_balance
 
@@ -246,6 +264,7 @@ def findings(include_fine: bool = False, today: date | None = None) -> list[dict
     with _conn() as conn:
         for part in (_checks, _invoices_and_batches, _bank, _suppliers, _credit_cards):
             part(conn, today, out)
+        _guarantee_checks(conn, out)
         fine = {r["dup_key"]: r["note"] for r in conn.execute("SELECT dup_key, note FROM duplicate_dismissals WHERE dup_key LIKE ?", (KEY_PREFIX + "%",))}
     for f in out:
         f["fine"], f["note"] = f["key"] in fine, fine.get(f["key"]) or ""

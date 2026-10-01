@@ -24,6 +24,7 @@ from engines.today_report_pdf import generate_today_report_pdf
 
 from views.bank_cash import show_alerts
 from views.credit_cards import render_missing_statements
+from views.guarantee import guarantee_notice
 from views.shared import (  # noqa: F401
     LN_BROWSE,
     OS_BROWSE,
@@ -219,6 +220,7 @@ def render() -> None:
         if h2.button("Open Data health", icon=":material/health_and_safety:", key="pr_health_btn", width="stretch"):
             go_to("data-health")
     _booklet_notice()
+    guarantee_notice()
     reprint = _stages().get("needs_reprint")
     if reprint is not None and not reprint.empty:
         rp1, rp2 = st.columns([5, 1.6], vertical_alignment="center")

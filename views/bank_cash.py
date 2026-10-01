@@ -33,6 +33,7 @@ from views.shared import (
 KIND_LABELS = {"CHECK": "Our checks clearing", "DEPOSIT": "Money in (deposits, transfers)", "RETURNED_CHECK": "Returned (bounced) deposited checks",
                "BILLS_PAYMENT": "Bills payments", "DEBIT_MEMO": "Bank debit memos (loan debits, charges)", "OTHER": "Other"}
 EXCEPTION_LABELS = {
+    "guarantee_check_presented": "The bank PAID or received a GUARANTEE check (a check given to a lender as security, never meant to be paid) — ask the lender and Metrobank",
     "cancelled_check_cleared": "A check we cancelled / replaced was cleared by the bank",
     "cleared_twice": "The bank cleared this check a SECOND time (our check was already cleared by another bank line) — ask Metrobank about a double debit",
     "amount_mismatch": "Cleared amount differs from our check",
@@ -40,9 +41,9 @@ EXCEPTION_LABELS = {
     "not_in_system": "Check not in the system (never recorded, or a typo in the number)",
     "unmatched_debit": "Bank debit that is not our check and matched nothing (loan debit, bills payment, charge)",
 }
-SHORT_LABELS = {"cleared_twice": "cleared twice", "cancelled_check_cleared": "cancelled check cleared", "amount_mismatch": "amount differs", "returned_check": "bounced deposit",
+SHORT_LABELS = {"guarantee_check_presented": "GUARANTEE check paid", "cleared_twice": "cleared twice", "cancelled_check_cleared": "cancelled check cleared", "amount_mismatch": "amount differs", "returned_check": "bounced deposit",
                 "not_in_system": "check not in the system", "unmatched_debit": "bank debit", "matched_manual": "linked to our check"}
-DEFAULT_REASON = {"cleared_twice": "Bank error", "returned_check": "Customer bounced check", "unmatched_debit": "Expected bank debit", "not_in_system": "Legacy record",
+DEFAULT_REASON = {"guarantee_check_presented": "Other", "cleared_twice": "Bank error", "returned_check": "Customer bounced check", "unmatched_debit": "Expected bank debit", "not_in_system": "Legacy record",
                   "amount_mismatch": "Bank error", "cancelled_check_cleared": "Other"}
 ALERT_BOX = {"error": st.error, "warning": st.warning, "info": st.info}
 ALERT_ICON = {"low_cash": ":material/trending_down:", "large_debit": ":material/report:", "stale_deposit": ":material/hourglass_top:",

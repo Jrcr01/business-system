@@ -74,6 +74,9 @@ def _is_check_number_available(cur: sqlite3.Cursor, bank_account_id: int, number
     cur.execute(f"SELECT 1 FROM spoiled_checks WHERE bank_account_id = ? AND check_number IN ({marks})", (bank_account_id, *variants))
     if cur.fetchone():
         return False
+    cur.execute(f"SELECT 1 FROM guarantee_checks WHERE bank_account_id = ? AND check_number IN ({marks})", (bank_account_id, *variants))
+    if cur.fetchone():
+        return False
     return True
 
 
@@ -958,6 +961,10 @@ def spoiled_check_problems(check_number: str, bank_account_id: int = PRIMARY_BAN
         ).fetchone()
         if row:
             blocking.append(f"Check {canonical} is already the number of a {row[1]} check to {row[3]} ({php(row[2])}) — it can't also be spoiled.")
+        row = cur.execute(f"SELECT g.status, cr.creditor_name FROM guarantee_checks g JOIN creditors cr ON cr.creditor_id = g.creditor_id "
+                          f"WHERE g.bank_account_id = ? AND g.check_number IN ({marks}) LIMIT 1", (bank_account_id, *variants)).fetchone()
+        if row:
+            blocking.append(f"Check {canonical} is recorded as a guarantee check ({row[0]}) held by {row[1]} — it can't also be spoiled.")
         key = int(_check_number_key(canonical))
         in_range = False
         for start, end in cur.execute("SELECT start_number, end_number FROM check_booklets WHERE bank_account_id = ?", (bank_account_id,)).fetchall():
