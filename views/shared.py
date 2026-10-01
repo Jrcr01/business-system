@@ -656,6 +656,61 @@ def confirm_create_dialog(summary: str, action_key: str, action) -> None:
         st.rerun()
 
 
+@st.dialog("Please confirm")
+def confirm_change_dialog(summary: str, action_key: str, action, yes_label: str = "Yes, do it", warning: str = "") -> None:
+    """The same second look as confirm_create_dialog, for changes to records that already exist (void a check, correct a printed check, delete rows,
+    ...), with its own wording on the Yes button. Enter = Yes and Esc = Go back (app.py's keyboard script looks for a button starting with 'Yes' and one
+    saying 'Go back'). action() does the real work and returns (ok, message); it may also st.rerun() itself (refresh()). A double-clicked Yes is ignored."""
+    st.markdown(summary)
+    if warning:
+        st.warning(warning, icon=":material/warning:")
+    c1, c2 = st.columns(2)
+    if c1.button(f"{yes_label}  [Enter]", icon=":material/check:", width="stretch", key=f"{action_key}_yes"):
+        if guard_duplicate_submit(action_key + "_yes", summary):
+            ok, msg = action()
+            if ok:
+                st.cache_data.clear()
+                st.rerun()
+            else:
+                st.error(msg)
+    if c2.button("Go back  [Esc]", width="stretch", key=f"{action_key}_back"):
+        st.rerun()
+
+
+def grid_risk_lines(original: pd.DataFrame, edited: pd.DataFrame, id_col: str, label, money_cols: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """What a grid Save would do that is hard to take back: (rows removed, money values changed on existing rows), as plain lines for a pop-up.
+    `label(row)` names a row; `money_cols` are the columns whose change deserves a second look (amounts, rates). New rows and edits to other columns
+    are not listed -- typing in new records stays fast. Both lists empty = nothing risky, save straight away."""
+    removed, changed = [], []
+    if original is None or original.empty:
+        return removed, changed
+    new_ids = {int(v) for v in edited[id_col].dropna()} if id_col in edited.columns and not edited.empty else set()
+    edited_by_id = edited.dropna(subset=[id_col]).assign(**{id_col: lambda d: d[id_col].astype(int)}).set_index(id_col) if new_ids else None
+    for _, row in original.iterrows():
+        rid = int(row[id_col])
+        if rid not in new_ids:
+            removed.append(f"- **{label(row)}**")
+            continue
+        now = edited_by_id.loc[rid]
+        for col in money_cols or []:
+            try:
+                old_v, new_v = float(row[col] or 0), float(now[col] or 0)
+            except (TypeError, ValueError):
+                continue
+            if abs(old_v - new_v) > 0.001:
+                changed.append(f"- **{label(row)}** — {col.replace('_', ' ')}: {old_v:,.2f} → **{new_v:,.2f}**")
+    return removed, changed
+
+
+def grid_risk_summary(what: str, removed: list[str], changed: list[str]) -> str:
+    parts = []
+    if removed:
+        parts.append(f"**{len(removed)} {what} will be deleted** (they were removed from the table):\n" + "\n".join(removed))
+    if changed:
+        parts.append(f"**{len(changed)} amount(s) will change:**\n" + "\n".join(changed))
+    return "\n\n".join(parts) + "\n\nSave these changes?"
+
+
 @st.dialog("Confirm cancel loan note")
 def confirm_cancel_loan_note_dialog(loan_note_id: int, note_ref: str, active_check_count: int, active_check_total: float) -> None:
     st.write(f"Are you sure you want to cancel loan note **{note_ref}**?")

@@ -43,7 +43,9 @@ from engines.validators import money_amount_error
 
 from views.shared import (  # noqa: F401
     MONEY_FORMAT,
+    confirm_change_dialog,
     confirm_create_dialog,
+    flash,
     creditor_options,
     date_col,
     dup_needs_confirm,
@@ -405,17 +407,28 @@ def render() -> None:
                 ec1, ec2 = st.columns(2)
                 with ec1:
                     if st.button("Save statement changes", icon=":material/save:", key=f"save_stmt_{edit_stmt_id}"):
-                        ok, msg = edit_cc_statement(int(edit_stmt_id), edit_stmt_due, edit_stmt_prev, edit_stmt_new, edit_stmt_int, edit_stmt_paid)
-                        (st.success if ok else st.error)(msg)
-                        if ok:
-                            refresh(done=msg)
+                        def _save_stmt(sid=int(edit_stmt_id), due=edit_stmt_due, prev=edit_stmt_prev, new=edit_stmt_new, intr=edit_stmt_int, paid=edit_stmt_paid):
+                            ok, msg = edit_cc_statement(sid, due, prev, new, intr, paid)
+                            if ok:
+                                flash(msg)
+                            return ok, msg
+
+                        _new_total = round(edit_stmt_prev + edit_stmt_new + edit_stmt_int, 2)
+                        confirm_change_dialog(f"Save these changes to the statement due **{cur_stmt['due_date']}**?\n\n"
+                                              f"- due date: {cur_stmt['due_date']} → **{edit_stmt_due}**\n"
+                                              f"- total amount due: {php(stored_total)} → **{php(_new_total)}**\n"
+                                              f"- amount paid: {php(float(cur_stmt['amount_paid']))} → **{php(edit_stmt_paid)}**",
+                                              f"save_stmt_confirm_{edit_stmt_id}", _save_stmt, "Yes, save the changes")
                 with ec2:
-                    confirm_delete_stmt = st.checkbox("Yes, delete this statement", key=f"confirm_delete_stmt_{edit_stmt_id}")
-                    if st.button("Delete this statement", icon=":material/delete:", key=f"delete_stmt_{edit_stmt_id}", disabled=not confirm_delete_stmt):
-                        ok, msg = delete_cc_statement(int(edit_stmt_id))
-                        (st.success if ok else st.error)(msg)
-                        if ok:
-                            refresh(done=msg)
+                    if st.button("Delete this statement", icon=":material/delete:", key=f"delete_stmt_{edit_stmt_id}"):
+                        def _delete_stmt(sid=int(edit_stmt_id)):
+                            ok, msg = delete_cc_statement(sid)
+                            if ok:
+                                flash(msg)
+                            return ok, msg
+
+                        confirm_change_dialog(f"Delete the statement due **{cur_stmt['due_date']}** for **{php(stored_total)}**?  \nIt is removed completely, not just marked cancelled.",
+                                              f"delete_stmt_confirm_{edit_stmt_id}", _delete_stmt, "Yes, delete it")
 
     # ----------------------------------------------------------------------
     with sub_cards:
@@ -543,8 +556,13 @@ def render() -> None:
 
                     if int(current["is_active"]):
                         if st.button("Deactivate this card", icon=":material/block:", key=f"deactivate_card_{edit_card_id}"):
-                            deactivate_credit_card(int(edit_card_id))
-                            refresh(done="Card deactivated — its statement history stays intact, but it won't appear when adding a new statement.")
+                            def _deactivate_card(cid=int(edit_card_id)):
+                                deactivate_credit_card(cid)
+                                flash("Card deactivated — its statement history stays intact, but it won't appear when adding a new statement.")
+                                return True, ""
+
+                            confirm_change_dialog(f"Deactivate this card?  \nIts statement history stays, but it will not be offered when adding a new statement. You can reactivate it any time.",
+                                                  f"deactivate_card_confirm_{edit_card_id}", _deactivate_card, "Yes, deactivate it")
                     else:
                         st.caption("This card is currently inactive.")
                         if st.button("Reactivate this card", icon=":material/refresh:", key=f"reactivate_card_{edit_card_id}"):
@@ -637,8 +655,13 @@ def render() -> None:
 
                     if int(current_holder_row["is_active"]):
                         if st.button("Deactivate this cardholder", icon=":material/block:", key=f"deactivate_holder_{edit_holder_id}"):
-                            deactivate_cardholder(int(edit_holder_id))
-                            refresh(done="Cardholder deactivated — their card/statement history stays intact, but they won't appear when adding a new card or statement.")
+                            def _deactivate_holder(hid=int(edit_holder_id)):
+                                deactivate_cardholder(hid)
+                                flash("Cardholder deactivated — their card/statement history stays intact, but they won't appear when adding a new card or statement.")
+                                return True, ""
+
+                            confirm_change_dialog("Deactivate this cardholder?  \nTheir card and statement history stays, but they will not be offered when adding a new card or statement. You can reactivate them any time.",
+                                                  f"deactivate_holder_confirm_{edit_holder_id}", _deactivate_holder, "Yes, deactivate")
                     else:
                         st.caption("This cardholder is currently inactive.")
                         if st.button("Reactivate this cardholder", icon=":material/refresh:", key=f"reactivate_holder_{edit_holder_id}"):

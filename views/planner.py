@@ -11,7 +11,7 @@ from engines import check_date_planner as cp
 from engines.cc_forecast_service import MONTHS_AHEAD, estimated_card_dues, forecast_by_week
 from engines.cc_service import paid_from_bank_ids
 from engines.common import php
-from views.shared import OS_BROWSE, creditor_options_all, export_buttons, go_to, page_header, refresh, section, show_table
+from views.shared import OS_BROWSE, confirm_change_dialog, creditor_options_all, export_buttons, go_to, page_header, refresh, section, show_table
 
 STATUS_ICON = {"On time": "🟢", "Moved": "🟠", "Overdue": "🔴", "Doesn't fit": "⛔"}
 
@@ -192,13 +192,18 @@ def _render_plan() -> None:
         st.error(msg)
     if b3.button("Send to every batch", icon=":material/done_all:", key="pl_send_all", width="stretch",
                  help="Fills every batch's Issue checks grid. Each one still waits for you to review and park it (see the reminder in the sidebar)."):
-        results = [cp.send_to_batch(p, sid) for sid in opts]
-        for sid in opts:
-            for base in ("issue_split_mode", "issue_checks_count", "issue_checks_editor", "issue_checks_last_signature"):
-                st.session_state.pop(f"{base}__{sid}", None)
-        bad = [m for ok, m in results if not ok]
-        refresh(done=f"Sent to {len(results) - len(bad)} batch(es)." + (f" {len(bad)} not sent: {bad[0]}" if bad else "")
-                + " Open each batch's Issue checks to review and park.")
+        def _send_all():
+            results = [cp.send_to_batch(p, sid) for sid in opts]
+            for sid in opts:
+                for base in ("issue_split_mode", "issue_checks_count", "issue_checks_editor", "issue_checks_last_signature"):
+                    st.session_state.pop(f"{base}__{sid}", None)
+            bad = [m for ok, m in results if not ok]
+            refresh(done=f"Sent to {len(results) - len(bad)} batch(es)." + (f" {len(bad)} not sent: {bad[0]}" if bad else "")
+                    + " Open each batch's Issue checks to review and park.")
+            return True, ""
+
+        confirm_change_dialog(f"Fill the Issue checks grid of **{len(opts)} batch(es)** with the planned dates?  \nNothing is parked: each batch still waits for you to review and park it, "
+                              "and any dates you typed in those grids are replaced.", "pl_send_all_confirm", _send_all, "Yes, send to every batch")
 
     with st.expander("Every invoice and why it got its date", icon=":material/list_alt:"):
         it = p.items.assign(status=[f"{STATUS_ICON.get(x, '')} {x}" for x in p.items["status"]])

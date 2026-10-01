@@ -38,9 +38,11 @@ from views.shared import (  # noqa: F401
     PRINT_CHECKS_IN_APP,
     date_col,
     dup_needs_confirm,
+    confirm_change_dialog,
     confirm_create_dialog,
     dup_resume,
     export_buttons,
+    flash,
     guard_duplicate_submit,
     show_table,
     money_col,
@@ -169,19 +171,21 @@ def render() -> None:
                 # Generating the file IS the "sent for printing" moment: it logs a batch (Batch run history, below)
                 # and stamps printed_at, as the old in-app print button did.
                 if st.button("Generate Chrysanth file (.txt)", icon=":material/download:", type="primary", disabled=not print_picked_ids or not _cs["account_no"], key="check_export_excel_btn"):
-                    if guard_duplicate_submit("create_check_print_batch", tuple(sorted(print_picked_ids))):
-                        txt_bytes, txt_problems, txt_ids = generate_pending_check_run_txt(print_picked_ids, log_batch=True)
+                    def _make_chrysanth_file(picked=list(print_picked_ids)):
+                        txt_bytes, txt_problems, txt_ids = generate_pending_check_run_txt(picked, log_batch=True)
                         if not txt_ids:
-                            st.error("Nothing could be exported:" + chr(10) + chr(10).join(f"- {p}" for p in txt_problems))
-                        else:
-                            newest_batch = get_check_print_batches().iloc[0]
-                            # Keep the file across the rerun that refresh() triggers -- the download button used to vanish with it.
-                            st.session_state["_chrysanth_txt"] = {"tag": print_batch_tag(int(newest_batch["print_batch_id"])), "count": len(txt_ids),
-                                                                  "bytes": txt_bytes, "problems": txt_problems,
-                                                                  "file_name": file_name_for_checks(txt_ids, int(newest_batch["print_batch_id"]))}
-                            refresh()
-                    else:
-                        st.warning("Duplicate submission ignored — identical to the click just before it.")
+                            return False, "Nothing could be exported:" + chr(10) + chr(10).join(f"- {p}" for p in txt_problems)
+                        newest_batch = get_check_print_batches().iloc[0]
+                        # Keep the file across the rerun the pop-up triggers -- the download button used to vanish with it.
+                        st.session_state["_chrysanth_txt"] = {"tag": print_batch_tag(int(newest_batch["print_batch_id"])), "count": len(txt_ids),
+                                                              "bytes": txt_bytes, "problems": txt_problems,
+                                                              "file_name": file_name_for_checks(txt_ids, int(newest_batch["print_batch_id"]))}
+                        return True, ""
+
+                    _picked_total = float(pending_df[pending_df["check_id"].isin(print_picked_ids)]["amount"].sum())
+                    confirm_change_dialog(f"Make the Chrysanth file for **{len(print_picked_ids)} check(s)** totaling **{php(_picked_total)}**?  \n"
+                                          "This logs a print run and marks these checks as sent for printing — they leave the \"Checks to print\" list.",
+                                          "chrysanth_confirm", _make_chrysanth_file, "Yes, make the file")
                 if st.session_state.get("_chrysanth_txt"):
                     _last = st.session_state["_chrysanth_txt"]
                     st.success(f"{_last['tag']} logged — {_last['count']} check(s). Download the file, then in Chrysanth open Transaction, then File, then Import Cheque Transaction and pick it.")
@@ -226,17 +230,25 @@ def render() -> None:
             if _picked_printed:
                 _pk2.caption(f"{print_batch_tag(int(batch_pick))} was marked printed on {str(_picked_row['printed_confirmed_at'])[:16]}.")
                 if _pk1.button("Un-mark as printed", icon=":material/undo:", key=f"unmark_printed_{int(batch_pick)}"):
-                    ok, msg = mark_batch_printed(int(batch_pick), False)
-                    (st.success if ok else st.error)(msg)
-                    if ok:
-                        refresh(done=msg)
+                    def _unmark(bp=int(batch_pick)):
+                        ok, msg = mark_batch_printed(bp, False)
+                        if ok:
+                            flash(msg)
+                        return ok, msg
+
+                    confirm_change_dialog(f"Un-mark **{print_batch_tag(int(batch_pick))}** as printed?  \nIt goes back to \"exported, not yet printed\".",
+                                          f"unmark_printed_confirm_{int(batch_pick)}", _unmark, "Yes, un-mark it")
             else:
                 _pk2.caption(f"{print_batch_tag(int(batch_pick))} is exported but not marked printed. Once you have printed it in Chrysanth, mark it here.")
                 if _pk1.button("Mark as printed", icon=":material/print:", type="primary", key=f"mark_printed_{int(batch_pick)}"):
-                    ok, msg = mark_batch_printed(int(batch_pick), True)
-                    (st.success if ok else st.error)(msg)
-                    if ok:
-                        refresh(done=msg)
+                    def _mark(bp=int(batch_pick)):
+                        ok, msg = mark_batch_printed(bp, True)
+                        if ok:
+                            flash(msg)
+                        return ok, msg
+
+                    confirm_change_dialog(f"Mark **{print_batch_tag(int(batch_pick))}** as printed ({int(_picked_row['check_count'])} check(s))?  \nOnly do this once the run is really printed in Chrysanth.",
+                                          f"mark_printed_confirm_{int(batch_pick)}", _mark, "Yes, it is printed")
             _bx_bytes, _bx_problems = generate_batch_txt(int(batch_pick))
             st.download_button("Download this batch's Chrysanth file (.txt)", data=_bx_bytes, disabled=not get_chrysanth_settings()["account_no"],
                                file_name=file_name_for_batch(int(batch_pick)), mime="text/plain", icon=":material/download:", key=f"batch_txt_dl_{int(batch_pick)}")
@@ -315,13 +327,17 @@ def render() -> None:
                 )
                 if st.button("Assign numbers", icon=":material/tag:", key="check_assign_manual_btn"):
                     assignments = {int(r["check_id"]): r["check_number"] for _, r in edited_manual_df.iterrows()}
-                    if guard_duplicate_submit("bulk_assign_manual", ref_booklet_id, repr(assignments)):
-                        ok, msg, assigned_ids = assign_check_numbers_manual(assignments, ref_booklet_id)
-                        (st.success if ok else st.error)(msg)
-                        if assigned_ids:
-                            refresh()
-                    else:
-                        st.warning("Duplicate submission ignored — identical to the click just before it.")
+
+                    def _assign_numbers(a=assignments, booklet=ref_booklet_id):
+                        ok, msg, assigned_ids = assign_check_numbers_manual(a, booklet)
+                        if ok:
+                            flash(msg)
+                        return ok, msg
+
+                    confirm_change_dialog(f"Give **{len(assignments)} check(s)** these numbers?\n\n" + "\n".join(
+                        f"- {assign_options[cid]} → **{str(no).strip() or '(blank)'}**" for cid, no in assignments.items()),
+                        "bulk_assign_confirm", _assign_numbers, "Yes, assign the numbers",
+                        warning="A check number is final once assigned — changing it later needs a logged correction.")
 
     with st.expander("Log a spoiled check (misprint / jam)"):
         render_log_spoiled_form()

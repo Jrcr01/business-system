@@ -17,9 +17,12 @@ from engines.statement_rules import DEFAULT_SUPPLIER_TERMS
 from views.shared import (  # noqa: F401
     MONEY_FORMAT,
     SUPPLIER_TERMS_OPTIONS,
+    confirm_change_dialog,
     date_col,
     dup_needs_confirm,
     dup_resume,
+    grid_risk_lines,
+    grid_risk_summary,
     guard_duplicate_submit,
     money_col,
     page_header,
@@ -133,78 +136,89 @@ def render() -> None:
         elif not guard_duplicate_submit("save_creditor_master", edited_master_df.to_csv(index=False)):
             st.warning("Duplicate submission ignored — identical to the click just before it.")
         else:
-            original_by_id = original_master_df.set_index("creditor_id")
-            seen_ids = set()
-            added = updated = reactivated = deactivated = removed = 0
-            row_errors = []
+            def _save_creditors():
+                original_by_id = original_master_df.set_index("creditor_id")
+                seen_ids = set()
+                added = updated = reactivated = deactivated = removed = 0
+                row_errors = []
 
-            for _, r in edited_master_df.iterrows():
-                if pd.isna(r["creditor_id"]):
-                    name = cell_text(r["creditor_name"]).strip()
-                    ctype = cell_text(r["creditor_type"]).strip()
-                    if not name and not ctype:
-                        continue  # untouched blank template row
-                    if not name or ctype not in ("SUPPLIER", "LENDER", "BANK_LOAN"):
-                        row_errors.append("New creditor row needs a Name and a Type.")
+                for _, r in edited_master_df.iterrows():
+                    if pd.isna(r["creditor_id"]):
+                        name = cell_text(r["creditor_name"]).strip()
+                        ctype = cell_text(r["creditor_type"]).strip()
+                        if not name and not ctype:
+                            continue  # untouched blank template row
+                        if not name or ctype not in ("SUPPLIER", "LENDER", "BANK_LOAN"):
+                            row_errors.append("New creditor row needs a Name and a Type.")
+                            continue
+                        add_creditor(
+                            name, ctype, cell_text(r["tin"]), cell_text(r["contact_person"]),
+                            cell_text(r["contact_number"]), cell_text(r["email"]), cell_text(r["terms"]),
+                        )
+                        added += 1
                         continue
-                    add_creditor(
-                        name, ctype, cell_text(r["tin"]), cell_text(r["contact_person"]),
-                        cell_text(r["contact_number"]), cell_text(r["email"]), cell_text(r["terms"]),
+
+                    cid = int(r["creditor_id"])
+                    seen_ids.add(cid)
+                    orig = original_by_id.loc[cid]
+
+                    new_type = cell_text(r["creditor_type"]).strip() or orig["creditor_type"]
+                    if new_type != orig["creditor_type"] and creditor_reference_counts(cid):
+                        row_errors.append(f"{orig['creditor_name']}: can't change type — it already has transaction history. Kept as {orig['creditor_type']}.")
+                        new_type = orig["creditor_type"]
+
+                    details_changed = (
+                        cell_text(r["creditor_name"]) != cell_text(orig["creditor_name"])
+                        or new_type != orig["creditor_type"]
+                        or cell_text(r["tin"]) != cell_text(orig["tin"])
+                        or cell_text(r["contact_person"]) != cell_text(orig["contact_person"])
+                        or cell_text(r["contact_number"]) != cell_text(orig["contact_number"])
+                        or cell_text(r["email"]) != cell_text(orig["email"])
+                        or cell_text(r["terms"]) != cell_text(orig["terms"])
                     )
-                    added += 1
-                    continue
+                    if details_changed:
+                        update_creditor(
+                            cid, cell_text(r["creditor_name"]), new_type, cell_text(r["tin"]),
+                            cell_text(r["contact_person"]), cell_text(r["contact_number"]), cell_text(r["email"]),
+                            cell_text(r["terms"]),
+                        )
+                        updated += 1
 
-                cid = int(r["creditor_id"])
-                seen_ids.add(cid)
-                orig = original_by_id.loc[cid]
+                    if bool(r["is_active"]) != bool(orig["is_active"]):
+                        if r["is_active"]:
+                            reactivate_creditor(cid)
+                            reactivated += 1
+                        else:
+                            deactivate_creditor(cid)
+                            deactivated += 1
 
-                new_type = cell_text(r["creditor_type"]).strip() or orig["creditor_type"]
-                if new_type != orig["creditor_type"] and creditor_reference_counts(cid):
-                    row_errors.append(f"{orig['creditor_name']}: can't change type — it already has transaction history. Kept as {orig['creditor_type']}.")
-                    new_type = orig["creditor_type"]
-
-                details_changed = (
-                    cell_text(r["creditor_name"]) != cell_text(orig["creditor_name"])
-                    or new_type != orig["creditor_type"]
-                    or cell_text(r["tin"]) != cell_text(orig["tin"])
-                    or cell_text(r["contact_person"]) != cell_text(orig["contact_person"])
-                    or cell_text(r["contact_number"]) != cell_text(orig["contact_number"])
-                    or cell_text(r["email"]) != cell_text(orig["email"])
-                    or cell_text(r["terms"]) != cell_text(orig["terms"])
-                )
-                if details_changed:
-                    update_creditor(
-                        cid, cell_text(r["creditor_name"]), new_type, cell_text(r["tin"]),
-                        cell_text(r["contact_person"]), cell_text(r["contact_number"]), cell_text(r["email"]),
-                        cell_text(r["terms"]),
-                    )
-                    updated += 1
-
-                if bool(r["is_active"]) != bool(orig["is_active"]):
-                    if r["is_active"]:
-                        reactivate_creditor(cid)
-                        reactivated += 1
+                for removed_id in set(original_by_id.index) - seen_ids:
+                    ok, msg = delete_or_deactivate_creditor(int(removed_id))
+                    if ok:
+                        removed += 1
                     else:
-                        deactivate_creditor(cid)
-                        deactivated += 1
+                        row_errors.append(msg)
 
-            for removed_id in set(original_by_id.index) - seen_ids:
-                ok, msg = delete_or_deactivate_creditor(int(removed_id))
-                if ok:
-                    removed += 1
-                else:
-                    row_errors.append(msg)
+                summary = [
+                    f"{n} {label}" for n, label in
+                    [(added, "added"), (updated, "updated"), (reactivated, "reactivated"), (deactivated, "deactivated"), (removed, "removed")]
+                    if n
+                ]
+                if row_errors:
+                    if summary:
+                        st.cache_data.clear()
+                    return False, "\n\n".join(row_errors) + (f"\n\nSaved before stopping: {', '.join(summary)}." if summary else "")
+                if not summary:
+                    return True, "No changes to save."
+                refresh(done="Creditors: " + ", ".join(summary) + ".")
+                return True, ""
 
-            summary = [
-                f"{n} {label}" for n, label in
-                [(added, "added"), (updated, "updated"), (reactivated, "reactivated"), (deactivated, "deactivated"), (removed, "removed")]
-                if n
-            ]
-            if summary:
-                st.success("Creditors: " + ", ".join(summary) + ".")
-            for e in row_errors:
-                st.error(e)
-            if not summary and not row_errors:
-                st.info("No changes to save.")
-            if summary:
-                refresh()
+            # Second look only when rows were removed from the table (deleted outright, or deactivated if they have history).
+            gone = grid_risk_lines(original_master_df, edited_master_df, "creditor_id", lambda r: f"{cell_text(r['creditor_name'])} ({cell_text(r['creditor_type']).title()})")[0]
+            if gone:
+                confirm_change_dialog(grid_risk_summary("creditor(s)", gone, []).replace("will be deleted", "will be removed (deleted, or deactivated if they have history)"),
+                                      "save_creditors_confirm", _save_creditors, "Yes, save the changes")
+            else:
+                ok, msg = _save_creditors()
+                if msg:
+                    (st.info if ok else st.error)(msg)

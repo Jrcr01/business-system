@@ -26,7 +26,7 @@ from engines.cash_insights_service import (
 from engines.common import php
 from engines.settled_outside_bank import REASONS as SETTLE_REASONS, settle_outside_bank, settled_checks, undo_settlement
 from views.shared import (
-    LN_BROWSE, OS_BROWSE, confirm_create_dialog, date_col, go_to, guard_duplicate_submit, money_col, page_header, pdf_preview_and_download, q, refresh,
+    LN_BROWSE, OS_BROWSE, confirm_change_dialog, confirm_create_dialog, date_col, flash, go_to, guard_duplicate_submit, money_col, page_header, pdf_preview_and_download, q, refresh,
     section, show_table,
 )
 
@@ -148,10 +148,15 @@ def _suggestions_section() -> None:
                     f":gray[{' · '.join(s_['reasons'])}]")
         k = f"{s_['txn_id']}_{s_['check_id']}"
         if c2.button("Accept", icon=":material/check:", key=f"bank_sg_ok_{k}", width="stretch"):
-            ok, msg = link_to_check(s_["txn_id"], s_["check_id"], how="Suggested match accepted")
-            if ok:
-                refresh(done=msg + ("" if s_["our_number"] else " Our check has no number yet — assign it on the batch's Assign numbers screen."))
-            st.error(msg)
+            def _accept(sg=dict(s_)):
+                ok, msg = link_to_check(sg["txn_id"], sg["check_id"], how="Suggested match accepted")
+                if ok:
+                    flash(msg + ("" if sg["our_number"] else " Our check has no number yet — assign it on the batch's Assign numbers screen."))
+                return ok, msg
+
+            confirm_change_dialog(f"Bank line **{s_['posting_date']} · check # {s_['bank_check_number'] or '—'} · {php(s_['amount'])}** IS our check "
+                                  f"**{s_['our_number'] or 'with no number yet'}** ({s_['payee']}, dated {s_['check_date']})?  \nIt will be marked cleared by the bank on {s_['posting_date']}.",
+                                  f"bank_accept_{k}", _accept, "Yes, it is that check")
         if c3.button("Reject", icon=":material/close:", key=f"bank_sg_no_{k}", width="stretch"):
             reject_suggestion(s_["txn_id"], s_["check_id"])
             refresh(done="Rejected — it won't be suggested again.")
@@ -181,10 +186,15 @@ def _deal_with(shown: list[dict]) -> None:
                     cpick = st.selectbox("Our check", list(copts), format_func=copts.get, key=f"bank_link_pick_{pick}",
                                          help="Checks the bank has not cleared yet. Same amount first (marked =), then the nearest check date.")
                     if st.button("Link", icon=":material/link:", key=f"bank_link_btn_{pick}"):
-                        ok, msg = link_to_check(pick, cpick)
-                        if ok:
-                            refresh(done=msg)
-                        st.error(msg)
+                        def _link(t=int(pick), c=int(cpick)):
+                            ok, msg = link_to_check(t, c)
+                            if ok:
+                                flash(msg)
+                            return ok, msg
+
+                        confirm_change_dialog(f"Link this bank line ({e['posting_date']} · {php(e['debit'] or e['credit'])}) to our check **{copts[cpick]}**?  \n"
+                                              "The check is marked cleared by the bank on the bank line's date. You can undo this from the Resolved list.",
+                                              f"bank_link_{pick}", _link, "Yes, link them")
             else:
                 st.caption("This is not one of our checks, so there is nothing to link — tag the reason.")
             if e.get("statement_id") or e.get("loan_note_id"):
@@ -228,13 +238,16 @@ def _bank_fix(txn_id: int) -> None:
     if st.button("Adjust to the bank", icon=":material/account_balance:", key=f"bank_fix_btn_{txn_id}",
                   help="Adds the adjustment(s) and marks the check cleared by the bank. Our check record is not changed. Reopen the bank line "
                        "(Resolved list) to reverse."):
-        if not guard_duplicate_submit("bank_fix", txn_id):
-            st.warning("Duplicate click ignored — identical to the click just before it.")
-            return
-        ok, msg = adjust_check_to_bank(txn_id)
-        if ok:
-            refresh(done=msg)
-        st.error(msg)
+        def _adjust(t=int(txn_id)):
+            ok, msg = adjust_check_to_bank(t)
+            if ok:
+                flash(msg)
+            return ok, msg
+
+        confirm_change_dialog(f"Adjust check **{fix['check_number']}** to what the bank paid?  \n"
+                              f"Recorded {php(fix['old_amount'])} ({fix['check_date']}) → bank {php(fix['new_amount'])} (paid {fix['bank_date']}).  \n"
+                              "Our check stays as recorded; the difference is added as an adjustment and the check is marked cleared by the bank.",
+                              f"bank_fix_{txn_id}", _adjust, "Yes, adjust it", warning=fix["warn"] or "")
 
 
 def _adjustments_section() -> None:
@@ -359,8 +372,14 @@ def _reconcile_tab() -> None:
             rpick = r1.selectbox("Made a mistake? Reopen a line", list(ropts), format_func=ropts.get, key="bank_reopen_pick",
                                  help="The line goes back to Need a look and is matched again; a check linked by hand is no longer marked cleared.")
             if r2.button("Reopen", icon=":material/undo:", key="bank_reopen_btn", width="stretch"):
-                reopen(int(rpick))
-                refresh(done="Reopened — it is back under Need a look (or matched again).")
+                def _reopen(t=int(rpick)):
+                    reopen(t)
+                    flash("Reopened — it is back under Need a look (or matched again).")
+                    return True, ""
+
+                confirm_change_dialog(f"Reopen bank line **{ropts[rpick]}**?  \nThe line goes back to Need a look and is matched again; a check linked to it by hand "
+                                      "is no longer marked cleared, and any adjustments made for it are reversed.",
+                                      "bank_reopen", _reopen, "Yes, reopen it")
 
     _adjustments_section()
 

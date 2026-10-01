@@ -39,7 +39,11 @@ from views.shared import (  # noqa: F401
     MONEY_FORMAT,
     PRINT_CHECKS_IN_APP,
     confirm_cancel_loan_note_dialog,
+    confirm_change_dialog,
     confirm_create_dialog,
+    flash,
+    grid_risk_lines,
+    grid_risk_summary,
     confirm_delete_loan_note_dialog,
     date_col,
     date_preset_filter,
@@ -215,8 +219,12 @@ def render() -> None:
             with ln_col_promote:
                 if str(ln_row["note_ref"]).startswith("DRAFT-"):
                     if st.button("Promote to real LN No.", icon=":material/arrow_upward:", key="ln_promote_btn"):
-                        new_ref = promote_draft_loan_note(selected_lnid)
-                        refresh(done=f"Promoted to {new_ref}.")
+                        def _promote_ln(lnid=int(selected_lnid)):
+                            flash(f"Promoted to {promote_draft_loan_note(lnid)}.")
+                            return True, ""
+
+                        confirm_change_dialog(f"Give loan note **{ln_row['note_ref']}** its permanent LN number?  \nThe next number in the sequence is used and cannot be given back.",
+                                              "ln_promote_confirm", _promote_ln, "Yes, give it the number")
                 else:
                     st.caption("LN No. is permanent.")
             with ln_col_status:
@@ -233,10 +241,14 @@ def render() -> None:
                         st.caption("Settled fires automatically once Outstanding (uncleared) hits ₱0 — every check issued must also have actually passed its date, not just been written. Use this only to force Defaulted, or to correct a mistake.")
                         override_status = st.selectbox("Status", ["Active", "Settled", "Defaulted"], index=["Active", "Settled", "Defaulted"].index(ln_row["status"]), key="ln_status_override", help='Settled happens by itself once everything is paid. Use this only to mark Defaulted or to fix a mistake.')
                         if st.button("Save status", icon=":material/update:", key="ln_status_save_btn"):
-                            ok, msg = update_loan_note_status(selected_lnid, override_status)
-                            (st.success if ok else st.error)(msg)
-                            if ok:
-                                refresh(done=msg)
+                            def _save_ln_status(lnid=int(selected_lnid), new_status=override_status):
+                                ok, msg = update_loan_note_status(lnid, new_status)
+                                if ok:
+                                    flash(msg)
+                                return ok, msg
+
+                            confirm_change_dialog(f"Change loan note **{ln_row['note_ref']}** from **{ln_row['status']}** to **{override_status}**?",
+                                                  "ln_status_confirm", _save_ln_status, "Yes, change the status")
             with ln_col_export:
                 with st.expander("Export Loan Note PDF"):
                     if st.button("Generate Loan Note PDF", icon=":material/picture_as_pdf:", key="ln_export_btn"):
@@ -270,10 +282,17 @@ def render() -> None:
                     edit_principal = st.number_input("Principal amount", min_value=0.0, step=1000.0, value=float(ln_row["principal_amount"] or 0.0), key="ln_edit_principal")
                     edit_rate = st.number_input("Monthly interest rate (%)", min_value=0.0, step=0.5, format="%.2f", value=float(ln_row["monthly_interest_rate"] or 0.0), key="ln_edit_rate")
                     if st.button("Save changes", icon=":material/save:", key="ln_edit_terms_btn"):
-                        ok, msg = edit_loan_note_terms(selected_lnid, edit_principal, edit_rate)
-                        (st.success if ok else st.error)(msg)
-                        if ok:
-                            refresh(done=msg)
+                        def _save_ln_terms(lnid=int(selected_lnid), principal=edit_principal, rate=edit_rate):
+                            ok, msg = edit_loan_note_terms(lnid, principal, rate)
+                            if ok:
+                                flash(msg)
+                            return ok, msg
+
+                        confirm_change_dialog(f"Change the terms of loan note **{ln_row['note_ref']}**?\n\n"
+                                              f"- principal: {php(float(ln_row['principal_amount'] or 0))} → **{php(edit_principal)}**\n"
+                                              f"- monthly rate: {float(ln_row['monthly_interest_rate'] or 0):g}% → **{edit_rate:g}%**\n\n"
+                                              "The schedule's balances and the note's total interest / payable are recomputed.",
+                                              "ln_terms_confirm", _save_ln_terms, "Yes, save the terms")
 
         tab_schedule, tab_ln_checks = st.tabs(
             ["Repayment Schedule", "Checks"], key="ln_subtab", default="Repayment Schedule", on_change="rerun",
@@ -396,34 +415,46 @@ def render() -> None:
                         },
                     )
                     if st.button("Save schedule changes", icon=":material/save:", key="ln_save_schedule_btn"):
-                        original_by_id = installments_df.set_index("installment_id")
-                        seen_ids, updated, deleted, sched_errors = set(), 0, 0, []
-                        for _, r in edited_installments_df.iterrows():
-                            if pd.isna(r["installment_id"]):
-                                continue  # blank template row from the dynamic editor's add affordance
-                            iid = int(r["installment_id"])
-                            seen_ids.add(iid)
-                            orig = original_by_id.loc[iid]
-                            if (str(r["due_date"]) != str(orig["due_date"]) or abs(float(r["principal"]) - float(orig["principal"])) > 0.001
-                                    or abs(float(r["interest"]) - float(orig["interest"])) > 0.001):
-                                ok, msg = edit_loan_installment(iid, r["due_date"], float(r["principal"]), float(r["interest"]))
+                        def _save_schedule():
+                            original_by_id = installments_df.set_index("installment_id")
+                            seen_ids, updated, deleted, sched_errors = set(), 0, 0, []
+                            for _, r in edited_installments_df.iterrows():
+                                if pd.isna(r["installment_id"]):
+                                    continue  # blank template row from the dynamic editor's add affordance
+                                iid = int(r["installment_id"])
+                                seen_ids.add(iid)
+                                orig = original_by_id.loc[iid]
+                                if (str(r["due_date"]) != str(orig["due_date"]) or abs(float(r["principal"]) - float(orig["principal"])) > 0.001
+                                        or abs(float(r["interest"]) - float(orig["interest"])) > 0.001):
+                                    ok, msg = edit_loan_installment(iid, r["due_date"], float(r["principal"]), float(r["interest"]))
+                                    if ok:
+                                        updated += 1
+                                    else:
+                                        sched_errors.append(f"Installment {iid}: {msg}")
+                            for removed_id in set(original_by_id.index) - seen_ids:
+                                ok, msg = delete_loan_installment(int(removed_id))
                                 if ok:
-                                    updated += 1
+                                    deleted += 1
                                 else:
-                                    sched_errors.append(f"Installment {iid}: {msg}")
-                        for removed_id in set(original_by_id.index) - seen_ids:
-                            ok, msg = delete_loan_installment(int(removed_id))
-                            if ok:
-                                deleted += 1
-                            else:
-                                sched_errors.append(msg)
-                        summary = [f"{n} {label}" for n, label in [(updated, "updated"), (deleted, "deleted")] if n]
-                        if summary:
-                            st.success("Schedule: " + ", ".join(summary) + ".")
-                        for e in sched_errors:
-                            st.error(e)
-                        if summary:
-                            refresh()
+                                    sched_errors.append(msg)
+                            summary = [f"{n} {label}" for n, label in [(updated, "updated"), (deleted, "deleted")] if n]
+                            if sched_errors:
+                                if summary:
+                                    st.cache_data.clear()
+                                return False, "\n\n".join(sched_errors) + (f"\n\nSaved before stopping: {', '.join(summary)}." if summary else "")
+                            if not summary:
+                                return True, "No changes to save."
+                            refresh(done="Schedule: " + ", ".join(summary) + ".")
+                            return True, ""
+
+                        removed, changed = grid_risk_lines(installments_df, edited_installments_df, "installment_id",
+                                                           lambda r: f"installment #{r['installment_no']} due {str(r['due_date'])[:10]}", ["principal", "interest"])
+                        if removed or changed:
+                            confirm_change_dialog(grid_risk_summary("installment(s)", removed, changed), "ln_save_schedule_confirm", _save_schedule, "Yes, save the changes")
+                        else:
+                            ok, msg = _save_schedule()
+                            if msg:
+                                (st.info if ok else st.error)(msg)
 
         with tab_ln_checks:
             pending_installments = q(
@@ -515,24 +546,34 @@ def render() -> None:
                          or abs(float(r["amount"]) - float(original_ln_parked.set_index("check_id").loc[int(r["check_id"]), "amount"])) > 0.001}),
                     ):
                         original_by_id = original_ln_parked.set_index("check_id")
-                        updated, row_errors = 0, []
+                        pending = []
                         for _, r in edited_ln_parked.iterrows():
                             chk_id = int(r["check_id"])
                             orig = original_by_id.loc[chk_id]
                             if str(r["check_date"]) != str(orig["check_date"]) or abs(float(r["amount"]) - float(orig["amount"])) > 0.001:
-                                ok, msg = edit_parked_check(chk_id, float(r["amount"]), r["check_date"])
-                                if ok:
-                                    updated += 1
-                                else:
-                                    row_errors.append(f"Check {chk_id}: {msg}")
-                        if updated:
-                            st.success(f"{updated} parked check(s) updated.")
-                        for e in row_errors:
-                            st.error(e)
-                        if not updated and not row_errors:
+                                pending.append({"id": chk_id, "amount": float(r["amount"]), "date": r["check_date"],
+                                                "old_amount": float(orig["amount"]), "old_date": orig["check_date"]})
+                        if not pending:
                             st.info("No changes to save.")
-                        if updated:
-                            refresh()
+                        else:
+                            def _save_ln_parked(rows=pending):
+                                updated, row_errors = 0, []
+                                for x in rows:
+                                    ok, msg = edit_parked_check(x["id"], x["amount"], x["date"])
+                                    if ok:
+                                        updated += 1
+                                    else:
+                                        row_errors.append(f"Check {x['id']}: {msg}")
+                                if row_errors:
+                                    if updated:
+                                        st.cache_data.clear()
+                                    return False, "\n\n".join(row_errors) + (f"\n\n{updated} other change(s) were saved." if updated else "")
+                                flash(f"{updated} parked check(s) updated.")
+                                return True, ""
+
+                            confirm_change_dialog(f"Change **{len(pending)} parked check(s)**?\n\n" + "\n".join(
+                                f"- check ID {x['id']}: date {x['old_date']} → **{x['date']}** · amount {php(x['old_amount'])} → **{php(x['amount'])}**" for x in pending),
+                                "ln_save_parked_confirm", _save_ln_parked, "Yes, save the changes")
 
             numbered_ln_checks = active_ln_checks[active_ln_checks["check_number"].apply(has_value)] if not active_ln_checks.empty else active_ln_checks
             if not ln_is_settled_or_defaulted and not numbered_ln_checks.empty:
@@ -563,30 +604,40 @@ def render() -> None:
 
                     if (st.button("Save check corrections", icon=":material/save:", key="ln_save_check_corrections") or dup_resume("ln_save_check_corrections")) \
                             and not dup_needs_confirm("ln_save_check_corrections", loan_check_mismatches(selected_lnid, _ln_corr_changes())):
-                        updated, row_errors = 0, []
+                        pending = []                                   # (check id, what, value to save, old shown, new shown, check number)
                         for _, r in edited_ln_corr.iterrows():
                             chk_id = int(r["check_id"])
                             orig = corr_by_id.loc[chk_id]
+                            shown_no = str(orig["check_number"]).strip()
                             new_number = cell_text(r["check_number"]).strip()
-                            for ctype, changed, value in (
-                                ("Check Number", new_number != str(orig["check_number"]).strip(), new_number),
-                                ("Check Date", str(r["check_date"]) != str(orig["check_date"]), str(r["check_date"])),
-                                ("Amount", abs(float(r["amount"]) - float(orig["amount"])) > 0.001, str(float(r["amount"]))),
-                            ):
-                                if changed:
-                                    ok, msg = apply_check_correction(chk_id, ctype, value, "")
+                            if new_number != shown_no:
+                                pending.append((chk_id, "Check Number", new_number, shown_no, new_number, shown_no))
+                            if str(r["check_date"]) != str(orig["check_date"]):
+                                pending.append((chk_id, "Check Date", str(r["check_date"]), str(orig["check_date"]), str(r["check_date"]), shown_no))
+                            if abs(float(r["amount"]) - float(orig["amount"])) > 0.001:
+                                pending.append((chk_id, "Amount", str(float(r["amount"])), php(float(orig["amount"])), php(float(r["amount"])), shown_no))
+                        if not pending:
+                            st.info("No changes to save.")
+                        else:
+                            def _save_ln_corrections(rows=pending):
+                                updated, row_errors = 0, []
+                                for chk_id, what, value, *_ in rows:
+                                    ok, msg = apply_check_correction(chk_id, what, value, "")
                                     if ok:
                                         updated += 1
                                     else:
                                         row_errors.append(f"Check {chk_id}: {msg}")
-                        if updated:
-                            st.success(f"{updated} correction(s) saved.")
-                        for e in row_errors:
-                            st.error(e)
-                        if not updated and not row_errors:
-                            st.info("No changes to save.")
-                        if updated:
-                            refresh()
+                                if row_errors:
+                                    if updated:
+                                        st.cache_data.clear()
+                                    return False, "\n\n".join(row_errors) + (f"\n\n{updated} other correction(s) were saved." if updated else "")
+                                flash(f"{updated} correction(s) saved.")
+                                return True, ""
+
+                            confirm_change_dialog(f"Correct **{len(pending)} item(s)** on printed check(s)?\n\n" + "\n".join(
+                                f"- check **{no or x[0]}** · {x[1]}: {x[3]} → **{x[4]}**" for x in pending for no in [x[5]]),
+                                "ln_save_corrections_confirm", _save_ln_corrections, "Yes, correct it",
+                                warning="These checks are already printed. Every change is logged (old → new, with the time) and cannot be undone from the screen.")
 
             if not ln_is_settled_or_defaulted and not active_ln_checks.empty:
                 with st.expander("Cancel or replace a check"):
@@ -601,14 +652,27 @@ def render() -> None:
                         cr_reason = st.text_input("Reason (optional)", key="ln_cancel_reason", placeholder="e.g. wrong amount",
                                                   help="Kept with the voided check — it shows in Checks and checkbook → Voided, replaced and spoiled checks.")
                         if st.button("Cancel this check", icon=":material/cancel:", key="ln_check_cancel_btn"):
-                            ok, msg = cancel_check(int(cr_pick), cr_reason)
-                            (st.success if ok else st.error)(msg)
-                            if ok:
-                                refresh(done=msg)
+                            def _cancel_ln_check(pick=int(cr_pick), why=cr_reason):
+                                ok, msg = cancel_check(pick, why)
+                                if ok:
+                                    flash(msg)
+                                return ok, msg
+
+                            crow = active_ln_checks.set_index("check_id").loc[int(cr_pick)]
+                            confirm_change_dialog(f"Void check **{crow['check_number'] or 'no number yet'}** for **{php(crow['amount'])}**?  \nThe amount goes back to what is still payable on this loan note."
+                                                  + (f"  \nReason: {cr_reason.strip()}" if cr_reason.strip() else ""),
+                                                  "ln_cancel_confirm", _cancel_ln_check, "Yes, void it",
+                                                  warning="A voided check is cancelled for good. If it was already handed out, make sure the payee gives it back.")
                     with cr_col_replace:
                         new_date = st.date_input("New check date", value=date.today(), key="ln_replace_date", help="The replacement check's date. The old check is cancelled; the new one is parked (no number yet).")
                         if st.button("Replace this check (new one parked)", icon=":material/sync_alt:", key="ln_replace_btn"):
-                            ok, msg, *_ = replace_check(int(cr_pick), new_date, "")
-                            (st.success if ok else st.error)(msg)
-                            if ok:
-                                refresh(done=msg)
+                            def _replace_ln_check(pick=int(cr_pick), on=new_date):
+                                ok, msg, *_ = replace_check(pick, on, "")
+                                if ok:
+                                    flash(msg)
+                                return ok, msg
+
+                            rrow = active_ln_checks.set_index("check_id").loc[int(cr_pick)]
+                            confirm_change_dialog(f"Replace check **{rrow['check_number'] or 'no number yet'}** for **{php(rrow['amount'])}**?  \nThe old check is voided and a new one is parked for the same amount, dated {new_date:%b %d, %Y}, with no number yet.",
+                                                  "ln_replace_confirm", _replace_ln_check, "Yes, replace it",
+                                                  warning="The old check is cancelled for good. If it was already handed out, make sure the payee gives it back.")

@@ -27,6 +27,8 @@ from views.credit_cards import render_missing_statements
 from views.guarantee import guarantee_notice
 from views.shared import (  # noqa: F401
     LN_BROWSE,
+    confirm_change_dialog,
+    flash,
     OS_BROWSE,
     date_col,
     go_to,
@@ -274,10 +276,14 @@ def render() -> None:
                        None if runs.empty else "In Chrysanth, search the Remark box for the run number, print, then mark it printed here.")
     for _, r in runs.iterrows():
         if right.button(f"Mark {r['tag']} as printed", icon=":material/print:", key=f"pr_mark_{int(r['print_batch_id'])}", width="stretch"):
-            ok, msg = mark_batch_printed(int(r["print_batch_id"]), True)
-            if ok:
-                refresh(done=msg)
-            st.error(msg)
+            def _mark_run(pb=int(r["print_batch_id"])):
+                ok, msg = mark_batch_printed(pb, True)
+                if ok:
+                    flash(msg)
+                return ok, msg
+
+            confirm_change_dialog(f"Mark **{r['tag']}** as printed ({int(r['check_count'])} check(s), {php(float(r['total_amount']))})?  \nOnly do this once the run is really printed in Chrysanth.",
+                                  f"pr_mark_confirm_{int(r['print_batch_id'])}", _mark_run, "Yes, it is printed")
 
     num = stg["to_number"]
     right = _stage_row("4 · Numbers", "blue", num.empty,

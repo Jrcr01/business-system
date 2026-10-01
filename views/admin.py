@@ -15,6 +15,8 @@ from engines.common import get_conn
 
 from views.shared import (  # noqa: F401
     MONEY_FORMAT,
+    confirm_change_dialog,
+    flash,
     _read_whats_new,
     date_col,
     guard_duplicate_submit,
@@ -105,10 +107,14 @@ def render() -> None:
                 arch_options = {int(r["booklet_id"]): (r["booklet_code"] or f"Booklet #{int(r['booklet_id'])}") + f" [{r['status']}]" for _, r in archivable_df.iterrows()}
                 arch_pick = st.selectbox("Booklet", options=list(arch_options.keys()), format_func=lambda bid: arch_options[bid], key="archive_booklet_pick")
                 if st.button("Archive this booklet", icon=":material/archive:", key="archive_booklet_btn"):
-                    ok, msg = archive_booklet(int(arch_pick))
-                    (st.success if ok else st.error)(msg)
-                    if ok:
-                        refresh(done=msg)
+                    def _archive(bid=int(arch_pick)):
+                        ok, msg = archive_booklet(bid)
+                        if ok:
+                            flash(msg)
+                        return ok, msg
+
+                    confirm_change_dialog(f"Archive booklet **{arch_options[int(arch_pick)]}**?  \nIt is retired: its numbers are no longer offered when assigning check numbers. "
+                                          "Only archive a booklet that is finished or no longer used.", "archive_booklet_confirm", _archive, "Yes, archive it")
 
         with st.expander("Booklet gap audit"):
             st.caption("Every assignment is manual (Phase 6 Redux v2) — a normal one shouldn't leave a gap, since the dropdown only ever offers open leaves. A real gap here usually means a leaf was assigned outside this app (pre-Redux historical data), or a spoiled leaf logged after the fact.")
