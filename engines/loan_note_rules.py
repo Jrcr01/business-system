@@ -47,6 +47,7 @@ def create_loan_note(creditor_id: int, issue_date: date, principal_amount: float
             (creditor_id, note_ref, str(issue_date), principal_amount, monthly_interest_rate, principal_amount),
         )
         loan_note_id = cur.lastrowid
+        cur.execute("UPDATE loan_notes SET is_lease = 1 WHERE loan_note_id = ? AND (SELECT is_lessor FROM creditors WHERE creditor_id = ?) = 1", (loan_note_id, creditor_id))   # rent, not a loan
         conn.commit()
         return True, "Draft loan note created.", loan_note_id
 

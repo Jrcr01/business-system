@@ -63,7 +63,7 @@ def render_handwritten_form() -> None:
                "handwritten, so it never goes into Checks to print or the Chrysanth file. Add the invoice at the same time if it is a new one.")
     to = st.radio("Paid to", ["A supplier", "A private lender (loan note)"], horizontal=True, key="hw_to")
     is_supplier = to == "A supplier"
-    creditor = selectbox_creditor("Supplier" if is_supplier else "Lender", "SUPPLIER" if is_supplier else "LENDER", "hw_supplier" if is_supplier else "hw_lender")
+    creditor = selectbox_creditor("Supplier" if is_supplier else "Lender or lessor", "SUPPLIER" if is_supplier else "LENDER_OR_LESSOR", "hw_supplier" if is_supplier else "hw_lender")
     if not creditor:
         return
     cid = int(creditor)

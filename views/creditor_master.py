@@ -39,7 +39,7 @@ def render_new_creditor_form() -> None:
     with st.form("new_creditor_form", border=False, clear_on_submit=True):
         nc1, nc2 = st.columns([3, 1])
         nc_name = nc1.text_input("Name")
-        nc_type = nc2.selectbox("Type", ["SUPPLIER", "LENDER", "BANK_LOAN"], format_func=lambda t: t.replace("_", " ").title(), help='Supplier = invoices and order statements · Lender = private loan notes · Bank loan = bank dues. Credit-card issuers are added under Credit cards.')
+        nc_type = nc2.selectbox("Type", ["SUPPLIER", "LENDER", "LESSOR", "BANK_LOAN"], format_func=lambda t: t.replace("_", " ").title(), help='Supplier = invoices and order statements · Lender = private loan notes · Bank loan = bank dues. Credit-card issuers are added under Credit cards.')
         nc3, nc4 = st.columns(2)
         nc_tin = nc3.text_input("TIN (optional)", help='Tax Identification Number — for your records; optional.')
         nc_terms = nc4.selectbox("Terms (suppliers)", SUPPLIER_TERMS_OPTIONS, index=SUPPLIER_TERMS_OPTIONS.index(DEFAULT_SUPPLIER_TERMS) if DEFAULT_SUPPLIER_TERMS in SUPPLIER_TERMS_OPTIONS else 0, help="Agreed days to pay. Each invoice's due date is its received date plus these terms; whole months (30/60/90/120/150) land on the same day of the month (month-end if that day doesn't exist).")
@@ -69,11 +69,12 @@ def render_new_creditor_form() -> None:
 
 def render() -> None:
     page_header("Creditors")
-    st.caption("Master registry of payees tagged supplier, lender, or bank loan. Credit card payees stay in their own track (Credit cards page).")
+    st.caption("Master registry of payees tagged supplier, lender, lessor (rent), or bank loan. Credit card payees stay in their own track (Credit cards page).")
 
     creditor_master_df = q(
-        "SELECT creditor_id, creditor_name, creditor_type, tin, contact_person, contact_number, email, terms, is_active, datetime(created_at, 'localtime') AS created_at "
-        "FROM creditors WHERE creditor_type IN ('SUPPLIER', 'LENDER', 'BANK_LOAN') ORDER BY creditor_type, creditor_name"
+        "SELECT creditor_id, creditor_name, CASE WHEN is_lessor = 1 THEN 'LESSOR' ELSE creditor_type END AS creditor_type, tin, contact_person, contact_number, email, terms, is_active, "
+        "datetime(created_at, 'localtime') AS created_at "
+        "FROM creditors WHERE creditor_type IN ('SUPPLIER', 'LENDER', 'BANK_LOAN') ORDER BY creditor_type, is_lessor, creditor_name"
     )
     creditor_master_df["is_active"] = creditor_master_df["is_active"].astype(int) == 1
     filter_col1, filter_col2, filter_col3 = st.columns([2, 2, 1])
@@ -83,7 +84,7 @@ def render() -> None:
         )
     with filter_col2:
         type_filter_master = st.multiselect(
-            "Filter: type", options=["SUPPLIER", "LENDER", "BANK_LOAN"], key="creditor_master_type_filter"
+            "Filter: type", options=["SUPPLIER", "LENDER", "LESSOR", "BANK_LOAN"], key="creditor_master_type_filter"
         )
     with filter_col3:
         show_inactive = st.checkbox("Show inactive too", key="creditor_master_show_inactive")
@@ -115,7 +116,7 @@ def render() -> None:
         column_config={
             "creditor_id": st.column_config.NumberColumn("ID"),
             "creditor_name": st.column_config.TextColumn("Name", default=""),
-            "creditor_type": st.column_config.SelectboxColumn("Type", options=["SUPPLIER", "LENDER", "BANK_LOAN"], default="SUPPLIER"),
+            "creditor_type": st.column_config.SelectboxColumn("Type", options=["SUPPLIER", "LENDER", "LESSOR", "BANK_LOAN"], default="SUPPLIER"),
             "tin": st.column_config.TextColumn("TIN", default=""),
             "contact_person": st.column_config.TextColumn("Contact person", default=""),
             "contact_number": st.column_config.TextColumn("Contact number", default=""),
@@ -148,7 +149,7 @@ def render() -> None:
                         ctype = cell_text(r["creditor_type"]).strip()
                         if not name and not ctype:
                             continue  # untouched blank template row
-                        if not name or ctype not in ("SUPPLIER", "LENDER", "BANK_LOAN"):
+                        if not name or ctype not in ("SUPPLIER", "LENDER", "LESSOR", "BANK_LOAN"):
                             row_errors.append("New creditor row needs a Name and a Type.")
                             continue
                         add_creditor(

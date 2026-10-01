@@ -481,10 +481,22 @@ def render_assign_number_section(checks_df: pd.DataFrame, key_prefix: str, bank_
     _render_retract_number_section(active_df, key_prefix)
 
 
+def _type_filter(creditor_type: str) -> tuple[str, tuple]:
+    """'LESSOR' = the lenders flagged as lessors; 'LENDER' = the others (a lessor is not a lender on any picker)."""
+    if creditor_type == "LESSOR":
+        return "creditor_type = 'LENDER' AND is_lessor = 1", ()
+    if creditor_type == "LENDER":
+        return "creditor_type = 'LENDER' AND is_lessor = 0", ()
+    if creditor_type == "LENDER_OR_LESSOR":                 # where a loan note or a lease can be made (Lenders page, handwritten checks)
+        return "creditor_type = 'LENDER'", ()
+    return "creditor_type = ?", (creditor_type,)
+
+
 def creditor_options(creditor_type: str) -> dict:
+    cond, params = _type_filter(creditor_type)
     df = q(
-        "SELECT creditor_id, creditor_name FROM creditors WHERE creditor_type = ? AND is_active = 1 ORDER BY creditor_name",
-        (creditor_type,),
+        f"SELECT creditor_id, creditor_name FROM creditors WHERE {cond} AND is_active = 1 ORDER BY creditor_name",
+        params,
     )
     return dict(zip(df.creditor_id, df.creditor_name))
 
@@ -504,9 +516,10 @@ def selectbox_creditor_label(creditor_type: str, creditor_id: int) -> str:
 def creditor_options_all(creditor_type: str) -> dict:
     """Same as creditor_options() but including inactive creditors -- a history/report picker
     still needs to find a supplier or lender that's since been deactivated."""
+    cond, params = _type_filter(creditor_type)
     df = q(
-        "SELECT creditor_id, creditor_name FROM creditors WHERE creditor_type = ? ORDER BY creditor_name",
-        (creditor_type,),
+        f"SELECT creditor_id, creditor_name FROM creditors WHERE {cond} ORDER BY creditor_name",
+        params,
     )
     return dict(zip(df.creditor_id, df.creditor_name))
 

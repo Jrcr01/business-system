@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS creditors (
     -- TblPayee.PayeeId for any creditor migrated from the legacy system; NULL for one created
     -- directly in the new system.
     legacy_payee_id INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- migration 060 (2026-10-01): a LESSOR is a creditor we pay rent to. Stored as a LENDER-type creditor flagged here (the type list is a CHECK constraint on a table
+    -- used everywhere); screens and reports show it as "Lessor" and keep it out of the lender lists.
+    is_lessor INTEGER NOT NULL DEFAULT 0 CHECK(is_lessor IN (0, 1))
 );
 
 -- Bank cash is not tracked in this system (abolished 2026-09-06, migration 016) -- this table
@@ -147,6 +150,10 @@ CREATE TABLE IF NOT EXISTS loan_notes (
     -- migration 059 (2026-10-01): "Beginning balance (from MS Access)" label on a migrated placeholder note (interest / terms not split out yet)
     is_beginning_balance INTEGER NOT NULL DEFAULT 0,
     beginning_label_removed INTEGER NOT NULL DEFAULT 0,
+    -- migration 060 (2026-10-01): a LEASE is rent paid to a lessor: a loan note with no interest whose schedule is the rent checks. is_lease = 1 keeps it off the Lenders
+    -- page and out of debt figures; lease_description is the property / what is rented.
+    is_lease INTEGER NOT NULL DEFAULT 0 CHECK(is_lease IN (0, 1)),
+    lease_description TEXT,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id)
 );
 

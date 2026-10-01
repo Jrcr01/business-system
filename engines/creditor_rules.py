@@ -16,16 +16,22 @@ CREDITOR_REFERENCE_TABLES = (
 )
 
 
+def storage_type(creditor_type: str) -> tuple[str, int]:
+    """('LESSOR' -> ('LENDER', 1)): a lessor is stored as a LENDER-type creditor flagged is_lessor (the type list is a CHECK constraint used everywhere)."""
+    return ("LENDER", 1) if creditor_type == "LESSOR" else (creditor_type, 0)
+
+
 def add_creditor(name: str, creditor_type: str, tin: str, contact_person: str, contact_number: str, email: str, terms: str = "") -> int:
+    creditor_type, is_lessor = storage_type(creditor_type)
     if creditor_type in ("BANK_LOAN", "CREDIT_CARD"):
         name = expand_bank_name(name)
     name = smart_proper_case(name)  # ALL CAPS / all lowercase becomes proper case; mixed case is left as typed
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
-            """INSERT INTO creditors (creditor_name, creditor_type, tin, contact_person, contact_number, email, terms)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (name, creditor_type, tin, contact_person, contact_number, email, terms or (DEFAULT_SUPPLIER_TERMS if creditor_type == "SUPPLIER" else None)),
+            """INSERT INTO creditors (creditor_name, creditor_type, tin, contact_person, contact_number, email, terms, is_lessor)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (name, creditor_type, tin, contact_person, contact_number, email, terms or (DEFAULT_SUPPLIER_TERMS if creditor_type == "SUPPLIER" else None), is_lessor),
         )
         conn.commit()
         return cur.lastrowid
@@ -58,13 +64,14 @@ def update_creditor(creditor_id: int, name: str, creditor_type: str, tin: str, c
     no transaction history yet (checked by the caller via creditor_reference_counts()), since
     reclassifying one that's already in use would silently move it out of the pickers that filter
     by type elsewhere (batches, loan notes, bank loans)."""
+    creditor_type, is_lessor = storage_type(creditor_type)
     if creditor_type in ("BANK_LOAN", "CREDIT_CARD"):
         name = expand_bank_name(name)
     name = smart_proper_case(name)
     with get_conn() as conn:
         conn.execute(
-            "UPDATE creditors SET creditor_name = ?, creditor_type = ?, tin = ?, contact_person = ?, contact_number = ?, email = ?, terms = ? WHERE creditor_id = ?",
-            (name, creditor_type, tin, contact_person, contact_number, email, terms or None, creditor_id),
+            "UPDATE creditors SET creditor_name = ?, creditor_type = ?, is_lessor = ?, tin = ?, contact_person = ?, contact_number = ?, email = ?, terms = ? WHERE creditor_id = ?",
+            (name, creditor_type, is_lessor, tin, contact_person, contact_number, email, terms or None, creditor_id),
         )
         conn.commit()
 

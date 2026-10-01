@@ -74,7 +74,7 @@ from views.card_dues_note import render_card_week_notes
 def render_new_loan_note_form() -> None:
     """The Create loan note form (with its confirmation). Shared by Lenders and Add data."""
     with st.form("new_loan_note_form", border=False):
-        ln_creditor = selectbox_creditor("Lender", "LENDER", "ln_creditor")
+        ln_creditor = selectbox_creditor("Lender or lessor (rent)", "LENDER_OR_LESSOR", "ln_creditor")
         ln_issue_date = st.date_input("Issue date", value=date.today(), help="The date the money was lent — the first installment's interest is counted from here.")
         ln_principal = st.number_input("Principal amount", min_value=0.0, step=1000.0)
         ln_rate = st.number_input("Monthly interest rate (%)", min_value=0.0, step=0.5, format="%.2f", help="Per month, e.g. 2 for 2%. Used to suggest each installment's interest (rate × balance × days ÷ 30); you can change the suggestion.")
