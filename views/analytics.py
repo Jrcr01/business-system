@@ -345,9 +345,14 @@ def render() -> None:
     page_header("Analytics", "Where the money goes, who we owe, how we pay, what borrowing costs and what cash is ahead.")
     st.caption("This system tracks the AP side only (no sales or general ledger), so ratios like current ratio are not offered — everything here comes from the checks, loans, "
                "cards and bank statements on file.")
-    tab_money, tab_owe, tab_pay, tab_cost, tab_cash, tab_more = st.tabs([
-        ":material/payments: Where the money goes", ":material/groups: Who we owe most", ":material/speed: How we pay",
-        ":material/percent: Cost of borrowing", ":material/account_balance: Cash ahead", ":material/more_horiz: More detail"])
+    from engines.settings_registry import forecast_shown
+
+    labels = [":material/payments: Where the money goes", ":material/groups: Who we owe most", ":material/speed: How we pay", ":material/percent: Cost of borrowing"]
+    if forecast_shown():                                    # hidden until the Sales / AR cycle brings real deposits (Settings)
+        labels.append(":material/account_balance: Cash ahead")
+    tabs = st.tabs(labels + [":material/more_horiz: More detail"])
+    tab_money, tab_owe, tab_pay, tab_cost, tab_more = tabs[0], tabs[1], tabs[2], tabs[3], tabs[-1]
+    tab_cash = tabs[4] if forecast_shown() else None
     with tab_money:
         _where_the_money_goes()
     with tab_owe:
@@ -356,8 +361,9 @@ def render() -> None:
         _how_we_pay()
     with tab_cost:
         _cost_of_borrowing()
-    with tab_cash:
-        _cash_ahead()
+    if tab_cash is not None:
+        with tab_cash:
+            _cash_ahead()
     with tab_more:
         st.caption("Aging, payment health, top suppliers, payables trend and the interest tracker (moved from the Dashboard).")
         render_supplier_debt_detail()

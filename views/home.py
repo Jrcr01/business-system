@@ -76,7 +76,7 @@ def _panel(page_id: str) -> None:
     tile = next(t for t in TILES if t.page_id == page_id)
     info = _figures((page_id,)).get(page_id) or evaluate(tile)
     st.markdown(f"**{escape(tile.title)}**" + (f" — {escape(info['figure'])} {escape(info['unit'])}" if info["figure"] else ""))
-    for i, a in enumerate(tile.actions):
+    for i, a in enumerate(tile.visible_actions):
         hint = ((("\n\n" + a.hint) if i == 0 else ("\n\n:gray[" + a.hint + "]")) if a.hint else "")
         if st.button(f"**{a.label}**" + hint, key=f"act_{page_id}_{i}", icon=a.icon or None, width="stretch", type="primary" if i == 0 else "secondary"):
             _open(a.page_id or page_id, dict(a.state))

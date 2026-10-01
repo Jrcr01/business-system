@@ -42,10 +42,16 @@ def _key_row(bank: dict | None, n_attention: int) -> None:
                       delta_color="off", delta_arrow="off", border=True, help="The last balance on the imported bank statements.")
         st.metric("Due in next 7 days", php(get_upcoming_cash_obligations(7)), border=True,
                   help="Supplier / lender checks, bank-loan installments and card statements still owed and due within 7 days — same scope as the Schedule of payments.")
-        low = bank["lowest"] if bank else None
-        st.metric("Lowest balance, next 30 days", php(low[1]) if low else "—",
-                  (f"on {low[0]:%b %d} · buffer {php(bank['buffer'])}" if low else "needs a recent statement"), delta_color="off", delta_arrow="off", border=True,
-                  help="From the cash forecast: bank balance + expected money in − checks not cleared and loan / card dues.")
+        from engines.settings_registry import forecast_shown
+
+        if forecast_shown():
+            low = bank["lowest"] if bank else None
+            st.metric("Lowest balance, next 30 days", php(low[1]) if low else "—",
+                      (f"on {low[0]:%b %d} · buffer {php(bank['buffer'])}" if low else "needs a recent statement"), delta_color="off", delta_arrow="off", border=True,
+                      help="From the cash forecast: bank balance + expected money in − checks not cleared and loan / card dues.")
+        else:                                                      # the forecast is hidden until the Sales / AR cycle brings real deposits (Settings)
+            st.metric("Due in next 30 days", php(get_upcoming_cash_obligations(30)), border=True,
+                      help="Supplier / lender checks, bank-loan installments and card statements still owed and due within 30 days. No forecast of deposits.")
         st.metric("To do today", str(waiting_count(get_run_stages())), border=True, help="Steps waiting on the Payment run page.")
         st.metric("Needs attention", str(n_attention), border=True, help="Errors and warnings in the list below. Information lines are not counted.")
 

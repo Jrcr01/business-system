@@ -31,10 +31,11 @@ class Action:
     icon: str = ""
     state: tuple = ()                                # ((widget key, value), ...) -- a tuple so the dataclass stays hashable
     page_id: str | None = None
+    forecast: bool = False                           # belongs to the cash forecast: hidden while the forecast is switched off (Settings)
 
 
-def act(label: str, hint: str = "", icon: str = "", page_id: str | None = None, **state) -> Action:
-    return Action(label, hint, icon, tuple(state.items()), page_id)
+def act(label: str, hint: str = "", icon: str = "", page_id: str | None = None, forecast: bool = False, **state) -> Action:
+    return Action(label, hint, icon, tuple(state.items()), page_id, forecast)
 
 
 @dataclass
@@ -48,8 +49,13 @@ class Tile:
     actions: list = field(default_factory=list)      # Action buttons; two or more make the tile open a panel, fewer open the page straight away
 
     @property
+    def visible_actions(self) -> list:
+        from engines.settings_registry import forecast_shown
+        return [a for a in self.actions if forecast_shown() or not a.forecast]
+
+    @property
     def has_panel(self) -> bool:
-        return len(self.actions) >= 2
+        return len(self.visible_actions) >= 2
 
 
 GROUPS: list[Group] = [
@@ -134,13 +140,19 @@ def _checks():
 
 
 def _bank_cash():
-    from engines.cash_insights_service import cash_position, forecast
+    from engines.cash_insights_service import cash_position, forecast_if_shown
     pos = cash_position()
     if pos is None:
         return "", "No bank statement yet", "none"
-    f = forecast(30)
+    f = forecast_if_shown(30)
     dip = f.get("first_below") if f else None
     return peso_short(pos["balance"]), (f"under the buffer {dip:%b %d}" if dip else f"as of {pos['as_of']:%b %d}"), "alert" if dip else "ok"
+
+
+def _payables_due():
+    from engines.payables_due_service import next_days
+    r = next_days(7)
+    return peso_short(r["amount"]), f"next 7 days · {r['checks']} check(s)", "warn" if r["amount"] else "none"
 
 
 def _planner():
@@ -150,7 +162,8 @@ def _planner():
 
 def _purchase_orders():
     n = _count("SELECT COUNT(*) FROM purchase_orders WHERE status IN ('DRAFT', 'ORDERED', 'PARTIAL')")
-    over = _count("SELECT COUNT(*) FROM purchase_orders WHERE over_cash_plan = 1 AND cash_ack_at IS NULL AND status IN ('ORDERED', 'PARTIAL')")
+    from engines.po_rules import orders_over_plan
+    over = len(orders_over_plan())                  # empty while the cash forecast is hidden
     if over:
         return str(n), f"open · {over} over plan", "alert"
     return _waiting(n, "open", "ok")
@@ -219,8 +232,12 @@ for _t in (
     Tile("bank-cash", "daily", "Bank and cash", _bank_cash, actions=[
         A("Import a bank statement", "Match your checks to the bank", ":material/upload_file:", bank_cash_tab=":material/upload_file: Import a statement"),
         A("Reconciliation", "What still needs a look", ":material/rule:", bank_cash_tab=":material/rule: Reconciliation"),
-        A("Cash forecast", "Day by day, orders included", ":material/trending_up:", bank_cash_tab=":material/trending_up: Cash forecast"),
+        A("Cash forecast", "Day by day, orders included", ":material/trending_up:", forecast=True, bank_cash_tab=":material/trending_up: Cash forecast"),
         A("Checks not yet cleared", "Waiting to be deposited", ":material/hourglass_top:", bank_cash_tab=":material/hourglass_top: Checks not yet cleared")]),
+    Tile("payables-due", "daily", "Payables due", _payables_due, actions=[
+        A("Week by week", "What can hit the bank, by week", ":material/calendar_view_week:", pd_tab="Week by week"),
+        A("By supplier", "Who holds checks, which orders are coming", ":material/groups:", pd_tab="By supplier"),
+        A("Past their date", "Checks the suppliers have not deposited yet", ":material/hourglass_top:", pd_tab="Past their date")]),
     Tile("planner", "daily", "Check-date planner", _planner),
     Tile("purchase-orders", "purchasing", "Purchase orders", _purchase_orders, actions=[
         A("New order", "From a supplier's price list", ":material/add_shopping_cart:", po_mode="New order"),

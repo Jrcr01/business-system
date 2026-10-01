@@ -470,8 +470,8 @@ def _forecast_tab() -> None:
     fc = forecast(int(days))
     gone = outside_card_dues(manila_today(), manila_today() + timedelta(days=int(days)))
     st.caption("This forecast follows the Metrobank account only: credit card bills count only for cards marked as paid from it (Credit cards → "
-               "Cards & cardholders), and those whose statement is not in yet are estimated from their last 3 statements. "
-               + (f"Not deducted because paid elsewhere: {php(gone['recorded'] + gone['estimated'])} of card bills in the next {int(days)} days "
+               "Cards & cardholders), and only for statements that are entered. "
+               + (f"Not deducted because paid elsewhere: {php(gone['recorded'])} of card bills in the next {int(days)} days "
                   f"({gone['cards']} card(s))." if gone["cards"] else "Every card with a bill in this period is counted."))
     d = fc["daily"]
     m1, m2, m3 = st.columns(3)
@@ -595,11 +595,16 @@ def render() -> None:
     if li:
         st.caption(f"Last statement imported {str(li['imported_at'])[:16]} · covers {li['period_from']} to {li['period_to']}.")
     show_alerts(all_alerts())
-    tabs = st.tabs([":material/upload_file: Import a statement", ":material/rule: Reconciliation", ":material/description: Reconciliation statement",
-                    ":material/trending_up: Cash forecast",
-                    ":material/hourglass_top: Checks not yet cleared", ":material/savings: Money in", ":material/report: Unusual items",
-                    ":material/balance: Working capital"], key="bank_cash_tab", on_change="rerun")
-    for tab, fn in zip(tabs, (_import_tab, _reconcile_tab, _statement_tab, _forecast_tab, _float_tab, _inflow_tab, _unusual_tab, _working_capital_tab)):
+    from engines.settings_registry import forecast_shown
+
+    parts = [(":material/upload_file: Import a statement", _import_tab), (":material/rule: Reconciliation", _reconcile_tab),
+             (":material/description: Reconciliation statement", _statement_tab)]
+    if forecast_shown():                                    # hidden until the Sales / AR cycle brings real deposits (Settings)
+        parts.append((":material/trending_up: Cash forecast", _forecast_tab))
+    parts += [(":material/hourglass_top: Checks not yet cleared", _float_tab), (":material/savings: Money in", _inflow_tab),
+              (":material/report: Unusual items", _unusual_tab), (":material/balance: Working capital", _working_capital_tab)]
+    tabs = st.tabs([label for label, _ in parts], key="bank_cash_tab", on_change="rerun")
+    for tab, fn in zip(tabs, [fn for _, fn in parts]):
         if tab.open:                                      # only the open tab is worked out
             with tab:
                 fn()

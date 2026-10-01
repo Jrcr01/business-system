@@ -273,16 +273,16 @@ def test_debt_cost_comparison_includes_private_loan_with_real_rate(db):
 def test_missing_debt_terms_ranks_by_real_exposure_excludes_zero_balance(db):
     big_lender = make_creditor(db, name="Big Lender", creditor_type="LENDER")
     big_note = _make_loan_note(db, big_lender, monthly_interest_rate=None, note_ref="LN-BIG")
-    _make_check(db, big_lender, date(2026, 10, 1), 90000.0, loan_note_id=big_note)
+    _make_check(db, big_lender, date(2027, 6, 1), 90000.0, loan_note_id=big_note)
 
     small_lender = make_creditor(db, name="Small Lender", creditor_type="LENDER")
     small_note = _make_loan_note(db, small_lender, monthly_interest_rate=None, note_ref="LN-SMALL")
-    _make_check(db, small_lender, date(2026, 10, 1), 10000.0, loan_note_id=small_note)
+    _make_check(db, small_lender, date(2027, 6, 1), 10000.0, loan_note_id=small_note)
 
     # A lender with a real rate already on file shouldn't show up as "missing."
     rated_lender = make_creditor(db, name="Rated Lender", creditor_type="LENDER")
     rated_note = _make_loan_note(db, rated_lender, monthly_interest_rate=2.0, note_ref="LN-RATED")
-    _make_check(db, rated_lender, date(2026, 10, 1), 50000.0, loan_note_id=rated_note)
+    _make_check(db, rated_lender, date(2027, 6, 1), 50000.0, loan_note_id=rated_note)
 
     # A lender with no rate but zero outstanding shouldn't show up either -- nothing to prioritize.
     make_creditor(db, name="Idle Lender", creditor_type="LENDER")

@@ -130,9 +130,9 @@ def debt_due_by_month(months: int = 12, today: date | None = None) -> pd.DataFra
 def cash_ahead_weeks(weeks: int = 13, today: date | None = None) -> pd.DataFrame:
     """The cash forecast by week for the next `weeks` weeks: week, money_in, money_out, end_balance, lowest_balance, short (the balance goes under the buffer). Empty
     when no recent bank statement is on file."""
-    from engines.cash_insights_service import forecast
+    from engines.cash_insights_service import forecast_if_shown
 
-    f = forecast(weeks * 7, today)
+    f = forecast_if_shown(weeks * 7, today)
     cols = ["week", "money_in", "money_out", "end_balance", "lowest_balance", "short"]
     if not f or f.get("daily") is None or f["daily"].empty:
         return pd.DataFrame(columns=cols)

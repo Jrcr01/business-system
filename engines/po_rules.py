@@ -229,7 +229,7 @@ def po_outflow_rows(start: date, end: date) -> list[dict]:
 
 def _cash_context(today: date, horizon_days: int) -> dict | None:
     """The day-by-day forecast (open orders included), {'stale': days} when the bank balance is too old to trust, or None without any balance."""
-    from engines.cash_insights_service import cash_position, forecast, forecast_fresh_days
+    from engines.cash_insights_service import cash_position, forecast_fresh_days, forecast_if_shown
 
     pos = cash_position()
     if pos is None:
@@ -237,7 +237,7 @@ def _cash_context(today: date, horizon_days: int) -> dict | None:
     age = (today - pos["as_of"]).days
     if age > forecast_fresh_days():
         return {"stale": age}
-    return forecast(min(max(horizon_days, 1), 900), today) or None
+    return forecast_if_shown(min(max(horizon_days, 1), 900), today) or None
 
 
 def _own_commitment(po_id: int | None, today: date) -> tuple[date, float] | None:
@@ -275,8 +275,9 @@ def cash_check(creditor_id: int, amount: float, delivery_date, today: date | Non
     ctx = _cash_context(today, (pay_day - today).days + 61)
     if not ctx or "daily" not in ctx:
         age = (ctx or {}).get("stale")
-        return {"known": False, "ok": None, "pay_date": pay,
-                "message": f"The bank balance is {age} days old, so the cash cannot be checked. Import a newer statement." if age else "No bank balance on file, so the cash cannot be checked."}
+        why = ("The cash forecast is switched off (Settings), so the cash is not checked." if not settings_registry.forecast_shown() else
+               f"The bank balance is {age} days old, so the cash cannot be checked. Import a newer statement." if age else "No bank balance on file, so the cash cannot be checked.")
+        return {"known": False, "ok": None, "pay_date": pay, "message": why}
     res = _evaluate(ctx["daily"], pay_day, float(amount), ctx["buffer"], _own_commitment(exclude_po_id, today))
     return {"known": True, "pay_date": pay, "buffer": ctx["buffer"], "message": "", **res}
 
@@ -324,6 +325,8 @@ def update_cash_flag(po_id: int) -> None:
 
 
 def orders_over_plan(include_acknowledged: bool = False) -> pd.DataFrame:
+    if not settings_registry.forecast_shown():             # the cash plan is hidden, so nothing is "over" it
+        return pd.DataFrame(columns=["po_id", "po_no", "supplier", "expected_pay_date", "cash_note", "cash_ack_at", "created_by", "total"])
     with get_conn() as conn:
         return pd.read_sql_query(
             f"""SELECT p.po_id, p.po_no, c.creditor_name AS supplier, p.expected_pay_date, p.cash_note, p.cash_ack_at, p.created_by,
@@ -342,3 +345,25 @@ def acknowledge_over_plan(po_id: int) -> tuple[bool, str]:
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_OVER_PLAN_SEEN', 'purchase_orders', ?, ?)",
                      (po_id, f"{row[0]} noted by the owner"))
     return True, f"{row[0]} noted."
+
+
+def committed_load(pay_date, new_amount: float = 0.0, exclude_po_id: int | None = None) -> dict | None:
+    """What is already committed to fall due in the Monday-to-Sunday week of `pay_date`, so whoever orders can see the load before adding to it (no judgement,
+    no deposits). {'week_start', 'week_end', 'checks', 'loans_cards', 'orders', 'total', 'adds'}. An order being changed does not count itself."""
+    day = _as_date(pay_date)
+    if day is None:
+        return None
+    start, end = day - timedelta(days=day.weekday()), day + timedelta(days=6 - day.weekday())
+    from engines.cash_insights_service import scheduled_outflows
+
+    out = scheduled_outflows(manila_today(), end)          # from today, so a check already past its date lands in THIS week, not in a later one
+    out = out[(pd.to_datetime(out["day"]).dt.date >= start) & (pd.to_datetime(out["day"]).dt.date <= end)] if not out.empty else out
+    own = _own_commitment(exclude_po_id, manila_today())
+    sums = out.groupby("track")["amount"].sum().to_dict() if not out.empty else {}
+    checks = float(sums.get("Supplier", 0.0) + sums.get("Lender", 0.0))
+    loans_cards = float(sums.get("Bank Loan", 0.0) + sums.get("Credit Card", 0.0))
+    orders = float(sums.get("Purchase order", 0.0))
+    if own and start <= own[0] <= end:
+        orders = max(orders - own[1], 0.0)
+    return {"week_start": start, "week_end": end, "checks": checks, "loans_cards": loans_cards, "orders": orders,
+            "total": checks + loans_cards + orders, "adds": float(new_amount)}

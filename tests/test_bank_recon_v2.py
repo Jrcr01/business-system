@@ -172,6 +172,8 @@ def test_reconciliation_statement_math_and_pdf(db, monkeypatch, tmp_path):
 
 
 def test_alerts_default_seven_days_and_adjustable(db, monkeypatch, tmp_path):
+    from engines import settings_registry as _sr
+    _sr.save("show_cash_forecast", 1)                # the forecast is hidden by default (Settings); the low-cash alert is part of it
     ids = _setup(db, monkeypatch, tmp_path)
     assert bank_alerts.stale_days() == 7 and bank_alerts.debit_factor() == 5.0
     # waiting to Oct 8 (last bank date): S 13 days, E 6, T and W 5 -> only S at the 7-day default

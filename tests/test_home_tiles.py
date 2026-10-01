@@ -44,6 +44,8 @@ def test_waiting_work_turns_tiles_orange_and_an_order_over_the_plan_turns_red(db
     by = {t.page_id: evaluate(t) for t in TILES}
     assert by["checks"]["figure"] == "1" and by["checks"]["level"] == "warn"
     assert by["order-statements"]["figure"] == "1"                                     # 600 still to cover
+    from engines import settings_registry as sr
+    sr.save("show_cash_forecast", 1)                         # the over-plan warning is part of the cash plan, hidden by default
     sqlite3.connect(db).execute(
         "INSERT INTO purchase_orders (po_no, creditor_id, order_date, status, over_cash_plan) VALUES ('2026 - PO 0001', ?, '2026-10-01', 'ORDERED', 1)",
         (cid,)).connection.commit()

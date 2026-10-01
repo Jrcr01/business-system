@@ -279,6 +279,7 @@ import views.dashboard
 import views.lenders
 import views.order_statement
 import views.home
+import views.payables_due
 import views.payment_run
 import views.price_lists
 import views.purchase_orders
@@ -418,6 +419,7 @@ PAGES.update({
     "checks": st.Page(views.checks.render, title="Checks and checkbook", icon=":material/receipt_long:", url_path="checks"),
     "bank-cash": st.Page(views.bank_cash.render, title="Bank and cash", icon=":material/account_balance_wallet:", url_path="bank-cash"),
     "planner": st.Page(views.planner.render, title="Check-date planner", icon=":material/event_available:", url_path="planner"),
+    "payables-due": st.Page(views.payables_due.render, title="Payables due", icon=":material/event_upcoming:", url_path="payables-due"),
     "lenders": st.Page(views.lenders.render, title="Lenders", icon=":material/handshake:", url_path="lenders"),
     "bank-loans": st.Page(views.bank_loans.render, title="Bank loans", icon=":material/account_balance:", url_path="bank-loans"),
     "credit-cards": st.Page(views.credit_cards.render, title="Credit cards", icon=":material/credit_card:", url_path="credit-cards"),
@@ -430,9 +432,12 @@ PAGES.update({
     "price-lists": st.Page(views.price_lists.render, title="Price lists", icon=":material/sell:", url_path="price-lists"),
     "purchase-orders": st.Page(views.purchase_orders.render, title="Purchase orders", icon=":material/shopping_cart:", url_path="purchase-orders"),
 })
+from engines.settings_registry import forecast_shown as _forecast_shown   # the cash forecast and planner are hidden until the owner switches them on (Settings)
+if not _forecast_shown():
+    PAGES.pop("planner", None)
 MENU = {
     "Home": ["home"],          # first, and skipped by the Alt+number shortcuts below so they still open the same pages
-    "Daily work": ["payment-run", "add-data", "order-statements", "checks", "bank-cash", "planner"],
+    "Daily work": ["payment-run", "add-data", "order-statements", "checks", "bank-cash", "payables-due"] + (["planner"] if "planner" in PAGES else []),
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records and reports": ["dashboard", "creditors", "analytics", "reports"],
     "System": ["settings", "admin", "data-health"],

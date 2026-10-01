@@ -7,6 +7,11 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 - Plain-English bullet, no jargon -- written for someone who doesn't read code.
 -->
 
+## 2026-10-02
+- **Payables due (new page):** shows what is already committed to go out and when — checks the suppliers hold, loan and card dues from entered statements, and ordered purchase orders — by week, by supplier, and the checks past their date. It makes no guess about deposits.
+- **Cash forecast and Check-date planner hidden for now:** until the Sales / AR cycle brings real deposits. One setting (Settings → Cash forecast → Show the cash forecast) brings them back. While hidden, a purchase order shows what is already falling due that week instead of a cash verdict.
+- **Estimated credit card bills removed everywhere:** only statements you have entered count. The heavy-card-week note under check-date grids and the 'Credit card dues ahead' section are gone.
+
 ## 2026-10-01
 - **Batches now lock and unlock by themselves.** A batch closes the moment its checks cover the full amount, and opens again if you void, replace, un-park or correct a check so a balance appears. There is no Lock or Re-lock button any more, and printing a statement never locks. To change an invoice or credit memo on a closed batch, press **Edit this batch**, give a short reason, make the change and Save: it closes again by itself. A new invoice for a supplier whose batch is closed goes into a new batch. Admin and audit has a one-time **Batch locks tidy-up** that lists batches left out of step by the old manual locking, and applies the fix only when you say so.
 - **Lessors (rent) finished:** the Lenders list now has a **Kind** column (Loan / Lease), lessors are no longer in the Lenders list but have their own **Lessors (rent)** list under Reports > Lists, and rent checks are kept out of the "debt falling due by month" figures. Rent is paid with checks like a loan — no contract record.

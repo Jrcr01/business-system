@@ -48,6 +48,8 @@ def test_stale_checks_leave_out_what_the_bank_cleared(db):
 
 
 def test_dashboard_bank_panel(db, monkeypatch, tmp_path):
+    from engines import settings_registry as _sr
+    _sr.save("show_cash_forecast", 1)                # the forecast is hidden by default (Settings); this test is about it
     assert dashboard_bank_summary() is None                          # nothing imported yet
     _setup(db, monkeypatch, tmp_path)
     closing = 1_000_000.0 - sum(x[3] for x in STATEMENT) + sum(x[4] for x in STATEMENT)

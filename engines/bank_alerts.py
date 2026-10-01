@@ -67,10 +67,10 @@ def large_debits(factor: float | None = None) -> pd.DataFrame:
 
 def low_cash_ahead(today: date | None = None) -> dict | None:
     """{'day', 'lowest', 'buffer', 'as_of'} when the forecast goes under the cash buffer within FORECAST_DAYS days, else None."""
-    from engines.cash_insights_service import forecast
+    from engines.cash_insights_service import forecast_if_shown
 
     today = today or manila_today()
-    f = forecast(days=FORECAST_DAYS, today=today)
+    f = forecast_if_shown(days=FORECAST_DAYS, today=today)
     if not f or f["stale_days"] > FORECAST_MAX_AGE or f["first_below"] is None:
         return None
     return {"day": f["first_below"], "lowest": f["lowest"][1], "buffer": f["buffer"], "as_of": f["as_of"]}

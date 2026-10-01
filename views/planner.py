@@ -8,8 +8,6 @@ import pandas as pd
 import streamlit as st
 
 from engines import check_date_planner as cp
-from engines.cc_forecast_service import MONTHS_AHEAD, estimated_card_dues, forecast_by_week
-from engines.cc_service import paid_from_bank_ids
 from engines.common import php
 from views.shared import OS_BROWSE, confirm_change_dialog, creditor_options_all, export_buttons, go_to, page_header, refresh, section, show_table
 
@@ -47,66 +45,6 @@ def _open_batch(statement_id: int) -> None:
 
 def render() -> None:
     _render_plan()
-    _card_dues_ahead()
-
-
-def _card_dues_ahead() -> None:
-    """Credit card dues ahead (owner, 2026-09-29): a card's bill is known only a month before it is due, but supplier checks are dated
-    4-5 months ahead (the usual terms) -- so estimate every card's coming bills from its last 3 statements. The estimates already count
-    as cash going out in the suggested dates above and in the Cash forecast."""
-    from datetime import timedelta
-
-    from engines.clock import manila_today  # one clock (Phase F1.3)
-
-    section(f"Credit card dues ahead ({MONTHS_AHEAD} months)",
-            help="What the cards will likely ask for, week by week. Amounts already on a statement are shown as they are; the rest is "
-                 "estimated from each card's last 3 statements (the middle one), with the lowest-highest of those 3 as the range.")
-    weeks = forecast_by_week()
-    if weeks.empty:
-        st.caption("No card history to estimate from yet.")
-        return
-    bank_weeks = forecast_by_week(bank_only=True)
-    bank_total = float((bank_weeks["recorded"] + bank_weeks["estimated"]).sum()) if not bank_weeks.empty else 0.0
-    all_total = float((weeks["recorded"] + weeks["estimated"]).sum())
-    total_rec, total_est = float(weeks["recorded"].sum()), float(weeks["estimated"].sum())
-    peak = weeks.assign(total=weeks["recorded"] + weeks["estimated"]).sort_values("total", ascending=False).iloc[0]
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Already on statements", php(total_rec), border=True, help="Unpaid card statements you have entered, due in this period.")
-    m2.metric("Estimated (statement not in yet)", php(total_est), border=True,
-              help=f"Likely range {php(float(weeks['low'].sum()) - total_rec)} – {php(float(weeks['high'].sum()) - total_rec)}.")
-    m3.metric("Heaviest week", f"{peak['week_start']:%b %d}", php(float(peak["total"])), delta_color="off", delta_arrow="off", border=True,
-              help="The week with the most card dues -- avoid dating big supplier checks around it.")
-    if not paid_from_bank_ids():
-        st.info(f"No card is marked as paid from the Metrobank account, so **none of these {php(all_total)} is deducted from the bank balance** "
-                "in the suggested dates. Mark the cards you pay through Metrobank on the Credit cards page → Cards & cardholders.",
-                icon=":material/account_balance:")
-    else:
-        st.caption(f"Counted against the Metrobank balance (cards marked as paid from it): {php(bank_total)} of the {php(all_total)} below; "
-                   f"the other {php(all_total - bank_total)} is paid from other cash or accounts.")
-    chart = weeks.melt(id_vars=["week_start"], value_vars=["recorded", "estimated"], var_name="kind", value_name="amount")
-    chart = chart.assign(week_start=pd.to_datetime(chart["week_start"]), kind=chart["kind"].map({"recorded": "On a statement", "estimated": "Estimated"}))
-    st.altair_chart(alt.Chart(chart).mark_bar().encode(
-        x=alt.X("week_start:T", title="Week of"), y=alt.Y("sum(amount):Q", title="Card dues (PHP)"),
-        color=alt.Color("kind:N", title=None, scale=alt.Scale(domain=["On a statement", "Estimated"], range=["#16305B", "#9FB3D1"])),
-        tooltip=[alt.Tooltip("week_start:T", title="Week of"), alt.Tooltip("kind:N", title=""), alt.Tooltip("sum(amount):Q", title="Amount", format=",.2f")]),
-        width="stretch")
-    show_table(weeks.assign(range=[f"{php(lo)} – {php(hi)}" for lo, hi in zip(weeks["low"], weeks["high"])])[
-        ["week_start", "recorded", "estimated", "range", "cards"]],
-        {"week_start": "Week of", "recorded": "On a statement", "estimated": "Estimated", "range": "Likely range", "cards": "Cards"},
-        kinds={"week_start": "date", "recorded": "money", "estimated": "money", "cards": "count"})
-    with st.expander("Each card's estimate", icon=":material/credit_card:"):
-        today = manila_today()
-        est = estimated_card_dues(today, today + timedelta(days=31 * MONTHS_AHEAD), today=today)
-        if est.empty:
-            st.caption("Nothing to estimate.")
-        else:
-            show_table(est[["due", "payee", "cardholder", "amount", "low", "high", "based_on"]],
-                       {"due": "Likely due", "payee": "Card", "cardholder": "Cardholder", "amount": "Estimate", "low": "Lowest",
-                        "high": "Highest", "based_on": "From statements"},
-                       kinds={"due": "date", "amount": "money", "low": "money", "high": "money", "based_on": "count"})
-    st.caption("Estimates are replaced by the real amount as soon as the statement is entered. For the cards marked as paid from Metrobank "
-               "they already count as cash going out in the suggested check dates above and in Bank and cash → Cash forecast. A month with nothing due can be marked \"No due\" "
-               "on the Credit cards page, and its estimate disappears.")
 
 
 def _render_plan() -> None:

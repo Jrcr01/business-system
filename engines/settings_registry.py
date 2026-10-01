@@ -26,14 +26,15 @@ NUMBERS = [
      "Reminder when a check is still not cleared by the bank this many days after its check date, or the newest imported statement is this old."),
     ("recon_debit_alert_factor", "Bank", "Large bank debit alert at", 5, 1, 50, 1, "× usual",
      "An unexpected bank debit this many times larger than the usual size is shown as an alert."),
+    ("show_cash_forecast", "Cash forecast", "Show the cash forecast and the Check-date planner (1 = yes, 0 = no)", 0, 0, 1, 0, "",
+     "Off for now (owner, 2026-10-02): until the Sales / AR cycle brings real deposits the forecast has nothing to rest on. While off, the Cash forecast, "
+     "the planner, the low-cash warnings and the purchase-order cash check are hidden. The Payables due page shows what is committed instead."),
     ("forecast_fresh_days", "Cash forecast", "Bank balance is too old to forecast from after", 14, 1, 60, 0, "days",
      "When the latest bank balance is older than this, the cash forecast does not use it (import a newer statement)."),
     ("inflow_weeks", "Cash forecast", "Expected deposits are averaged over the last", 8, 2, 52, 0, "weeks",
      "The forecast estimates future deposits from this many recent weeks of bank deposits."),
     ("cash_buffer", "Cash forecast", "Cash buffer to keep in the bank", 0, 0, 1_000_000_000, 2, "₱",
      "The Dashboard, forecast and planner warn when the balance would go below this amount."),
-    ("heavy_card_factor", "Credit cards", "A week is 'heavy' for card dues at", 1.5, 1, 10, 1, "× average",
-     "A week whose card dues are at least this many times the average week is flagged when you pick a check date."),
     ("cc_missing_wait_days", "Credit cards", "Wait before a card statement counts as missing", 7, 0, 60, 0, "days",
      "After a card's statement date, wait this many days before warning that its statement has not been entered."),
     ("min_money_amount", "Entry checks", "Smallest loan / limit amount accepted", 1, 0.01, 1000, 2, "₱",
@@ -228,3 +229,8 @@ def reset_shortcuts() -> tuple[bool, str]:
         if had:
             _audit(conn, "SHORTCUTS_RESET", SHORTCUT_KEY, "Keyboard shortcuts back to the defaults")
     return True, "Keyboard shortcuts are back to the defaults."
+
+
+def forecast_shown() -> bool:
+    """Whether the cash forecast and its dependants (planner, low-cash warnings, PO cash check) are visible. Off by default (owner, 2026-10-02)."""
+    return int_value("show_cash_forecast") == 1

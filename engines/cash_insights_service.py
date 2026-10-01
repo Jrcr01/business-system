@@ -100,8 +100,8 @@ def expected_daily_inflow(weeks: int | None = None) -> dict[int, float]:
 def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
     """Money going out per day between start and end (inclusive): our active checks the bank has not cleared yet -- on their check date,
     or on `start` if that date is already past (the bank can take them any day) -- moved to the next banking day on weekends; plus
-    bank-loan installments and credit-card dues from the payment schedule; plus ESTIMATED card dues for the months whose statement is
-    not in yet (engines/cc_forecast_service.py, owner 2026-09-29 -- track 'Credit Card (estimated)'). Columns: day, track, payee,
+    bank-loan installments and credit-card dues from the payment schedule (only statements that are entered: no estimates, owner 2026-10-02
+    -- "it can be misleading"); plus ordered purchase orders. Columns: day, track, payee,
     reference, amount."""
     checks = _read("""SELECT c.check_date, c.amount, cr.creditor_name AS payee, COALESCE(c.check_number, 'no number') AS reference,
                               CASE WHEN c.statement_id IS NOT NULL THEN 'Supplier' ELSE 'Lender' END AS track
@@ -120,7 +120,6 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
             d = next_banking_day(str(r["due_date"])[:10])
             if start <= d <= end:
                 rows.append({"day": d, "track": r["track"], "payee": r["payee_name"], "reference": r["reference"], "amount": float(r["amount"])})
-    rows += estimated_outflows(start, end)
     from engines.po_rules import po_outflow_rows               # ordered purchase orders: money we will owe, before any invoice exists (stage B3)
     rows += po_outflow_rows(start, end)
     return pd.DataFrame(rows, columns=["day", "track", "payee", "reference", "amount"])
@@ -147,12 +146,9 @@ def split_card_rows(sched: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def outside_card_dues(start: date, end: date) -> dict:
-    """Card dues in the window that are paid outside the Metrobank account (not deducted from its balance):
-    {'recorded': on statements, 'estimated': not yet on a statement, 'cards': how many cards}."""
-    from engines.cc_forecast_service import estimated_card_dues
-    from engines.cc_service import paid_from_bank_ids
-
-    bank_cards, ref = paid_from_bank_ids(), _card_ids_by_reference()
+    """Card dues on entered statements in the window that are paid outside the Metrobank account (not deducted from its balance):
+    {'recorded': the amount, 'cards': how many cards}."""
+    ref = _card_ids_by_reference()
     recorded, cards = 0.0, set()
     sched = get_payment_schedule_all_tracks()
     if not sched.empty:
@@ -160,27 +156,14 @@ def outside_card_dues(start: date, end: date) -> dict:
         gone = gone[(pd.to_datetime(gone["due_date"]).dt.date >= start) & (pd.to_datetime(gone["due_date"]).dt.date <= end)]
         recorded = float(gone["amount"].sum()) if not gone.empty else 0.0
         cards |= {ref.get(r) for r in gone["reference"] if ref.get(r) is not None}
-    est = estimated_card_dues(start, end, today=start)
-    est = est[~est["card_id"].isin(bank_cards)] if not est.empty else est
-    cards |= set(est["card_id"]) if not est.empty else set()
-    return {"recorded": recorded, "estimated": float(est["amount"].sum()) if not est.empty else 0.0, "cards": len(cards)}
+    return {"recorded": recorded, "cards": len(cards)}
 
 
-def estimated_outflows(start: date, end: date) -> list[dict]:
-    """Estimated card dues (not yet on a statement) as outflow rows, on the next banking day like the other dues -- only for cards paid
-    from the Metrobank account (owner, 2026-09-29)."""
-    from engines.cc_forecast_service import estimated_card_dues
-    from engines.cc_service import paid_from_bank_ids
+def forecast_if_shown(days: int = 60, today: date | None = None) -> dict:
+    """forecast(), or {} (no forecast) while the owner has the forecast switched off (Settings: show_cash_forecast). Every screen and alert uses this."""
+    from engines.settings_registry import forecast_shown
 
-    rows = []
-    est = estimated_card_dues(start, end, today=start)
-    if not est.empty:
-        est = est[est["card_id"].isin(paid_from_bank_ids())]
-    for _, r in est.iterrows():
-        d = next_banking_day(str(r["due"])[:10])
-        if start <= d <= end:
-            rows.append({"day": d, "track": r["track"], "payee": r["payee"], "reference": r["reference"], "amount": float(r["amount"])})
-    return rows
+    return forecast(days, today) if forecast_shown() else {}
 
 
 def forecast(days: int = 60, today: date | None = None) -> dict:
@@ -318,7 +301,7 @@ def dashboard_bank_summary(today: date | None = None) -> dict | None:
                 (first.isoformat(), last.isoformat())).iloc[0]
     waiting = not_yet_cleared()
     age = (today - pos["as_of"]).days
-    fc = forecast(30, today) if age <= forecast_fresh_days() else {}
+    fc = forecast_if_shown(30, today) if age <= forecast_fresh_days() else {}
     return {"balance": pos["balance"], "as_of": pos["as_of"], "age_days": age,
             "checks_in_period": int(cov["n"]), "checks_cleared": int(cov["cleared"]),
             "pct_cleared": (float(cov["cleared"]) / int(cov["n"]) * 100.0) if int(cov["n"]) else None,

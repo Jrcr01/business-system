@@ -97,7 +97,6 @@ from views.shared import (  # noqa: F401
     status_text,
 )
 from engines.clock import manila_now, manila_today
-from views.card_dues_note import render_card_week_notes
 
 
 CHECKS_VIEWS = ["Issue checks", "Checks in this batch", "Assign numbers", "Corrections"]
@@ -1082,7 +1081,6 @@ def render() -> None:
                             "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01, default=0.0),
                         },
                     )
-                    render_card_week_notes(edited_checks_df["check_date"])     # card dues in those weeks (owner, 2026-09-29)
 
                     _typed = [(str(r["check_date"])[:10], round(float(r["amount"]), 2)) for _, r in edited_checks_df.iterrows() if pd.notna(r["amount"]) and float(r["amount"]) > 0]
                     _computed = [(str(r["check_date"])[:10], round(float(r["amount"]), 2)) for _, r in computed_default_df.iterrows()]
@@ -1310,7 +1308,6 @@ def render() -> None:
                             "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
                         },
                     )
-                    render_card_week_notes(edited_parked_df["check_date"])     # card dues in those weeks (owner, 2026-09-29)
                     if st.button("Save parked check edits", icon=":material/save:", key=batch_scoped_key("save_parked_edits")):
                         original_by_id = original_parked_df.set_index("check_id")
                         pending = []
@@ -1396,7 +1393,6 @@ def render() -> None:
                             "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.01, step=0.01),
                         },
                     )
-                    render_card_week_notes(edited_active_df["check_date"])     # card dues in those weeks (owner, 2026-09-29)
                     if st.button("Save check corrections", icon=":material/save:", key=batch_scoped_key("save_check_corrections")):
                         original_by_id = original_active_df.set_index("check_id")
                         pending = []                                   # (check id, what, value to save, old shown, new shown, check number)

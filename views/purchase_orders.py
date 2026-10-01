@@ -10,8 +10,9 @@ import streamlit as st
 from engines.clock import manila_today
 from engines.po_pdf import build_po_pdf
 from engines.cash_insights_service import scheduled_outflows
-from engines.po_rules import acknowledge_over_plan, cancel_po, cash_check, expected_pay_date, get_po, list_pos, order_po, orders_over_plan, save_po, suggest_order_date
+from engines.po_rules import acknowledge_over_plan, cancel_po, cash_check, committed_load, expected_pay_date, get_po, list_pos, order_po, orders_over_plan, save_po, suggest_order_date
 from engines.price_list_service import item_names, price_on
+from engines.settings_registry import forecast_shown
 from views.shared import MONEY_FORMAT, confirm_change_dialog, flash, page_header, php, refresh, section, selectbox_creditor
 
 LINE_COLS = ["item_name", "unit", "qty", "est_unit_price"]
@@ -56,6 +57,13 @@ def _use_dates(order_date, delivery) -> None:
 def _cash_panel(cid: int, estimate: float, order_date, delivery, edit_id) -> None:
     """Does the cash on the pay date cover this order? Says so, or says how far short and offers the first later order date that fits."""
     if estimate <= 0 or delivery is None:
+        return
+    if not forecast_shown():                                # no cash verdict while the forecast is hidden: show what is already committed that week
+        load = committed_load(expected_pay_date(cid, delivery), estimate, exclude_po_id=edit_id)
+        if load:
+            st.info(f"**Already falling due the week of {load['week_start']:%b %d}:** {php(load['total'])} "
+                    f"(checks {php(load['checks'])}, loans and cards {php(load['loans_cards'])}, other orders {php(load['orders'])}). "
+                    f"This order adds {php(load['adds'])}.", icon=":material/event_upcoming:")
         return
     chk = cash_check(cid, estimate, delivery, exclude_po_id=edit_id)
     if not chk["known"]:

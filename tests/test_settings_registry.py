@@ -56,26 +56,23 @@ def test_existing_setting_keys_keep_working(db):
 
 
 def test_reset_removes_the_saved_value_and_is_audited(db):
-    sr.save("heavy_card_factor", 2.5)
-    ok, msg = sr.reset("heavy_card_factor")
-    assert ok and sr.value("heavy_card_factor") == 1.5
+    sr.save("planner_max_days_late", 12)
+    ok, msg = sr.reset("planner_max_days_late")
+    assert ok and sr.value("planner_max_days_late") == 7
     assert fetchone(db, "SELECT COUNT(*) FROM audit_logs WHERE user_action = 'SETTING_RESET'")[0] == 1
     assert sr.changed_from_default() == []
 
 
 def test_the_engines_read_the_settings(db):
     from engines import cash_insights_service as ci
-    from engines import cc_forecast_service as cf
     from engines import data_health_service as dh
     from engines import overview_report_service as ov
     from engines import validators
     sr.save("forecast_fresh_days", 20)
     sr.save("inflow_weeks", 4)
-    sr.save("heavy_card_factor", 2)
     sr.save("min_money_amount", 50)
     sr.save("stale_check_days", 90)
     assert ci.forecast_fresh_days() == 20 and ci.inflow_weeks() == 4
-    assert cf.heavy_factor() == 2
     assert validators.money_amount_error(10, "Principal") is not None and validators.money_amount_error(60, "Principal") is None
     assert dh.stale_check_days() == 90 and ov.stale_days() == 90
 

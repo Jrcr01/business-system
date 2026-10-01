@@ -16,6 +16,12 @@ from engines.po_rules import (
 from engines.price_list_service import add_price
 from test_cash_insights import statement  # noqa: F401  (fixture: a bank statement closing at 10,000 on Oct 16, 2026)
 
+@pytest.fixture(autouse=True)
+def _forecast_on(db):
+    """These tests are about the cash plan, which is hidden by default (Settings: show_cash_forecast)."""
+    sr.save("show_cash_forecast", 1)
+
+
 TODAY = date(2026, 10, 19)                       # a Monday; late check of 3,000 counts today, 4,000 on Oct 26
 
 
