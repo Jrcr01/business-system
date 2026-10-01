@@ -21,7 +21,7 @@ from engines import settings_registry
 from engines.clock import manila_now, manila_today
 from engines.common import get_conn, write_tx
 from engines.db_engine import next_doc_number
-from engines.price_list_service import price_on
+from engines.price_list_service import add_price, price_on
 from engines.statement_rules import resolve_due_date
 
 OPEN_STATUSES = ("DRAFT", "ORDERED")                     # an order can still be changed while it is in one of these and nothing has been received
@@ -367,3 +367,145 @@ def committed_load(pay_date, new_amount: float = 0.0, exclude_po_id: int | None 
         orders = max(orders - own[1], 0.0)
     return {"week_start": start, "week_end": end, "checks": checks, "loans_cards": loans_cards, "orders": orders,
             "total": checks + loans_cards + orders, "adds": float(new_amount)}
+
+
+# --- receiving: matching the supplier's invoice to its order (stage B4) -------------------------------------------------------------------------
+
+def receivable_lines(creditor_id: int) -> pd.DataFrame:
+    """The supplier's order lines that were sent to the supplier and are not fully received yet. Columns: po_id, po_no, line_id, item_name, unit, qty,
+    qty_received, remaining, est_unit_price, expected_delivery_date."""
+    cols = ["po_id", "po_no", "line_id", "item_name", "unit", "qty", "qty_received", "remaining", "est_unit_price", "expected_delivery_date"]
+    with get_conn() as conn:
+        df = pd.read_sql_query(
+            """SELECT p.po_id, p.po_no, l.line_id, l.item_name, l.unit, l.qty, l.qty_received, l.qty - l.qty_received AS remaining, l.est_unit_price,
+                      p.expected_delivery_date
+               FROM purchase_orders p JOIN purchase_order_lines l ON l.po_id = p.po_id
+               WHERE p.creditor_id = ? AND p.status IN ('ORDERED', 'PARTIAL') AND l.qty - l.qty_received > 0.0000001
+               ORDER BY p.po_id, l.line_id""", conn, params=(creditor_id,))
+    return df[cols] if not df.empty else pd.DataFrame(columns=cols)
+
+
+def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoice_date, picks: list[dict], update_prices: bool = False,
+                       received_date=None, gross_override: float | None = None) -> tuple[bool, str, int | None]:
+    """Matches the supplier's invoice to one or more orders and puts it in the batch. picks: [{'line_id', 'qty', 'actual_unit_price'}]. The ACTUAL price
+    prevails: the invoice is made at what the supplier charged (qty x actual price, or `gross_override` when the invoice total is typed), the order line keeps both
+    prices, and the received quantity leaves the commitments. Everything is checked first; a refusal writes nothing. update_prices: add the actual price to the
+    price list (starting on the invoice date) wherever it differs from the estimate. Returns (ok, message, invoice_id)."""
+    from engines.statement_rules import add_invoice, delete_invoice
+
+    doc = " ".join(str(doc_ref or "").split())
+    inv_date = _as_date(invoice_date)
+    if not doc:
+        return False, "Enter the supplier's invoice number.", None
+    if inv_date is None:
+        return False, "Enter the invoice date.", None
+    if not picks:
+        return False, "Tick at least one delivered line.", None
+    with get_conn() as conn:
+        batch = conn.execute("SELECT creditor_id, status, is_locked FROM order_statements WHERE statement_id = ?", (statement_id,)).fetchone()
+        creditor = conn.execute("SELECT terms FROM creditors WHERE creditor_id = ?", (creditor_id,)).fetchone()
+        if not batch or not creditor:
+            return False, "Batch or supplier not found.", None
+        if int(batch[0]) != int(creditor_id):
+            return False, "That batch belongs to another supplier.", None
+        if batch[1] == "Cancelled":
+            return False, "That batch is cancelled.", None
+        if batch[2]:
+            return False, "That batch is locked (closed: its checks cover it in full). Put the invoice in a new batch.", None
+        if conn.execute("SELECT 1 FROM invoices WHERE creditor_id = ? AND doc_ref = ?", (creditor_id, doc)).fetchone():
+            return False, f"Invoice {doc} already exists for this supplier.", None
+        rows = []
+        for n, pk in enumerate(picks, start=1):
+            ln = conn.execute(
+                """SELECT l.line_id, l.po_id, l.item_name, l.unit, l.qty, l.qty_received, l.est_unit_price, l.actual_amount, p.status, p.creditor_id, p.po_no
+                   FROM purchase_order_lines l JOIN purchase_orders p ON p.po_id = l.po_id WHERE l.line_id = ?""", (int(pk["line_id"]),)).fetchone()
+            if not ln:
+                return False, f"Line {n}: order line not found.", None
+            if int(ln[9]) != int(creditor_id):
+                return False, f"Line {n} ({ln[2]}): that order is for another supplier.", None
+            if ln[8] not in LIVE_STATUSES:
+                return False, f"Line {n} ({ln[2]}): {ln[10]} has not been sent to the supplier or is closed, so it cannot be received.", None
+            try:
+                qty, price = float(pk["qty"]), float(pk["actual_unit_price"])
+            except (TypeError, ValueError):
+                return False, f"Line {n} ({ln[2]}): enter the quantity and the price.", None
+            if qty <= 0:
+                return False, f"Line {n} ({ln[2]}): the quantity received must be more than zero.", None
+            if price < 0:
+                return False, f"Line {n} ({ln[2]}): the price cannot be negative.", None
+            remaining = float(ln[4]) - float(ln[5])
+            if qty > remaining + 1e-6:
+                return False, f"Line {n} ({ln[2]}): {qty:g} is more than is still to come ({remaining:g}).", None
+            rows.append({"line_id": ln[0], "po_id": ln[1], "item": ln[2], "unit": ln[3], "qty": qty, "price": price, "est_price": float(ln[6]),
+                         "amount": round(qty * price, 2), "est": round(qty * float(ln[6]), 2), "prior_actual": float(ln[7] or 0.0), "prior_qty": float(ln[5])})
+    gross = round(sum(r["amount"] for r in rows), 2) if gross_override is None else round(float(gross_override), 2)
+    if gross <= 0:
+        return False, "The invoice amount must be more than zero.", None
+    due = resolve_due_date(inv_date, creditor[0])
+    add_invoice(creditor_id, doc, inv_date, due, gross, [], statement_id)              # the invoice is the payable from here on
+    with get_conn() as conn:
+        inv_id = conn.execute("SELECT invoice_id FROM invoices WHERE creditor_id = ? AND doc_ref = ?", (creditor_id, doc)).fetchone()[0]
+    received = _as_date(received_date) or manila_today()
+    try:
+        with write_tx() as conn:
+            for r in rows:
+                new_qty = r["prior_qty"] + r["qty"]
+                new_actual = round(r["prior_actual"] + r["amount"], 2)
+                conn.execute("UPDATE purchase_order_lines SET qty_received = ?, actual_amount = ?, actual_unit_price = ? WHERE line_id = ?",
+                             (new_qty, new_actual, round(new_actual / new_qty, 4), r["line_id"]))
+            for po_id in sorted({r["po_id"] for r in rows}):
+                mine = [r for r in rows if r["po_id"] == po_id]
+                conn.execute(
+                    """INSERT INTO po_receipts (po_id, received_date, supplier_invoice_no, supplier_invoice_date, actual_amount, est_amount, invoice_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""", (po_id, str(received), doc, str(inv_date), sum(r["amount"] for r in mine), sum(r["est"] for r in mine), inv_id))
+                left = conn.execute("SELECT COUNT(*) FROM purchase_order_lines WHERE po_id = ? AND qty - qty_received > 0.0000001", (po_id,)).fetchone()[0]
+                conn.execute("UPDATE purchase_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE po_id = ?", ("PARTIAL" if left else "RECEIVED", po_id))
+                po_no = conn.execute("SELECT po_no FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()[0]
+                conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_RECEIVED', 'purchase_orders', ?, ?)",
+                             (po_id, f"{po_no} received on invoice {doc}: actual {sum(r['amount'] for r in mine):,.2f} against estimate {sum(r['est'] for r in mine):,.2f}"))
+    except Exception:
+        delete_invoice(inv_id)                                                            # nothing half-done: take the invoice back out
+        raise
+    if update_prices:
+        for r in rows:
+            if abs(r["price"] - r["est_price"]) > 0.005:
+                add_price(creditor_id, r["item"], r["unit"] or "", r["price"], inv_date, replace=True)
+    for po_id in sorted({r["po_id"] for r in rows}):
+        update_cash_flag(po_id)
+    changed = sum(1 for r in rows if abs(r["price"] - r["est_price"]) > 0.005)
+    return True, f"Invoice {doc} for {gross:,.2f} added to the batch from {len({r['po_id'] for r in rows})} order(s)" + (f"; {changed} price(s) differ from the estimate." if changed else "."), int(inv_id)
+
+
+def po_links_for_batch(statement_id: int) -> pd.DataFrame:
+    """The batch's invoices that were matched to purchase orders: doc_ref, po_nos, est_amount, actual_amount, difference (actual - estimate), matches (no difference)."""
+    cols = ["invoice_id", "doc_ref", "po_nos", "est_amount", "actual_amount", "difference", "matches"]
+    with get_conn() as conn:
+        df = pd.read_sql_query(
+            """SELECT i.invoice_id, i.doc_ref, GROUP_CONCAT(DISTINCT p.po_no) AS po_nos, SUM(r.est_amount) AS est_amount, SUM(r.actual_amount) AS actual_amount
+               FROM invoices i JOIN po_receipts r ON r.invoice_id = i.invoice_id JOIN purchase_orders p ON p.po_id = r.po_id
+               WHERE i.statement_id = ? GROUP BY i.invoice_id ORDER BY i.invoice_id""", conn, params=(statement_id,))
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+    df["difference"] = (df["actual_amount"] - df["est_amount"]).round(2)
+    df["matches"] = df["difference"].abs() < 0.005
+    return df[cols]
+
+
+def price_differences(creditor_id: int | None = None, since=None) -> pd.DataFrame:
+    """Received order lines with what was estimated and what was charged: po_no, supplier, item_name, qty_received, est_unit_price, actual_unit_price,
+    difference (actual - estimate, times the quantity received), difference_pct. Newest first."""
+    where, params = ["l.qty_received > 0", "l.actual_unit_price IS NOT NULL"], []
+    if creditor_id:
+        where.append("p.creditor_id = ?")
+        params.append(creditor_id)
+    if since:
+        where.append("p.updated_at >= ?")
+        params.append(str(_as_date(since)))
+    with get_conn() as conn:
+        df = pd.read_sql_query(
+            f"""SELECT p.po_no, c.creditor_name AS supplier, l.item_name, l.qty_received, l.est_unit_price, l.actual_unit_price
+                FROM purchase_order_lines l JOIN purchase_orders p ON p.po_id = l.po_id JOIN creditors c ON c.creditor_id = p.creditor_id
+                WHERE {' AND '.join(where)} ORDER BY p.updated_at DESC, l.line_id DESC""", conn, params=params)
+    df["difference"] = ((df["actual_unit_price"] - df["est_unit_price"]) * df["qty_received"]).round(2)
+    df["difference_pct"] = ((df["actual_unit_price"] / df["est_unit_price"] - 1) * 100).where(df["est_unit_price"] > 0)
+    return df

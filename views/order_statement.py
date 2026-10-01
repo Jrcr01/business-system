@@ -97,6 +97,7 @@ from views.shared import (  # noqa: F401
     status_text,
 )
 from engines.clock import manila_now, manila_today
+from views.po_receive import render_po_match_notes, render_receive_form
 
 
 CHECKS_VIEWS = ["Issue checks", "Checks in this batch", "Assign numbers", "Corrections"]
@@ -128,6 +129,7 @@ def render_batch_invoices(statement_id: int) -> None:
            ORDER BY invoice_id""",
         (int(batch_scope_pick),),
     )
+    render_po_match_notes(int(batch_scope_pick), scoped_creditor_id)         # which invoices came from purchase orders, and how far the price moved
     if batch_is_locked:
         if scoped_invoices_df.empty:
             st.caption("No invoices linked to this order statement yet.")
@@ -143,6 +145,9 @@ def render_batch_invoices(statement_id: int) -> None:
         st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is closed (fully covered by checks) — use Edit this batch above to change an invoice. A new invoice for this supplier goes in a new batch.")
     else:
         st.caption(f"Add, edit, or delete rows below, then Save. A new row needs a Doc Ref and a positive Amount; use the row's menu (or select + Delete) to remove one. Due Date is always recomputed as Date Received + this supplier's Terms ({supplier_terms or 'not set'}) when you Save — it's a computed reference field, not manually edited; whatever you type into it is overwritten on Save. The grid itself won't visibly update Due Date while you're still typing, only after Save. Every change is logged automatically (old → new + timestamp).")
+
+        with st.expander("Add an invoice from a purchase order", icon=":material/inventory_2:"):
+            render_receive_form(scoped_creditor_id, statement_id=int(batch_scope_pick), key=batch_scoped_key("rcv"))
 
         with st.expander("Add invoices from a photo, PDF, or spreadsheet"):
             bulk_staged_key = batch_scoped_key("bulk_staged")

@@ -935,6 +935,7 @@ CREATE TABLE IF NOT EXISTS po_receipts (
     supplier_invoice_no TEXT,
     supplier_invoice_date DATE,
     actual_amount REAL NOT NULL CHECK(actual_amount >= 0),
+    est_amount REAL NOT NULL DEFAULT 0,                             -- what the order estimated for the part received (the difference = what the actual price changed)
     invoice_id INTEGER,                                             -- the AP invoice this receipt created or matched
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (po_id) REFERENCES purchase_orders(po_id),

@@ -240,6 +240,7 @@ for _t in (
         A("Past their date", "Checks the suppliers have not deposited yet", ":material/hourglass_top:", pd_tab="Past their date")]),
     Tile("planner", "daily", "Check-date planner", _planner),
     Tile("purchase-orders", "purchasing", "Purchase orders", _purchase_orders, actions=[
+        A("Match a supplier invoice", "Goods arrived: invoice into a batch at the actual price", ":material/inventory_2:", po_mode="Receive"),
         A("New order", "From a supplier's price list", ":material/add_shopping_cart:", po_mode="New order"),
         A("Orders", "Open, late and over-plan orders; PO PDF", ":material/list_alt:", po_mode="Orders")]),
     Tile("price-lists", "purchasing", "Price lists", _price_lists, actions=[

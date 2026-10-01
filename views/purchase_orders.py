@@ -13,6 +13,7 @@ from engines.cash_insights_service import scheduled_outflows
 from engines.po_rules import acknowledge_over_plan, cancel_po, cash_check, committed_load, expected_pay_date, get_po, list_pos, order_po, orders_over_plan, save_po, suggest_order_date
 from engines.price_list_service import item_names, price_on
 from engines.settings_registry import forecast_shown
+from views.po_receive import render_receive_form
 from views.shared import MONEY_FORMAT, confirm_change_dialog, flash, page_header, php, refresh, section, selectbox_creditor
 
 LINE_COLS = ["item_name", "unit", "qty", "est_unit_price"]
@@ -82,6 +83,37 @@ def _cash_panel(cid: int, estimate: float, order_date, delivery, edit_id) -> Non
                   help="Moves the order date and the delivery date together, keeping the same lead time. That is the first date the cash covers it.")
     else:
         st.caption("No order date within the next days fits either. The cash needs to come in first, or the order has to be smaller.")
+
+
+def _start_receive(po_id: int, creditor_id: int) -> None:
+    """Button callback: open the Receive form for this order's supplier with its lines ticked."""
+    st.session_state.update({"po_mode": "Receive", "rcv_supplier": int(creditor_id), "rcv_po": int(po_id)})
+
+
+def _receive() -> None:
+    st.caption("A delivery arrived with the supplier's invoice: match it to the order. The invoice goes into a batch at the price the supplier actually charged.")
+    cid = selectbox_creditor("Supplier", "SUPPLIER", "rcv_supplier")
+    if cid is None:
+        return
+    render_receive_form(int(cid), preselect_po=st.session_state.get("rcv_po"))
+
+
+def _price_differences() -> None:
+    from engines.po_rules import price_differences
+
+    df = price_differences()
+    if df.empty:
+        st.caption("No order has been received yet, so there is no price difference to show.")
+        return
+    changed = df[df["difference"].abs() > 0.004]
+    st.caption(f"{len(changed)} of {len(df)} received line(s) were charged a different price than estimated; net {php(float(df['difference'].sum()))} "
+               "(positive = the suppliers charged more). Keep the price lists current to shrink this.")
+    st.dataframe(changed if not changed.empty else df, hide_index=True, width="stretch",
+                 column_config={"po_no": "PO", "supplier": "Supplier", "item_name": "Item", "qty_received": st.column_config.NumberColumn("Qty", format="%g"),
+                                "est_unit_price": st.column_config.NumberColumn("Estimated", format=MONEY_FORMAT),
+                                "actual_unit_price": st.column_config.NumberColumn("Charged", format=MONEY_FORMAT),
+                                "difference": st.column_config.NumberColumn("Difference", format=MONEY_FORMAT),
+                                "difference_pct": st.column_config.NumberColumn("%", format="%+.1f%%")})
 
 
 def _lines_df() -> pd.DataFrame:
@@ -177,6 +209,8 @@ def _orders() -> None:
     _over_plan_section()
     with st.expander("What is going out, week by week (orders included)"):
         _by_week()
+    with st.expander("Price differences: estimated against what the suppliers charged"):
+        _price_differences()
     f1, f2 = st.columns(2)
     scope = f1.selectbox("Show", ["Open (draft, ordered, partly received)", "Draft", "Ordered", "Partly received", "Received", "Cancelled", "All"], key="po_scope")
     everyone = list_pos()
@@ -225,8 +259,10 @@ def _orders() -> None:
             pdf = build_po_pdf(int(pick))
             if pdf:
                 c1.download_button("Download PO (PDF)", pdf, file_name=f"{h['po_no']}.pdf".replace(" ", "_"), mime="application/pdf", icon=":material/picture_as_pdf:", key="po_pdf")
+        if status in ("ORDERED", "PARTIAL"):
+            c2.button("Receive / match invoice", icon=":material/inventory_2:", key="po_receive_btn", on_click=_start_receive, args=(int(pick), int(h["creditor_id"])))
         if status in ("DRAFT", "ORDERED"):
-            c2.button("Change", icon=":material/edit:", key="po_edit_btn", on_click=_start_edit, args=(int(pick),))
+            c4.button("Change", icon=":material/edit:", key="po_edit_btn", on_click=_start_edit, args=(int(pick),))
         if status in ("DRAFT", "ORDERED", "PARTIAL"):
             if c3.button("Cancel order", icon=":material/cancel:", key="po_cancel_btn"):
                 def _cancel():
@@ -242,9 +278,11 @@ def _orders() -> None:
 def render() -> None:
     page_header("Purchase orders", "An order shows what we will owe, and when, before the supplier's invoice exists. Prices come from the Price lists.")
     st.session_state.setdefault("po_mode", "Orders")
-    mode = st.segmented_control("What do you want to do?", ["Orders", "New order"], key="po_mode", label_visibility="collapsed")
+    mode = st.segmented_control("What do you want to do?", ["Orders", "New order", "Receive"], key="po_mode", label_visibility="collapsed")
     if mode == "New order":
         _form()
+    elif mode == "Receive":
+        _receive()
     else:
         if st.session_state.get("po_edit_id"):
             _reset_form()
