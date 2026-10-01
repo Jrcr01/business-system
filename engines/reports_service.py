@@ -111,19 +111,19 @@ def get_parked_checks_daily_totals() -> pd.DataFrame:
     return grouped.sort_values("actual_payment_date").reset_index(drop=True)
 
 
-_PAYMENT_SCHEDULE_UNION = """
+_PAYMENT_SCHEDULE_TEMPLATE = """
     -- 2026-09-22: 'today and future' -- an item due TODAY is still to be paid, so >= (it used to start tomorrow).
     SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Supplier' AS track, COALESCE(c.check_number, 'Pending') AS reference, os.statement_ref AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
     LEFT JOIN order_statements os ON os.statement_id = c.statement_id
-    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND c.check_date >= DATE('now', 'localtime') AND c.settled_outside_at IS NULL
+    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND c.check_date __CMP__ DATE('now', 'localtime') AND c.settled_outside_at IS NULL
 
     UNION ALL
 
     -- Lender checks aren't batched (Loan Notes track, not Order Statements) -- batch is NULL.
     SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Lender' AS track, COALESCE(c.check_number, 'Pending') AS reference, NULL AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND c.check_date >= DATE('now', 'localtime') AND c.settled_outside_at IS NULL
+    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND c.check_date __CMP__ DATE('now', 'localtime') AND c.settled_outside_at IS NULL
 
     UNION ALL
 
@@ -136,7 +136,7 @@ _PAYMENT_SCHEDULE_UNION = """
     JOIN bank_loans bl ON bli.bank_loan_id = bl.bank_loan_id
     JOIN creditors cr ON bl.creditor_id = cr.creditor_id
     LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id
-    WHERE bli.due_date >= DATE('now', 'localtime') AND bl.is_cancelled = 0
+    WHERE bli.due_date __CMP__ DATE('now', 'localtime') AND bl.is_cancelled = 0
 
     UNION ALL
 
@@ -150,9 +150,15 @@ _PAYMENT_SCHEDULE_UNION = """
     JOIN credit_cards cc ON cs.card_id = cc.card_id
     JOIN creditors cr ON cc.creditor_id = cr.creditor_id
     LEFT JOIN cardholders ch ON cc.cardholder_id = ch.cardholder_id
-    WHERE cs.status IN ('Unpaid', 'Partially Paid') AND cs.due_date >= DATE('now', 'localtime')
+    WHERE __CARD_STATUS__ AND cs.due_date __CMP__ DATE('now', 'localtime')
       AND NOT (cs.unpaid_balance_next > 0 AND """ + superseded_sql("cs") + """)
 """
+
+# Still owed (today or later) -- the Schedule of payments, forecasts and reports. Unchanged.
+_PAYMENT_SCHEDULE_UNION = _PAYMENT_SCHEDULE_TEMPLATE.replace("__CMP__", ">=").replace("__CARD_STATUS__", "cs.status IN ('Unpaid', 'Partially Paid')")
+# What fell due on a day that has already passed (owner, 2026-09-30: "the calendar shows 0 on past days"): same four tracks, same references, so the
+# calendar can show what was paid. A card statement counts whether or not it was marked paid (past dues are treated as paid, like everywhere else).
+_PAYMENT_PAST_UNION = _PAYMENT_SCHEDULE_TEMPLATE.replace("__CMP__", "<").replace("__CARD_STATUS__", "cs.status != 'Cancelled'")
 
 
 PAYMENT_SCHEDULE_TRACK_ORDER = {"Lender": 0, "Bank Loan": 1, "Supplier": 2, "Credit Card": 3}
@@ -194,6 +200,60 @@ def get_payment_schedule_daily_totals() -> pd.DataFrame:
         return pd.DataFrame(columns=["actual_payment_date", "num_items", "total_amount"])
     grouped = detail.groupby("actual_payment_date").agg(num_items=("amount", "count"), total_amount=("amount", "sum")).reset_index()
     return grouped.sort_values("actual_payment_date").reset_index(drop=True)
+
+
+def get_payment_calendar_items() -> pd.DataFrame:
+    """Every payment on the calendar, past and future, one row each: the still-owed schedule (state "Due", today and later) plus what fell due on past
+    days (state "Paid" -- checks dated that day, bank-loan installments, card statements). Columns as get_payment_schedule_all_tracks() + state."""
+    with sqlite3.connect(DB_PATH) as conn:
+        past = pd.read_sql_query(f"SELECT * FROM ({_PAYMENT_PAST_UNION}) ORDER BY due_date ASC, track ASC", conn)
+    due = get_payment_schedule_all_tracks()
+    if not past.empty:
+        past["actual_payment_date"] = past["due_date"].apply(next_banking_day)
+        past["state"] = "Paid"
+    if not due.empty:
+        due["state"] = "Due"
+    frames = [f for f in (past, due) if not f.empty]
+    if not frames:
+        return pd.DataFrame(columns=["due_date", "payee_name", "track", "reference", "batch", "amount", "actual_payment_date", "state"])
+    out = pd.concat(frames, ignore_index=True)
+    out["_rank"] = out["track"].map(PAYMENT_SCHEDULE_TRACK_ORDER).fillna(len(PAYMENT_SCHEDULE_TRACK_ORDER))
+    return out.sort_values(["actual_payment_date", "_rank", "amount"], kind="stable").drop(columns="_rank").reset_index(drop=True)
+
+
+def get_payment_calendar_daily_totals() -> pd.DataFrame:
+    """Per-day totals for the calendars, one row per day: actual_payment_date, due_amount / due_items (still owed: today and later) and paid_amount /
+    paid_items (fell due on a day that has passed). A weekend due date lands on the next banking day, as everywhere else, so a day can in rare cases
+    hold both (a Sunday item landing on Monday, the day it is viewed)."""
+    cols = ["actual_payment_date", "due_amount", "due_items", "paid_amount", "paid_items"]
+    detail = get_payment_calendar_items()
+    if detail.empty:
+        return pd.DataFrame(columns=cols)
+    g = detail.groupby(["actual_payment_date", "state"]).agg(items=("amount", "count"), amount=("amount", "sum")).reset_index()
+    out = pd.DataFrame({"actual_payment_date": sorted(g["actual_payment_date"].unique())})
+    for state, name in (("Due", "due"), ("Paid", "paid")):
+        part = g[g["state"] == state].rename(columns={"amount": f"{name}_amount", "items": f"{name}_items"}).drop(columns="state")
+        out = out.merge(part, on="actual_payment_date", how="left")
+    out[["due_amount", "paid_amount"]] = out[["due_amount", "paid_amount"]].fillna(0.0)
+    out[["due_items", "paid_items"]] = out[["due_items", "paid_items"]].fillna(0).astype(int)
+    return out[cols]
+
+
+def attach_calendar_totals(grid_df: pd.DataFrame) -> pd.DataFrame:
+    """Add the calendar figures to a month grid (a frame with a `date` column): total_amount / num_items (paid + due that day), `status` ("Paid" for a day that
+    has passed, "Due" for today and later, "" when nothing), and is_paid (the cell is drawn green)."""
+    daily = get_payment_calendar_daily_totals()
+    out = grid_df.merge(daily, left_on="date", right_on="actual_payment_date", how="left") if not daily.empty else grid_df.assign(
+        due_amount=0.0, due_items=0, paid_amount=0.0, paid_items=0)
+    for c in ("due_amount", "paid_amount"):
+        out[c] = out[c].fillna(0.0)
+    for c in ("due_items", "paid_items"):
+        out[c] = out[c].fillna(0).astype(int)
+    out["total_amount"] = out["due_amount"] + out["paid_amount"]
+    out["num_items"] = out["due_items"] + out["paid_items"]
+    out["is_paid"] = (out["paid_amount"] > 0) & (out["due_amount"] == 0)
+    out["status"] = out.apply(lambda r: "" if r["num_items"] == 0 else ("Paid" if r["is_paid"] else ("Due" if r["paid_amount"] == 0 else "Paid + due")), axis=1)
+    return out
 
 
 def get_combined_ap_summary() -> pd.DataFrame:

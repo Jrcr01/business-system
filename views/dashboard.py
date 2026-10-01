@@ -32,7 +32,7 @@ from engines.dashboard_kpi_service import get_upcoming_cash_obligations
 from engines.interest_service import get_monthly_interest_summary
 from engines.interest_service import get_yearly_interest_trend
 from engines.reports_service import get_payment_schedule_all_tracks
-from engines.reports_service import get_payment_schedule_daily_totals
+from engines.reports_service import attach_calendar_totals, get_payment_calendar_items
 from engines.reports_service import get_supplier_ap_aging_report
 
 from views.bank_cash import show_alerts
@@ -228,7 +228,7 @@ def render() -> None:
     # third option to compare, not a replacement — drop this block if it doesn't win.
     with st.container(border=True):
         st.subheader("Payment calendar (all tracks)")
-        st.caption("Hover a day for its total. Darker = more payable that day.")
+        st.caption("Hover a day for its total. Blue = still to pay (darker = more), green = paid (days that have passed), outlined = today, grey = holiday or marked date.")
         cal_year = st.session_state.get("cal_year", date.today().year)
         cal_month = st.session_state.get("cal_month", date.today().month)
         cal_month_names = [date(2000, m, 1).strftime("%B") for m in range(1, 13)]
@@ -291,13 +291,8 @@ def render() -> None:
                 cal_rows.append({"date": date(cal_year, cal_month, day_num), "week": week_idx, "weekday": weekday_names[day_idx], "day": day_num})
         cal_grid_df = pd.DataFrame(cal_rows)
 
-        cal_daily = get_payment_schedule_daily_totals()
-        if not cal_daily.empty:
-            cal_daily = cal_daily.copy()
-            cal_daily["actual_payment_date"] = pd.to_datetime(cal_daily["actual_payment_date"]).dt.date
-        cal_merged = cal_grid_df.merge(cal_daily, left_on="date", right_on="actual_payment_date", how="left") if not cal_daily.empty else cal_grid_df.assign(total_amount=0.0, num_items=0)
-        cal_merged["total_amount"] = cal_merged["total_amount"].fillna(0.0)
-        cal_merged["num_items"] = cal_merged["num_items"].fillna(0).astype(int)
+        cal_merged = attach_calendar_totals(cal_grid_df)
+        cal_merged["is_today"] = cal_merged["date"] == date.today()
 
         # Greyed-out dates (2026-09-14): Philippine holidays (seeded, migration 024) and any
         # custom date the user has marked — both stored in calendar_blocked_dates, rendered as
@@ -305,13 +300,15 @@ def render() -> None:
         cal_blocked = get_blocked_dates_for_month(cal_year, cal_month)
         cal_merged["is_blocked"] = cal_merged["date"].isin(cal_blocked.keys())
         cal_merged["blocked_label"] = cal_merged["date"].apply(lambda d: cal_blocked.get(d, {}).get("label") or cal_blocked.get(d, {}).get("kind", "").title())
-        cal_normal_df = cal_merged[~cal_merged["is_blocked"]]
+        cal_normal_df = cal_merged[~cal_merged["is_blocked"] & ~cal_merged["is_paid"]]
+        cal_paid_df = cal_merged[~cal_merged["is_blocked"] & cal_merged["is_paid"]]
         cal_blocked_df = cal_merged[cal_merged["is_blocked"]]
 
         cal_tooltip = [
             alt.Tooltip("date:T", title="Date"),
-            alt.Tooltip("total_amount:Q", title="Total payable", format=",.2f"),
+            alt.Tooltip("total_amount:Q", title="Total", format=",.2f"),
             alt.Tooltip("num_items:Q", title="Items"),
+            alt.Tooltip("status:N", title="Status"),
         ]
         cal_tooltip_blocked = cal_tooltip + [alt.Tooltip("blocked_label:N", title="Marked")]
         # Transposed (2026-09-17) to the conventional calendar layout -- weekday across the top
@@ -321,8 +318,17 @@ def render() -> None:
         cal_heat = alt.Chart(cal_normal_df).mark_rect(stroke="white", strokeWidth=2, cornerRadius=4).encode(
             x=alt.X("weekday:N", title=None, sort=weekday_names, axis=cal_weekday_axis),
             y=alt.Y("week:O", title=None, axis=None),
-            color=alt.Color("total_amount:Q", title="Payable", scale=alt.Scale(scheme="blues", type="sqrt"), legend=None),
+            color=alt.Color("total_amount:Q", title="Payable", scale=alt.Scale(scheme="blues", type="sqrt", domain=[0, max(1.0, float(cal_merged["total_amount"].max()))]), legend=None),
             tooltip=cal_tooltip,
+        )
+        cal_paid_heat = alt.Chart(cal_paid_df).mark_rect(stroke="white", strokeWidth=2, cornerRadius=4).encode(
+            x=alt.X("weekday:N", title=None, sort=weekday_names, axis=cal_weekday_axis),
+            y=alt.Y("week:O", title=None, axis=None),
+            color=alt.Color("total_amount:Q", title="Paid", scale=alt.Scale(scheme="greens", type="sqrt", domain=[0, max(1.0, float(cal_merged["total_amount"].max()))]), legend=None),
+            tooltip=cal_tooltip,
+        )
+        cal_today = alt.Chart(cal_merged[cal_merged["is_today"]]).mark_rect(fill=None, stroke="#1f3a5f", strokeWidth=3, cornerRadius=4).encode(
+            x=alt.X("weekday:N", title=None, sort=weekday_names, axis=cal_weekday_axis), y=alt.Y("week:O", title=None, axis=None),
         )
         cal_grey = alt.Chart(cal_blocked_df).mark_rect(stroke="white", strokeWidth=2, cornerRadius=4, color="#C4C4C4").encode(
             x=alt.X("weekday:N", title=None, sort=weekday_names, axis=cal_weekday_axis),
@@ -349,7 +355,7 @@ def render() -> None:
         # not worth fighting when "day" + the already-known cal_year/cal_month reconstructs the
         # exact date with no serialization round-trip at all.
         cal_click = alt.selection_point(name="cal_pick", fields=["day"], on="click", empty=False)
-        cal_combined = (cal_heat + cal_grey + cal_text).add_params(cal_click)
+        cal_combined = (cal_heat + cal_paid_heat + cal_grey + cal_today + cal_text).resolve_scale(color="independent").add_params(cal_click)
         cal_event = st.altair_chart(cal_combined.properties(height=220), width="stretch", on_select="rerun", key="cal_chart")
 
         cal_picked_date = None
@@ -358,16 +364,16 @@ def render() -> None:
             cal_picked_date = date(cal_year, cal_month, int(cal_sel[0]["day"]))
 
         if cal_picked_date is not None:
-            cal_day_items = get_payment_schedule_all_tracks()
+            cal_day_items = get_payment_calendar_items()
             if not cal_day_items.empty:
                 cal_day_items = cal_day_items[pd.to_datetime(cal_day_items["actual_payment_date"]).dt.date == cal_picked_date]
             with st.container(border=True):
                 st.markdown(f"**{cal_picked_date.strftime('%B %d, %Y')} — breakdown**")
                 if cal_day_items.empty:
-                    st.caption("Nothing scheduled for this date.")
+                    st.caption("Nothing was due on this date.")
                 else:
                     st.dataframe(
-                        cal_day_items[["track", "payee_name", "reference", "amount", "due_date"]],
+                        cal_day_items[["state", "track", "payee_name", "reference", "amount", "due_date"]],
                         hide_index=True,
                         column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)},
                     )

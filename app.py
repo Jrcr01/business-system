@@ -103,7 +103,7 @@ from engines.reports_service import (
     get_credit_card_history,
     get_lender_history,
     get_payment_schedule_all_tracks,
-    get_payment_schedule_daily_totals,
+    attach_calendar_totals,
     get_private_lender_master_report,
     get_supplier_ap_aging_report,
     get_supplier_history,
@@ -559,16 +559,7 @@ with st.sidebar:
                     "week": side_cal_week_idx, "weekday": side_cal_weekday_names[side_cal_day_idx], "day": side_cal_day_num,
                 })
         side_cal_grid_df = pd.DataFrame(side_cal_rows)
-        side_cal_daily_df = get_payment_schedule_daily_totals()
-        if not side_cal_daily_df.empty:
-            side_cal_daily_df = side_cal_daily_df.copy()
-            side_cal_daily_df["actual_payment_date"] = pd.to_datetime(side_cal_daily_df["actual_payment_date"]).dt.date
-        side_cal_merged_df = (
-            side_cal_grid_df.merge(side_cal_daily_df, left_on="date", right_on="actual_payment_date", how="left")
-            if not side_cal_daily_df.empty else side_cal_grid_df.assign(total_amount=0.0, num_items=0)
-        )
-        side_cal_merged_df["total_amount"] = side_cal_merged_df["total_amount"].fillna(0.0)
-        side_cal_merged_df["num_items"] = side_cal_merged_df["num_items"].fillna(0).astype(int)
+        side_cal_merged_df = attach_calendar_totals(side_cal_grid_df)
 
         # Both layers must share the exact same Axis object, not one Axis(orient="top") and one
         # axis=None (2026-09-17 -- this was the actual bug, not a missing-label rendering issue as
@@ -583,13 +574,20 @@ with st.sidebar:
         side_cal_merged_df["is_blocked"] = side_cal_merged_df["date"].isin(side_cal_blocked.keys())
         side_cal_merged_df["blocked_label"] = side_cal_merged_df["date"].apply(
             lambda d: side_cal_blocked.get(d, {}).get("label") or side_cal_blocked.get(d, {}).get("kind", "").title())
-        side_cal_normal_df = side_cal_merged_df[~side_cal_merged_df["is_blocked"]]
+        side_cal_normal_df = side_cal_merged_df[~side_cal_merged_df["is_blocked"] & ~side_cal_merged_df["is_paid"]]
+        side_cal_paid_df = side_cal_merged_df[~side_cal_merged_df["is_blocked"] & side_cal_merged_df["is_paid"]]
         side_cal_blocked_df = side_cal_merged_df[side_cal_merged_df["is_blocked"]]
-        side_cal_tooltip = [alt.Tooltip("date:T", title="Date"), alt.Tooltip("total_amount:Q", title="Total", format=",.2f"), alt.Tooltip("num_items:Q", title="Items")]
+        side_cal_tooltip = [alt.Tooltip("date:T", title="Date"), alt.Tooltip("total_amount:Q", title="Total", format=",.2f"), alt.Tooltip("num_items:Q", title="Items"), alt.Tooltip("status:N", title="Status")]
         side_cal_heat = alt.Chart(side_cal_normal_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3).encode(
             x=alt.X("weekday:N", title=None, sort=side_cal_weekday_names, axis=side_cal_weekday_axis),
             y=alt.Y("week:O", title=None, axis=None),
-            color=alt.Color("total_amount:Q", scale=alt.Scale(scheme="blues", type="sqrt"), legend=None),
+            color=alt.Color("total_amount:Q", scale=alt.Scale(scheme="blues", type="sqrt", domain=[0, max(1.0, float(side_cal_merged_df["total_amount"].max()))]), legend=None),
+            tooltip=side_cal_tooltip,
+        )
+        side_cal_paid_heat = alt.Chart(side_cal_paid_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3).encode(
+            x=alt.X("weekday:N", title=None, sort=side_cal_weekday_names, axis=side_cal_weekday_axis),
+            y=alt.Y("week:O", title=None, axis=None),
+            color=alt.Color("total_amount:Q", scale=alt.Scale(scheme="greens", type="sqrt", domain=[0, max(1.0, float(side_cal_merged_df["total_amount"].max()))]), legend=None),
             tooltip=side_cal_tooltip,
         )
         side_cal_grey = alt.Chart(side_cal_blocked_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3, color="#C4C4C4").encode(
@@ -608,8 +606,8 @@ with st.sidebar:
             ),
             tooltip=side_cal_tooltip,
         )
-        st.altair_chart((side_cal_heat + side_cal_grey + side_cal_text).properties(height=150), width="stretch")
-        st.caption("Hover a day for its total. Grey = holiday or marked date. Full calendar: Dashboard.")
+        st.altair_chart((side_cal_heat + side_cal_paid_heat + side_cal_grey + side_cal_text).resolve_scale(color="independent").properties(height=150), width="stretch")
+        st.caption("Hover a day for its total. Blue = to pay, green = paid, grey = holiday or marked date. Full calendar: Dashboard.")
 
     st.button("Refresh data", icon=":material/refresh:", on_click=lambda: st.cache_data.clear(), width="stretch")
     _hk = _hotkeys()
