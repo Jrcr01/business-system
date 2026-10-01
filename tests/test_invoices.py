@@ -155,6 +155,7 @@ def test_delete_invoice_blocked_when_check_already_allocated(db):
     ok, _msg, check_ids = app.issue_checks_grid(creditor_id, statement_id, [{"check_date": date(2026, 1, 10), "amount": 1000.0}])
     assert ok
     app.allocate_check_to_invoices(check_ids[0], [(invoice_id, 1000.0)])
+    app.unlock_statement(statement_id)             # the full check locked the batch by itself; the owner reopens it to edit
 
     ok, msg = app.delete_invoice(invoice_id)
 

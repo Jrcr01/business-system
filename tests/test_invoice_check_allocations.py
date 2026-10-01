@@ -147,22 +147,22 @@ def test_cancel_check_releases_its_invoice_allocation(db):
     assert remaining_after.iloc[0]["remaining"] == 1000.0
 
 
-def test_cancel_check_rejects_locked_batch(db):
-    """2026-09-17 fix: cancel_check() had no batch-lock guard at all, unlike
-    replace_check()/apply_check_correction()."""
+def test_cancel_check_rejects_cancelled_batch(db):
+    """2026-09-17 fix: cancel_check() had no batch guard at all. Since 2026-10-01 a batch that is merely locked (fully covered) reopens by itself
+    when a check is voided (tests/test_auto_lock.py); a CANCELLED batch stays closed for good."""
     creditor_id = make_creditor(db)
     statement_id = make_statement(db, creditor_id)
     app.add_invoice(creditor_id, "INV-1", date(2026, 1, 1), date(2026, 1, 31), 1000.0, [], statement_id)
     ok, _msg, check_ids = app.issue_checks_grid(creditor_id, statement_id, [{"check_date": date(2026, 1, 10), "amount": 1000.0}])
     assert ok
     with app.get_conn() as conn:
-        conn.execute("UPDATE order_statements SET is_locked = 1 WHERE statement_id = ?", (statement_id,))
+        conn.execute("UPDATE order_statements SET status = 'Cancelled', is_locked = 1 WHERE statement_id = ?", (statement_id,))
         conn.commit()
 
     ok, msg = app.cancel_check(check_ids[0])
 
     assert not ok
-    assert "locked" in msg.lower()
+    assert "cancelled" in msg.lower()
     assert fetchone(db, "SELECT status FROM checks_issued WHERE check_id = ?", (check_ids[0],)) == ("Active",)
 
 

@@ -12,6 +12,7 @@ from engines.checkbook_service import audit_booklet_gaps
 from engines.common import PRIMARY_BANK_ACCOUNT_ID
 from engines.common import fix_nullable_int
 from engines.common import get_conn
+from engines.lock_rules import apply_lock_catchup, lock_catchup_preview
 
 from views.shared import (  # noqa: F401
     MONEY_FORMAT,
@@ -115,6 +116,32 @@ def render() -> None:
 
                     confirm_change_dialog(f"Archive booklet **{arch_options[int(arch_pick)]}**?  \nIt is retired: its numbers are no longer offered when assigning check numbers. "
                                           "Only archive a booklet that is finished or no longer used.", "archive_booklet_confirm", _archive, "Yes, archive it")
+
+        with st.expander("Batch locks — one-time tidy-up"):
+            st.caption("Batches now lock by themselves when their checks cover the full amount, and reopen when a check change leaves a balance. "
+                       "This lists batches the old manual locking left out of step. Download a backup first (Database backup & restore, below), then apply: nothing else changes, and each change is in the audit log.")
+            _prev = lock_catchup_preview()
+            _cols = ["statement_ref", "supplier", "net_total", "active_checks", "remaining"]
+            _money = {c: st.column_config.NumberColumn(c.replace("_", " ").title(), format="%.2f") for c in ("net_total", "active_checks", "remaining")}
+            st.markdown(f"**Fully covered but still open ({len(_prev['to_lock'])})** — will be locked")
+            if not _prev["to_lock"].empty:
+                st.dataframe(_prev["to_lock"][_cols], hide_index=True, column_config=_money)
+            st.markdown(f"**Locked but still owing ({len(_prev['to_unlock'])})** — will be reopened")
+            if not _prev["to_unlock"].empty:
+                st.dataframe(_prev["to_unlock"][_cols], hide_index=True, column_config=_money)
+            if _prev["to_lock"].empty and _prev["to_unlock"].empty:
+                st.success("Every batch is in step.")
+            else:
+                def _apply_catchup():
+                    done = apply_lock_catchup()
+                    msg = f"Locked {done['locked']} batch(es) and reopened {done['unlocked']}."
+                    flash(msg)
+                    return True, msg
+
+                if st.button("Apply the tidy-up", icon=":material/lock_reset:", key="lock_catchup_btn"):
+                    confirm_change_dialog(f"Lock **{len(_prev['to_lock'])}** fully covered batch(es) and reopen **{len(_prev['to_unlock'])}** that still owe?",
+                                          "lock_catchup_confirm", _apply_catchup, "Yes, apply it",
+                                          warning="Have you downloaded a backup? This changes the lock on every batch listed above.")
 
         with st.expander("Booklet gap audit"):
             st.caption("Every assignment is manual (Phase 6 Redux v2) — a normal one shouldn't leave a gap, since the dropdown only ever offers open leaves. A real gap here usually means a leaf was assigned outside this app (pre-Redux historical data), or a spoiled leaf logged after the fact.")

@@ -53,7 +53,7 @@ from engines.statement_rules import edit_invoice
 from engines.statement_rules import get_batch_balance
 from engines.statement_rules import get_batch_memo_status
 from engines.statement_rules import get_invoices_with_remaining
-from engines.statement_rules import lock_statement
+from engines.lock_rules import sync_batch_lock
 from engines.statement_rules import parse_less_pct
 from engines.statement_rules import resolve_due_date
 from engines.statement_rules import split_remaining_evenly
@@ -140,7 +140,7 @@ def render_batch_invoices(statement_id: int) -> None:
                     "amount": st.column_config.NumberColumn("Net amount", format=MONEY_FORMAT),
                 },
             )
-        st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is locked — unlock it above to add, edit, or delete an invoice.")
+        st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is closed (fully covered by checks) — use Edit this batch above to change an invoice. A new invoice for this supplier goes in a new batch.")
     else:
         st.caption(f"Add, edit, or delete rows below, then Save. A new row needs a Doc Ref and a positive Amount; use the row's menu (or select + Delete) to remove one. Due Date is always recomputed as Date Received + this supplier's Terms ({supplier_terms or 'not set'}) when you Save — it's a computed reference field, not manually edited; whatever you type into it is overwritten on Save. The grid itself won't visibly update Due Date while you're still typing, only after Save. Every change is logged automatically (old → new + timestamp).")
 
@@ -389,6 +389,8 @@ def render_batch_invoices(statement_id: int) -> None:
                         st.cache_data.clear()
                     return False, "\n\n".join(row_errors) + (f"\n\nSaved before stopping: {', '.join(summary)}." if summary else "")
                 if not summary:
+                    if sync_batch_lock(int(batch_scope_pick)) == "locked":
+                        refresh(done="No changes — the batch is closed again.")
                     return True, "No changes to save."
                 refresh(done="Invoices: " + ", ".join(summary) + ".")
                 return True, ""
@@ -422,7 +424,7 @@ def render_batch_memos(statement_id: int) -> None:
                 hide_index=True,
                 column_config={"amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)},
             )
-        st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is locked — unlock it above to add, edit, or delete a credit memo.")
+        st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is closed (fully covered by checks) — use Edit this batch above to change a credit memo.")
     else:
         st.caption("Add, edit, or delete rows below, then Save. A new row needs a reference and a positive Amount.")
         original_memos_df = scoped_memos_df.copy()
@@ -500,6 +502,8 @@ def render_batch_memos(statement_id: int) -> None:
                         st.cache_data.clear()
                     return False, "\n\n".join(row_errors) + (f"\n\nSaved before stopping: {', '.join(summary)}." if summary else "")
                 if not summary:
+                    if sync_batch_lock(int(batch_scope_pick)) == "locked":
+                        refresh(done="No changes — the batch is closed again.")
                     return True, "No changes to save."
                 refresh(done="Credit memos: " + ", ".join(summary) + ".")
                 return True, ""
@@ -709,7 +713,7 @@ def render() -> None:
             filtered_statements_df = date_preset_filter(mod_col, filtered_statements_df, "last_modified", "Filter: last modified", "batch_filter_modified_preset")
             filtered_statements_df = filtered_statements_df.reset_index(drop=True)
 
-            st.caption("Click a row to open that batch — every action below (invoices, credit memo, lock/unlock, issue check, export) defaults to it.")
+            st.caption("Click a row to open that batch — every action below (invoices, credit memo, issue check, export) defaults to it.")
             browser_event = st.dataframe(
                 filtered_statements_df.assign(status=filtered_statements_df["stage"]).drop(columns=["stage"]),      # shown status: Draft / Parked / Issued
                 hide_index=True,
@@ -852,18 +856,16 @@ def render() -> None:
                 if batch_is_cancelled:
                     st.caption("Cancelled — permanently locked.")
                 elif batch_is_locked:
-                    if st.button("Unlock batch", icon=":material/lock_open:", key="unlock_btn_open"):
+                    st.caption(":material/lock: Fully covered by checks — closed.")
+                    if st.button("Edit this batch", icon=":material/edit:", key="unlock_btn_open",
+                                 help="Reopens the batch to change an invoice or credit memo. It closes again by itself when you save and the checks still cover it."):
                         confirm_unlock_dialog(int(selected_sid), scoped_row["statement_ref"])
+                elif abs(_balance) <= 0.005 and _n > 0:
+                    st.caption(":material/lock_open: Reopened for editing — closes again when you save.")
+                elif _n > 0:
+                    st.caption(f":material/lock_open: {php(_balance)} still to cover.")
                 else:
-                    has_checks = not q("SELECT 1 FROM checks_issued WHERE statement_id = ? LIMIT 1", (int(selected_sid),)).empty
-                    if has_checks:
-                        if st.button("Re-lock batch", icon=":material/lock:", key="relock_btn_open"):
-                            ok, lock_msg = lock_statement(int(selected_sid))
-                            (st.success if ok else st.error)(lock_msg)
-                            if ok:
-                                refresh()
-                    else:
-                        st.caption("Locks automatically once a check is issued.")
+                    st.caption("Locks by itself once its checks cover the full amount.")
             with hc3:
                 if not batch_is_cancelled:
                     if st.button("Cancel batch", icon=":material/cancel:", key="cancel_batch_btn"):
@@ -888,15 +890,10 @@ def render() -> None:
             with st.expander("Export Batch Statement"):
                 export_net, export_active_sum, export_remaining = get_batch_balance(int(selected_sid))
                 export_is_overpaid = export_remaining < -0.005
-                export_is_covered = export_net > 0 and abs(export_remaining) <= 0.005
-                if batch_is_locked:
-                    st.caption("This batch is locked. Regenerating the report keeps it locked.")
-                elif export_is_overpaid:
-                    st.error(f"This batch is overpaid by {php(-export_remaining)} — active checks exceed the net total. This can't be locked until you correct or cancel a check.")
-                elif export_is_covered:
-                    st.caption("This batch is balanced — generating the report will lock it automatically for collection.")
+                if export_is_overpaid:
+                    st.error(f"This batch is overpaid by {php(-export_remaining)} — active checks exceed the net total. Correct or cancel a check.")
                 else:
-                    st.caption(f"This batch is not yet balanced (remaining {php(export_remaining)}) — generating now will NOT lock it.")
+                    st.caption("Printing a statement never locks or unlocks the batch. It locks by itself once its checks cover the full amount.")
 
                 export_full_history = st.toggle("Include full check history (incl. cancelled/replaced)", value=True, key="export_history_toggle", help='On: cancelled and replaced checks are listed too (marked as such). Off: only the checks that count.')
                 export_show_payment_application = st.toggle(
@@ -914,11 +911,6 @@ def render() -> None:
                 if st.button("Generate Batch Statement PDF", icon=":material/picture_as_pdf:", key="export_generate_btn"):
                     pdf_bytes = generate_batch_statement_pdf(int(selected_sid), export_full_history, export_copy_choice, export_show_payment_application)
                     if pdf_bytes:
-                        if export_is_covered and not batch_is_locked:
-                            lock_ok, lock_msg = lock_statement(int(selected_sid))
-                            (st.success if lock_ok else st.error)(
-                                "Batch is balanced — locked automatically after generating the report for collection." if lock_ok else lock_msg
-                            )
                         ref = scoped_row["statement_ref"]
                         suffix = {"both": "", "filing": "_filing", "supplier": "_supplier"}[export_copy_choice]
                         pdf_preview_and_download(
@@ -933,11 +925,6 @@ def render() -> None:
                 if st.button("Generate Thermal Statement (80mm) PDF", icon=":material/receipt_long:", key="export_thermal_generate_btn"):
                     thermal_pdf_bytes = generate_batch_statement_thermal_pdf(int(selected_sid), export_full_history)
                     if thermal_pdf_bytes:
-                        if export_is_covered and not batch_is_locked:
-                            lock_ok, lock_msg = lock_statement(int(selected_sid))
-                            (st.success if lock_ok else st.error)(
-                                "Batch is balanced — locked automatically after generating the report for collection." if lock_ok else lock_msg
-                            )
                         ref = scoped_row["statement_ref"]
                         pdf_preview_and_download(
                             thermal_pdf_bytes, f"batch_statement_{ref}_thermal.pdf".replace(" ", "_"),
@@ -1356,8 +1343,8 @@ def render() -> None:
 
                 section("Un-park checks")
                 unparkable_df = parked_active_df[~parked_active_df["check_number"].apply(has_value)] if not parked_active_df.empty else parked_active_df
-                if batch_is_locked:
-                    st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to un-park checks.")
+                if batch_is_cancelled:
+                    st.caption("This batch is cancelled.")
                 elif unparkable_df.empty:
                     st.caption("No check to un-park — only checks that have no number yet can be taken back.")
                 else:
@@ -1387,8 +1374,8 @@ def render() -> None:
 
             if checks_view == "Corrections":
                 section("Correct an active check")
-                if batch_is_locked:
-                    st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to correct a check.")
+                if batch_is_cancelled:
+                    st.caption("This batch is cancelled.")
                 elif numbered_active_df.empty:
                     st.caption("No numbered active check in this batch to correct (assign a number first — above — or edit an unprinted check via 'Edit parked checks').")
                 else:
@@ -1464,8 +1451,8 @@ def render() -> None:
                                 st.error("Note can't be blank.")
 
                 section("Void a check")
-                if batch_is_locked:
-                    st.caption("This batch is cancelled." if batch_is_cancelled else "Batch is locked — unlock it above to void a check.")
+                if batch_is_cancelled:
+                    st.caption("This batch is cancelled.")
                 elif active_checks_df.empty:
                     st.caption("No active check in this batch to void.")
                 else:

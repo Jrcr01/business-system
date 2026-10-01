@@ -610,13 +610,14 @@ def filter_by_status(df: pd.DataFrame, col: str, key: str, label: str = "Status"
     return df[df[col].isin(picked)] if picked else df.iloc[0:0]
 
 
-@st.dialog("Confirm unlock")
+@st.dialog("Edit this batch")
 def confirm_unlock_dialog(statement_id: int, statement_ref: str) -> None:
-    st.write(f"Are you sure you want to unlock batch **{statement_ref}**?")
-    st.caption("Unlocking allows corrections and check replacements against this batch.")
+    st.write(f"Reopen batch **{statement_ref}** to change an invoice or credit memo?")
+    st.caption("It closes again by itself when you save and its checks still cover it. Voiding, replacing or correcting a check never needs this.")
+    reason = st.text_input("Why? (kept in the audit log)", key=f"reopen_reason_{statement_id}")
     c1, c2 = st.columns(2)
-    if c1.button("Yes, unlock", icon=":material/lock_open:", width="stretch"):
-        ok, msg = unlock_statement(statement_id)
+    if c1.button("Yes, reopen", icon=":material/lock_open:", width="stretch", disabled=not reason.strip()):
+        ok, msg = unlock_statement(statement_id, f"Batch reopened to edit: {reason.strip()}")
         if ok:
             st.cache_data.clear()
             st.rerun()

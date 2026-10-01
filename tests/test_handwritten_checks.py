@@ -102,8 +102,9 @@ def test_a_duplicate_invoice_number_for_the_supplier_is_refused_and_nothing_is_w
     cid = _supplier(db)
     sid = _draft_batch(db, cid)
     assert record_handwritten_checks(cid, [_chk("3992554297", 100.0)], statement_id=sid, invoice=_invoice("INV-1", 100.0))[0]
+    sid2 = _draft_batch(db, cid)                  # the first batch is fully covered, so it locked itself: the same invoice number is tried in a new batch
 
-    ok, msg, _ = record_handwritten_checks(cid, [_chk("3992554298", 100.0)], statement_id=sid, invoice=_invoice("INV-1", 100.0))
+    ok, msg, _ = record_handwritten_checks(cid, [_chk("3992554298", 100.0)], statement_id=sid2, invoice=_invoice("INV-1", 100.0))
 
     assert not ok and "INV-1" in msg
     assert fetchone(db, "SELECT COUNT(*) FROM checks_issued")[0] == 1
