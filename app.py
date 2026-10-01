@@ -278,6 +278,7 @@ from engines.settings_registry import label as _hotkey_label, shortcuts as _hotk
 import views.dashboard
 import views.lenders
 import views.order_statement
+import views.home
 import views.payment_run
 import views.price_lists
 import views.purchase_orders
@@ -409,7 +410,8 @@ _n_waiting = _run_waiting()
 PAGES.clear()
 PAGES.update({
     "payment-run": st.Page(views.payment_run.render, title="Payment run" + (f" · {_n_waiting}" if _n_waiting else ""), icon=":material/checklist:",
-                           url_path="payment-run", default=True),
+                           url_path="payment-run"),
+    "home": st.Page(views.home.render, title="Home", icon=":material/home:", url_path="home", default=True),
     "add-data": st.Page(views.add_data.render, title="Add data", icon=":material/add_box:", url_path="add-data"),
     "dashboard": st.Page(views.dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard"),
     "order-statements": st.Page(views.order_statement.render, title="Order statements", icon=":material/description:", url_path="order-statements"),
@@ -429,6 +431,7 @@ PAGES.update({
     "purchase-orders": st.Page(views.purchase_orders.render, title="Purchase orders", icon=":material/shopping_cart:", url_path="purchase-orders"),
 })
 MENU = {
+    "Home": ["home"],          # first, and skipped by the Alt+number shortcuts below so they still open the same pages
     "Daily work": ["payment-run", "add-data", "order-statements", "checks", "bank-cash", "planner"],
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records and reports": ["dashboard", "creditors", "analytics", "reports"],
@@ -679,7 +682,8 @@ components.html(r"""<script>
     d.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1f3a5f;color:#fff;padding:10px 18px;border-radius:8px;z-index:99999;font-size:14px;';
     D.body.appendChild(d); setTimeout(function () { d.remove(); }, 2600);
   }
-  function menuLinks() { return Array.from(D.querySelectorAll('[data-testid="stSidebarNav"] a')); }   // the sidebar menu, top to bottom
+  function allMenuLinks() { return Array.from(D.querySelectorAll('[data-testid="stSidebarNav"] a')); }   // the sidebar menu, top to bottom (Home first)
+  function menuLinks() { return allMenuLinks().slice(1); }   // without Home, so Alt+1 is still Payment run
   function searchBox() { return Array.from(D.querySelectorAll('input')).find(function (i) { return (i.placeholder || '').indexOf('Check #') === 0; }); }
   var handler = function (e) {
     var dlg = D.querySelector('[role=dialog]');
@@ -693,6 +697,11 @@ components.html(r"""<script>
         var back = buttons(dlg).find(function (b) { return /go back|no, go back/i.test(b.innerText || ''); });
         if (back) { back.click(); e.preventDefault(); }
       }
+      return;
+    }
+    if (mods(CFG.pages.mod).alt === e.altKey && mods(CFG.pages.mod).ctrl === e.ctrlKey && mods(CFG.pages.mod).shift === e.shiftKey && e.code === 'KeyH') {
+      var home = allMenuLinks()[0];
+      if (home) { home.click(); e.preventDefault(); }
       return;
     }
     if (mods(CFG.pages.mod).alt === e.altKey && mods(CFG.pages.mod).ctrl === e.ctrlKey && mods(CFG.pages.mod).shift === e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
