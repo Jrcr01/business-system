@@ -10,7 +10,7 @@ import streamlit as st
 
 from engines.common import php
 from engines.handwritten_check_service import problems_with, record_handwritten_checks
-from views.shared import MONEY_FORMAT, confirm_create_dialog, q, selectbox_creditor
+from views.shared import MONEY_FORMAT, confirm_create_dialog, flash, q, selectbox_creditor
 
 
 def _replace_options(creditor_id: int) -> dict:
@@ -20,6 +20,13 @@ def _replace_options(creditor_id: int) -> dict:
               ORDER BY (status = 'Cancelled') DESC, check_id DESC LIMIT 200""", (int(creditor_id),))
     label = {"Cancelled": "voided", "Active": "still active — will be voided"}
     return {int(r["check_id"]): f"{r['check_number'] or 'no number'} · {r['check_date']} · {php(r['amount'])} · {label[r['status']]}" for _, r in df.iterrows()}
+
+
+def _old_check_terms(creditor_id: int) -> dict:
+    """check_id -> (date, amount) of the checks in _replace_options, so a replacement starts with the same date and amount."""
+    df = q("""SELECT check_id, check_date, amount FROM checks_issued WHERE creditor_id = ? AND status IN ('Active', 'Cancelled') AND replacement_check_id IS NULL
+              ORDER BY check_id DESC LIMIT 200""", (int(creditor_id),))
+    return {int(r["check_id"]): (pd.to_datetime(r["check_date"]).date(), float(r["amount"])) for _, r in df.iterrows()}
 
 
 def render_handwritten_form() -> None:
@@ -32,6 +39,7 @@ def render_handwritten_form() -> None:
         return
     cid = int(creditor)
     statement_id = loan_note_id = invoice = None
+    n = st.session_state.get("hw_nonce", 0)                       # bumped after a save, so every box starts empty again
 
     if is_supplier:
         batches = q("""SELECT os.statement_id, os.statement_ref, os.status, v.net_total FROM order_statements os
@@ -39,15 +47,15 @@ def render_handwritten_form() -> None:
                        WHERE os.creditor_id = ? AND os.status != 'Cancelled' AND os.is_locked = 0
                        ORDER BY (os.status = 'Draft') DESC, os.statement_id DESC""", (cid,))
         labels = {int(r["statement_id"]): f"{r['statement_ref']} · {r['status']} · net {php(r['net_total'])}" for _, r in batches.iterrows()}
-        statement_id = st.selectbox("Batch", [None] + list(labels), format_func=lambda s: "New batch for this invoice" if s is None else labels[s], key=f"hw_batch_{cid}",
+        statement_id = st.selectbox("Batch", [None] + list(labels), format_func=lambda s: "New batch for this invoice" if s is None else labels[s], key=f"hw_batch_{cid}_{n}",
                                     help="Locked and cancelled batches are not listed. Pick 'New batch' when this is a brand-new invoice.")
-        new_invoice = st.checkbox("This is a new invoice — add it together with the check", value=statement_id is None, key=f"hw_new_inv_{cid}_{statement_id}")
+        new_invoice = st.checkbox("This is a new invoice — add it together with the check", value=statement_id is None, key=f"hw_new_inv_{cid}_{statement_id}_{n}")
         if new_invoice:
             c1, c2, c3, c4 = st.columns([2, 1.6, 1.6, 1])
-            doc_ref = c1.text_input("Invoice number", key=f"hw_doc_{cid}")
-            inv_date = c2.date_input("Date received", value=date.today(), key=f"hw_idate_{cid}")
-            gross = c3.number_input("Invoice amount", min_value=0.0, step=100.0, format="%.2f", key=f"hw_gross_{cid}")
-            less = c4.number_input("Less %", min_value=0.0, max_value=100.0, step=1.0, key=f"hw_less_{cid}")
+            doc_ref = c1.text_input("Invoice number", key=f"hw_doc_{cid}_{n}")
+            inv_date = c2.date_input("Date received", value=date.today(), key=f"hw_idate_{cid}_{n}")
+            gross = c3.number_input("Invoice amount", min_value=0.0, step=100.0, format="%.2f", key=f"hw_gross_{cid}_{n}")
+            less = c4.number_input("Less %", min_value=0.0, max_value=100.0, step=1.0, key=f"hw_less_{cid}_{n}")
             invoice = {"doc_ref": doc_ref, "invoice_date": inv_date, "gross": gross, "less_pct": less}
         elif statement_id is None:
             st.info("Pick a batch, or tick \"new invoice\".")
@@ -59,11 +67,17 @@ def render_handwritten_form() -> None:
             st.info("This lender has no open loan note.")
             return
         opts = {int(r["loan_note_id"]): f"{r['note_ref']} · {r['status']}" for _, r in notes.iterrows()}
-        loan_note_id = st.selectbox("Loan note", list(opts), format_func=opts.get, key=f"hw_ln_{cid}")
+        loan_note_id = st.selectbox("Loan note", list(opts), format_func=opts.get, key=f"hw_ln_{cid}_{n}")
+
+    repl = _replace_options(cid)
+    replaces = st.selectbox("Does this replace an earlier check?", [None] + list(repl), format_func=lambda c: "No" if c is None else repl[c], key=f"hw_repl_{cid}_{n}",
+                            help="Pick the voided (or wrong) check this one takes the place of; the two are linked, and a still-active one is voided first. "
+                                 "The new check starts with the same date and amount — change them if they differ.")
+    start_date, start_amount = _old_check_terms(cid).get(replaces, (date.today(), 0.0)) if replaces else (date.today(), 0.0)
 
     st.markdown("**The handwritten check(s)**")
     grid = st.data_editor(
-        pd.DataFrame({"check_number": [""], "check_date": [date.today()], "amount": [0.0]}), num_rows="dynamic", hide_index=True, key=f"hw_checks_{cid}",
+        pd.DataFrame({"check_number": [""], "check_date": [start_date], "amount": [start_amount]}), num_rows="dynamic", hide_index=True, key=f"hw_checks_{cid}_{n}_{replaces}",
         column_config={"check_number": st.column_config.TextColumn("Check number", help="Exactly as printed on the check, e.g. 3992554297."),
                        "check_date": st.column_config.DateColumn("Check date", default=date.today()),
                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0)})
@@ -74,10 +88,6 @@ def render_handwritten_form() -> None:
         if not number and amount <= 0:
             continue                                             # an untouched blank row
         checks.append({"number": number, "date": pd.to_datetime(r["check_date"]).date() if pd.notna(r["check_date"]) else None, "amount": amount})
-
-    repl = _replace_options(cid)
-    replaces = st.selectbox("Does this replace an earlier check?", [None] + list(repl), format_func=lambda c: "No" if c is None else repl[c], key=f"hw_repl_{cid}",
-                            help="Pick the voided (or wrong) check this one takes the place of; the two are linked, and a still-active one is voided first.")
 
     if st.button("Record the handwritten check(s)", icon=":material/edit_note:", type="primary", key="hw_save"):
         problem = problems_with(cid, checks, statement_id, loan_note_id, invoice, replaces)
@@ -93,7 +103,8 @@ def render_handwritten_form() -> None:
         def _do(c=list(checks), s=statement_id, ln=loan_note_id, inv=invoice, rp=replaces, who=cid):
             ok, msg, _ids = record_handwritten_checks(who, c, statement_id=s, loan_note_id=ln, invoice=inv, replaces_check_id=rp)
             if ok:
-                st.toast(msg)
+                flash(msg)
+                st.session_state["hw_nonce"] = st.session_state.get("hw_nonce", 0) + 1       # empty form for the next one
             return ok, msg
 
         confirm_create_dialog(summary, "hw_save_confirm", _do)
