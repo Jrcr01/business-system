@@ -904,6 +904,9 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     created_by TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    over_cash_plan INTEGER NOT NULL DEFAULT 0 CHECK(over_cash_plan IN (0, 1)),   -- set when the order was placed (or changed) and the cash on its pay date did not cover it
+    cash_note TEXT,                                                              -- plain words for the owner: how far short, and when
+    cash_ack_at DATETIME,                                                        -- the owner has seen it
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id)
 );
 CREATE INDEX IF NOT EXISTS idx_po_creditor_status ON purchase_orders (creditor_id, status);

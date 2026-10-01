@@ -121,6 +121,8 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
             if start <= d <= end:
                 rows.append({"day": d, "track": r["track"], "payee": r["payee_name"], "reference": r["reference"], "amount": float(r["amount"])})
     rows += estimated_outflows(start, end)
+    from engines.po_rules import po_outflow_rows               # ordered purchase orders: money we will owe, before any invoice exists (stage B3)
+    rows += po_outflow_rows(start, end)
     return pd.DataFrame(rows, columns=["day", "track", "payee", "reference", "amount"])
 
 

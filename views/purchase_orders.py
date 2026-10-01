@@ -9,7 +9,8 @@ import streamlit as st
 
 from engines.clock import manila_today
 from engines.po_pdf import build_po_pdf
-from engines.po_rules import cancel_po, expected_pay_date, get_po, list_pos, order_po, save_po
+from engines.cash_insights_service import scheduled_outflows
+from engines.po_rules import acknowledge_over_plan, cancel_po, cash_check, expected_pay_date, get_po, list_pos, order_po, orders_over_plan, save_po, suggest_order_date
 from engines.price_list_service import item_names, price_on
 from views.shared import MONEY_FORMAT, confirm_change_dialog, flash, page_header, php, refresh, section, selectbox_creditor
 
@@ -44,6 +45,35 @@ def _save(also_order: bool, edit_id, cid, order_date, delivery, lines, notes) ->
     st.session_state["po_open"] = po_id
     st.cache_data.clear()
     flash(msg if also_order else "Draft saved.")
+
+
+def _use_dates(order_date, delivery) -> None:
+    """Button callback: take the suggested dates (a callback may change the page's own widgets)."""
+    st.session_state["po_order_date"] = order_date
+    st.session_state["po_delivery"] = delivery
+
+
+def _cash_panel(cid: int, estimate: float, order_date, delivery, edit_id) -> None:
+    """Does the cash on the pay date cover this order? Says so, or says how far short and offers the first later order date that fits."""
+    if estimate <= 0 or delivery is None:
+        return
+    chk = cash_check(cid, estimate, delivery, exclude_po_id=edit_id)
+    if not chk["known"]:
+        st.info(chk["message"], icon=":material/info:")
+        return
+    day, low = chk["lowest"]
+    if chk["ok"]:
+        st.success(f"Fits the cash plan: after this order the lowest balance is {php(low)} on {day:%b %d, %Y} (buffer {php(chk['buffer'])}).", icon=":material/check_circle:")
+        return
+    st.warning(f"Over the cash plan: when this falls due on {chk['pay_date']:%b %d, %Y} the balance would drop to {php(low)} on {day:%b %d, %Y}, "
+               f"{php(chk['shortfall'])} under the buffer of {php(chk['buffer'])}. You can still save it; the owner is told.", icon=":material/warning:")
+    sug = suggest_order_date(cid, estimate, order_date, delivery, exclude_po_id=edit_id)
+    if sug:
+        st.button(f"Order on {sug['order_date']:%b %d, %Y} instead ({sug['days_later']} days later): delivery {sug['delivery_date']:%b %d}, falls due {sug['pay_date']:%b %d, %Y}",
+                  icon=":material/event_repeat:", key="po_use_dates", on_click=_use_dates, args=(sug["order_date"], sug["delivery_date"]),
+                  help="Moves the order date and the delivery date together, keeping the same lead time. That is the first date the cash covers it.")
+    else:
+        st.caption("No order date within the next days fits either. The cash needs to come in first, or the order has to be smaller.")
 
 
 def _lines_df() -> pd.DataFrame:
@@ -98,6 +128,7 @@ def _form() -> None:
     m1, m2 = st.columns(2)
     m1.metric("Estimated total", php(estimate), border=True, help="From the price list. When the invoice comes, the actual price prevails.")
     m2.metric("Payment falls due", f"{pay:%b %d, %Y}" if pay else "Needs a delivery date", border=True, help="Delivery date + the supplier's terms, on a bank day.")
+    _cash_panel(cid, estimate, order_date, delivery, edit_id)
     notes = st.text_area("Notes for the supplier (optional)", key="po_notes", height=70)
 
     if st.session_state.get("_po_error"):
@@ -108,7 +139,36 @@ def _form() -> None:
     b2.button("Save and order", icon=":material/send:", key="po_save_order", type="primary", on_click=_save, args=(True, *args))
 
 
+def _over_plan_section() -> None:
+    over = orders_over_plan()
+    if over.empty:
+        return
+    with st.container(border=True):
+        st.markdown(f"**:material/warning: {len(over)} order(s) placed over the cash plan**")
+        for r in over.itertuples():
+            c1, c2 = st.columns([5, 1])
+            c1.markdown(f"**{r.po_no}** · {r.supplier} · {php(r.total)}  \n{r.cash_note or ''}")
+            c2.button("Noted", key=f"po_seen_{r.po_id}", icon=":material/done:", on_click=lambda i=int(r.po_id): (acknowledge_over_plan(i), st.cache_data.clear()),
+                      help="You have seen it. It stops showing as a warning on the Dashboard.")
+
+
+def _by_week() -> None:
+    out = scheduled_outflows(manila_today(), manila_today() + timedelta(days=120))
+    if out.empty:
+        st.caption("Nothing is scheduled to go out in the next 120 days.")
+        return
+    out = out.assign(week=pd.to_datetime(out["day"]).dt.to_period("W-SUN").dt.start_time.dt.date)
+    pivot = out.pivot_table(index="week", columns="track", values="amount", aggfunc="sum", fill_value=0.0)
+    pivot["Total"] = pivot.sum(axis=1)
+    st.dataframe(pivot.reset_index(), hide_index=True, width="stretch",
+                 column_config={"week": st.column_config.DateColumn("Week of"), **{c: st.column_config.NumberColumn(c, format=MONEY_FORMAT) for c in pivot.columns}})
+    st.caption("Everything the cash forecast counts as going out, by week: checks, loan and card dues, and open purchase orders (column Purchase order).")
+
+
 def _orders() -> None:
+    _over_plan_section()
+    with st.expander("What is going out, week by week (orders included)"):
+        _by_week()
     f1, f2 = st.columns(2)
     scope = f1.selectbox("Show", ["Open (draft, ordered, partly received)", "Draft", "Ordered", "Partly received", "Received", "Cancelled", "All"], key="po_scope")
     everyone = list_pos()

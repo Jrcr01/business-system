@@ -488,6 +488,9 @@ def _forecast_tab() -> None:
     st.caption("How it is worked out: the bank's latest balance + expected money in (your average deposits for that weekday over recent weeks) "
                "- money going out (checks the bank has not cleared yet, on their check date — or tomorrow if already past; bank-loan and credit-card "
                "dues). Weekend dues move to Monday. It is an estimate to plan with, not a promise.")
+    po_out = fc["outflows"][fc["outflows"]["track"] == "Purchase order"]["amount"].sum() if not fc["outflows"].empty else 0.0
+    if po_out:
+        st.caption(f"Includes {php(po_out)} for purchase orders already placed, counted on the day each falls due (Purchasing → Purchase orders). Orders can be left out under Settings.")
     busy = d[d["money_out"] > 0].sort_values("money_out", ascending=False).head(10)
     if not busy.empty:
         st.markdown("**Heaviest days going out**")

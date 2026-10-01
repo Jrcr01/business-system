@@ -155,7 +155,8 @@ def _baseline(today: date, end: date, start_cash: float | None, inflow_per_day: 
         else:
             sched = sched.assign(day=pd.to_datetime(sched["actual_payment_date"]).dt.date)
             out = sched[(sched["day"] >= today) & (sched["day"] <= end)][["day", "track", "amount"]]
-        est = pd.DataFrame(estimated_outflows(today, end), columns=["day", "track", "payee", "reference", "amount"])
+        from engines.po_rules import po_outflow_rows
+        est = pd.DataFrame(estimated_outflows(today, end) + po_outflow_rows(today, end), columns=["day", "track", "payee", "reference", "amount"])
         if not est.empty:                     # card dues whose statement is not in yet (owner, 2026-09-29): count as cash going out
             out = pd.concat([out, est[["day", "track", "amount"]]], ignore_index=True)
     weekday_in = expected_daily_inflow() if inflow_per_day is None else {wd: (float(inflow_per_day) if wd < 5 else 0.0) for wd in range(7)}

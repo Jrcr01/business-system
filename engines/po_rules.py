@@ -6,14 +6,18 @@ bank day -- the date the cash forecast will count it (stage B3).
 
   * save_po / order_po / cancel_po   -- make, change, number and cancel an order
   * expected_pay_date                -- delivery + terms, on a bank day
-  * get_po / list_pos                -- read them back (list_pos flags deliveries that are late)"""
+  * get_po / list_pos                -- read them back (list_pos flags deliveries that are late)
+  * open_commitments / po_outflow_rows -- what ordered orders still owe, and when (feeds the cash forecast and the planner, stage B3)
+  * cash_check / suggest_order_date  -- does a new order fit the cash on its pay date, and if not, the first later order date that does
+  * orders_over_plan / acknowledge_over_plan -- orders placed over the cash plan: the owner is told, not asked"""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 
 from engines.check_date_planner import _blocked_days, next_bank_day
+from engines import settings_registry
 from engines.clock import manila_now, manila_today
 from engines.common import get_conn, write_tx
 from engines.db_engine import next_doc_number
@@ -121,6 +125,7 @@ def save_po(po_id: int | None, creditor_id: int, order_date, expected_delivery, 
         total = sum(ln["est_amount"] for ln in clean)
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), ?, 'purchase_orders', ?, ?)",
                      (action, po_id, f"{len(clean)} line(s), estimated {total:,.2f}, pay date {pay}"))
+    update_cash_flag(int(po_id))
     return True, "Order saved.", int(po_id)
 
 
@@ -145,6 +150,7 @@ def order_po(po_id: int) -> tuple[bool, str]:
         conn.execute("UPDATE purchase_orders SET po_no = ?, status = 'ORDERED', updated_at = CURRENT_TIMESTAMP WHERE po_id = ?", (number, po_id))
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_ORDERED', 'purchase_orders', ?, ?)",
                      (po_id, f"{number}, estimated {total:,.2f}"))
+    update_cash_flag(po_id)
     return True, f"Ordered as {number}."
 
 
@@ -157,7 +163,7 @@ def cancel_po(po_id: int, reason: str = "") -> tuple[bool, str]:
             return False, "This order is already cancelled."
         if row[0] == "RECEIVED" or _has_receipt(conn, po_id):
             return False, "Goods have already been received on this order, so it cannot be cancelled."
-        conn.execute("UPDATE purchase_orders SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP WHERE po_id = ?", (po_id,))
+        conn.execute("UPDATE purchase_orders SET status = 'CANCELLED', over_cash_plan = 0, cash_note = NULL, updated_at = CURRENT_TIMESTAMP WHERE po_id = ?", (po_id,))
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_CANCELLED', 'purchase_orders', ?, ?)",
                      (po_id, f"{row[1]}" + (f": {reason.strip()}" if reason and reason.strip() else "")))
     return True, f"{row[1]} cancelled."
@@ -191,3 +197,148 @@ def list_pos(status: str | None = None, creditor_id: int | None = None, today: d
                 {'WHERE ' + ' AND '.join(where) if where else ''} ORDER BY p.po_id DESC""", conn, params=params)
     df["delivery_overdue"] = df["status"].isin(LIVE_STATUSES) & df["expected_delivery_date"].notna() & (df["expected_delivery_date"].fillna("") < today.isoformat())
     return df
+
+
+# --- the cash plan (stage B3) ------------------------------------------------------------------------------------------------------------------
+
+def open_commitments(start: date, end: date) -> pd.DataFrame:
+    """What ordered purchase orders still owe, by pay date (inside start..end; a pay date already past counts on `start`). The unreceived part only:
+    each line's estimate times the share of its quantity not yet received. Columns: po_id, po_no, supplier, day, amount."""
+    cols = ["po_id", "po_no", "supplier", "day", "amount"]
+    with get_conn() as conn:
+        df = pd.read_sql_query(
+            """SELECT p.po_id, p.po_no, c.creditor_name AS supplier, p.expected_pay_date,
+                      SUM(l.est_amount * MAX(l.qty - l.qty_received, 0) / l.qty) AS amount
+               FROM purchase_orders p JOIN creditors c ON c.creditor_id = p.creditor_id JOIN purchase_order_lines l ON l.po_id = p.po_id
+               WHERE p.status IN ('ORDERED', 'PARTIAL') AND p.expected_pay_date IS NOT NULL GROUP BY p.po_id""", conn)
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+    blocked = _blocked_days()
+    df["day"] = df["expected_pay_date"].map(lambda d: max(next_bank_day(_as_date(d), blocked), start))
+    df = df[(df["day"] <= end) & (df["amount"] > 0.004)]
+    return df[cols].reset_index(drop=True)
+
+
+def po_outflow_rows(start: date, end: date) -> list[dict]:
+    """The commitments as forecast rows (track 'Purchase order'), or nothing when the setting leaves orders out of the forecast."""
+    if not settings_registry.int_value("po_in_forecast"):
+        return []
+    return [{"day": r.day, "track": "Purchase order", "payee": r.supplier, "reference": r.po_no, "amount": float(r.amount)}
+            for r in open_commitments(start, end).itertuples()]
+
+
+def _cash_context(today: date, horizon_days: int) -> dict | None:
+    """The day-by-day forecast (open orders included), {'stale': days} when the bank balance is too old to trust, or None without any balance."""
+    from engines.cash_insights_service import cash_position, forecast, forecast_fresh_days
+
+    pos = cash_position()
+    if pos is None:
+        return None
+    age = (today - pos["as_of"]).days
+    if age > forecast_fresh_days():
+        return {"stale": age}
+    return forecast(min(max(horizon_days, 1), 900), today) or None
+
+
+def _own_commitment(po_id: int | None, today: date) -> tuple[date, float] | None:
+    if not po_id:
+        return None
+    df = open_commitments(today, today + timedelta(days=2000))
+    row = df[df["po_id"] == po_id]
+    return (row.iloc[0]["day"], float(row.iloc[0]["amount"])) if not row.empty else None
+
+
+def _evaluate(daily: pd.DataFrame, pay_day: date, amount: float, buffer: float, own: tuple[date, float] | None, window: int = 60) -> dict:
+    """Balance from the pay date on if this order is added (an order being changed has its own old amount taken out first)."""
+    d = daily.copy()
+    adj = pd.Series(0.0, index=d.index)
+    adj[d["day"] >= pay_day] -= amount
+    if own:
+        adj[d["day"] >= own[0]] += own[1]
+    d["after"] = d["balance"] + adj
+    span = d[(d["day"] >= pay_day) & (d["day"] <= pay_day + timedelta(days=window))]
+    low = span.loc[span["after"].idxmin()]
+    on_day = span[span["day"] == pay_day]
+    return {"balance_on_pay_date": float(on_day["after"].iloc[0]) if not on_day.empty else float(low["after"]), "lowest": (low["day"], round(float(low["after"]), 2)),
+            "shortfall": round(max(buffer - float(low["after"]), 0.0), 2), "ok": float(low["after"]) >= buffer}
+
+
+def cash_check(creditor_id: int, amount: float, delivery_date, today: date | None = None, exclude_po_id: int | None = None) -> dict:
+    """Does the cash on this order's pay date cover it? Counts everything already going out (checks, loans, cards, other open orders) against the
+    expected deposits, keeps the cash buffer, and looks 60 days past the pay date for a dip. `exclude_po_id`: an order being changed must not count itself twice.
+    Returns {known, ok, pay_date, balance_on_pay_date, lowest: (day, balance), shortfall, buffer, message}; known False (ok None) without a recent bank balance."""
+    today = today or manila_today()
+    pay = expected_pay_date(creditor_id, delivery_date)
+    if pay is None:
+        return {"known": False, "ok": None, "pay_date": None, "message": "Enter the expected delivery date to check the cash."}
+    pay_day = max(pay, today)
+    ctx = _cash_context(today, (pay_day - today).days + 61)
+    if not ctx or "daily" not in ctx:
+        age = (ctx or {}).get("stale")
+        return {"known": False, "ok": None, "pay_date": pay,
+                "message": f"The bank balance is {age} days old, so the cash cannot be checked. Import a newer statement." if age else "No bank balance on file, so the cash cannot be checked."}
+    res = _evaluate(ctx["daily"], pay_day, float(amount), ctx["buffer"], _own_commitment(exclude_po_id, today))
+    return {"known": True, "pay_date": pay, "buffer": ctx["buffer"], "message": "", **res}
+
+
+def suggest_order_date(creditor_id: int, amount: float, order_date, delivery_date, today: date | None = None, exclude_po_id: int | None = None,
+                       max_defer_days: int | None = None) -> dict | None:
+    """When the order does not fit: the first later order date (delivery moves with it, same lead time) on which it does, within `max_defer_days`
+    (default: the setting). None when it already fits, the cash is unknown, or nothing in reach fits."""
+    today = today or manila_today()
+    max_defer = settings_registry.int_value("po_max_defer_days") if max_defer_days is None else int(max_defer_days)
+    order, delivery = _as_date(order_date), _as_date(delivery_date)
+    now = cash_check(creditor_id, amount, delivery, today=today, exclude_po_id=exclude_po_id)
+    if not now["known"] or now["ok"]:
+        return None
+    far = expected_pay_date(creditor_id, delivery + timedelta(days=max_defer))
+    ctx = _cash_context(today, (max(far, today) - today).days + 61)
+    if not ctx or "daily" not in ctx:
+        return None
+    own = _own_commitment(exclude_po_id, today)
+    for k in range(1, max_defer + 1):
+        pay = expected_pay_date(creditor_id, delivery + timedelta(days=k))
+        if _evaluate(ctx["daily"], max(pay, today), float(amount), ctx["buffer"], own)["ok"]:
+            return {"days_later": k, "order_date": order + timedelta(days=k), "delivery_date": delivery + timedelta(days=k), "pay_date": pay}
+    return None
+
+
+def update_cash_flag(po_id: int) -> None:
+    """Sets or clears the 'over the cash plan' flag of an ordered order from a fresh cash check. A draft, a cancelled or a received order carries no flag.
+    Changing an order starts a new look, so an earlier acknowledgement is cleared unless the finding is the same."""
+    po = get_po(po_id)
+    if po is None:
+        return
+    h = po["header"]
+    over, note = 0, None
+    if h["status"] in LIVE_STATUSES and h["expected_delivery_date"]:
+        chk = cash_check(int(h["creditor_id"]), po["total"], h["expected_delivery_date"], exclude_po_id=po_id)
+        if chk["known"] and not chk["ok"]:
+            day, bal = chk["lowest"]
+            over, note = 1, f"Cash would be short by {chk['shortfall']:,.2f} (lowest {bal:,.2f} on {day:%b %d, %Y}) when this falls due on {chk['pay_date']:%b %d, %Y}."
+    with write_tx() as conn:
+        was = conn.execute("SELECT over_cash_plan, cash_note FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()
+        keep_ack = bool(was and was[0] == over and was[1] == note)
+        conn.execute("UPDATE purchase_orders SET over_cash_plan = ?, cash_note = ?, cash_ack_at = CASE WHEN ? THEN cash_ack_at ELSE NULL END WHERE po_id = ?",
+                     (over, note, 1 if keep_ack else 0, po_id))
+
+
+def orders_over_plan(include_acknowledged: bool = False) -> pd.DataFrame:
+    with get_conn() as conn:
+        return pd.read_sql_query(
+            f"""SELECT p.po_id, p.po_no, c.creditor_name AS supplier, p.expected_pay_date, p.cash_note, p.cash_ack_at, p.created_by,
+                       COALESCE((SELECT SUM(est_amount) FROM purchase_order_lines l WHERE l.po_id = p.po_id), 0) AS total
+                FROM purchase_orders p JOIN creditors c ON c.creditor_id = p.creditor_id
+                WHERE p.over_cash_plan = 1 AND p.status IN ('ORDERED', 'PARTIAL') {'' if include_acknowledged else 'AND p.cash_ack_at IS NULL'}
+                ORDER BY p.expected_pay_date""", conn)
+
+
+def acknowledge_over_plan(po_id: int) -> tuple[bool, str]:
+    with write_tx() as conn:
+        row = conn.execute("SELECT po_no FROM purchase_orders WHERE po_id = ? AND over_cash_plan = 1", (po_id,)).fetchone()
+        if not row:
+            return False, "This order is not over the cash plan."
+        conn.execute("UPDATE purchase_orders SET cash_ack_at = CURRENT_TIMESTAMP WHERE po_id = ?", (po_id,))
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_OVER_PLAN_SEEN', 'purchase_orders', ?, ?)",
+                     (po_id, f"{row[0]} noted by the owner"))
+    return True, f"{row[0]} noted."

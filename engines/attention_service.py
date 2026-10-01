@@ -135,7 +135,18 @@ def _to_print() -> list[dict]:
     return [_item("info", f"{len(soon)} check(s), {php(soon['amount'].sum())}, are dated within 7 days and not printed yet.", "checks", "Checks")]
 
 
-SOURCES = (_cards, _booklets, _guarantees, _bank, _stale, _health, _concentration, _to_print)
+
+
+def _purchasing() -> list[dict]:
+    from engines.po_rules import orders_over_plan
+
+    df = orders_over_plan()
+    if df.empty:
+        return []
+    return [_item("warning", f"{len(df)} purchase order(s) were placed over the cash plan, {php(df['total'].sum())} in all — open Purchase orders to see which.", "purchase-orders", "Purchasing")]
+
+
+SOURCES = (_cards, _booklets, _guarantees, _bank, _stale, _health, _concentration, _to_print, _purchasing)
 
 
 def attention_items() -> list[dict]:
