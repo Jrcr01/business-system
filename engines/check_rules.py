@@ -106,6 +106,26 @@ def allocate_check_to_invoices(check_id: int, allocations: list[tuple[int, float
     return True, "Allocated."
 
 
+def _resize_allocations(cur, check_id: int, old_amount: float, new_amount: float) -> None:
+    """A corrected check amount must carry its invoice allocations with it (found 2026-10-01: a check corrected from 169,282 to 169,292 still allocated 169,282, so its
+    invoice stayed 10.00 short). The difference goes to / comes off the check's LAST allocation (a reduction never takes an allocation below zero, working back
+    through earlier ones). A check with no allocations is left alone."""
+    rows = cur.execute("SELECT allocation_id, amount FROM invoice_check_allocations WHERE check_id = ? ORDER BY allocation_id", (check_id,)).fetchall()
+    if not rows:
+        return
+    delta = round(new_amount - old_amount, 2)
+    if delta > 0:
+        cur.execute("UPDATE invoice_check_allocations SET amount = ? WHERE allocation_id = ?", (round(rows[-1][1] + delta, 2), rows[-1][0]))
+        return
+    left = -delta
+    for allocation_id, amount in reversed(rows):
+        take = min(left, amount)
+        cur.execute("UPDATE invoice_check_allocations SET amount = ? WHERE allocation_id = ?", (round(amount - take, 2), allocation_id))
+        left = round(left - take, 2)
+        if left <= 0:
+            break
+
+
 def apply_check_correction(check_id: int, correction_type: str, new_value: str, reason: str) -> tuple[bool, str]:
     with get_conn() as conn:
         cur = conn.cursor()
@@ -170,6 +190,7 @@ def apply_check_correction(check_id: int, correction_type: str, new_value: str, 
 
             old_value = str(old_amount)
             cur.execute("UPDATE checks_issued SET amount = ? WHERE check_id = ?", (new_amount, check_id))
+            _resize_allocations(cur, check_id, float(old_amount), new_amount)
         elif correction_type == "Check Date":
             try:
                 datetime.strptime(new_value.strip(), "%Y-%m-%d")

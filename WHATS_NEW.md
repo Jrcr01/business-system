@@ -8,6 +8,8 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 -->
 
 ## 2026-10-01
+- **Handwritten check form, loan notes:** picking a loan note now shows its total payable, the checks already issued on it (with whether each is handwritten, printed or still to print) and what is still left to cover. A replacement whose amount differs from the check it replaces now shows a warning with both amounts.
+- **Fixed: correcting a check's amount now carries its invoice along** - before, the invoice kept the old amount and stayed short by the difference. Check 3992554299 was corrected to 169,292.00 and Express Tire's batch now owes 0. Richie's six LN 0002 checks (3992575908-13) are now marked handwritten and printed, so they no longer wait in Checks to print.
 - **Void & reissue in one step with the replacement's check number** (batch screen and loan note screen) - type the new check's number and it is saved right away as a handwritten check (printed, same amount, linked to the voided one); leave it blank to park it as before. The new check's date now starts as the old check's date. A number already used is refused before anything is voided.
 - **The "Checks typed but not parked yet" reminder no longer goes stale** - recording the same check as a handwritten check clears it, and a reminder for a batch with nothing left to pay disappears by itself.
 - **Handwritten check form: replacing a check now starts with the same date and amount** (pick "Does this replace an earlier check?" first; change them if they differ), and **the form empties itself after a successful save** so the next check starts clean.

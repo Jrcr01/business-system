@@ -8,7 +8,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from engines.common import php
+from engines.common import has_value, php
 from engines.handwritten_check_service import problems_with, record_handwritten_checks
 from views.shared import MONEY_FORMAT, confirm_create_dialog, flash, q, selectbox_creditor
 
@@ -27,6 +27,23 @@ def _old_check_terms(creditor_id: int) -> dict:
     df = q("""SELECT check_id, check_date, amount FROM checks_issued WHERE creditor_id = ? AND status IN ('Active', 'Cancelled') AND replacement_check_id IS NULL
               ORDER BY check_id DESC LIMIT 200""", (int(creditor_id),))
     return {int(r["check_id"]): (pd.to_datetime(r["check_date"]).date(), float(r["amount"])) for _, r in df.iterrows()}
+
+
+def _show_loan_note_checks(loan_note_id: int) -> None:
+    """What this loan note already has: its total payable, the active checks issued against it and what is still left to cover (so a handwritten check is
+    recorded against the right note, and nothing is entered twice)."""
+    note = q("SELECT total_payable, principal_amount FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
+    checks = q("""SELECT check_number, check_date, amount, CASE WHEN is_handwritten = 1 THEN 'handwritten' WHEN printed_at IS NOT NULL THEN 'printed' ELSE 'to print' END AS how
+                  FROM checks_issued WHERE loan_note_id = ? AND status = 'Active' ORDER BY check_date, check_id""", (loan_note_id,))
+    payable = float(note["total_payable"][0]) if not note.empty and has_value(note["total_payable"][0]) else None
+    issued = float(checks["amount"].sum()) if not checks.empty else 0.0
+    if payable is None:
+        st.caption(f"No total payable on this loan note yet. {len(checks)} check(s) issued, {php(issued)}.")
+    else:
+        st.caption(f"Total payable {php(payable)} · checks already issued {len(checks)} = {php(issued)} · still to cover **{php(payable - issued)}**")
+    if not checks.empty:
+        with st.expander(f"Checks already on this loan note ({len(checks)})"):
+            st.dataframe(checks, hide_index=True, column_config={"check_number": "Check no.", "check_date": "Date", "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT), "how": "State"})
 
 
 def render_handwritten_form() -> None:
@@ -68,6 +85,7 @@ def render_handwritten_form() -> None:
             return
         opts = {int(r["loan_note_id"]): f"{r['note_ref']} · {r['status']}" for _, r in notes.iterrows()}
         loan_note_id = st.selectbox("Loan note", list(opts), format_func=opts.get, key=f"hw_ln_{cid}_{n}")
+        _show_loan_note_checks(int(loan_note_id))
 
     repl = _replace_options(cid)
     replaces = st.selectbox("Does this replace an earlier check?", [None] + list(repl), format_func=lambda c: "No" if c is None else repl[c], key=f"hw_repl_{cid}_{n}",
@@ -99,6 +117,11 @@ def render_handwritten_form() -> None:
                    + (f"\n\nTogether with new invoice **{invoice['doc_ref'].strip()}** for {php(invoice['gross'])}"
                       + (" in a new batch" if statement_id is None else "") + "." if invoice else "")
                    + (f"\n\nThis replaces **{repl[replaces]}**." if replaces else ""))
+        if replaces:
+            old_amount = _old_check_terms(cid).get(replaces, (None, None))[1]
+            new_total = sum(c["amount"] for c in checks)
+            if old_amount is not None and abs(new_total - old_amount) > 0.005:
+                summary += f"\n\n:warning: **The amount differs from the check it replaces:** {php(old_amount)} → {php(new_total)} (difference {php(abs(new_total - old_amount))}). Make sure that is right."
 
         def _do(c=list(checks), s=statement_id, ln=loan_note_id, inv=invoice, rp=replaces, who=cid):
             ok, msg, _ids = record_handwritten_checks(who, c, statement_id=s, loan_note_id=ln, invoice=inv, replaces_check_id=rp)
