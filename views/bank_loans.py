@@ -6,6 +6,7 @@ import sqlite3
 import streamlit as st
 
 from datetime import date
+from engines.beginning_balance_service import remove_beginning_label
 from engines.bank_loan_import_service import get_template_csv as get_bank_loan_template_csv
 from engines.bank_loan_import_service import parse_bank_loan_spreadsheet
 from engines.bank_loan_report_service import generate_bank_loan_pdf
@@ -293,6 +294,7 @@ def render() -> None:
                        WHERE bank_loan_id = bl.bank_loan_id AND due_date >= DATE('now', 'localtime')), 0
                   ) END AS outstanding,
                   bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, bl.is_cancelled, lb.name AS beneficiary, lb.beneficiary_type, bl.beneficiary_id,
+                  CASE WHEN bl.is_beginning_balance = 1 THEN 'Beginning balance (from MS Access)' ELSE '' END AS source,
                   """ + bank_loan_modified_sql("bl") + """ AS last_modified
            FROM bank_loans bl JOIN creditors c ON bl.creditor_id = c.creditor_id
            LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id
@@ -328,6 +330,7 @@ def render() -> None:
                     "outstanding": st.column_config.NumberColumn("Outstanding", format=MONEY_FORMAT),
                     "beneficiary": st.column_config.TextColumn("Attributable To"),
                     "beneficiary_type": st.column_config.TextColumn("Type"),
+                    "source": st.column_config.TextColumn("Source", help="Beginning balance (from MS Access): imported as a repayment schedule only, with no start date or principal yet."),
                 },
             )
             bl_selected_rows = bl_browser_event.selection.rows if bl_browser_event and bl_browser_event.selection else []
@@ -342,6 +345,18 @@ def render() -> None:
         with st.container(border=True):
             st.markdown(f"#### {bl_row['loan_ref']} — {bl_row['creditor_name']}  " + status_text(bl_row["status"]))
             bl_beneficiary_text = f"{bl_row['beneficiary']} ({bl_row['beneficiary_type']})" if pd.notna(bl_row["beneficiary_id"]) and bl_row["beneficiary_id"] != "" else "not set"
+            if bl_row["source"]:
+                bb1, bb2 = st.columns([5, 1.8], vertical_alignment="center")
+                bb1.info(f":material/history: **{bl_row['source']}** — imported from the old system as a repayment schedule only (no start date or principal yet).")
+                if bb2.button("Remove the label", icon=":material/label_off:", key="bl_bb_remove_btn", width="stretch"):
+                    def _remove_bl_label(blid=int(selected_blid)):
+                        ok, msg = remove_beginning_label("bank_loan", blid)
+                        if ok:
+                            flash(msg)
+                        return ok, msg
+
+                    confirm_change_dialog(f"Remove the beginning-balance label from bank loan **{bl_row['loan_ref']}**?  \nDo this only when its real details are known. The label is not put back.",
+                                          "bl_bb_remove_confirm", _remove_bl_label, "Yes, remove the label")
             st.caption(f"Status: {bl_row['status']} · Mode of payment (informational): {bl_row['mode_of_payment']} · Outstanding: {php(bl_row['outstanding'])} · Attributable to: {bl_beneficiary_text}")
             if not bl_beneficiaries_df.empty:
                 with st.expander("Edit attribution (who this loan is for)"):

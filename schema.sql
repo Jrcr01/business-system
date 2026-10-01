@@ -144,6 +144,9 @@ CREATE TABLE IF NOT EXISTS loan_notes (
     total_payable REAL,
     status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Settled', 'Defaulted', 'Cancelled', 'Pending Setup')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- migration 059 (2026-10-01): "Beginning balance (from MS Access)" label on a migrated placeholder note (interest / terms not split out yet)
+    is_beginning_balance INTEGER NOT NULL DEFAULT 0,
+    beginning_label_removed INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id)
 );
 
@@ -196,6 +199,9 @@ CREATE TABLE IF NOT EXISTS bank_loans (
     status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Closed')),
     is_cancelled INTEGER NOT NULL DEFAULT 0 CHECK(is_cancelled IN (0, 1)),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- migration 059 (2026-10-01): "Beginning balance (from MS Access)" label on a bank loan imported as a schedule only (no start date, no principal)
+    is_beginning_balance INTEGER NOT NULL DEFAULT 0,
+    beginning_label_removed INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (beneficiary_id) REFERENCES loan_beneficiaries(beneficiary_id)
 );

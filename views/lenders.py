@@ -10,6 +10,7 @@ from engines.check_rules import cancel_check
 from engines.check_rules import edit_parked_check
 from engines.check_rules import issue_check
 from engines.check_rules import replace_check
+from engines.beginning_balance_service import remove_beginning_label
 from engines.common import cell_text
 from engines.common import has_value
 from engines.common import php
@@ -138,7 +139,8 @@ def render() -> None:
                       (SELECT SUM(amount) FROM checks_issued
                        WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < DATE('now', 'localtime')), 0
                   ) AS outstanding,
-                  ln.status, """ + loan_note_modified_sql("ln") + """ AS last_modified
+                  ln.status, CASE WHEN ln.is_beginning_balance = 1 THEN 'Beginning balance (from MS Access)' ELSE '' END AS source,
+                  """ + loan_note_modified_sql("ln") + """ AS last_modified
            FROM loan_notes ln JOIN creditors c ON ln.creditor_id = c.creditor_id
            ORDER BY ln.loan_note_id DESC"""
     )
@@ -181,6 +183,7 @@ def render() -> None:
                     "total_interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT),
                     "total_payable": st.column_config.NumberColumn("Total payable", format=MONEY_FORMAT),
                     "outstanding": st.column_config.NumberColumn("Outstanding (uncleared)", format=MONEY_FORMAT),
+                    "source": st.column_config.TextColumn("Source", help="Beginning balance (from MS Access): migrated from the old system with its interest / terms not split out yet."),
                 },
             )
             ln_selected_rows = ln_browser_event.selection.rows if ln_browser_event and ln_browser_event.selection else []
@@ -201,6 +204,19 @@ def render() -> None:
             # postdated check hasn't actually left the bank yet, so it shouldn't count as paid
             # down until its date arrives.
             st.markdown(f"#### {ln_row['note_ref']} — {ln_row['creditor_name']}  " + status_text(ln_row["status"]))
+            if ln_row["source"]:
+                bb1, bb2 = st.columns([5, 1.8], vertical_alignment="center")
+                bb1.info(f":material/history: **{ln_row['source']}** — migrated from the old system; its interest / terms are not split out yet. "
+                         "The label goes away by itself when you enter the real terms below.")
+                if bb2.button("Remove the label", icon=":material/label_off:", key="ln_bb_remove_btn", width="stretch"):
+                    def _remove_ln_label(lnid=int(selected_lnid)):
+                        ok, msg = remove_beginning_label("loan_note", lnid)
+                        if ok:
+                            flash(msg)
+                        return ok, msg
+
+                    confirm_change_dialog(f"Remove the beginning-balance label from loan note **{ln_row['note_ref']}**?  \nDo this only when its real terms are known. The label is not put back.",
+                                          "ln_bb_remove_confirm", _remove_ln_label, "Yes, remove the label")
             if ln_row["total_payable"] in (None, ""):
                 # Pending Setup (Phase 8a placeholder) -- no principal/rate on file yet. q()'s
                 # underlying df_query() coerces SQL NULL to '' (fillna('')), not None -- so a

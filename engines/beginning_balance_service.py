@@ -82,3 +82,55 @@ def apply_beginning_balances() -> tuple[bool, str]:
     if skipped:
         msg += f" {skipped} batch(es) were left because their total does not equal their checks."
     return True, msg
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------------
+# The same label on migrated loans (owner, 2026-10-01: "label the loan notes and bank loans too").
+# ---------------------------------------------------------------------------------------------------------------------------------------
+LABEL = BEGINNING_REF
+LABEL_COLUMNS = ["kind", "id", "ref", "holder"]
+_TABLES = {"loan_note": ("loan_notes", "loan_note_id", "note_ref"), "bank_loan": ("bank_loans", "bank_loan_id", "loan_ref")}
+
+
+def loan_label_candidates() -> pd.DataFrame:
+    """Loan notes still named PENDING-... (the import's placeholders) and bank loans imported as a schedule only (no start date and no principal) that
+    are not labelled yet and have never had a label removed on purpose."""
+    with sqlite3.connect(DB_PATH) as conn:
+        notes = conn.execute("""SELECT 'loan_note', ln.loan_note_id, ln.note_ref, cr.creditor_name FROM loan_notes ln JOIN creditors cr ON cr.creditor_id = ln.creditor_id
+                                WHERE ln.note_ref LIKE 'PENDING-%' AND ln.status != 'Cancelled' AND ln.is_beginning_balance = 0 AND ln.beginning_label_removed = 0
+                                ORDER BY ln.loan_note_id""").fetchall()
+        banks = conn.execute("""SELECT 'bank_loan', bl.bank_loan_id, bl.loan_ref, cr.creditor_name FROM bank_loans bl JOIN creditors cr ON cr.creditor_id = bl.creditor_id
+                                WHERE bl.start_date IS NULL AND bl.principal_amount IS NULL AND bl.is_cancelled = 0 AND bl.is_beginning_balance = 0
+                                  AND bl.beginning_label_removed = 0 ORDER BY bl.bank_loan_id""").fetchall()
+    return pd.DataFrame(notes + banks, columns=LABEL_COLUMNS)
+
+
+def apply_loan_labels() -> tuple[bool, str]:
+    """Tag every candidate. Only the label is set: no amount, status, schedule or check changes. Audited per record. Safe to run again."""
+    cands = loan_label_candidates()
+    with sqlite3.connect(DB_PATH) as conn:
+        for r in cands.itertuples():
+            table, pk, _ref = _TABLES[r.kind]
+            conn.execute(f"UPDATE {table} SET is_beginning_balance = 1 WHERE {pk} = ?", (int(r.id),))
+            conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BEGINNING_BALANCE_LABELLED', ?, ?, ?)",
+                         (table, int(r.id), f"{r.ref} ({r.holder}) labelled \"{LABEL}\" — interest / terms not split out yet; nothing else changed"))
+    n_notes = int((cands["kind"] == "loan_note").sum()) if not cands.empty else 0
+    n_banks = int((cands["kind"] == "bank_loan").sum()) if not cands.empty else 0
+    return True, f"Labelled {n_notes} loan note(s) and {n_banks} bank loan(s)."
+
+
+def remove_beginning_label(kind: str, record_id: int) -> tuple[bool, str]:
+    """Take the label off by hand (real terms are known). It is never put back."""
+    if kind not in _TABLES:
+        return False, "Unknown record type."
+    table, pk, ref_col = _TABLES[kind]
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(f"SELECT {ref_col}, is_beginning_balance FROM {table} WHERE {pk} = ?", (int(record_id),)).fetchone()
+        if not row:
+            return False, "Record not found."
+        if not row[1]:
+            return False, f"{row[0]} has no beginning-balance label."
+        conn.execute(f"UPDATE {table} SET is_beginning_balance = 0, beginning_label_removed = 1 WHERE {pk} = ?", (int(record_id),))
+        conn.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BEGINNING_BALANCE_LABEL_REMOVED', ?, ?, ?)",
+                     (table, int(record_id), f"{row[0]}: beginning-balance label removed by hand (real terms known)"))
+    return True, f"{row[0]}: label removed."

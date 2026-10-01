@@ -278,7 +278,8 @@ def get_private_lender_master_report() -> pd.DataFrame:
             (SELECT SUM(amount) FROM checks_issued
              WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < DATE('now', 'localtime')), 0
         ) AS outstanding_uncleared,
-        ln.status
+        ln.status,
+        CASE WHEN ln.is_beginning_balance = 1 THEN 'Beginning balance (from MS Access)' ELSE '' END AS source
     FROM loan_notes ln
     JOIN creditors c ON ln.creditor_id = c.creditor_id
     WHERE c.creditor_type = 'LENDER'
@@ -514,7 +515,8 @@ def get_bank_loan_servicing_report() -> pd.DataFrame:
             (SELECT SUM(amount) FROM bank_loan_installments
              WHERE bank_loan_id = bl.bank_loan_id AND due_date >= DATE('now', 'localtime')), 0
         ) END AS outstanding,
-        bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, lb.name AS beneficiary, lb.beneficiary_type
+        bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, lb.name AS beneficiary, lb.beneficiary_type,
+        CASE WHEN bl.is_beginning_balance = 1 THEN 'Beginning balance (from MS Access)' ELSE '' END AS source
     FROM bank_loans bl
     JOIN creditors c ON bl.creditor_id = c.creditor_id
     LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id

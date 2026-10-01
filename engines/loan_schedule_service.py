@@ -199,7 +199,7 @@ def edit_loan_note_terms(loan_note_id: int, principal_amount: float, monthly_int
     try:
         with _get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT status FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
+            cur.execute("SELECT status, is_beginning_balance, note_ref FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
             row = cur.fetchone()
             if not row:
                 return False, "Loan note not found."
@@ -210,6 +210,10 @@ def edit_loan_note_terms(loan_note_id: int, principal_amount: float, monthly_int
                 "UPDATE loan_notes SET principal_amount = ?, monthly_interest_rate = ?, status = ? WHERE loan_note_id = ?",
                 (principal_amount, monthly_interest_rate, new_status, loan_note_id),
             )
+            if row[1]:                       # real terms entered: the "Beginning balance (from MS Access)" label has done its job (and is never put back)
+                cur.execute("UPDATE loan_notes SET is_beginning_balance = 0, beginning_label_removed = 1 WHERE loan_note_id = ?", (loan_note_id,))
+                cur.execute("INSERT INTO audit_logs (user_action, entity_name, entity_id, new_values) VALUES ('BEGINNING_BALANCE_LABEL_REMOVED', 'loan_notes', ?, ?)",
+                            (loan_note_id, f"{row[2]}: beginning-balance label removed because its terms were entered"))
             _recompute_schedule(cur, loan_note_id)
             _assert_no_negative_balance(cur, loan_note_id)
             cur.execute(
