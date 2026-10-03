@@ -13,18 +13,14 @@ DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
 def next_banking_day(d) -> date:
-    """A due date that falls on a Saturday or Sunday is actually paid the next banking day
-    (Monday) -- reports-only display convention, confirmed explicitly: doesn't change any
-    stored due_date or the auto-cleared-by-date rule elsewhere in this app, just how the
-    Uncleared Checks / Schedule of Payments reports group and label things. Philippine
-    holidays are deliberately out of scope for now (no holiday calendar exists in this system,
-    and they change every year) -- weekends only."""
+    """A due date that falls on a Saturday, a Sunday, a holiday or a no-check day (marked on the payment calendar) is actually paid the next banking day -- a display convention
+    that does not change any stored due_date or the auto-cleared-by-date rule: it only decides the day a payment is shown and totalled on."""
     if isinstance(d, str):
         d = date.fromisoformat(d)
-    if d.weekday() == 5:  # Saturday
-        return d + timedelta(days=2)
-    if d.weekday() == 6:  # Sunday
-        return d + timedelta(days=1)
+    from engines.calendar_marks import blocked_days
+    blocked = blocked_days()                          # holidays and no-check days marked on the calendar are bank days off, like a weekend (2026-10-03)
+    while d.weekday() >= 5 or d.isoformat() in blocked:
+        d += timedelta(days=1)
     return d
 
 

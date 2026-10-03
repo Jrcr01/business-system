@@ -21,6 +21,7 @@ CONTROLS = [
     ("Bank", "FLAG", "A loan installment with no bank debit", "An installment past due with no matching debit shows in Data health.", "test_bank_recon_v2.py"),
     ("Set-up", "FLAG", "A new supplier or lender", "Anyone but the System admin may add one and use it at once; it is flagged so the owner notices before a check is printed.", "test_review_flags.py"),
     ("Set-up", "GUIDE", "System functions are the System admin's", "Users and roles, settings, the audit log, data fixes and the developer view are not available to owners.", "test_permissions.py"),
+    ("Pay", "GUIDE", "A marked day is a bank day off", "A payment due on a holiday or a no-check day is paid the next bank day in Payables due, the calendar and the reports; new orders and the planner skip it; stored due dates and written checks keep their dates.", "test_calendar_marks.py"),
     ("Set-up", "GUIDE", "Calendar marks are audited", "Marking a holiday, a no-check day or a note is recorded with who did it; only Owner and Payables may.", "test_calendar_marks.py"),
 ]
 

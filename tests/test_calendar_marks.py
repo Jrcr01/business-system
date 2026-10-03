@@ -49,3 +49,36 @@ def test_every_change_is_audited_with_who_did_it(db):
         cm.unmark_day(DAY)
     rows = [r[0] for r in __import__("sqlite3").connect(db).execute("SELECT user_email FROM audit_logs WHERE user_action IN ('CALENDAR_MARKED', 'CALENDAR_UNMARKED') ORDER BY rowid")]
     assert rows == ["clerk@example.com", "clerk@example.com"]
+
+
+def test_a_payment_on_a_marked_day_is_paid_the_next_bank_day_in_the_schedule_and_the_calendar_and_comes_back_when_unmarked(db):
+    import app
+    from conftest import make_creditor
+    from engines.check_rules import issue_check
+    from engines.reports_service import get_payment_calendar_items, get_payment_schedule_all_tracks, next_banking_day
+    from engines.statement_rules import add_invoice
+    cid = make_creditor(db, name="Marked Day Supplier")
+    sid = app.create_order_statement(cid)
+    add_invoice(cid, "MK-1", date(2026, 10, 1), date(2026, 11, 1), 5000.0, [], sid)
+    wed = date(2026, 11, 11)                                                                  # a Wednesday
+    with acting_as("owner@example.com", "owner"):
+        assert issue_check(cid, 5000.0, wed, statement_id=sid)[0]
+
+    def paid_on():
+        df = get_payment_schedule_all_tracks()
+        return {str(d)[:10] for d in df[df["amount"] == 5000.0]["actual_payment_date"]}
+
+    assert paid_on() == {"2026-11-11"} and next_banking_day(wed) == wed
+    with acting_as("clerk@example.com", "payables"):
+        assert cm.payments_on(wed) == 1
+        assert cm.mark_day(wed, "holiday", "Test holiday")[0]
+        assert next_banking_day(wed) == date(2026, 11, 12)
+        assert paid_on() == {"2026-11-12"}                                                    # the check stays dated Nov 11; it is paid the next bank day
+        items = get_payment_calendar_items()
+        assert str(items[items["amount"] == 5000.0]["due_date"].iloc[0])[:10] == "2026-11-11"   # its own date did not move
+        assert cm.mark_day(date(2026, 11, 12), "custom", "")[0]
+        assert next_banking_day(wed) == date(2026, 11, 13)                                      # two marked days in a row: past both
+        assert cm.mark_day(date(2026, 11, 14), "note", "Payday")[0]
+        assert next_banking_day(date(2026, 11, 14)) == date(2026, 11, 16)                       # a note moves nothing: Saturday goes to Monday as always
+        assert cm.unmark_day(wed)[0] and cm.unmark_day(date(2026, 11, 12))[0]
+    assert paid_on() == {"2026-11-11"}

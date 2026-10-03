@@ -2,8 +2,8 @@
   holiday   a bank day off (calendar_blocked_dates, kind 'holiday')
   custom    a no-check day, treated like a holiday (calendar_blocked_dates, kind 'custom')
   note      a coloured reminder (a supplier visit, payday); it moves no date (calendar_notes)
-A holiday or a no-check day is skipped when a NEW purchase order works out its pay date and by the check-date planner (engines/check_date_planner.next_bank_day). It does not move an
-invoice's stored due date or a check already written: those keep their dates.
+A holiday or a no-check day is treated like a weekend (owner, 2026-10-03): a payment due on it is PAID on the next bank day, in Payables due, the payment calendar, Payment run and the
+reports (reports_service.next_banking_day), and a new purchase order and the check-date planner skip it. An invoice's stored due date and a check already written keep their dates.
 Owner and Payables mark (the 'calendar.mark' action); everyone who sees the calendar sees the marks. Every change is audited with the acting email."""
 from __future__ import annotations
 
@@ -13,6 +13,23 @@ from engines.common import get_conn, write_tx
 from engines.permissions import require as require_permission
 
 KINDS = {"holiday": "Holiday (bank day off)", "custom": "No-check day", "note": "Note only"}
+
+_BLOCKED: dict = {}          # db path -> (file stamp, frozenset of ISO dates); read once until the database changes (next_banking_day asks for it once per payment)
+
+
+def blocked_days() -> frozenset:
+    """Every holiday and no-check day, as ISO dates. Notes are not here: they move nothing."""
+    from engines import common
+    from engines.settings_store import _stamp
+    path = common.DB_PATH                                   # the same file get_conn() opens by default
+    stamp = _stamp(path)
+    hit = _BLOCKED.get(path)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    with get_conn() as conn:
+        days = frozenset(str(r[0])[:10] for r in conn.execute("SELECT blocked_date FROM calendar_blocked_dates"))
+    _BLOCKED[path] = (stamp, days)
+    return days
 
 
 def notes_for_month(year: int, month: int) -> dict:
@@ -67,6 +84,16 @@ def unmark_day(day: date) -> tuple[bool, str]:
         if n:
             conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, new_values) VALUES (acting_user(), 'CALENDAR_UNMARKED', 'calendar', ?)", (str(day),))
     return True, f"{day:%b %d, %Y} is no longer marked." if n else "That day was not marked."
+
+
+def payments_on(day: date) -> int:
+    """How many payments (checks, dues) are shown on this day: the ones that will be paid the next bank day if the day is marked as a holiday or a no-check day."""
+    import pandas as pd
+    from engines.reports_service import get_payment_calendar_items
+    items = get_payment_calendar_items()
+    if items is None or items.empty:
+        return 0
+    return int(((pd.to_datetime(items["actual_payment_date"]).dt.date == day) & (items["state"] == "Due")).sum())
 
 
 def orders_planned_on(day: date) -> int:
