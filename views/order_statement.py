@@ -123,7 +123,7 @@ def render_batch_invoices(statement_id: int) -> None:
     """The open batch's Invoices section (grid + photo/PDF/spreadsheet import). Shared by Order statements and Add data."""
     batch_scope_pick, scoped_row, scoped_creditor_id, supplier_terms, batch_is_locked, batch_is_cancelled = _batch_context(statement_id)
     scoped_invoices_df = q(
-        """SELECT invoice_id, doc_ref, invoice_date, due_date, gross_amount, trade_discounts, amount, status
+        """SELECT invoice_id, doc_ref, dr_no, invoice_date, due_date, gross_amount, trade_discounts, amount, status
            FROM invoices
            WHERE statement_id = ?
            ORDER BY invoice_id""",
@@ -135,16 +135,17 @@ def render_batch_invoices(statement_id: int) -> None:
             st.caption("No invoices linked to this order statement yet.")
         else:
             st.dataframe(
-                scoped_invoices_df[["invoice_id", "doc_ref", "invoice_date", "due_date", "gross_amount", "amount", "status"]],
+                scoped_invoices_df[["invoice_id", "doc_ref", "dr_no", "invoice_date", "due_date", "gross_amount", "amount", "status"]],
                 hide_index=True,
                 column_config={
+                    "doc_ref": "Sales invoice no. (SI)", "dr_no": "DR no.",
                     "gross_amount": st.column_config.NumberColumn("Gross amount", format=MONEY_FORMAT),
                     "amount": st.column_config.NumberColumn("Net amount", format=MONEY_FORMAT),
                 },
             )
         st.caption("This batch is cancelled and can't be edited." if batch_is_cancelled else "Batch is closed (fully covered by checks) — use Edit this batch above to change an invoice. A new invoice for this supplier goes in a new batch.")
     else:
-        st.caption(f"Add, edit, or delete rows below, then Save. A new row needs a Doc Ref and a positive Amount; use the row's menu (or select + Delete) to remove one. Due Date is always recomputed as Date Received + this supplier's Terms ({supplier_terms or 'not set'}) when you Save — it's a computed reference field, not manually edited; whatever you type into it is overwritten on Save. The grid itself won't visibly update Due Date while you're still typing, only after Save. Every change is logged automatically (old → new + timestamp).")
+        st.caption(f"Add, edit, or delete rows below, then Save. Type the supplier's SALES INVOICE number (not the delivery receipt's: that goes in DR no.). A new row needs a Sales invoice no. and a positive Amount; use the row's menu (or select + Delete) to remove one. Due Date is always recomputed as Date Received + this supplier's Terms ({supplier_terms or 'not set'}) when you Save — it's a computed reference field, not manually edited; whatever you type into it is overwritten on Save. The grid itself won't visibly update Due Date while you're still typing, only after Save. Every change is logged automatically (old → new + timestamp).")
 
         with st.expander("Add an invoice from a purchase order", icon=":material/inventory_2:"):
             render_receive_form(scoped_creditor_id, statement_id=int(batch_scope_pick), key=batch_scoped_key("rcv"))
@@ -239,7 +240,7 @@ def render_batch_invoices(statement_id: int) -> None:
                     key=staging_editor_key,
                     column_config={
                         "source_file": st.column_config.TextColumn("Source"),
-                        "doc_ref": st.column_config.TextColumn("Doc Ref"),
+                        "doc_ref": st.column_config.TextColumn("Sales invoice no. (SI)"),
                         "invoice_date": st.column_config.DateColumn("Date Received", format="MMM DD, YYYY"),
                         "due_date": st.column_config.DateColumn("Due Date (computed, recalculated on save)"),
                         "gross_amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01),
@@ -302,7 +303,7 @@ def render_batch_invoices(statement_id: int) -> None:
         original_invoices_df = scoped_invoices_df.copy()
         original_invoices_df["less_pct"] = original_invoices_df["trade_discounts"].apply(parse_less_pct)
         editable_display_df = original_invoices_df[
-            ["invoice_id", "doc_ref", "invoice_date", "due_date", "gross_amount", "less_pct", "amount", "status"]
+            ["invoice_id", "doc_ref", "dr_no", "invoice_date", "due_date", "gross_amount", "less_pct", "amount", "status"]
         ].copy()
         editable_display_df["invoice_date"] = pd.to_datetime(editable_display_df["invoice_date"]).dt.date
         editable_display_df["due_date"] = pd.to_datetime(editable_display_df["due_date"]).dt.date
@@ -315,7 +316,8 @@ def render_batch_invoices(statement_id: int) -> None:
             key=invoices_editor_key,
             column_config={
                 "invoice_id": st.column_config.NumberColumn("ID"),
-                "doc_ref": st.column_config.TextColumn("Doc Ref", default=""),
+                "doc_ref": st.column_config.TextColumn("Sales invoice no. (SI)", default="", help="The supplier's sales invoice number (owner, 2026-10-03), not the delivery receipt's."),
+                "dr_no": st.column_config.TextColumn("DR no. (optional)", default="", help="The delivery receipt number, if the goods came with one."),
                 "invoice_date": st.column_config.DateColumn("Date Received", default=manila_today()),
                 "due_date": st.column_config.DateColumn(
                     "Due Date (computed, recalculated on save)", default=resolve_due_date(manila_today(), supplier_terms)
@@ -345,13 +347,13 @@ def render_batch_invoices(statement_id: int) -> None:
                         if not doc_ref and gross <= 0:
                             continue  # untouched blank template row
                         if not doc_ref or gross <= 0:
-                            row_errors.append("New invoice row needs a Doc Ref and a positive Amount.")
+                            row_errors.append("New invoice row needs a Sales invoice no. and a positive Amount.")
                             continue
                         resolved_due = resolve_due_date(r["invoice_date"], supplier_terms)
                         try:
                             add_invoice(
                                 scoped_creditor_id, doc_ref, r["invoice_date"], resolved_due,
-                                gross, [float(r["less_pct"])] if r["less_pct"] else [], int(batch_scope_pick),
+                                gross, [float(r["less_pct"])] if r["less_pct"] else [], int(batch_scope_pick), dr_no=cell_text(r["dr_no"]),
                             )
                             added += 1
                         except sqlite3.IntegrityError:
@@ -364,6 +366,7 @@ def render_batch_invoices(statement_id: int) -> None:
                     resolved_due = resolve_due_date(r["invoice_date"], supplier_terms)
                     is_changed = (
                         cell_text(r["doc_ref"]) != cell_text(orig["doc_ref"])
+                        or cell_text(r["dr_no"]) != cell_text(orig["dr_no"])
                         or str(r["invoice_date"]) != str(orig["invoice_date"])
                         or str(resolved_due) != str(orig["due_date"])
                         or abs(float(r["gross_amount"]) - float(orig["gross_amount"])) > 0.001
@@ -373,7 +376,7 @@ def render_batch_invoices(statement_id: int) -> None:
                         continue
                     ok, msg = edit_invoice(
                         inv_id, cell_text(r["doc_ref"]), r["invoice_date"], resolved_due,
-                        float(r["gross_amount"]), float(r["less_pct"]),
+                        float(r["gross_amount"]), float(r["less_pct"]), dr_no=cell_text(r["dr_no"]),
                     )
                     if ok:
                         updated += 1

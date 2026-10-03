@@ -95,7 +95,7 @@ def _invoice_form(creditor_id: int, statement_id: int | None, lines: pd.DataFram
     est_total = float((ticked["qty_now"] * ticked["est_unit_price"]).sum())
 
     c1, c2, c3 = st.columns([2, 1.4, 1.6])
-    doc = c1.text_input("Supplier's invoice number", value=came_with, key=f"{k}_doc")
+    doc = c1.text_input("Sales invoice no. (SI)", value=came_with, key=f"{k}_doc", help="The supplier's sales invoice number, not the delivery receipt's. The DR the goods came with is kept beside it.")
     got = pd.to_datetime(lines["received_date"], errors="coerce").max() if "received_date" in lines.columns and came_with else None
     inv_default = min(got.date(), manila_today()) if got is not None and not pd.isna(got) else manila_today()          # an invoice that came with the goods is dated the day they arrived
     inv_date = c2.date_input("Invoice date", value=inv_default, key=f"{k}_date", help="The due date is worked out from this date and the supplier's terms.")

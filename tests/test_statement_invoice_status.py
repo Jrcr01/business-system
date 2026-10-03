@@ -89,9 +89,9 @@ def test_a_section_heading_is_never_stranded_from_its_table_at_a_page_bottom(db)
         with pdfplumber.open(io.BytesIO(pdf)) as doc:
             for page in doc.pages:
                 lines = [ln.strip() for ln in (page.extract_text() or "").split(chr(10))]
-                if not any(marker in " ".join(lines) for marker in ("Check Number", "Doc Ref", "BATCH / ORDER STATEMENT", "Payment Application")):
+                if not any(marker in " ".join(lines) for marker in ("Check Number", "Sales Invoice", "BATCH / ORDER STATEMENT", "Payment Application")):
                     stranded.append((n_invoices, "blank page (footer only)"))
-                for heading, header_row in (("Checks", "Check Number"), ("Invoices", "Doc Ref")):
+                for heading, header_row in (("Checks", "Check Number"), ("Invoices", "Sales Invoice")):          # the column was "Doc Ref" until 2026-10-03
                     if heading in lines and not any(ln.startswith(header_row) for ln in lines):
                         stranded.append((n_invoices, heading))
     assert stranded == [], f"heading alone / blank page for: {stranded}"

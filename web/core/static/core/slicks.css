@@ -136,3 +136,11 @@ input[type=date], input[type=file] { padding: 7px 9px; border: 1px solid #cbd5e1
 .btn[disabled] { opacity: .75; cursor: default; }
 .enter-default { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 details > summary { margin: 4px 0; }
+
+/* ---- stage D3 ---- */
+.steps { display: flex; gap: 14px; flex-wrap: wrap; margin: 6px 0 10px; font-size: .9rem; }
+.steps .done { color: var(--ok); } .steps .part { color: #C26A00; } .steps .wait { color: #9ca3af; }
+.kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.kinds a { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; text-decoration: none; color: var(--ink); }
+.kinds a:hover { background: #f8fafc; border-color: #cbd5e1; }
+.kinds a b { display: block; margin-top: 4px; } .kinds a .hint { display: block; }

@@ -1,0 +1,53 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Payables due{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">event_upcoming</span> Payables due</h2>
+<p class="note">What is already committed to go out, and when. The suppliers deposit the checks they hold when they like, so this shows how much can hit the bank, not a plan.</p>
+<div class="facts">
+  <div><span>Can hit the bank in the next 7 days</span><b>₱{{ w.amount|floatformat:2|intcomma }}</b><span>{{ w.checks }} check(s), {{ w.orders }} order(s)</span></div>
+  <div><span>In the next 30 days</span><b>₱{{ m.amount|floatformat:2|intcomma }}</b><span>{{ m.checks }} check(s), {{ m.orders }} order(s)</span></div>
+</div>
+<p class="hint">{% if w.balance is not None %}Bank balance on {{ w.balance_as_of|date:"M d, Y" }}: ₱{{ w.balance|floatformat:2|intcomma }}. Shown beside the figures, not compared with them.{% else %}No bank statement imported yet, so no balance is shown.{% endif %}</p>
+<nav class="tabs">
+  <a href="?tab=weeks"{% if tab == "weeks" %} class="on"{% endif %}>Week by week</a>
+  <a href="?tab=suppliers"{% if tab == "suppliers" %} class="on"{% endif %}>By supplier</a>
+  <a href="?tab=past"{% if tab == "past" %} class="on"{% endif %}>Past their date</a>
+  <a href="?tab=calendar"{% if tab == "calendar" %} class="on"{% endif %}>Calendar <span class="pill off">D4</span></a>
+  <a href="?tab=all"{% if tab == "all" %} class="on"{% endif %}>Everything owed <span class="pill off">D8</span></a>
+</nav>
+
+{% if tab == "weeks" %}
+  <div class="grp" style="margin-top:0">Next 7 days</div>
+  {% if next7 %}<div class="scroll-x"><table class="list"><tr><th>Day</th><th>Track</th><th>Payee</th><th>Reference</th><th>Amount</th></tr>
+    {% for r in next7 %}<tr><td>{{ r.actual_payment_date|slice:":10" }}</td><td>{{ r.track }}</td><td>{{ r.payee_name }}</td><td>{{ r.reference|default:"" }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>
+  {% else %}<p class="note">Nothing falls due in the next 7 days.</p>{% endif %}
+  <div class="grp">Week by week, the next 12 weeks</div>
+  <div class="bars">{% for r in weeks %}<div class="b" title="Week of {{ r.week|date:'M d' }}: ₱{{ r.Total|floatformat:2|intcomma }}">{% for p in r.parts %}<div style="height:{{ p.h }}%;background:{{ p.color }}" title="{{ p.kind }}: ₱{{ p.amount|floatformat:2|intcomma }}"></div>{% endfor %}</div>{% endfor %}</div>
+  <div class="barlabels">{% for r in weeks %}<span>{{ r.week|date:"M d" }}</span>{% endfor %}</div>
+  <p class="hint">{% for k, c in colors.items %}<span style="display:inline-block;width:10px;height:10px;background:{{ c }};border-radius:2px"></span> {{ k }}&nbsp;&nbsp;{% endfor %}<br>A check already past its date counts in the first week, because the supplier can deposit it any day.</p>
+  <div class="scroll-x"><table class="list"><tr><th>Week of</th>{% for c in columns %}<th>{{ c }}</th>{% endfor %}<th>Total</th></tr>
+    {% for r in weeks %}<tr><td>{{ r.week|date:"M d, Y" }}</td>{% for v in r.cells %}<td class="num">{% if v %}{{ v|floatformat:2|intcomma }}{% else %}—{% endif %}</td>{% endfor %}
+      <td class="num"><b>{{ r.Total|floatformat:2|intcomma }}</b></td></tr>{% endfor %}</table></div>
+
+{% elif tab == "suppliers" %}
+  <p class="note">Who holds checks that can be deposited in the next 30 days, and which ordered purchase orders are coming due. Biggest first.</p>
+  {% if by_supplier %}<div class="scroll-x"><table class="list"><tr><th>Supplier</th><th>Checks</th><th>Checks amount</th><th>Orders</th><th>Orders amount</th><th>Total</th><th>First date</th></tr>
+    {% for r in by_supplier %}<tr><td>{{ r.payee }}</td><td class="num">{{ r.checks }}</td><td class="num">{{ r.check_amount|floatformat:2|intcomma }}</td><td class="num">{{ r.orders }}</td>
+      <td class="num">{{ r.order_amount|floatformat:2|intcomma }}</td><td class="num">{{ r.total|floatformat:2|intcomma }}</td><td>{{ r.next_day|slice:":10" }}</td></tr>{% endfor %}</table></div>
+  {% else %}<p class="note">Nothing is committed to suppliers in the next 30 days.</p>{% endif %}
+
+{% elif tab == "past" %}
+  {% if not fs %}<p class="note">Import a bank statement first (Bank and cash): the checks past their date are the ones the bank has not cleared yet.</p>
+  {% elif not overdue_n %}<div class="msg success">No check is waiting to be deposited within the imported period.</div>
+  {% else %}
+  <p class="note">Checks dated on or before the last imported bank date ({{ fs.as_of|date:"M d" }}) that the bank has not cleared: the suppliers have not deposited them yet, so they can hit the bank any day.</p>
+  <div class="facts"><div><span>Past their date, not cleared</span><b>₱{{ overdue_total|floatformat:2|intcomma }}</b><span>{{ overdue_n }} check(s)</span></div></div>
+  <table class="list" style="max-width:560px"><tr><th>Supplier</th><th>Checks</th><th>Amount</th></tr>
+    {% for r in by_payee %}<tr><td>{{ r.payee }}</td><td class="num">{{ r.checks }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table>
+  {% endif %}
+
+{% else %}
+  <div class="later-box"><p><b>{% if tab == "calendar" %}The payment calendar moves to the new system in stage D4 (Paying).{% else %}Everything owed (the schedule of payments) moves to the new system with the reports in stage D8.{% endif %}</b></p>
+    <p>Until then, use it in the Streamlit system you are piloting.</p></div>
+{% endif %}
+{% endblock %}

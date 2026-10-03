@@ -99,7 +99,7 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
         stage = "Cancelled" if stmt["status"] == "Cancelled" else "Issued" if printed else "Parked" if active else "Draft"
         stmt = dict(stmt, status=stage)
         invoice_rows = cur.execute(
-            """SELECT invoice_id, doc_ref, invoice_date, due_date, gross_amount, amount, status
+            """SELECT invoice_id, doc_ref, dr_no, invoice_date, due_date, gross_amount, amount, status
                FROM invoices WHERE statement_id = ? ORDER BY invoice_id""",
             (statement_id,),
         ).fetchall()
@@ -224,9 +224,9 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     story.append(_info_panel(stmt, styles))
 
     _add_section(story, "Invoices", styles)
-    inv_rows = [["Doc Ref", "Invoice Date", "Due Date", "Gross (PHP)", "Net (PHP)", "Status"]]
+    inv_rows = [["Sales Invoice", "Invoice Date", "Due Date", "Gross (PHP)", "Net (PHP)", "Status"]]
     for i in data["invoices"]:
-        inv_rows.append([i["doc_ref"], i["invoice_date"], i["due_date"], _money(i["gross_amount"]), _money(i["amount"]), i["display_status"]])
+        inv_rows.append([i["doc_ref"] + (f" (DR {i['dr_no']})" if i.get("dr_no") else ""), i["invoice_date"], i["due_date"], _money(i["gross_amount"]), _money(i["amount"]), i["display_status"]])
     if len(inv_rows) == 1:
         inv_rows.append(["—", "—", "—", "—", "—", "—"])
     inv_table = Table(inv_rows, colWidths=[CONTENT_WIDTH * w for w in (0.15, 0.14, 0.14, 0.14, 0.14, 0.29)], repeatRows=1)

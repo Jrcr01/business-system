@@ -380,12 +380,12 @@ def _match(request, cid: int, lines: list[dict], goods_received: bool):
     if not picks:
         return False, "Tick at least one line the invoice covers."
     if not p.get("doc", "").strip():
-        return False, "Enter the supplier's invoice number."
-    batch = p.get("batch", "new")
-    sid = int(batch) if batch.isdigit() else create_order_statement(cid)
+        return False, "Enter the supplier's sales invoice number (SI)."
+    batch = p.get("batch", "")
+    sid = int(batch) if batch.isdigit() else (create_order_statement(cid) if batch == "new" else None)      # None: waits for a batch (owner, 2026-10-03)
     override = _num(p.get("override"))
     ok, msg, _ = receive_into_batch(cid, sid, p.get("doc", ""), _date(p.get("inv_date")), picks, update_prices=p.get("update_prices") == "1",
-                                    gross_override=override if override and override > 0 else None, goods_received=goods_received)
+                                    gross_override=override if override and override > 0 else None, goods_received=goods_received, dr_no=p.get("dr", "").strip() or None)
     return ok, msg
 
 
@@ -441,5 +441,6 @@ def match(request):
         ln["checked"] = str(ln["po_id"]) == pre or (bool(came_with) and str(ln.get("received_ref")) == came_with)
     for ln in unreceived:
         ln["checked"] = str(ln["po_id"]) == pre and not waiting
+    pre_batch = request.GET.get("batch", "")                   # opened from a batch's "From a purchase order": that batch is chosen
     return render(request, "buying/match.html", {"page_id": "purchase-orders", **_head(request), "suppliers": suppliers, "cid": cid, "waiting": waiting, "unreceived": unreceived,
-                                                 "came_with": came_with, "today": manila_today(), "batches": _batches(cid)})
+                                                 "came_with": came_with, "today": manila_today(), "batches": _batches(cid), "pre_batch": pre_batch})

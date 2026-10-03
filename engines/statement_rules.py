@@ -67,16 +67,26 @@ def add_credit_memo(statement_id: int, memo_ref: str, memo_date: date, amount: f
     return True, f"Credit memo {memo_ref} for {php(amount)} applied to the batch."
 
 
-def add_invoice(creditor_id: int, doc_ref: str, invoice_date: date, due_date: date, gross_amount: float, discount_rates: list, statement_id: int | None):
+def dr_text(dr_no) -> str | None:
+    """A delivery receipt number as stored: trimmed, without a leading 'DR' the person may have typed (the screens show 'DR' beside it). Empty = None."""
+    import re
+    text = " ".join(str(dr_no or "").split())
+    text = re.sub(r"^D\.?\s*R(?![A-Za-z])\.?\s*[-#:.]?\s*", "", text, flags=re.IGNORECASE)          # "DR 77", "D.R. 77", "DR-77" -> "77"; "Driver" stays
+    return text or None
+
+
+def add_invoice(creditor_id: int, doc_ref: str, invoice_date: date, due_date: date, gross_amount: float, discount_rates: list, statement_id: int | None,
+                dr_no: str | None = None):
+    """doc_ref = the supplier's SALES INVOICE number (owner, 2026-10-03); dr_no = the delivery receipt number that came with the goods, if any."""
     total_discount, net_amount = calculate_trade_discount(gross_amount, discount_rates)
     with get_conn() as conn:
         warnings = detect_invoice_anomalies(creditor_id, doc_ref, net_amount, str(invoice_date), conn)
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO invoices
-               (creditor_id, doc_ref, invoice_date, due_date, gross_amount, trade_discounts, amount, status, statement_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'Unpaid', ?)""",
-            (creditor_id, doc_ref, str(invoice_date), str(due_date), gross_amount, str(discount_rates), net_amount, statement_id),
+               (creditor_id, doc_ref, invoice_date, due_date, gross_amount, trade_discounts, amount, status, statement_id, dr_no)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'Unpaid', ?, ?)""",
+            (creditor_id, doc_ref, str(invoice_date), str(due_date), gross_amount, str(discount_rates), net_amount, statement_id, dr_text(dr_no)),
         )
         conn.commit()
     if statement_id is not None:
@@ -173,10 +183,16 @@ def delete_invoice(invoice_id: int) -> tuple[bool, str]:
             # constraint as a raw, uncaught sqlite3.IntegrityError -- a check is already tied to
             # this invoice, so the invoice needs to stay (or the check cancelled/reallocated first).
             return False, f"This invoice has {alloc_count} check(s) already allocated to it — cancel or reallocate those first, then delete."
+        po = cur.execute("SELECT p.po_no FROM po_receipts r JOIN purchase_orders p ON p.po_id = r.po_id WHERE r.invoice_id = ? LIMIT 1", (invoice_id,)).fetchone()
+        if po:                                       # the order's invoiced quantities point at it: deleting it would leave the order wrong (2026-10-03)
+            return False, f"Invoice {doc_ref} was matched to purchase order {po[0]}, so it can't be deleted here. Correct its amount instead, or cancel the batch."
+        # an edited invoice has correction-history rows pointing at it: they go with it (the audit log keeps every edit and this deletion). Before 2026-10-03 the
+        # delete crashed on them (FOREIGN KEY constraint failed).
+        corrections = cur.execute("DELETE FROM invoice_corrections WHERE invoice_id = ?", (invoice_id,)).rowcount
         cur.execute("DELETE FROM invoices WHERE invoice_id = ?", (invoice_id,))
         cur.execute(
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'INVOICE_DELETED', 'invoices', ?, ?)",
-            (invoice_id, f"Deleted {doc_ref} ({php(amount)})"),
+            (invoice_id, f"Deleted {doc_ref} ({php(amount)})" + (f"; its {corrections} correction record(s) went with it" if corrections else "")),
         )
         conn.commit()
     if statement_id is not None:
@@ -240,7 +256,7 @@ def edit_credit_memo(credit_memo_id: int, memo_ref: str, memo_date: date, amount
     return True, f"Credit memo updated ({len(changes)} field(s) changed)."
 
 
-def edit_invoice(invoice_id: int, doc_ref: str, invoice_date: date, due_date: date, gross_amount: float, less_pct: float) -> tuple[bool, str]:
+def edit_invoice(invoice_id: int, doc_ref: str, invoice_date: date, due_date: date, gross_amount: float, less_pct: float, dr_no: str | None = None) -> tuple[bool, str]:
     """True in-place edit of a saved invoice row, gated behind the batch's unlock state.
     Auto-logs old->new per changed field (no manual reason — consistent with the
     no-friction unlock philosophy), then keeps the batch total and invoice payment
@@ -248,13 +264,14 @@ def edit_invoice(invoice_id: int, doc_ref: str, invoice_date: date, due_date: da
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT statement_id, doc_ref, invoice_date, due_date, gross_amount, trade_discounts FROM invoices WHERE invoice_id = ?",
+            "SELECT statement_id, doc_ref, invoice_date, due_date, gross_amount, trade_discounts, dr_no FROM invoices WHERE invoice_id = ?",
             (invoice_id,),
         )
         row = cur.fetchone()
         if not row:
             return False, "Invoice not found."
-        statement_id, old_doc_ref, old_invoice_date, old_due_date, old_gross, old_discounts = row
+        statement_id, old_doc_ref, old_invoice_date, old_due_date, old_gross, old_discounts, old_dr = row
+        new_dr = old_dr if dr_no is None else dr_text(dr_no)                 # None = leave the DR number as it is
         if _batch_lock_status(cur, statement_id):
             return False, "This batch is locked. Unlock it first to edit an invoice."
         if not doc_ref or not doc_ref.strip():
@@ -279,15 +296,17 @@ def edit_invoice(invoice_id: int, doc_ref: str, invoice_date: date, due_date: da
             changes.append(("gross_amount", str(old_gross), str(gross_amount)))
         if abs(parse_less_pct(old_discounts) - less_pct) > 0.001:
             changes.append(("less_pct", str(parse_less_pct(old_discounts)), str(less_pct)))
+        if (new_dr or None) != (old_dr or None):
+            changes.append(("dr_no", old_dr or "", new_dr or ""))
 
         if not changes:
             return True, "No changes to save."
 
         try:
             cur.execute(
-                """UPDATE invoices SET doc_ref = ?, invoice_date = ?, due_date = ?, gross_amount = ?, trade_discounts = ?, amount = ?
+                """UPDATE invoices SET doc_ref = ?, invoice_date = ?, due_date = ?, gross_amount = ?, trade_discounts = ?, amount = ?, dr_no = ?
                    WHERE invoice_id = ?""",
-                (doc_ref, new_invoice_date_s, new_due_date_s, gross_amount, new_discounts_repr, new_amount, invoice_id),
+                (doc_ref, new_invoice_date_s, new_due_date_s, gross_amount, new_discounts_repr, new_amount, new_dr, invoice_id),
             )
         except sqlite3.IntegrityError:
             return False, f"'{doc_ref}' already exists for this supplier — choose a different Doc Ref."
@@ -582,3 +601,74 @@ def waterfall_allocate_preview(check_rows: list[dict], invoices_df: pd.DataFrame
             if remaining_by_invoice[invoice_id] <= 0.005:
                 inv_cursor += 1
     return pd.DataFrame(preview_rows, columns=["check_row", "check_date", "invoice_id", "doc_ref", "allocated"])
+
+
+# --- invoices waiting for a batch (owner, 2026-10-03: "the put the invoice field is optional so when order statement is being prepared batching can be decided
+#     which to include or not in a specific batch") ---------------------------------------------------------------------------------------------------
+
+def unbatched_invoices(creditor_id: int | None = None) -> pd.DataFrame:
+    """Invoices not in any batch yet (not cancelled, not an opening balance), oldest first: invoice_id, creditor_id, supplier, doc_ref, dr_no, invoice_date, due_date,
+    amount, from_po (matched to a purchase order)."""
+    where, params = ["i.statement_id IS NULL", "i.status != 'Cancelled'", "i.is_opening_balance = 0", "i.paid_via_card_id IS NULL"], []
+    if creditor_id:
+        where.append("i.creditor_id = ?")
+        params.append(int(creditor_id))
+    with get_conn() as conn:
+        return pd.read_sql_query(
+            f"""SELECT i.invoice_id, i.creditor_id, c.creditor_name AS supplier, i.doc_ref, i.dr_no, i.invoice_date, i.due_date, i.amount,
+                       EXISTS (SELECT 1 FROM po_receipts r WHERE r.invoice_id = i.invoice_id) AS from_po
+                FROM invoices i JOIN creditors c ON c.creditor_id = i.creditor_id WHERE {' AND '.join(where)} ORDER BY i.due_date, i.invoice_id""", conn, params=params)
+
+
+def put_in_batch(statement_id: int, invoice_ids: list[int]) -> tuple[bool, str]:
+    """Puts invoices that are waiting for a batch into this batch, in ONE locked step: each must be the batch's supplier's, not cancelled and still in no batch
+    (someone else may have batched it a moment ago); the batch must be open. Then the batch total, the invoices' paid status and the lock follow."""
+    ids = sorted({int(i) for i in invoice_ids or []})
+    if not ids:
+        return False, "Tick at least one invoice."
+    with write_tx() as conn:
+        batch = conn.execute("SELECT creditor_id, status, is_locked, statement_ref FROM order_statements WHERE statement_id = ?", (statement_id,)).fetchone()
+        if not batch:
+            return False, "Batch not found."
+        if batch[1] == "Cancelled":
+            return False, "That batch is cancelled."
+        if batch[2]:
+            return False, "That batch is closed (its checks cover it). Reopen it first, or use a new batch."
+        rows = conn.execute(f"SELECT invoice_id, creditor_id, statement_id, status, doc_ref FROM invoices WHERE invoice_id IN ({','.join('?' * len(ids))})", ids).fetchall()
+        if len(rows) != len(ids):
+            return False, "An invoice was not found. Open the batch again."
+        for inv_id, cid, sid, status, doc in rows:
+            if int(cid) != int(batch[0]):
+                return False, f"{doc} is another supplier's invoice."
+            if status == "Cancelled":
+                return False, f"{doc} is cancelled."
+            if sid is not None:
+                return False, f"{doc} is already in a batch (someone may have just put it there). Open the batch again."
+        conn.execute(f"UPDATE invoices SET statement_id = ? WHERE invoice_id IN ({','.join('?' * len(ids))})", (statement_id, *ids))
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'INVOICES_BATCHED', 'order_statements', ?, ?)",
+                     (statement_id, "Put in the batch: " + ", ".join(r[4] for r in rows)))
+    recompute_statement_total(statement_id)
+    sync_invoice_payment_status(statement_id)
+    _resync_lock(statement_id)
+    return True, f"{len(ids)} invoice(s) put in the batch."
+
+
+def take_out_of_batch(invoice_id: int) -> tuple[bool, str]:
+    """Takes an invoice back out of its batch, to wait for another one: only from an open batch, and only while no check pays it."""
+    with write_tx() as conn:
+        row = conn.execute("SELECT i.statement_id, i.doc_ref, os.is_locked, os.status FROM invoices i LEFT JOIN order_statements os ON os.statement_id = i.statement_id "
+                           "WHERE i.invoice_id = ?", (invoice_id,)).fetchone()
+        if not row or row[0] is None:
+            return False, "That invoice is not in a batch."
+        sid, doc, locked, status = row
+        if status == "Cancelled" or locked:
+            return False, "The batch is closed or cancelled, so its invoices stay in it."
+        if conn.execute("SELECT 1 FROM invoice_check_allocations WHERE invoice_id = ? LIMIT 1", (invoice_id,)).fetchone():
+            return False, f"A check already pays {doc}, so it stays in this batch."
+        conn.execute("UPDATE invoices SET statement_id = NULL, status = 'Unpaid' WHERE invoice_id = ?", (invoice_id,))
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'INVOICE_UNBATCHED', 'order_statements', ?, ?)",
+                     (sid, f"{doc} taken out of the batch, waiting for another one"))
+    recompute_statement_total(sid)
+    sync_invoice_payment_status(sid)
+    _resync_lock(sid)
+    return True, f"{doc} is out of the batch and waits for another one."

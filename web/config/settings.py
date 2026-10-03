@@ -89,6 +89,7 @@ INSTALLED_APPS = [
     "core",
     "masters",                                             # D1: creditors, settings, users
     "buying",                                              # D2: price lists, purchase orders, receiving
+    "payables",                                            # D3: order statements, invoices, credit memos, Add data, Payables due
 ]
 
 MIDDLEWARE = [

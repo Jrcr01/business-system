@@ -25,12 +25,12 @@
     <div class="actions"><button class="btn" type="submit"><span class="ms">playlist_add</span>Record the goods and add the invoice to the batch</button></div>
   {% else %}
   <div class="bar" style="margin-top:12px">
-    <div><label for="kind">The supplier gave us</label><select id="kind" name="kind"><option value="delivery receipt">Delivery receipt</option><option value="invoice">Invoice</option></select></div>
+    <div><label for="kind">The supplier gave us</label><select id="kind" name="kind"><option value="delivery receipt">Delivery receipt</option><option value="invoice">Sales invoice</option></select></div>
     <div class="grow"><label for="ref">Its number (optional)</label><input id="ref" type="text" name="ref"></div>
     <div><label for="received">Date received</label><input id="received" type="date" name="received" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></div>
     <button class="btn small" type="submit"><span class="ms">inventory_2</span>Record goods received</button>
   </div>
-  <p class="hint">Some suppliers give no delivery receipt, only their invoice: pick Invoice and type its number, so Payables finds it when matching.
+  <p class="hint">Some suppliers give no delivery receipt, only their sales invoice: pick Sales invoice and type its number, so Payables finds it when matching.
     Until the invoice is matched, the goods still count as owed at the order price.</p>
   {% endif %}
 </form>

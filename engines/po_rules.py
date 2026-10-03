@@ -718,8 +718,9 @@ class _LinesChanged(Exception):
     """An order line was received or matched by someone else between the checks and the save."""
 
 
-def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoice_date, picks: list[dict], update_prices: bool = False,
-                       received_date=None, gross_override: float | None = None, goods_received: bool = False, book_stock: bool = True) -> tuple[bool, str, int | None]:
+def receive_into_batch(creditor_id: int, statement_id: int | None, doc_ref: str, invoice_date, picks: list[dict], update_prices: bool = False,
+                       received_date=None, gross_override: float | None = None, goods_received: bool = False, book_stock: bool = True,
+                       dr_no: str | None = None) -> tuple[bool, str, int | None]:
     """Matches the supplier's invoice to one or more orders and puts it in the batch. picks: [{'line_id', 'qty', 'actual_unit_price'}]. The ACTUAL price
     prevails: the invoice is made at what the supplier charged (qty x actual price, or `gross_override` when the invoice total is typed), the order line keeps both
     prices, and the received quantity leaves the commitments. Everything is checked first; a refusal writes nothing. update_prices: add the actual price to the
@@ -740,7 +741,9 @@ def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoic
     if not picks:
         return False, "Tick at least one delivered line.", None
     with get_conn() as conn:
-        batch = conn.execute("SELECT creditor_id, status, is_locked FROM order_statements WHERE statement_id = ?", (statement_id,)).fetchone()
+        # statement_id None (owner, 2026-10-03): the invoice waits for a batch; which batch it goes in is decided when the order statement is prepared
+        batch = (conn.execute("SELECT creditor_id, status, is_locked FROM order_statements WHERE statement_id = ?", (statement_id,)).fetchone()
+                 if statement_id is not None else (creditor_id, "Draft", 0))
         creditor = conn.execute("SELECT terms FROM creditors WHERE creditor_id = ?", (creditor_id,)).fetchone()
         if not batch or not creditor:
             return False, "Batch or supplier not found.", None
@@ -787,8 +790,14 @@ def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoic
     scale = gross / lines_total if lines_total else 1.0           # a typed invoice total (freight, rounding) is what each order's receipt records, shared by amount
     due = resolve_due_date(inv_date, creditor[0])
     import sqlite3
+    if not dr_no and goods_received:                                                    # the delivery receipt(s) the goods came with go on the invoice (2026-10-03)
+        with get_conn() as conn:
+            refs = [r[0] for r in conn.execute(
+                f"""SELECT DISTINCT supplier_invoice_no FROM po_receipts WHERE invoice_id IS NULL AND supplier_invoice_no LIKE 'DR%'
+                    AND po_id IN ({','.join('?' * len({r['po_id'] for r in rows}))}) ORDER BY receipt_id""", tuple(sorted({r["po_id"] for r in rows})))]
+        dr_no = ", ".join(r[2:].strip() if r.upper().startswith("DR") else r for r in refs) or None
     try:
-        add_invoice(creditor_id, doc, inv_date, due, gross, [], statement_id)          # the invoice is the payable from here on
+        add_invoice(creditor_id, doc, inv_date, due, gross, [], statement_id, dr_no=dr_no)   # the invoice (the supplier's sales invoice) is the payable from here on
     except sqlite3.IntegrityError:                                                      # someone saved the same invoice number a moment ago
         return False, f"Invoice {doc} already exists for this supplier.", None
     with get_conn() as conn:
@@ -858,7 +867,8 @@ def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoic
     for po_id in sorted({r["po_id"] for r in rows}):
         update_cash_flag(po_id)
     changed = sum(1 for r in rows if abs(r["price"] - r["est_price"]) > 0.005)
-    return True, (f"Invoice {doc} for {gross:,.2f} added to the batch from {len({r['po_id'] for r in rows})} order(s)" + (f"; {changed} price(s) differ from the estimate." if changed else ".")
+    return True, (f"Invoice {doc} for {gross:,.2f} " + ("added to the batch" if statement_id is not None else "saved, waiting for a batch")
+                  + f" from {len({r['po_id'] for r in rows})} order(s)" + (f"; {changed} price(s) differ from the estimate." if changed else ".")
                   + (" Price list: " + "; ".join(price_notes) + "." if price_notes else "")), int(inv_id)
 
 

@@ -129,6 +129,8 @@ CREATE TABLE IF NOT EXISTS invoices (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     -- migration 058 (2026-10-01): 1 = the "Beginning balance (from MS Access)" line of a migrated batch -- a balance, not a real invoice (see engines/beginning_balance_service.py)
     is_opening_balance INTEGER NOT NULL DEFAULT 0,
+    -- migration 075 (2026-10-03): doc_ref is the supplier's SALES INVOICE no.; the delivery receipt no., when there is one, is kept here
+    dr_no TEXT,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id),
     FOREIGN KEY (paid_via_card_id) REFERENCES credit_cards(card_id),

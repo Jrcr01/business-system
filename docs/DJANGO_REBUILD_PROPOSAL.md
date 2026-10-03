@@ -197,6 +197,43 @@ The mock-up `docs/mockups/d2_buying.html` was approved, and D2 was split into D2
 
 **Tests:** 10 new D2b tests and 4 same-moment tests.
 
+## D3a results (2026-10-03), waiting for sign-off
+
+The mock-up `docs/mockups/d3_payables.html` was approved, and D3 was split into D3a (the daily work) and D3b (the bulk tools).
+
+**Built in `web/payables/`: Pay suppliers → Order statements, Add data, Payables due**
+
+- **Order statements:** the batches, with search and filters by supplier, status and created date, and a New batch button.
+- **One batch:**
+  - Net, checks, balance and terms, with the steps (invoices, checks parked, sent to Chrysanth, numbered).
+  - "Give it its OS number" while it is a draft with invoices.
+  - Cancel batch and Edit this batch (reopen, with a reason): owners and the System admin only, as in Streamlit.
+  - Tabs:
+    - **Invoices:** add, edit and delete per row; the due date is worked out from the terms; the duplicate number is refused; a near double asks first; which invoices came from orders; and "From a purchase order" opens Match invoice with the batch chosen.
+    - **Credit memos:** add, edit and delete, with the double check.
+    - **Checks:** read only until D4.
+  - Print as an A4 PDF (copies, history, payment application) or a thermal 80mm PDF.
+- **Add data:** cards for each kind of record (later stages are marked). For invoices or credit memos, pick the supplier and the batch (the open draft is suggested, or a new one).
+- **Payables due:** the next 7 and 30 days with the bank balance beside them.
+  - **Week by week:** the next 7 days and 12 weeks of bars split by kind, with the table.
+  - **By supplier** and **Past their date.**
+  - Calendar and Everything owed say which stage brings them.
+- **Two people at once:** each invoice and credit-memo edit carries a fingerprint of the row as shown. A save is refused when someone else changed the row since.
+
+**Fixed in the shared rules:** deleting an invoice that had ever been edited crashed (FOREIGN KEY constraint failed), in Streamlit too. Its correction history now goes with it, and the audit log keeps every edit. An invoice matched to a purchase order is refused with a plain message, because the order's invoiced quantities point at it.
+
+**Tests:** 13 new tests.
+
+## The supplier's sales invoice (owner's decisions, 2026-10-03)
+
+- **The reference is the supplier's sales invoice (SI) number.** It used to be the delivery receipt. "Doc Ref" is now "Sales invoice no. (SI)" on the Django batch, Match invoice, the Streamlit invoice grid and Match box, and the printed statement ("Sales Invoice").
+- **The DR number is kept beside it** in its own optional column (`invoices.dr_no`, migration 075, added to the four sandbox databases). "DR 77", "D.R. 77" and "DR-77" are all stored as "77". A DR recorded when the goods were received goes on the matched invoice by itself. The printed statement shows "SI-55 (DR 12)".
+- **A purchase order is ideal but not required for now.** An invoice typed in with no order is allowed and tagged **No PO** on its batch, with a count.
+- **"Put the invoice in" is optional when matching.** The default is "Not in a batch yet". Waiting invoices show on Order statements by supplier; a batch lists its supplier's waiting invoices to tick in; an invoice can be taken back out of an open batch while no check pays it.
+  - The rules are `unbatched_invoices`, `put_in_batch` and `take_out_of_batch`; batching is checked inside the lock, so two people batching the same invoice at once cannot both win.
+  - Streamlit still asks for a batch when matching.
+- **Fixed on the way:** the DR cleaner must not eat the start of a word (for example "Driver").
+
 ## 7. Housekeeping before D0
 
 - Commit the removal of the old Django site, when you say so.
