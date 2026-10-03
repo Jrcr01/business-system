@@ -35,6 +35,10 @@ def create_loan_note(creditor_id: int, issue_date: date, principal_amount: float
     edit_loan_note_terms()) rather than trusting the caller — loan_notes.principal_amount has a
     CHECK(principal_amount > 0) constraint, and a 0-or-blank "Principal amount" widget left
     untouched used to hit that raw sqlite3.IntegrityError uncaught, all the way up to the user."""
+    from engines.permissions import require as require_permission
+    _ok, _msg = require_permission("loans.use")          # a role that may not work with loans cannot start one (2026-10-03)
+    if not _ok:
+        return False, _msg, None
     if (err := money_amount_error(principal_amount, "Principal amount")):
         return False, err, None
     if monthly_interest_rate < 0:

@@ -137,32 +137,73 @@ def _assert_no_negative_balance(cur: sqlite3.Cursor, loan_note_id: int) -> None:
         )
 
 
-def preview_schedule(loan_note_id: int, first_due: date, installments: int) -> list[dict]:
-    """A monthly schedule to look at before it is saved: the principal in equal parts (the last one takes the odd centavos), the interest each month = the monthly rate x the balance
-    still owed, one month apart from `first_due`. Rows: due_date, principal, interest, total, balance after."""
+MAX_INTEREST_ONLY_MONTHS, MAX_INSTALLMENTS = 60, 120
+
+
+def interest_only_months(issue_date: date, principal_start: date) -> int:
+    """How many monthly payments fall before the principal starts: the payments are monthly on the loan date's day, the first one month after it; the first payment ON or AFTER
+    `principal_start` is the first principal payment. Loan Oct 1, principal from Jan 1 = 2 (Nov 1 and Dec 1)."""
     from engines.common import add_months
-    with _get_conn() as conn:
-        row = conn.execute("SELECT principal_amount, monthly_interest_rate FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,)).fetchone()
-    if not row or not row[0] or installments < 1:
+    n = 0
+    while add_months(issue_date, n + 1) < principal_start and n <= MAX_INTEREST_ONLY_MONTHS:
+        n += 1
+    return n
+
+
+def schedule_rows(principal: float, monthly_rate: float, first_due: date, installments: int, interest_only: int = 0) -> list[dict]:
+    """The rows of a schedule, one month apart from `first_due`: `interest_only` rows of interest alone (the rate x the balance, which does not move), then `installments` rows
+    of equal principal (the last takes the odd centavos) with the interest on the balance before each payment. Rows: due_date, principal, interest, total, balance after."""
+    from engines.common import add_months
+    if not principal or principal <= 0 or installments < 1:
         return []
-    principal, rate = float(row[0]), float(row[1] or 0)
     part = round(principal / installments, 2)
-    out, balance = [], principal
-    for i in range(installments):
-        pay = round(balance, 2) if i == installments - 1 else part
-        interest = round(balance * rate / 100, 2)
+    out, balance = [], round(float(principal), 2)
+    for i in range(int(interest_only) + int(installments)):
+        k = i - int(interest_only)
+        pay = 0.0 if k < 0 else (round(balance, 2) if k == installments - 1 else part)
+        interest = round(balance * float(monthly_rate or 0) / 100, 2)
         balance = round(balance - pay, 2)
         out.append({"due_date": add_months(first_due, i), "principal": pay, "interest": interest, "total": round(pay + interest, 2), "balance": balance})
     return out
 
 
-def generate_schedule(loan_note_id: int, first_due: date, installments: int) -> tuple[bool, str]:
+def build_schedule(principal: float, monthly_rate: float, issue_date: date, principal_start: date, installments: int) -> list[dict]:
+    """The loan note generator: payments monthly on the loan date's day, interest only until `principal_start`, then `installments` equal principal payments.
+    Raises ValueError with a plain-words reason when the inputs cannot make a schedule."""
+    from engines.common import add_months
+    if not principal or float(principal) <= 0:
+        raise ValueError("Enter the principal.")
+    if monthly_rate is None or float(monthly_rate) < 0:
+        raise ValueError("Enter the monthly interest (0 or more).")
+    if not 1 <= int(installments) <= MAX_INSTALLMENTS:
+        raise ValueError(f"The number of principal payments must be from 1 to {MAX_INSTALLMENTS}.")
+    if principal_start < add_months(issue_date, 1) and principal_start < issue_date:
+        raise ValueError("Principal cannot start before the loan date.")
+    only = interest_only_months(issue_date, principal_start)
+    if only > MAX_INTEREST_ONLY_MONTHS:
+        raise ValueError(f"Interest only for more than {MAX_INTEREST_ONLY_MONTHS} months is too long; check the date principal starts.")
+    return schedule_rows(float(principal), float(monthly_rate), add_months(issue_date, 1), int(installments), only)
+
+
+def preview_schedule(loan_note_id: int, first_due: date, installments: int, interest_only: int = 0) -> list[dict]:
+    """A monthly schedule to look at before it is saved, for a loan note already on file: the principal in equal parts (the last one takes the odd centavos), the interest each month =
+    the monthly rate x the balance still owed, one month apart from `first_due`, with `interest_only` interest-only rows in front. Rows: due_date, principal, interest, total, balance after."""
+    with _get_conn() as conn:
+        row = conn.execute("SELECT principal_amount, monthly_interest_rate FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,)).fetchone()
+    if not row or not row[0] or installments < 1:
+        return []
+    return schedule_rows(float(row[0]), float(row[1] or 0), first_due, int(installments), int(interest_only))
+
+
+def generate_schedule(loan_note_id: int, first_due: date, installments: int, interest_only: int = 0) -> tuple[bool, str]:
     """Saves preview_schedule() as the loan note's repayment schedule. Only for a note with no installment yet (a schedule that exists is edited, never replaced)."""
     with _get_conn() as conn:
         n = conn.execute("SELECT COUNT(*) FROM loan_installments WHERE loan_note_id = ?", (loan_note_id,)).fetchone()[0]
     if n:
         return False, "This loan note already has a schedule. Edit its rows, or delete them first."
-    rows = preview_schedule(loan_note_id, first_due, int(installments))
+    if not 0 <= int(interest_only) <= MAX_INTEREST_ONLY_MONTHS or int(installments) > MAX_INSTALLMENTS:
+        return False, f"Use from 0 to {MAX_INTEREST_ONLY_MONTHS} interest-only months and from 1 to {MAX_INSTALLMENTS} principal payments."
+    rows = preview_schedule(loan_note_id, first_due, int(installments), int(interest_only))
     if not rows:
         return False, "Set the loan note's principal first (Edit loan note terms), and use at least one installment."
     try:
@@ -178,6 +219,62 @@ def generate_schedule(loan_note_id: int, first_due: date, installments: int) -> 
     except _ScheduleError as e:
         return False, str(e)
     return True, f"{len(rows)} installment(s) added."
+
+
+def loan_sheet(note_ref: str, issue_date: date, principal: float, monthly_rate: float, rows: list[dict], checks: list | None = None) -> dict:
+    """What the loan note sheet shows (the owner's layout): the header; the LOAN schedule (an opening row on the loan date, then every payment: date, principal, interest, outstanding
+    balance); the PAYMENT schedule (No., date, check number, amount: only the rows that are paid, the amount being the check's when one was issued, else the scheduled one); the two
+    totals and their difference. `rows`: due_date, principal, interest, balance. `checks`: one entry per row, None or {'check_number', 'amount'}."""
+    checks = checks or [None] * len(rows)
+    loan_rows = [{"date": issue_date, "principal": None, "interest": None, "balance": round(float(principal), 2)}]
+    pay_rows, loan_total, pay_total = [], 0.0, 0.0
+    for r, c in zip(rows, checks):
+        pay = round(float(r["principal"]) + float(r["interest"]), 2)
+        loan_rows.append({"date": r["due_date"], "principal": r["principal"] or None, "interest": r["interest"] or None, "balance": r["balance"]})
+        loan_total += pay
+        if pay > 0:
+            amount = float(c["amount"]) if c and c.get("amount") is not None else pay
+            pay_rows.append({"no": len(pay_rows) + 1, "date": r["due_date"], "check_number": (c or {}).get("check_number") or "", "amount": round(amount, 2)})
+            pay_total += amount
+    return {"header": {"ln_no": note_ref, "date": issue_date, "principal": round(float(principal), 2), "monthly_rate": float(monthly_rate or 0)},
+            "loan_rows": loan_rows, "payment_rows": pay_rows, "loan_total": round(loan_total, 2), "payment_total": round(pay_total, 2),
+            "difference": round(loan_total - pay_total, 2)}
+
+
+def loan_note_sheet(loan_note_id: int) -> dict | None:
+    """The sheet of a loan note on file: its saved schedule, with the check number and amount of each installment's active check."""
+    with _get_conn() as conn:
+        note = conn.execute("SELECT note_ref, issue_date, principal_amount, monthly_interest_rate FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,)).fetchone()
+        if not note or note[2] is None:
+            return None
+        inst = conn.execute(
+            """SELECT i.due_date, i.principal, i.interest, i.outstanding_balance, c.check_number, c.amount
+               FROM loan_installments i LEFT JOIN checks_issued c ON c.check_id = i.check_id AND c.status = 'Active'
+               WHERE i.loan_note_id = ? ORDER BY i.due_date, i.installment_id""", (loan_note_id,)).fetchall()
+    rows = [{"due_date": date.fromisoformat(str(d)[:10]), "principal": float(p), "interest": float(it), "balance": float(b)} for d, p, it, b, _n, _a in inst]
+    checks = [({"check_number": n, "amount": a} if a is not None else None) for _d, _p, _i, _b, n, a in inst]
+    return loan_sheet(note[0], date.fromisoformat(str(note[1])[:10]), note[2], note[3], rows, checks)
+
+
+def create_note_with_schedule(creditor_id: int, issue_date: date, principal: float, monthly_rate: float, principal_start: date, installments: int) -> tuple[bool, str, int | None]:
+    """The generator's Create: the loan note, its real LN number and its whole schedule, as one step. If the schedule cannot be saved the new note is cancelled, so no half-made note
+    is left behind. Returns (ok, message, loan_note_id)."""
+    from engines.common import add_months
+    from engines.loan_note_rules import cancel_loan_note, create_loan_note, promote_draft_loan_note
+    try:
+        rows = build_schedule(principal, monthly_rate, issue_date, principal_start, installments)
+    except ValueError as e:
+        return False, str(e), None
+    ok, msg, lnid = create_loan_note(creditor_id, issue_date, principal, monthly_rate)
+    if not ok:
+        return False, msg, None
+    ref = promote_draft_loan_note(lnid)
+    only = interest_only_months(issue_date, principal_start)
+    ok, msg = generate_schedule(lnid, add_months(issue_date, 1), int(installments), only)
+    if not ok:
+        cancel_loan_note(lnid)
+        return False, f"The loan note was not created: {msg}", None
+    return True, f"Loan note {ref} created with {len(rows)} payments ({only} interest only, then {int(installments)} with principal).", lnid
 
 
 def issue_all_pdcs(loan_note_id: int) -> tuple[bool, str, int]:

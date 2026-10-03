@@ -170,3 +170,33 @@ def test_a_run_marked_printed_is_numbered_in_order_from_the_first_number_typed(d
     assert not at.exception, at.exception
     go = next((b for b in at.button if b.key == f"run_numbers_go_{bid}"), None)
     assert go is not None and not go.proto.disabled                                                                # the panel appears, ready with the numbers 3992000900 … 902
+
+
+def test_new_loan_note_shows_the_owners_sheet_as_the_lender_principal_and_start_date_are_entered(db):
+    lender = make_creditor(db, name="Sheet Preview Lender", creditor_type="LENDER", terms="0")
+    issue = date(2026, 10, 1)
+    state = {"ln_mode": "New loan note", "ln_creditor": lender, "ln_new_principal": 200000.0, "ln_new_issue": issue, f"ln_new_rate_{lender}": 3.0,
+             f"ln_new_start_{issue}": date(2027, 1, 1), "ln_new_count": 4}
+    at = _open("lenders", "admin", **state)
+    assert not at.exception, at.exception
+    metrics = {m.label: m.value for m in at.metric}
+    assert metrics["Loan Schedule"] == "227,000.00" and metrics["Payment Schedule"] == "227,000.00" and metrics["Difference"] == "-" and metrics["Monthly interest"] == "3%"
+    assert metrics["LN. No."] == "given when created"
+    assert any("2 interest-only month(s)" in c.value and "Jan 01, 2027" in c.value and "Apr 01, 2027" in c.value for c in at.caption)
+    assert not next(b for b in at.button if b.key == "ln_new_go").proto.disabled
+    # without a schedule: the note alone, nothing previewed
+    at = _open("lenders", "admin", **{**state, "ln_new_schedule": "I will upload or type it later"})
+    assert not at.exception, at.exception
+    assert not any(m.label == "Loan Schedule" for m in at.metric) and any(b.label == "Create the loan note" for b in at.button)
+    # an impossible date explains itself and does not offer to create
+    at = _open("lenders", "admin", **{**state, f"ln_new_start_{issue}": date(2026, 9, 1)})
+    assert not at.exception and next(b for b in at.button if b.key == "ln_new_go").proto.disabled
+
+
+def test_this_lenders_last_rate_is_the_default_for_the_next_note(db):
+    from engines.loan_note_rules import create_loan_note
+    lender = make_creditor(db, name="Rate Memory Lender", creditor_type="LENDER", terms="0")
+    assert create_loan_note(lender, date(2026, 9, 1), 10000.0, 2.5)[0]
+    at = _open("lenders", "admin", ln_mode="New loan note", ln_creditor=lender)
+    assert not at.exception, at.exception
+    assert next(n for n in at.number_input if n.label == "Monthly interest (%)").value == 2.5

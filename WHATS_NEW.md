@@ -13,6 +13,7 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 - **Release checks by slip.** The statement prints three times (supplier, filing, finance), each ending with a release slip number and a signature. When the supplier collects their checks, Release checks records it by that number.
 - **The payment calendar** is a pop-up and a tab on Payables due. Mark a holiday, a no-check day or a note. A payment due on a holiday or no-check day is paid the next bank day.
 - **Roles:** System admin, Owner (family), Sales, Payables, Purchasing, Releaser, Viewer. The system flags things for review instead of blocking; only four things are always refused (a check above the batch balance, the same invoice number twice, a reused check number, releasing a check that was never printed). The Review list and My to-do are on Home.
+- **New loan note is now a generator.** Enter the lender, principal, loan date, monthly interest, when to start paying the principal and how many principal payments; the loan note sheet (loan schedule, payment schedule with check numbers, the difference) shows as you type, and one button makes the note and its whole schedule. The Loan Note PDF prints the same sheet.
 - **Loans:** a loan note's whole schedule in one go, every post-dated check in one press, and its own release slip. A bank loan can be filled with the same amount every month. A card statement is marked paid by the bank's debit.
 - **Dashboard and Analytics are gone:** their content is on Home, Payables due and Reports. Five statement reports are now one.
 

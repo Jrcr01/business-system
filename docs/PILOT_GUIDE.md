@@ -141,8 +141,9 @@ Each one: who does it, where, what to do, what you should see. "Test" lines are 
 
 ### W9. Private lenders (loan notes)
 *Who: Payables, owners.* **Other payables → Lenders.**
-1. **New loan note** (lender, issue date, principal, monthly rate); it gets its real number at once.
-2. **Repayment Schedule:** *Make the whole schedule in one go* (first due date, number of installments: equal principal, interest on the balance left), or add installments one by one, or import a spreadsheet.
+1. **Lenders → New loan note** is the loan note generator: enter the **lender**, the **principal**, the **loan date**, the **monthly interest** (it starts at this lender's last rate) and **when to start paying the principal** and **how many principal payments**. Payments fall monthly on the loan date's day; the months before the principal starts pay interest only. The sheet shows as you type: LN. No., date, principal, monthly interest; Loan Schedule / Payment Schedule / Difference; the loan schedule (with its opening row) and the payment schedule (check numbers fill in later). One button makes the note, its real LN number and its whole schedule. Example: 200,000 at 3% from Oct 1 2026, principal from Jan 1 2027, 4 payments gives 6,000 · 6,000 · 56,000 · 54,500 · 53,000 · 51,500 (total 227,000).
+   Choose **I will upload or type it later** to create the note alone.
+2. **Repayment Schedule tab:** the same sheet for the saved note. A note with no schedule can still use *Make the whole schedule in one go* (now with *Interest-only months first*), add installments one by one, or **import a spreadsheet (Excel/CSV)**. **Generate Loan Note PDF** prints the sheet.
 3. **Checks:** *Issue PDCs for all pending installments* (one confirmation) or one by one.
 4. Payment run lists installments due within 45 days that have no check.
 5. Printing, numbering and release work as for suppliers (W6, W7).

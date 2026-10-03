@@ -71,36 +71,93 @@ from views.shared import (  # noqa: F401
 from engines.clock import manila_today
 
 
+def render_loan_sheet(sheet: dict) -> None:
+    """The loan note sheet (the owner's layout, 2026-10-03): the header, Loan Schedule / Payment Schedule / Difference, the loan schedule with its opening row, and the payment schedule
+    with a Check Number column that fills in as checks are issued and numbered. Used for the preview in New loan note and for a saved note."""
+    h = sheet["header"]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("LN. No.", h["ln_no"], border=True)
+    c2.metric("Date", f"{h['date']:%a, %b %d, %Y}", border=True)
+    c3.metric("Principal", f"{h['principal']:,.0f}", border=True)
+    c4.metric("Monthly interest", f"{h['monthly_rate']:g}%", border=True)
+    t1, t2, t3 = st.columns(3)
+    t1.metric("Loan Schedule", f"{sheet['loan_total']:,.2f}", border=True, help="Every payment on the loan schedule: principal + interest.")
+    t2.metric("Payment Schedule", f"{sheet['payment_total']:,.2f}", border=True, help="The payments as they are paid: the check's amount once a check is issued, else the scheduled amount.")
+    t3.metric("Difference", "-" if abs(sheet["difference"]) < 0.005 else f"{sheet['difference']:,.2f}", border=True, help="Loan schedule less payment schedule. Anything but a dash means a check differs from the schedule.")
+    left, right = st.columns([3, 2])
+    with left:
+        st.markdown("**Loan schedule**")
+        st.dataframe(pd.DataFrame(sheet["loan_rows"]), hide_index=True, width="stretch",
+                     column_config={"date": date_col("Date"), "principal": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT), "interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT),
+                                    "balance": st.column_config.NumberColumn("Outstanding balance", format=MONEY_FORMAT)})
+    with right:
+        st.markdown("**Payment schedule**")
+        st.dataframe(pd.DataFrame(sheet["payment_rows"], columns=["no", "date", "check_number", "amount"]), hide_index=True, width="stretch",
+                     column_config={"no": st.column_config.NumberColumn("No.", format="%d"), "date": date_col("Date"), "check_number": "Check number",
+                                    "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT)})
+
+
+def _last_rate(creditor_id) -> float | None:
+    df = q("SELECT monthly_interest_rate AS r FROM loan_notes WHERE creditor_id = ? AND monthly_interest_rate IS NOT NULL ORDER BY loan_note_id DESC LIMIT 1", (int(creditor_id),))
+    return float(df["r"][0]) if not df.empty and df["r"][0] not in ("", None) else None
+
+
 def render_new_loan_note_form() -> None:
-    """The Create loan note form (with its confirmation). Shared by Lenders and Add data."""
-    with st.form("new_loan_note_form", border=False):
-        ln_creditor = selectbox_creditor("Lender or lessor (rent)", "LENDER_OR_LESSOR", "ln_creditor")
-        ln_issue_date = st.date_input("Issue date", value=manila_today(), help="The date the money was lent — the first installment's interest is counted from here.")
-        ln_principal = st.number_input("Principal amount", min_value=0.0, step=1000.0)
-        ln_rate = st.number_input("Monthly interest rate (%)", min_value=0.0, step=0.5, format="%.2f", help="Per month, e.g. 2 for 2%. Used to suggest each installment's interest (rate × balance × days ÷ 30); you can change the suggestion.")
-        st.caption("LN No. starts as a draft placeholder — use \"Promote to real LN No.\" below once it's ready to assign the permanent number. Total interest/payable are computed from the repayment schedule, not typed in.")
-        if st.form_submit_button("Create loan note", icon=":material/description:", type="primary"):
-            if ln_creditor:
-                err = money_amount_error(ln_principal, "Principal amount")
-                if err:
-                    st.error(err)
+    """New loan note with the generator (owner, 2026-10-03): the lender, the principal and when to start paying the principal; the sheet shows the whole loan as you type, and one button
+    makes the note, its real LN number and its schedule. 'I will upload or type it later' makes the note alone (the spreadsheet import is on the note)."""
+    from engines.common import add_months
+    from engines.loan_schedule_service import build_schedule, create_note_with_schedule, interest_only_months, loan_sheet
+    ln_creditor = selectbox_creditor("Lender or lessor (rent)", "LENDER_OR_LESSOR", "ln_creditor")
+    c1, c2, c3 = st.columns(3)
+    ln_principal = c1.number_input("Principal amount", min_value=0.0, step=1000.0, key="ln_new_principal")
+    ln_issue_date = c2.date_input("Loan date", value=manila_today(), key="ln_new_issue", help="The date the money was lent. Payments fall monthly on this day of the month, the first one month later.")
+    last = _last_rate(ln_creditor) if ln_creditor else None
+    ln_rate = c3.number_input("Monthly interest (%)", min_value=0.0, step=0.5, format="%.2f", value=last if last is not None else 0.0, key=f"ln_new_rate_{ln_creditor}",
+                              help="Per month, e.g. 3 for 3%. Starts at this lender's last rate; type it for a new lender." + ("" if last is not None else " This lender has no earlier note."))
+    mode = st.segmented_control("Schedule", ["Make it here", "I will upload or type it later"], default="Make it here", required=True, key="ln_new_schedule")
+    rows = sheet = None
+    if mode == "Make it here":
+        d1, d2 = st.columns(2)
+        start = d1.date_input("Start paying principal on", value=add_months(ln_issue_date, 1), key=f"ln_new_start_{ln_issue_date}",
+                              help="The first payment on or after this date is the first principal payment. The months before it pay interest only.")
+        n_pay = d2.number_input("Number of principal payments", min_value=1, max_value=120, value=12, step=1, key="ln_new_count", help="The principal is split equally; the last one takes any odd centavos.")
+        try:
+            rows = build_schedule(ln_principal, ln_rate, ln_issue_date, start, int(n_pay))
+        except ValueError as e:
+            st.info(str(e))
+        if rows:
+            only = interest_only_months(ln_issue_date, start)
+            st.caption(f"{only} interest-only month(s), principal from {next(r['due_date'] for r in rows if r['principal'] > 0):%b %d, %Y}, last payment {rows[-1]['due_date']:%b %d, %Y}.")
+            sheet = loan_sheet("given when created", ln_issue_date, ln_principal, ln_rate, rows)
+            render_loan_sheet(sheet)
+    else:
+        st.caption("The note is created without a schedule. On the note, use Import schedule from spreadsheet (Excel/CSV), or type the installments.")
+    ready = bool(ln_creditor) and ln_principal > 0 and (mode != "Make it here" or bool(rows))
+    if st.button("Create the loan note and its schedule" if mode == "Make it here" else "Create the loan note", icon=":material/description:", type="primary", key="ln_new_go", disabled=not ready):
+        err = money_amount_error(ln_principal, "Principal amount")
+        if err:
+            st.error(err)
+        else:
+            def _do_create_loan_note(c=ln_creditor, d=ln_issue_date, p=ln_principal, r=ln_rate, here=(mode == "Make it here"), s=locals().get("start"), n=locals().get("n_pay")):
+                if here:
+                    ok, msg, new_lnid = create_note_with_schedule(c, d, p, r, s, int(n))
                 else:
-                    def _do_create_loan_note(c=ln_creditor, d=ln_issue_date, p=ln_principal, r=ln_rate):
-                        ok, msg, new_lnid = create_loan_note(c, d, p, r)
-                        if ok:
-                            from engines.loan_note_rules import promote_draft_loan_note
-                            msg += f" It is {promote_draft_loan_note(new_lnid)}."          # given its real number at once: no separate Promote step (owner, 2026-10-03)
-                            st.session_state["selected_loan_note_id"] = new_lnid
-                            st.session_state["_ln_mode_next"] = LN_BROWSE
-                        return ok, msg
-                    confirm_create_dialog(
-                        f"Create a loan note for **{selectbox_creditor_label('LENDER', ln_creditor)}** dated "
-                        f"{ln_issue_date:%b %d, %Y}: principal **{php(ln_principal)}** at **{ln_rate:g}% per month**?"
-                        + dup_note(loan_note_warnings(ln_creditor, ln_issue_date, ln_principal)),
-                        "create_loan_note", _do_create_loan_note,
-                    )
-            else:
-                st.error("Lender is required.")
+                    ok, msg, new_lnid = create_loan_note(c, d, p, r)
+                    if ok:
+                        from engines.loan_note_rules import promote_draft_loan_note
+                        msg += f" It is {promote_draft_loan_note(new_lnid)}."          # given its real number at once: no separate Promote step (owner, 2026-10-03)
+                if ok:
+                    st.session_state["selected_loan_note_id"] = new_lnid
+                    st.session_state["_ln_mode_next"] = LN_BROWSE
+                    st.session_state["ln_subtab"] = "Repayment Schedule"
+                return ok, msg
+            confirm_create_dialog(
+                f"Create a loan note for **{selectbox_creditor_label('LENDER', ln_creditor)}** dated "
+                f"{ln_issue_date:%b %d, %Y}: principal **{php(ln_principal)}** at **{ln_rate:g}% per month**"
+                + (f", with its whole schedule ({len(rows)} payments, total {php(sheet['loan_total'])})?" if sheet else "?")
+                + dup_note(loan_note_warnings(ln_creditor, ln_issue_date, ln_principal)),
+                "create_loan_note", _do_create_loan_note,
+            )
 
 
 def render_add_installment_form(loan_note_id: int) -> None:
@@ -387,6 +444,10 @@ def render() -> None:
             )
             if not installments_df.empty:
                 installments_df["due_date"] = pd.to_datetime(installments_df["due_date"]).dt.date
+                from engines.loan_schedule_service import loan_note_sheet
+                saved_sheet = loan_note_sheet(int(selected_lnid))
+                if saved_sheet:
+                    render_loan_sheet(saved_sheet)
             if ln_is_settled_or_defaulted:
                 st.caption(f"This loan note is {ln_row['status']} — schedule is read-only.")
                 st.dataframe(
@@ -408,16 +469,18 @@ def render() -> None:
                     with st.expander("Make the whole schedule in one go", expanded=True):
                         st.caption("Equal monthly principal and interest on the balance still owed (the monthly rate × the balance). Look at the table, change the number or the first date, then create it; "
                                    "every row can still be edited afterwards.")
-                        g1, g2 = st.columns(2)
+                        g1, g2, g3 = st.columns(3)
                         first_due = g1.date_input("First due date", value=add_months(pd.to_datetime(ln_row["issue_date"]).date(), 1), key=f"ln_gen_first_{selected_lnid}")
                         how_many = g2.number_input("Number of installments", min_value=1, max_value=120, value=12, step=1, key=f"ln_gen_n_{selected_lnid}")
-                        preview = preview_schedule(int(selected_lnid), first_due, int(how_many))
+                        only_months = g3.number_input("Interest-only months first", min_value=0, max_value=60, value=0, step=1, key=f"ln_gen_only_{selected_lnid}",
+                                                      help="Months that pay interest alone before the principal payments start.")
+                        preview = preview_schedule(int(selected_lnid), first_due, int(how_many), int(only_months))
                         st.dataframe(pd.DataFrame(preview), hide_index=True, width="stretch",
                                      column_config={"due_date": date_col("Due"), "principal": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT),
                                                     "interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT), "total": st.column_config.NumberColumn("Pay", format=MONEY_FORMAT),
                                                     "balance": st.column_config.NumberColumn("Balance after", format=MONEY_FORMAT)})
                         if st.button("Create this schedule", icon=":material/calendar_add_on:", type="primary", key=f"ln_gen_go_{selected_lnid}"):
-                            ok, msg = generate_schedule(int(selected_lnid), first_due, int(how_many))
+                            ok, msg = generate_schedule(int(selected_lnid), first_due, int(how_many), int(only_months))
                             (refresh(done=msg) if ok else st.error(msg))
                 with st.expander("Add an installment", expanded=installments_df.empty and not float(ln_row["principal_amount"] or 0) > 0):
                     render_add_installment_form(int(selected_lnid))

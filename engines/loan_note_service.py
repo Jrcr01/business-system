@@ -125,14 +125,15 @@ def _section_heading(text: str, styles) -> Paragraph:
 
 
 def generate_loan_note_pdf(loan_note_id: int) -> bytes | None:
+    """The printable loan note, laid out like the owner's sheet (2026-10-03): the header, the Loan Schedule / Payment Schedule / Difference lines, the loan schedule (an opening row on the
+    loan date, then every payment) and the payment schedule (No., Date, Check Number, Amount; 'Pending' until a check exists)."""
+    from engines.loan_schedule_service import loan_note_sheet
     data = _fetch_loan_note_data(loan_note_id)
     if data is None:
         return None
-    note, installments, checks = data["note"], data["installments"], data["checks"]
-
-    loan_schedule_total = sum(r["principal"] + r["interest"] for r in installments)
-    payment_schedule_total = sum(c["amount"] for c in checks)
-    difference = round(loan_schedule_total - payment_schedule_total, 2)
+    note = data["note"]
+    sheet = loan_note_sheet(loan_note_id) or {"loan_rows": [], "payment_rows": [], "loan_total": 0.0, "payment_total": 0.0, "difference": 0.0}
+    difference = sheet["difference"]
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -143,15 +144,15 @@ def generate_loan_note_pdf(loan_note_id: int) -> bytes | None:
     story: list = [_title_band(styles), Spacer(1, 10), _info_panel(note, styles), Spacer(1, 10)]
 
     recon_rows = [
-        ["Loan Schedule (principal + interest)", f"PHP {_money(loan_schedule_total)}"],
-        ["Payment Schedule (checks issued)", f"PHP {_money(payment_schedule_total)}"],
-        ["Difference", f"PHP {_money(difference)}" if abs(difference) > 0.005 else "—"],
+        ["Loan Schedule", f"PHP {_money(sheet['loan_total'])}"],
+        ["Payment Schedule", f"PHP {_money(sheet['payment_total'])}"],
+        ["Difference", f"PHP {_money(difference)}" if abs(difference) > 0.005 else "-"],
     ]
     recon_table = Table(recon_rows, colWidths=[CONTENT_WIDTH * 0.72, CONTENT_WIDTH * 0.28])
     recon_table.setStyle(TableStyle([
         ("ALIGN", (1, 0), (1, -1), "RIGHT"),
         ("FONTSIZE", (0, 0), (-1, -1), 9.5),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
         ("TEXTCOLOR", (0, -1), (-1, -1), ACCENT),
         ("LINEABOVE", (0, -1), (-1, -1), 1, ACCENT),
         ("LINEABOVE", (0, 0), (-1, 0), 0.5, BORDER),
@@ -160,24 +161,24 @@ def generate_loan_note_pdf(loan_note_id: int) -> bytes | None:
     ]))
     story.append(recon_table)
 
-    story.append(_section_heading("Repayment Schedule", styles))
-    sched_rows = [["Date", "Principal (PHP)", "Interest (PHP)", "Outstanding Balance (PHP)", "Status"]]
-    for r in installments:
-        sched_rows.append([r["due_date"], _money(r["principal"]) if r["principal"] else "—", _money(r["interest"]) if r["interest"] else "—", _money(r["outstanding_balance"]), r["status"]])
+    story.append(_section_heading("Loan Schedule", styles))
+    sched_rows = [["Date", "Principal", "Interest", "Outstanding Balance"]]
+    for r in sheet["loan_rows"]:
+        sched_rows.append([f"{r['date']:%m/%d/%Y}", _money(r["principal"]) if r["principal"] else "-", _money(r["interest"]) if r["interest"] else "-", _money(r["balance"])])
     if len(sched_rows) == 1:
-        sched_rows.append(["—", "—", "—", "—", "—"])
-    sched_table = Table(sched_rows, colWidths=[CONTENT_WIDTH * w for w in (0.2, 0.22, 0.22, 0.24, 0.12)], repeatRows=1)
-    sched_table.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (1, 1), (3, -1), "RIGHT")]))
+        sched_rows.append(["—", "—", "—", "—"])
+    sched_table = Table(sched_rows, colWidths=[CONTENT_WIDTH * w for w in (0.22, 0.26, 0.24, 0.28)], repeatRows=1)
+    sched_table.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (1, 1), (3, -1), "RIGHT"), ("ALIGN", (0, 0), (0, -1), "CENTER")]))
     story.append(sched_table)
 
-    story.append(_section_heading("Checks Issued", styles))
-    chk_rows = [["No.", "Date", "Check Number", "Amount (PHP)"]]
-    for c in checks:
-        chk_rows.append([c["installment_no"], c["check_date"], c["check_number"] or "Pending", _money(c["amount"])])
+    story.append(_section_heading("Payment Schedule", styles))
+    chk_rows = [["No.", "Date", "Check Number", "Amount"]]
+    for p in sheet["payment_rows"]:
+        chk_rows.append([p["no"], f"{p['date']:%m/%d/%Y}", p["check_number"] or "Pending", _money(p["amount"])])
     if len(chk_rows) == 1:
         chk_rows.append(["—", "—", "—", "—"])
     chk_table = Table(chk_rows, colWidths=[CONTENT_WIDTH * w for w in (0.12, 0.25, 0.35, 0.28)], repeatRows=1)
-    chk_table.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (3, 1), (3, -1), "RIGHT")]))
+    chk_table.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (3, 1), (3, -1), "RIGHT"), ("ALIGN", (0, 0), (1, -1), "CENTER")]))
     story.append(chk_table)
 
     doc.build(story)
