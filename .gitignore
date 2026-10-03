@@ -61,6 +61,7 @@ MBOS Latest statement/
 
 # Slicks ERP (Django): its own Python environment, the laptop signing key, collected static files
 .venv/
-erp/.secret_key
-erp/staticfiles/
-erp/.sandbox_logins.txt
+
+# Django site (web/): its signing key and collected static files stay local
+web/.secret_key
+web/staticfiles/

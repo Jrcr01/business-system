@@ -1,0 +1,10 @@
+{% extends "core/base.html" %}
+{% block title %}{{ page.title }}{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">{{ page.icon }}</span> {{ page.title }}</h2>
+<div class="later-box">
+  <p><b>This screen moves to the new system in stage {{ page.stage }}{% if stage_name %} ({{ stage_name }}){% endif %}.</b></p>
+  <p>Until then, use it in the Streamlit system you are piloting. Nothing is lost: both work on the same rules.</p>
+  <a class="btn" href="/">Back to Home</a>
+</div>
+{% endblock %}

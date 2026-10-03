@@ -1,0 +1,33 @@
+{% extends "core/base.html" %}
+{% block title %}Creditors{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">contacts</span> Creditors</h2>
+<p class="note">Suppliers, lenders, lessors (rent) and bank loans. Credit-card issuers stay on Credit cards.</p>
+<form class="bar" method="get" action="/creditors/">
+  <div class="grow"><label for="q">Search</label><input id="q" type="text" name="q" value="{{ q }}" placeholder="Name, TIN, contact person or number, email"></div>
+  <div><label for="type">Type</label><select id="type" name="type" onchange="this.form.submit()"><option value="">All types</option>
+    {% for k, label in types %}<option value="{{ k }}"{% if k == type %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <label class="inline"><input type="checkbox" name="off" value="1"{% if off %} checked{% endif %} onchange="this.form.submit()"> Show switched-off too</label>
+  <button class="btn small ghost" type="submit"><span class="ms">search</span>Search</button>
+  <a class="btn small" href="/creditors/new/"><span class="ms">person_add</span>Add a creditor</a>
+</form>
+<div class="scroll-x">
+<table class="list">
+  <tr><th>Name</th><th>Type</th><th>Terms</th><th>Delivery days</th><th>Contact</th><th>TIN</th><th>Status</th></tr>
+  {% for r in rows %}
+  <tr>
+    <td><a href="/creditors/{{ r.creditor_id }}/">{{ r.name }}</a></td>
+    <td>{{ r.type_label }}</td>
+    <td>{% if r.type == "SUPPLIER" and r.terms %}{% if r.terms == "COD" %}COD{% else %}{{ r.terms }} days{% endif %}{% endif %}</td>
+    <td class="num">{% if r.type == "SUPPLIER" %}{% if r.lead_days is not None and r.lead_days != "" %}{{ r.lead_days }}{% else %}—{% endif %}{% endif %}</td>
+    <td>{{ r.contact_person|default:"" }}{% if r.contact_person and r.contact_number %} · {% endif %}{{ r.contact_number|default:"" }}</td>
+    <td>{{ r.tin|default:"" }}</td>
+    <td>{% if r.is_active %}<span class="pill">Active</span>{% else %}<span class="pill off">Switched off</span>{% endif %}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="7" class="note">No creditor matches.</td></tr>
+  {% endfor %}
+</table>
+</div>
+<p class="hint">Click a name to open it. {{ rows|length }} shown.</p>
+{% endblock %}

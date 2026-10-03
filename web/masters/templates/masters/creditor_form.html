@@ -1,0 +1,62 @@
+{% extends "core/base.html" %}
+{% block title %}{% if new %}Add a creditor{% else %}{{ c.creditor_name }}{% endif %}{% endblock %}
+{% block content %}
+<p class="note"><a href="/creditors/">← Creditors</a></p>
+<h2>{% if new %}Add a creditor{% else %}{{ c.creditor_name }}{% if not c.is_active %} <span class="pill off">Switched off</span>{% endif %}{% endif %}</h2>
+
+{% if changed_by %}
+<div class="msg error" style="max-width:900px"><b>Someone else changed this creditor after you opened it</b> ({{ changed_by.0 }}{% if changed_by.1 %}, {{ changed_by.1 }}{% endif %}).
+  Your changes were not saved. The form below shows their version; make your change again and save.</div>
+{% endif %}
+{% if warnings %}
+<div class="msg warning" style="max-width:900px"><b>Did you mean the one already on file?</b> {% for w in warnings %}{{ w }} {% endfor %}
+  Press <b>Yes, add it anyway</b> only if this is a different creditor.</div>
+{% endif %}
+
+<form method="post">{% csrf_token %}
+  {% if not new %}<input type="hidden" name="stamp" value="{{ c.stamp }}"><input type="hidden" name="action" value="save">{% endif %}
+  {% if warnings %}<input type="hidden" name="confirmed" value="1">{% endif %}
+  <div class="formgrid">
+    <div><label for="name">Name</label><input id="name" type="text" name="name" value="{{ v.name }}" required></div>
+    <div><label for="type">Type</label>
+      {% if not new and c.history %}
+        <select id="type" disabled><option>{% for k, label in types %}{% if k == v.type %}{{ label }}{% endif %}{% endfor %}</option></select>
+        <input type="hidden" name="type" value="{{ v.type }}"><div class="hint">Can't change: it has {{ history }}.</div>
+      {% else %}
+        <select id="type" name="type">{% for k, label in types %}<option value="{{ k }}"{% if k == v.type %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        <div class="hint">Supplier = invoices and order statements · Lender = private loan notes · Bank loan = bank dues.</div>
+      {% endif %}</div>
+    <div><label for="terms">Terms (suppliers)</label><select id="terms" name="terms">{% for t in terms %}<option value="{{ t }}"{% if t == v.terms %} selected{% endif %}>{% if not t %}—{% elif t == "COD" %}COD{% else %}{{ t }} days{% endif %}</option>{% endfor %}</select>
+      <div class="hint">Due date = received date + terms.</div></div>
+    <div><label for="lead_days">Usual delivery days (suppliers)</label><input id="lead_days" type="text" inputmode="numeric" name="lead_days" value="{{ v.lead_days }}">
+      <div class="hint">For new purchase orders. Empty = a week.</div></div>
+    <div><label for="tin">TIN (optional)</label><input id="tin" type="text" name="tin" value="{{ v.tin }}"></div>
+    <div><label for="contact_person">Contact person (optional)</label><input id="contact_person" type="text" name="contact_person" value="{{ v.contact_person }}"></div>
+    <div><label for="contact_number">Contact number (optional)</label><input id="contact_number" type="text" name="contact_number" value="{{ v.contact_number }}"></div>
+    <div><label for="email">Email (optional)</label><input id="email" type="email" name="email" value="{{ v.email }}"></div>
+  </div>
+  <div class="actions">
+    <button class="btn" type="submit"><span class="ms">{% if new %}person_add{% else %}save{% endif %}</span>{% if new and warnings %}Yes, add it anyway{% elif new %}Add creditor{% else %}Save changes{% endif %}</button>
+  </div>
+</form>
+
+{% if not new %}
+<div class="actions" style="margin-top:14px">
+  {% if c.is_active %}
+  <form method="post" onsubmit="return confirm('Switch off {{ c.creditor_name|escapejs }}? It keeps all its history but cannot be picked for new work. You can switch it back on.');">{% csrf_token %}
+    <input type="hidden" name="stamp" value="{{ c.stamp }}"><input type="hidden" name="action" value="off">
+    <button class="btn ghost small" type="submit"><span class="ms">person_off</span>Switch off</button></form>
+  {% else %}
+  <form method="post">{% csrf_token %}<input type="hidden" name="stamp" value="{{ c.stamp }}"><input type="hidden" name="action" value="on">
+    <button class="btn ghost small" type="submit"><span class="ms">person</span>Switch on</button></form>
+  {% endif %}
+  {% if not c.history %}
+  <form method="post" onsubmit="return confirm('Delete {{ c.creditor_name|escapejs }}? It has no transactions, so it is removed for good.');">{% csrf_token %}
+    <input type="hidden" name="stamp" value="{{ c.stamp }}"><input type="hidden" name="action" value="delete">
+    <button class="btn danger small" type="submit"><span class="ms">delete</span>Delete</button></form>
+  {% endif %}
+</div>
+<p class="hint">Switch off = it stays with all its history but can't be picked for new orders, loans or checks.{% if not c.history %} It has no transactions yet, so it can also be deleted.{% endif %}
+  Every change goes to the audit log with who made it.</p>
+{% endif %}
+{% endblock %}

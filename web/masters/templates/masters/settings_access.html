@@ -1,0 +1,16 @@
+{% extends "core/base.html" %}
+{% block title %}Who can do what{% endblock %}
+{% block content %}
+{% include "masters/_settings_tabs.html" %}
+<p class="note">Yes = may do it. View only = may see it, not change it. Own only = only what they created themselves. Nothing is ever hard-deleted by any role:
+  "delete" means cancel, void or switch off, kept in the audit log. This is the same table the menu, the buttons and the business rules read.</p>
+<div class="scroll-x">
+<table class="list">
+  <tr><th>Area</th><th>Operation</th>{% for r in roles %}<th>{{ r }}</th>{% endfor %}</tr>
+  {% for row in rows %}
+  <tr><td>{{ row.group }}</td><td>{{ row.operation }}</td>
+    {% for c in row.cells %}<td class="{% if c == 'Yes' %}yes{% elif c == 'No' %}no{% elif c == 'View only' %}view{% else %}own{% endif %}">{% if c == "No" %}—{% else %}{{ c }}{% endif %}</td>{% endfor %}</tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

@@ -168,3 +168,19 @@ def test_the_loan_note_pdf_is_laid_out_like_the_owners_sheet(db):
                  "53,000.00", "51,500.00", "Pending", "200,000.00"):
         assert must in text, must
     assert "Checks Issued" not in text
+
+
+def test_an_error_midway_leaves_no_half_made_note(db, monkeypatch):
+    """Load test, 2026-10-03: a save that waited too long for the database ('database is locked') left a draft note with no schedule."""
+    import sqlite3
+    from datetime import date
+    import engines.loan_schedule_service as svc
+    from tests.conftest import fetchone, make_creditor
+    lender = make_creditor(db, "Busy Lender", "LENDER")
+
+    def locked(*a, **k):
+        raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(svc, "generate_schedule", locked)
+    ok, msg, lnid = svc.create_note_with_schedule(lender, date(2026, 10, 1), 200000, 3, date(2027, 1, 1), 4)
+    assert not ok and lnid is None and "database is locked" in msg
+    assert fetchone(db, "SELECT COUNT(*) FROM loan_notes WHERE creditor_id = ? AND status != 'Cancelled'", (lender,))[0] == 0

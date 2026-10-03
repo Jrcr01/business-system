@@ -1,0 +1,11 @@
+# Slick's on Django (fresh project, 2026-10-03). Installed in C:\Slicks\Slicks_ERP\.venv (made with --system-site-packages, so it also sees the packages in
+# requirements.txt that the shared engines need):
+#   <main python> -m venv --system-site-packages .venv
+#   .venv\Scripts\python -m pip install -r requirements-web.txt
+Django==5.2.17          # LTS: security fixes until April 2028
+asgiref==3.12.1
+sqlparse==0.6.0
+tzdata==2026.3
+whitenoise==6.12.0      # serves the CSS and the logo on the server
+gunicorn==26.2.0        # the web server on the Linux server (several workers = many people at once)
+packaging==26.3         # needed by gunicorn

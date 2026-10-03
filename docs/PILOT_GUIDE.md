@@ -12,7 +12,7 @@ The new main system (the "ERP copy", Streamlit, `C:\Slicks\Slicks_ERP`, branch `
 
 plus private lenders, bank loans, credit cards, the bank statement, the payment calendar, reports, and the people who use it (seven roles).
 
-Not in the pilot: sales and stock screens (the tables are ready, no screens), the Django site (parked), moving the live AP data in (done only when the owner says the system is OK, with a backup).
+Not in the pilot: sales and stock screens (the tables are ready, no screens), moving the live AP data in (done only when the owner says the system is OK, with a backup).
 
 **Test status before the pilot:** 1,102 automated tests pass (every page for every role, every mode and tab, start-to-finish stories for each workflow, buttons pressed as in a browser). A dry run on a clean database worked: first-run set-up, sign-in, forced password change, a role seeing only its own menu.
 
@@ -211,7 +211,7 @@ Tick these as you try them. Note anything that surprises you.
 - Thermal printing uses the test printer until the printer arrives; the statement's QR copy is a local file until Google Drive is connected (`drive_connect.bat`, done before deploying).
 - The cash forecast and the check-date planner are hidden until Sales brings real deposits (Settings → Cash forecast brings them back).
 - The Dashboard and Analytics pages no longer exist (their content moved to Home, Payables due and Reports).
-- Sales, customers and stock tables are ready, with no screens. The parked Django site is not part of the pilot.
+- Sales, customers and stock tables are ready, with no screens. The old Django site was removed on 2026-10-03; a fresh Django system will be built from this Streamlit prototype, which stays the reference.
 - A marked holiday does not change an invoice's stored due date or a check already written, only the day the payment is shown and totalled.
 
 ## 8. Before deploying (not done yet)

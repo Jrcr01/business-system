@@ -1,0 +1,27 @@
+{% extends "core/base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+{% include "masters/_settings_tabs.html" %}
+<div class="grp">Notice on Home</div>
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="notice">
+  <div class="grow"><input type="text" name="notice" value="{{ notice }}" maxlength="300" placeholder="Type a notice for everyone, or leave empty" aria-label="Notice"></div>
+  <button class="btn small" type="submit"><span class="ms">campaign</span>Save notice</button>
+</form>
+<p class="hint">Everyone sees it in the yellow strip on Home (e.g. "No check release on Friday"). Save it empty to remove it.</p>
+
+<p class="note" style="margin-top:18px">Change a number and press <b>Save</b>. "Back to default" undoes a change. Every change is written to the audit log.</p>
+{% for g in groups %}
+<div class="grp">{{ g.title }}</div>
+{% for m in g.items %}
+<div class="numrow" id="{{ m.key }}">
+  <form method="post">{% csrf_token %}<input type="hidden" name="key" value="{{ m.key }}">
+    <div class="lbl"><b>{{ m.label }}{% if m.unit %} ({{ m.unit }}){% endif %}</b><span>{{ m.help }}</span></div>
+    <input type="text" inputmode="decimal" name="value" value="{{ m.shown }}" aria-label="{{ m.label }}">
+    <span class="hint">Default {{ m.default_shown }}</span>
+    <button class="btn small" type="submit" name="action" value="save">Save</button>
+    <button class="btn small ghost" type="submit" name="action" value="reset"{% if m.is_default %} disabled{% endif %}>Back to default</button>
+  </form>
+</div>
+{% endfor %}
+{% endfor %}
+{% endblock %}

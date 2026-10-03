@@ -121,6 +121,10 @@ def _fmt(v: float, decimals: int) -> str:
 
 
 def save(key: str, new_value) -> tuple[bool, str]:
+    from engines.permissions import require
+    ok, why = require("settings.edit")
+    if not ok:
+        return False, why
     if key not in _BY_KEY:
         return False, "Unknown setting."
     m = _meta(key)
@@ -142,6 +146,10 @@ def save(key: str, new_value) -> tuple[bool, str]:
 
 
 def reset(key: str) -> tuple[bool, str]:
+    from engines.permissions import require
+    ok, why = require("settings.edit")
+    if not ok:
+        return False, why
     if key not in _BY_KEY:
         return False, "Unknown setting."
     m = _meta(key)

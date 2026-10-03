@@ -268,9 +268,13 @@ def create_note_with_schedule(creditor_id: int, issue_date: date, principal: flo
     ok, msg, lnid = create_loan_note(creditor_id, issue_date, principal, monthly_rate)
     if not ok:
         return False, msg, None
-    ref = promote_draft_loan_note(lnid)
     only = interest_only_months(issue_date, principal_start)
-    ok, msg = generate_schedule(lnid, add_months(issue_date, 1), int(installments), only)
+    try:
+        ref = promote_draft_loan_note(lnid)
+        ok, msg = generate_schedule(lnid, add_months(issue_date, 1), int(installments), only)
+    except Exception as e:                           # e.g. "database is locked" after waiting 10 s while many people save (load test, 2026-10-03): no half-made note
+        cancel_loan_note(lnid)
+        return False, f"The loan note was not created: {e}. Nothing was kept; try again.", None
     if not ok:
         cancel_loan_note(lnid)
         return False, f"The loan note was not created: {msg}", None

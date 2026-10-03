@@ -1,0 +1,37 @@
+{% extends "core/base.html" %}
+{% block title %}{{ u.name }}{% endblock %}
+{% block content %}
+{% include "masters/_settings_tabs.html" %}
+<p class="note"><a href="/settings/users/">← Users</a></p>
+<h2 style="margin-top:0">{{ u.name }} <span class="pill{% if not u.is_active %} off{% endif %}">{% if u.is_active %}{{ role_label }}{% else %}Switched off{% endif %}</span></h2>
+<p class="note">{{ u.email }}</p>
+{% if shown %}
+<div class="msg success" style="max-width:760px"><span class="ms">key</span> New temporary password for <b>{{ shown.0 }}</b>: <code class="temp">{{ shown.1 }}</code>
+  Give it to them now; it is shown only this once.</div>
+{% endif %}
+
+<div class="grp">Password</div>
+<form method="post" onsubmit="return confirm('Give {{ u.name|escapejs }} a new temporary password? Their current password stops working and any lock is cleared.');">{% csrf_token %}
+  <input type="hidden" name="action" value="reset">
+  <button class="btn small ghost" type="submit"><span class="ms">lock_reset</span>Give a new temporary password</button></form>
+
+<div class="grp">Sign-in</div>
+{% if is_me %}<p class="hint">You can't switch yourself off.</p>
+{% elif u.is_active %}
+<form method="post" onsubmit="return confirm('Switch off {{ u.name|escapejs }}? They can no longer sign in. Their records and the audit log stay; you can switch them back on.');">{% csrf_token %}
+  <input type="hidden" name="action" value="off"><button class="btn small ghost" type="submit"><span class="ms">person_off</span>Switch off</button></form>
+{% else %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="on"><button class="btn small ghost" type="submit"><span class="ms">person</span>Switch on</button></form>
+{% endif %}
+
+<div class="grp">Role</div>
+{% if is_me %}<p class="hint">Your own role can't be changed here (another System admin can).</p>
+{% else %}
+<form class="bar" method="post" onsubmit="return confirm('Change the role of {{ u.name|escapejs }}? What they can see and do changes at their next click.');">{% csrf_token %}
+  <input type="hidden" name="action" value="role">
+  <div><select name="role" aria-label="Role">{% for r, label in roles %}<option value="{{ r }}"{% if r == u.role %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <button class="btn small" type="submit">Change the role</button>
+</form>
+<p class="hint">See "Who can do what" for what each role may do.</p>
+{% endif %}
+{% endblock %}

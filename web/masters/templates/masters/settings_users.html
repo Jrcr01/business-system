@@ -1,0 +1,30 @@
+{% extends "core/base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+{% include "masters/_settings_tabs.html" %}
+{% if shown %}
+<div class="msg success" style="max-width:760px"><span class="ms">key</span> Temporary password for <b>{{ shown.0 }}</b>: <code class="temp">{{ shown.1 }}</code>
+  Give it to them now; it is shown only this once. They must choose their own at first sign-in.</div>
+{% endif %}
+<p class="note">Only the System admin sees this. People are switched off, never deleted. Every change is in the audit log.</p>
+<div class="scroll-x">
+<table class="list">
+  <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last signed in</th><th></th></tr>
+  {% for u in users %}
+  <tr>
+    <td>{{ u.name }}</td><td>{{ u.email }}</td><td>{{ u.role_label }}</td>
+    <td>{% if not u.is_active %}<span class="pill off">Switched off</span>{% elif u.locked_until %}<span class="pill warn">Locked</span>{% elif u.must_change_password %}<span class="pill warn">Temporary password</span>{% else %}<span class="pill">Active</span>{% endif %}</td>
+    <td>{{ u.last_login_at|default:"—" }}</td>
+    <td>{% if u.user_id == me_id %}<span class="hint">you</span>{% endif %} <a href="/settings/users/{{ u.user_id }}/">Change</a></td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+<div class="grp">Add a person</div>
+<form class="bar" method="post">{% csrf_token %}
+  <div class="grow"><label for="email">Email</label><input id="email" type="email" name="email" required></div>
+  <div class="grow"><label for="name">Name</label><input id="name" type="text" name="name" required></div>
+  <div><label for="role">Role</label><select id="role" name="role">{% for r, label in roles %}<option value="{{ r }}"{% if r == "purchasing" %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <button class="btn small" type="submit"><span class="ms">person_add</span>Add</button>
+</form>
+{% endblock %}
