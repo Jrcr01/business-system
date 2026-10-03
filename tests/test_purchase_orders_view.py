@@ -83,3 +83,18 @@ def test_after_receiving_goods_the_next_step_is_offered_only_to_a_role_that_may_
         assert not at.exception, at.exception
         labels = [b.label for b in at.button if b.key.startswith("nxt_")]
         assert ("Match the invoice now" in labels) is expect and "Receive another delivery" in labels
+
+
+def test_a_person_who_may_match_invoices_can_receive_goods_and_the_invoice_together(db):
+    from conftest import make_creditor as _mk
+    from engines.po_rules import order_po, save_po
+    cid = _mk(db, name="Together Supplier", terms="30")
+    ok, msg, po = save_po(None, cid, date(2026, 10, 1), date(2026, 10, 8), [{"item_name": "Tire", "qty": 2, "est_unit_price": 100}])
+    assert ok and order_po(po)[0]
+    for role, offered in (("payables", True), ("owner", True), ("purchasing", False)):
+        at = _run(role, po_mode="Receive", rcv_supplier=cid)
+        assert not at.exception, (role, at.exception)
+        assert ("rcv_together" in at.session_state) is offered, role                              # the choice is only offered to a person who may match invoices
+    together = _run("payables", po_mode="Receive", rcv_supplier=cid, rcv_together="Goods and the supplier's invoice")
+    assert not together.exception, together.exception
+    assert any(b.label == "Add to the batch" for b in together.button)                              # the invoice form, on the Receive page

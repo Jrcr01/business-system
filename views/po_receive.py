@@ -44,6 +44,16 @@ def render_goods_form(creditor_id: int, preselect_po: int | None = None, key: st
             st.error(msg)
 
 
+def render_receive_and_invoice(creditor_id: int, preselect_po: int | None = None, key: str = "both") -> None:
+    """Goods and the supplier's invoice in ONE step, for a delivery that came with its invoice (a person who may match invoices: Payables, the owners): tick what arrived, check the
+    prices against the invoice, pick the batch. The goods are counted at the price charged, the invoice goes into the batch, and the order is updated, all together."""
+    lines = receivable_lines(creditor_id)
+    if lines.empty:
+        st.info("No purchase order is waiting for goods from this supplier. Order one under New order.", icon=":material/inventory_2:")
+        return
+    _invoice_form(creditor_id, None, lines, False, preselect_po, key)
+
+
 def render_receive_form(creditor_id: int, statement_id: int | None = None, preselect_po: int | None = None, key: str = "rcv") -> None:
     """Step 2 (Payables): match the supplier's invoice to goods already received and put it in a batch. statement_id: the batch (None: choose one, or start a new batch).
     Goods not yet recorded as received can be received and invoiced in one go (second box)."""

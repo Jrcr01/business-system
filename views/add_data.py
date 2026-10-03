@@ -99,11 +99,18 @@ def _invoices() -> None:
         render_batch_memos(sid)
 
 
+def _open_form(label: str, why: str, page_id: str, **state) -> None:
+    """One form, in one place (owner, 2026-10-03): Add data lists what can be added, and the form itself lives on the page that keeps the record."""
+    st.caption(why)
+    if st.button(label, icon=":material/open_in_new:", type="primary", key=f"ad_open_{page_id}_{label}"):
+        go_to(page_id, **state)
+
+
 def _loans() -> None:
     what = st.segmented_control("Loan", ["New loan note", "Loan note installment", "New bank loan", "Bank loan schedule"],
                                 default="New loan note", required=True, key="ad_loan_what", label_visibility="collapsed")
     if what == "New loan note":
-        render_new_loan_note_form()
+        _open_form("New loan note", "The form is on the Lenders page, where the loan note and its schedule are kept.", "lenders", ln_mode="New loan note")
     elif what == "Loan note installment":
         notes = q("""SELECT ln.loan_note_id, ln.note_ref, c.creditor_name, ln.status FROM loan_notes ln JOIN creditors c ON c.creditor_id = ln.creditor_id
                      WHERE ln.status NOT IN ('Cancelled', 'Settled', 'Defaulted') ORDER BY c.creditor_name, ln.note_ref""")
@@ -113,11 +120,11 @@ def _loans() -> None:
         opts = {int(r["loan_note_id"]): f"{r['creditor_name']} · {r['note_ref']} · {r['status']}" for _, r in notes.iterrows()}
         c1, c2 = st.columns([4, 1.6], vertical_alignment="bottom")
         lnid = c1.selectbox("Loan note", list(opts), format_func=opts.get, key="ad_ln_pick")
-        if c2.button("Open this loan note", icon=":material/open_in_new:", key="ad_open_ln", width="stretch"):
+        if c2.button("Add installments", icon=":material/open_in_new:", key="ad_open_ln", width="stretch", type="primary"):
             go_to("lenders", selected_loan_note_id=int(lnid), ln_mode=LN_BROWSE, ln_subtab="Repayment Schedule")
-        render_add_installment_form(int(lnid))
+        st.caption("Installments are added on the loan note's Repayment Schedule (you can make the whole schedule in one go there).")
     elif what == "New bank loan":
-        render_new_bank_loan_form()
+        _open_form("New bank loan", "The form is on the Bank loans page, where the loan and its schedule are kept.", "bank-loans", bl_mode="New bank loan")
     else:
         loans = q("""SELECT bl.bank_loan_id, bl.loan_ref, c.creditor_name FROM bank_loans bl JOIN creditors c ON c.creditor_id = bl.creditor_id
                      WHERE bl.is_cancelled = 0 ORDER BY c.creditor_name, bl.loan_ref""")
@@ -127,9 +134,9 @@ def _loans() -> None:
         opts = {int(r["bank_loan_id"]): f"{r['creditor_name']} · {r['loan_ref']}" for _, r in loans.iterrows()}
         c1, c2 = st.columns([4, 1.6], vertical_alignment="bottom")
         blid = c1.selectbox("Bank loan", list(opts), format_func=opts.get, key="ad_bl_pick")
-        if c2.button("Open this bank loan", icon=":material/open_in_new:", key="ad_open_bl", width="stretch"):
+        if c2.button("Open its schedule", icon=":material/open_in_new:", key="ad_open_bl", width="stretch", type="primary"):
             go_to("bank-loans", selected_bank_loan_id=int(blid), bl_mode=BL_BROWSE)
-        render_bank_loan_schedule(int(blid))
+        st.caption("The schedule is on the bank loan's page (the same amount every month can be filled in one go there).")
 
 
 def _records() -> None:
@@ -150,7 +157,7 @@ def render() -> None:
         if kind == "Invoices / credit memos":
             _invoices()
         elif kind == "Credit card statement":
-            render_add_cc_statement_form()
+            _open_form("Add a credit card statement", "The form is on the Credit cards page, next to the card's earlier statements.", "credit-cards", cc_tab=":material/receipt_long: Statements")
         elif kind == "Loans":
             _loans()
         elif kind == "Handwritten check":

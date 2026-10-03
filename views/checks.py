@@ -323,6 +323,29 @@ def render() -> None:
 
                     confirm_change_dialog(f"Mark **{print_batch_tag(int(batch_pick))}** as printed ({int(_picked_row['check_count'])} check(s))?  \nOnly do this once the run is really printed in Chrysanth.",
                                           f"mark_printed_confirm_{int(batch_pick)}", _mark, "Yes, it is printed")
+            if _picked_printed and can_now("check.issue"):                       # the same panel: a run just marked printed gets its numbers here, not on a second screen
+                _run_all = get_check_print_batch_detail(int(batch_pick))
+                _run_unnumbered = _run_all[_run_all["check_number"].isna() | (_run_all["check_number"].astype(str).str.strip() == "")]
+                if not _run_unnumbered.empty:
+                    with st.container(border=True):
+                        st.markdown(f"**{len(_run_unnumbered)} printed check(s) in this run have no number yet.**")
+                        _first_no = st.text_input("First check number of this run", key=f"run_first_no_{int(batch_pick)}", placeholder="e.g. 3992554370",
+                                                  help="Type the number printed on the first check; the others follow in the order listed. Look the list over before you save.")
+                        _run_numbers = numbers_in_sequence(_first_no, len(_run_unnumbered))
+                        _preview = _run_unnumbered[["payee_name", "check_date", "amount"]].assign(check_number=_run_numbers)
+                        st.dataframe(_preview[["check_number", "payee_name", "check_date", "amount"]], hide_index=True,
+                                     column_config={"check_number": "Check #", "payee_name": "Payee", "check_date": date_col("Check date"), "amount": money_col("Amount")})
+                        if st.button("Give these numbers", icon=":material/tag:", type="primary", key=f"run_numbers_go_{int(batch_pick)}", disabled=not all(_run_numbers)):
+                            _assign = {int(c): n for c, n in zip(_run_unnumbered["check_id"], _run_numbers)}
+
+                            def _give_numbers(a=_assign):
+                                ok, msg, _ids = assign_check_numbers_manual(a, None)
+                                if ok:
+                                    flash(msg)
+                                return ok, msg
+
+                            confirm_change_dialog(f"Give **{len(_assign)} check(s)** the numbers **{_run_numbers[0]}** to **{_run_numbers[-1]}**, in the order listed?", f"run_numbers_confirm_{int(batch_pick)}",
+                                                  _give_numbers, "Yes, give the numbers", warning="A check number is final once assigned — changing it later needs a logged correction.")
             _bx_bytes, _bx_problems = generate_batch_txt(int(batch_pick))
             st.download_button("Download this batch's Chrysanth file (.txt)", data=_bx_bytes, disabled=not get_chrysanth_settings()["account_no"],
                                file_name=file_name_for_batch(int(batch_pick)), mime="text/plain", icon=":material/download:", key=f"batch_txt_dl_{int(batch_pick)}")

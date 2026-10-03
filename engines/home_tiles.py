@@ -266,10 +266,10 @@ def _data_health():
 A = act
 for _t in (
     Tile("price-lists", "buy", "Price lists", _price_lists, actions=[
-        A("Current prices", "What each supplier charges", ":material/sell:", pl_tab="Current prices"),
+        A("Current prices", "What each supplier charges", ":material/sell:", pl_tab="Prices", pl_show="This supplier"),
         A("Add a price", "Type one in", ":material/edit:", needs="price.write", pl_tab="Add a price"),
         A("Import the Excel price list", "The template with Tires, Battery, Mags, Rims", ":material/upload_file:", needs="price.write", pl_tab="Import Excel"),
-        A("Products and prices side by side", "Our item codes; which supplier is cheapest", ":material/compare_arrows:", pl_tab="Compare suppliers")]),
+        A("Products and prices side by side", "Our item codes; which supplier is cheapest", ":material/compare_arrows:", pl_tab="Prices", pl_show="All suppliers side by side")]),
     Tile("purchase-orders", "buy", "Purchase orders", _purchase_orders, actions=[
         A("New order", "From a supplier's price list", ":material/add_shopping_cart:", needs="po.create", po_mode="New order"),
         A("Orders", "Open, late and over-plan orders; PO PDF", ":material/list_alt:", po_mode="Orders")]),

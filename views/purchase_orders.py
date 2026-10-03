@@ -112,6 +112,13 @@ def _receive() -> None:
     cid = selectbox_creditor("Supplier", "SUPPLIER", "rcv_supplier")
     if cid is None:
         return
+    if can_now("po.receive"):                              # a person who may match invoices can do both at once when the invoice came with the delivery
+        together = st.segmented_control("What came with the delivery?", ["Goods only", "Goods and the supplier's invoice"], default="Goods only", required=True, key="rcv_together",
+                                        help="If the invoice came with the goods, do both here: no second visit to Match invoice. If it comes later, record the goods now and match the invoice then.")
+        if together != "Goods only":
+            from views.po_receive import render_receive_and_invoice
+            render_receive_and_invoice(int(cid), preselect_po=st.session_state.get("rcv_po"))
+            return
     render_goods_form(int(cid), preselect_po=st.session_state.get("rcv_po"))
 
 

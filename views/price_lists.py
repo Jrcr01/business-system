@@ -53,6 +53,35 @@ def _current_tab(cid: int, writer: bool = True) -> None:
                 done_or_error(*set_price_active(int(pick), True))
 
 
+def _reconcile_section(cid: int, writer: bool) -> None:
+    """Items whose last matched invoice was priced differently from the list: the invoice is the truth, so the list is corrected here with one button (engines/price_reconcile.py)."""
+    from engines.price_reconcile import invoice_vs_list, update_to_invoice
+    diff = invoice_vs_list(cid, st.session_state.get("pl_as_of"))
+    if diff.empty:
+        return
+    section("Different from the last invoice", help="The last invoice matched to an order was priced differently from this list (after the supplier's discount). The invoice is the truth: update the list when the supplier's new price stands.")
+    st.dataframe(diff, hide_index=True, width="stretch",
+                 column_config={"item_name": "Item", "unit": "Unit", "list_net": st.column_config.NumberColumn("List, net", format=MONEY_FORMAT),
+                                "invoiced": st.column_config.NumberColumn("Last invoice, net", format=MONEY_FORMAT), "difference": st.column_config.NumberColumn("Difference", format="%+,.2f"),
+                                "difference_pct": st.column_config.NumberColumn("%", format="%+.1f%%"), "invoice_no": "Invoice", "invoice_date": date_col("Dated")})
+    if writer:
+        c1, c2 = st.columns([4, 1.6], vertical_alignment="bottom")
+        pick = c1.selectbox("Item", list(diff["item_name"]), key="pl_recon_pick")
+        if c2.button("Update the list", icon=":material/published_with_changes:", type="primary", key="pl_recon_go", width="stretch",
+                     help="Adds the invoice price to the list from the invoice's date. The old price stays in the history."):
+            done_or_error(*update_to_invoice(cid, pick))
+
+
+def _prices_tab(cid: int, writer: bool) -> None:
+    """ONE prices screen (owner, 2026-10-03): this supplier's prices with what the last invoices charged, or every supplier side by side with the catalog."""
+    show = st.segmented_control("Show", ["This supplier", "All suppliers side by side"], default="This supplier", required=True, key="pl_show", label_visibility="collapsed")
+    if show == "This supplier":
+        _current_tab(cid, writer)
+        _reconcile_section(cid, writer)
+    else:
+        _products_tab(cid, writer)
+
+
 def _then_flash(result: tuple[bool, str]) -> tuple[bool, str]:
     if result[0]:
         flash(result[1])
@@ -214,11 +243,10 @@ def render() -> None:
     from views.shared import selectbox_creditor_label
 
     writer = can(current_role(), "price.write")                  # a role that may only look sees the prices and the catalog, not the tabs that change them
-    names = ["Current prices", "Add a price", "Import Excel", "Discounts", "Compare suppliers"] if writer else ["Current prices", "Compare suppliers"]
-    tabs = dict(zip(names, st.tabs(names, key="pl_tab", default="Current prices", on_change="rerun")))
-    draw = {"Current prices": lambda: _current_tab(int(cid), writer), "Add a price": lambda: _add_tab(int(cid)),
-            "Import Excel": lambda: _import_tab(int(cid), selectbox_creditor_label("SUPPLIER", int(cid))), "Discounts": lambda: _discounts_tab(int(cid)),
-            "Compare suppliers": lambda: _products_tab(int(cid), writer)}
+    names = ["Prices", "Add a price", "Import Excel", "Discounts"] if writer else ["Prices"]
+    tabs = dict(zip(names, st.tabs(names, key="pl_tab", default="Prices", on_change="rerun")))
+    draw = {"Prices": lambda: _prices_tab(int(cid), writer), "Add a price": lambda: _add_tab(int(cid)),
+            "Import Excel": lambda: _import_tab(int(cid), selectbox_creditor_label("SUPPLIER", int(cid))), "Discounts": lambda: _discounts_tab(int(cid))}
     for name, tab in tabs.items():
         if tab.open:                                      # only the tab you are looking at runs
             with tab:
