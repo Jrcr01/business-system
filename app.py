@@ -265,6 +265,8 @@ from engines.card_rules import (  # noqa: F401
 import views.add_data
 import views.admin
 import views.analytics
+import views.release
+import views.roles_controls
 import views.bank_cash
 import views.planner
 import views.bank_loans
@@ -275,7 +277,6 @@ import views.creditor_master
 import views.data_health
 import views.settings
 from engines.settings_registry import label as _hotkey_label, shortcuts as _hotkeys
-import views.dashboard
 import views.lenders
 import views.order_statement
 import views.home
@@ -363,7 +364,7 @@ IS_SANDBOX = "TEST" in os.path.basename(DB_PATH).upper()
 _PAGE_TITLE = ("🧪 SANDBOX — " if IS_SANDBOX else "") + "Slick's Tire Supply — AP Disbursement"
 
 # No logo on screen (2026-09-27, per user: "remove Slick's logo ... everywhere in the app"); printed PDFs keep it.
-st.set_page_config(page_title=_PAGE_TITLE, page_icon=":material/request_quote:", layout="wide")
+st.set_page_config(page_title=_PAGE_TITLE, page_icon=":material/request_quote:", layout="wide", initial_sidebar_state="collapsed")
 
 # Sign-in (B8): nothing below runs until someone is signed in; every change this run is recorded under their email, and the menu and sidebar are cut to their role.
 from engines.permissions import allowed_pages, filter_menu, may_search
@@ -411,7 +412,7 @@ show_flashes()      # "Saved ..." toasts queued by refresh(done=...) before the 
 @st.cache_data(ttl="15s")
 def _run_waiting() -> int:
     """How many things wait in the payment cycle -- shown beside Payment run in the menu."""
-    return waiting_count(get_run_stages())
+    return waiting_count(get_run_stages(light=True))
 
 
 _n_waiting = _run_waiting()
@@ -421,9 +422,10 @@ PAGES.update({
                            url_path="payment-run"),
     "home": st.Page(views.home.render, title="Home", icon=":material/home:", url_path="home", default=True),
     "add-data": st.Page(views.add_data.render, title="Add data", icon=":material/add_box:", url_path="add-data"),
-    "dashboard": st.Page(views.dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard"),
     "order-statements": st.Page(views.order_statement.render, title="Order statements", icon=":material/description:", url_path="order-statements"),
     "checks": st.Page(views.checks.render, title="Checks and checkbook", icon=":material/receipt_long:", url_path="checks"),
+    "release": st.Page(views.release.render, title="Release checks", icon=":material/outbox:", url_path="release"),
+    "controls": st.Page(views.roles_controls.render, title="Roles and controls", icon=":material/rule:", url_path="controls"),
     "bank-cash": st.Page(views.bank_cash.render, title="Bank and cash", icon=":material/account_balance_wallet:", url_path="bank-cash"),
     "planner": st.Page(views.planner.render, title="Check-date planner", icon=":material/event_available:", url_path="planner"),
     "payables-due": st.Page(views.payables_due.render, title="Payables due", icon=":material/event_upcoming:", url_path="payables-due"),
@@ -431,7 +433,6 @@ PAGES.update({
     "bank-loans": st.Page(views.bank_loans.render, title="Bank loans", icon=":material/account_balance:", url_path="bank-loans"),
     "credit-cards": st.Page(views.credit_cards.render, title="Credit cards", icon=":material/credit_card:", url_path="credit-cards"),
     "creditors": st.Page(views.creditor_master.render, title="Creditors", icon=":material/contacts:", url_path="creditors"),
-    "analytics": st.Page(views.analytics.render, title="Analytics", icon=":material/query_stats:", url_path="analytics"),
     "reports": st.Page(views.reports.render, title="Reports", icon=":material/summarize:", url_path="reports"),
     "admin": st.Page(views.admin.render, title="Admin and audit", icon=":material/admin_panel_settings:", url_path="admin"),
     "settings": st.Page(views.settings.render, title="Settings", icon=":material/tune:", url_path="settings"),
@@ -442,19 +443,26 @@ PAGES.update({
 from engines.settings_registry import forecast_shown as _forecast_shown   # the cash forecast and planner are hidden until the owner switches them on (Settings)
 if not _forecast_shown():
     PAGES.pop("planner", None)
-MENU = {
-    "Home": ["home"],          # first, and skipped by the Alt+number shortcuts below so they still open the same pages
-    "Daily work": ["payment-run", "add-data", "order-statements", "checks", "bank-cash", "payables-due"] + (["planner"] if "planner" in PAGES else []),
+MENU = {                                                      # in the order the money moves (2026-10-03); the top bar shows these as drop-downs
+    "Home": ["home"],
+    "Buy": ["price-lists", "purchase-orders", ("Receive goods", ":material/inventory_2:", "purchase-orders", {"po_mode": "Receive"}, "po.receive_goods")],
+    "Pay suppliers": [("Match invoices", ":material/receipt_long:", "purchase-orders", {"po_mode": "Match invoice"}, "po.receive"),
+                      "order-statements", "payment-run", "checks", "release", "payables-due", "add-data"],
+    "Bank": ["bank-cash"] + (["planner"] if "planner" in PAGES else []),
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
-    "Records and reports": ["dashboard", "creditors", "analytics", "reports"],
-    "System": ["settings", "admin", "data-health"],
-    "Purchasing": ["purchase-orders", "price-lists"],          # last, so the Alt+number shortcuts of the existing pages do not move
+    "Records": ["reports"],
+    "Set-up": ["creditors", "controls", "settings", "admin", "data-health"],
 }
-MENU = filter_menu(MENU, _role)                               # a role sees only its own pages
+from engines.permissions import can as _can
+_PLAIN_MENU = filter_menu({sec: [e for e in ids if not isinstance(e, tuple)] for sec, ids in MENU.items()}, _role)       # a role sees only its own pages
 for _hidden in set(PAGES) - allowed_pages(_role, set(PAGES)):
     PAGES.pop(_hidden)
-page = st.navigation({section: [PAGES[pid] for pid in ids] for section, ids in MENU.items()}, position="sidebar",
-                     expanded=True)          # always show every page (Streamlit folds long menus behind "View more"; Alt+1..0 need the links)
+TOPBAR_MENU = {}
+for _sec, _ids in MENU.items():                                # the top bar's drop-downs: the pages, plus the shortcuts (Receive goods ...) this role may use
+    _keep = [e for e in _ids if (not isinstance(e, tuple) and e in _PLAIN_MENU.get(_sec, [])) or (isinstance(e, tuple) and (e[4] is None or _can(_role, e[4])) and e[2] in PAGES)]
+    if _keep:
+        TOPBAR_MENU[_sec] = _keep
+page = st.navigation({section: [PAGES[pid] for pid in ids] for section, ids in _PLAIN_MENU.items()}, position="hidden")      # the top bar is the menu now; no sidebar
 
 # A jump requested by the search pop-up or a page button (set, then st.rerun()): apply it before any page draws.
 _pending_global_jump = st.session_state.pop("_global_jump", None)
@@ -462,197 +470,33 @@ if _pending_global_jump:
     _jump(_pending_global_jump["page"], **_pending_global_jump["state"])
 
 
-with st.sidebar:
-    park_draft_slot = st.empty()      # "checks typed but not parked" reminder, filled at the end of the script
-    if IS_SANDBOX:
-        st.markdown(
-            "<div style='background-color:#FFA500;color:#000;text-align:center;"
-            "font-weight:bold;padding:8px;border-radius:4px;margin-bottom:8px;'>"
-            "🧪 SANDBOX — test data, not real</div>",
-            unsafe_allow_html=True,
-        )
-    render_account_box(_user)
-    if may_search(_role):                                  # the owner's sidebar: bank line, search, mini calendar of payments
-        st.markdown("**Slick's Tire Supply** · AP" + (" (SANDBOX)" if IS_SANDBOX else ""))
-        bank_df = q("SELECT * FROM bank_accounts WHERE bank_account_id = ?", (PRIMARY_BANK_ACCOUNT_ID,))
-        bank = bank_df.iloc[0] if not bank_df.empty else None
-        # "Did my restart actually pick up the change" indicator (2026-09-17): st.cache_resource holds its value for the life of
-        # this Python process, so this timestamp changes exactly when restart_live.bat / run_test_streamlit.bat restarts the app.
-        st.caption((f"{bank['bank_name']} · Branch {bank['branch_code']} · " if bank is not None else "")
-                   + f"started {_get_app_start_time().strftime('%b %d, %I:%M %p')}")
-
-        search_term = st.text_input(
-            "Quick search", key="quick_search_term",
-            placeholder="Check #, invoice, batch/LN/loan ref, name",
-            label_visibility="collapsed", icon=":material/search:",
-        )
-
-        if search_term.strip():
-            result = search_records(search_term)
-            kind, matches = result["kind"], result["matches"]
-
-            if kind == "none":
-                st.warning(f"No check or invoice found matching '{search_term}'.")
-
-            elif kind == "spoiled":
-                for m in matches:
-                    extra = f" ({m['reason']})" if m["reason"] else ""
-                    st.info(f"Check {m['check_number']} is logged as spoiled — no batch attached.{extra}")
-
-            elif kind == "check":
-                st.caption(f"{len(matches)} check(s) match:")
-                for m in matches:
-                    label = f"{m['check_number']} · {m['creditor_name']} · {php(m['amount'])} · {m['status']}"
-                    if st.button(label, key=f"jump_check_{m['check_id']}", width="stretch"):
-                        if m["statement_id"] is not None:
-                            _jump("order-statements", selected_statement_id=m["statement_id"], os_mode=OS_BROWSE, os_subtab="Checks",
-                                  **{f"os_checks_view__{m['statement_id']}": "Checks in this batch"})
-                        else:
-                            _jump("lenders", selected_loan_note_id=m["loan_note_id"], ln_mode=LN_BROWSE, ln_subtab="Checks")
-
-            elif kind == "invoice":
-                st.caption(f"{len(matches)} invoice(s) match:")
-                for m in matches:
-                    label = f"{m['doc_ref']} · {m['creditor_name']} · {php(m['amount'])} · {m['statement_ref']}"
-                    if st.button(label, key=f"jump_inv_{m['invoice_id']}", width="stretch"):
-                        _jump("order-statements", selected_statement_id=m["statement_id"], os_mode=OS_BROWSE, os_subtab="Invoices")
-
-            elif kind == "ref":
-                st.caption(f"{len(matches)} record(s) match:")
-                for m in matches:
-                    label = f"[{m['type']}] {m['ref']} · {m['payee']} · {php(m['amount'])} · {m['status']}"
-                    if st.button(label, key=f"jump_ref_{m['type']}_{m['id']}", width="stretch"):
-                        if m["type"] == "Order Statement":
-                            _jump("order-statements", selected_statement_id=m["id"], os_mode=OS_BROWSE)
-                        elif m["type"] == "Loan Note":
-                            _jump("lenders", selected_loan_note_id=m["id"], ln_mode=LN_BROWSE)
-                        else:
-                            _jump("bank-loans", selected_bank_loan_id=m["id"], bl_mode=BL_BROWSE)
-
-        if st.button("Search everything  [ / ]", icon=":material/manage_search:", key="global_search_open_side", width="stretch"):
-            global_search_dialog()
-
-        with st.expander("Mini calendar", icon=":material/calendar_month:", expanded=True):
-            # Mini calendar grid, not a flat list (2026-09-17, revised per user's actual purpose: a quick
-            # visual reference for which dates are already loaded while typing in a check date on the
-            # Order Statement/Lenders/Checks & checkbook tabs). The sidebar is the one part of this app
-            # that stays on screen regardless of which tab is active -- a modal/dialog popup would close
-            # the moment you switched tabs, so this is the only surface that actually works for that.
-            st.caption("For reference while issuing checks.")
-            # Month/year pickers + prev/next arrows. The arrows change the pickers through on_click callbacks, NOT by calling
-            # st.rerun() from here: this sidebar is drawn before the main tabs, so an early st.rerun() made Streamlit forget
-            # which tab was open and dropped you back on the Dashboard every time (2026-09-26). A callback runs before the page
-            # is redrawn, so the tabs keep their state.
-            side_cal_years = list(range(manila_today().year - 5, manila_today().year + 11))
-            side_cal_month_names = [date(2000, m, 1).strftime("%b") for m in range(1, 13)]
-            if st.session_state.get("side_cal_year_pick") not in side_cal_years:
-                st.session_state["side_cal_year_pick"] = manila_today().year
-            if st.session_state.get("side_cal_month_pick") not in range(1, 13):
-                st.session_state["side_cal_month_pick"] = manila_today().month
-
-            def _side_cal_step(delta: int) -> None:
-                m, y = st.session_state["side_cal_month_pick"] + delta, st.session_state["side_cal_year_pick"]
-                if m < 1:
-                    m, y = 12, y - 1
-                elif m > 12:
-                    m, y = 1, y + 1
-                if y in side_cal_years:
-                    st.session_state["side_cal_month_pick"], st.session_state["side_cal_year_pick"] = m, y
-
-            side_cal_prev_col, side_cal_month_col, side_cal_year_col, side_cal_next_col = st.columns([0.8, 2, 2.5, 0.8], vertical_alignment="center", gap="small")
-            side_cal_prev_col.button("◀", key="side_cal_prev", on_click=_side_cal_step, args=(-1,))
-            def _side_cal_month_picked() -> None:
-                st.session_state["side_cal_year_pick"] = prospective_year(st.session_state["side_cal_month_pick"])
-
-            side_cal_month_col.selectbox("Month", options=list(range(1, 13)), format_func=lambda m: side_cal_month_names[m - 1],
-                                         key="side_cal_month_pick", label_visibility="collapsed", on_change=_side_cal_month_picked)
-            side_cal_year_col.selectbox("Year", options=side_cal_years, key="side_cal_year_pick", label_visibility="collapsed")
-            side_cal_next_col.button("▶", key="side_cal_next", on_click=_side_cal_step, args=(1,))
-            side_cal_year, side_cal_month = st.session_state["side_cal_year_pick"], st.session_state["side_cal_month_pick"]
-
-            # Single letters ("M","T","W","T","F","S","S") collided -- Tue/Thu both became "T" and
-            # Sat/Sun both became "S", merging those column pairs into one on the x-axis instead of
-            # keeping 7 distinct days. Two-letter codes stay unique while still fitting the narrow
-            # sidebar width.
-            side_cal_weekday_names = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
-            side_cal_rows = []
-            for side_cal_week_idx, side_cal_week in enumerate(calendar.Calendar(firstweekday=0).monthdayscalendar(side_cal_year, side_cal_month)):
-                for side_cal_day_idx, side_cal_day_num in enumerate(side_cal_week):
-                    if side_cal_day_num == 0:
-                        continue
-                    side_cal_rows.append({
-                        "date": date(side_cal_year, side_cal_month, side_cal_day_num),
-                        "week": side_cal_week_idx, "weekday": side_cal_weekday_names[side_cal_day_idx], "day": side_cal_day_num,
-                    })
-            side_cal_grid_df = pd.DataFrame(side_cal_rows)
-            side_cal_merged_df = attach_calendar_totals(side_cal_grid_df)
-
-            # Both layers must share the exact same Axis object, not one Axis(orient="top") and one
-            # axis=None (2026-09-17 -- this was the actual bug, not a missing-label rendering issue as
-            # it first looked): when Altair layers two charts whose axis specs for the same channel
-            # disagree, it has to resolve the conflict, and it silently dropped the labels entirely
-            # rather than keeping either version. The main Dashboard calendar avoids this by giving every
-            # layer the identical axis object -- matched here.
-            side_cal_weekday_axis = alt.Axis(orient="top", labelFontSize=9, labelAngle=0)
-            # Marked days (2026-09-26, per user): the same grey days the Dashboard's payment calendar shows -- Philippine holidays
-            # and any date marked as blocked (calendar_blocked_dates) -- drawn as a flat grey layer over the heat colour.
-            side_cal_blocked = get_blocked_dates_for_month(side_cal_year, side_cal_month)
-            side_cal_merged_df["is_blocked"] = side_cal_merged_df["date"].isin(side_cal_blocked.keys())
-            side_cal_merged_df["blocked_label"] = side_cal_merged_df["date"].apply(
-                lambda d: side_cal_blocked.get(d, {}).get("label") or side_cal_blocked.get(d, {}).get("kind", "").title())
-            side_cal_normal_df = side_cal_merged_df[~side_cal_merged_df["is_blocked"] & ~side_cal_merged_df["is_paid"]]
-            side_cal_paid_df = side_cal_merged_df[~side_cal_merged_df["is_blocked"] & side_cal_merged_df["is_paid"]]
-            side_cal_blocked_df = side_cal_merged_df[side_cal_merged_df["is_blocked"]]
-            side_cal_tooltip = [alt.Tooltip("date:T", title="Date"), alt.Tooltip("total_amount:Q", title="Total", format=",.2f"), alt.Tooltip("num_items:Q", title="Items"), alt.Tooltip("status:N", title="Status")]
-            side_cal_heat = alt.Chart(side_cal_normal_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3).encode(
-                x=alt.X("weekday:N", title=None, sort=side_cal_weekday_names, axis=side_cal_weekday_axis),
-                y=alt.Y("week:O", title=None, axis=None),
-                color=alt.Color("total_amount:Q", scale=alt.Scale(scheme="blues", type="sqrt", domain=[0, max(1.0, float(side_cal_merged_df["total_amount"].max()))]), legend=None),
-                tooltip=side_cal_tooltip,
-            )
-            side_cal_paid_heat = alt.Chart(side_cal_paid_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3).encode(
-                x=alt.X("weekday:N", title=None, sort=side_cal_weekday_names, axis=side_cal_weekday_axis),
-                y=alt.Y("week:O", title=None, axis=None),
-                color=alt.Color("total_amount:Q", scale=alt.Scale(scheme="greens", type="sqrt", domain=[0, max(1.0, float(side_cal_merged_df["total_amount"].max()))]), legend=None),
-                tooltip=side_cal_tooltip,
-            )
-            side_cal_grey = alt.Chart(side_cal_blocked_df).mark_rect(stroke="white", strokeWidth=1, cornerRadius=3, color="#C4C4C4").encode(
-                x=alt.X("weekday:N", title=None, sort=side_cal_weekday_names, axis=side_cal_weekday_axis),
-                y=alt.Y("week:O", title=None, axis=None),
-                tooltip=side_cal_tooltip + [alt.Tooltip("blocked_label:N", title="Marked")],
-            )
-            side_cal_dark_threshold = side_cal_merged_df["total_amount"].max() * 0.5
-            side_cal_text = alt.Chart(side_cal_merged_df).mark_text(baseline="middle", fontSize=9).encode(
-                x=alt.X("weekday:N", sort=side_cal_weekday_names, axis=side_cal_weekday_axis), y=alt.Y("week:O", axis=None),
-                text="day:N",
-                color=(
-                    alt.when(alt.datum.is_blocked).then(alt.value("#404040"))
-                    .when(alt.datum.total_amount > side_cal_dark_threshold).then(alt.value("white"))
-                    .otherwise(alt.value("#333333"))
-                ),
-                tooltip=side_cal_tooltip,
-            )
-            st.altair_chart((side_cal_heat + side_cal_paid_heat + side_cal_grey + side_cal_text).resolve_scale(color="independent").properties(height=150), width="stretch")
-            st.caption("Hover a day for its total. Blue = to pay, green = paid, grey = holiday or marked date. Full calendar: Dashboard.")
-
-    st.button("Refresh data", icon=":material/refresh:", on_click=lambda: st.cache_data.clear(), width="stretch")
-    _hk = _hotkeys()
-    _hk_pages, _hk_search, _hk_park, _hk_new = (_hk["pages"]["mod"].replace("+", " + ") + " +", _hotkey_label(_hk["search"]), _hotkey_label(_hk["park"]), _hotkey_label(_hk["new"]))
-    with st.expander("Keyboard shortcuts (change them in Settings)", icon=":material/keyboard:"):
-        st.markdown(
-            "| Keys | What it does |" + chr(10) + "|---|---|" + chr(10)
-            + "| **Enter** | In a confirmation pop-up: **Yes** (unless a button is focused) |" + chr(10)
-            + "| **Esc** | In a pop-up: go back |" + chr(10)
-            + "| **" + _hk_pages + " 1 … 9, 0** | Open a menu page (1 = the first page in the menu, 0 = the tenth) — hover a menu item to see its key |" + chr(10)
-            + "| **" + _hk_search + "** | Open **Search everything** (checks, invoices, batches, loans, creditors, cards…) |" + chr(10)
-            + "| **" + _hk_park + "** | Press the screen's main **P**ark / Save / Add button (only if there is one) |" + chr(10)
-            + "| **" + _hk_new + "** | Open the **N**ew … form (New Batch, New Loan Note, New Bank Loan) |" + chr(10)
-            + "| **Tab / Shift+Tab** | Next / previous box or button |" + chr(10)
-            + "| **Enter / Space** | Press the focused button |" + chr(10)
-            + "| **↑ ↓** | Move through a dropdown (or just type to search it) |"
-        )
+_pending_drafts = list_park_drafts() if may_search(_role) else []      # checks typed but never parked: the bell in the top bar, and a browser prompt when the page is closed
+_hk = _hotkeys()
+_hk_pages, _hk_search, _hk_park, _hk_new = (_hk["pages"]["mod"].replace("+", " + ") + " +", _hotkey_label(_hk["search"]), _hotkey_label(_hk["park"]), _hotkey_label(_hk["new"]))
+_SHORTCUTS = (
+    "| Keys | What it does |" + chr(10) + "|---|---|" + chr(10)
+    + "| **Enter** | In a confirmation pop-up: **Yes** (unless a button is focused) |" + chr(10)
+    + "| **Esc** | In a pop-up: go back |" + chr(10)
+    + "| **" + _hk_pages + " 1 … 9, 0** | Open a page (1 = Payment run, 2 = Add data, 3 = Order statements, 4 = Checks, 5 = Bank and cash, 6 = Payables due, 7 = Lenders, 8 = Bank loans, 9 = Credit cards, 0 = Reports), **H** = Home |" + chr(10)
+    + "| **" + _hk_search + "** | Open **Search everything** (checks, invoices, batches, loans, creditors, cards…) |" + chr(10)
+    + "| **" + _hk_park + "** | Press the screen's main **P**ark / Save / Add button (only if there is one) |" + chr(10)
+    + "| **" + _hk_new + "** | Open the **N**ew … form (New Batch, New Loan Note, New Bank Loan) |" + chr(10)
+    + "| **Tab / Shift+Tab** | Next / previous box or button |" + chr(10)
+    + "| **Enter / Space** | Press the focused button |" + chr(10)
+    + "| **↑ ↓** | Move through a dropdown (or just type to search it) |"
+)
+import views.topbar
+park_draft_slot = st.empty() if not st.runtime.exists() else views.topbar.render(TOPBAR_MENU, PAGES, _user, _role, IS_SANDBOX, _pending_drafts, {"search": may_search(_role), "calendar": may_search(_role), "shortcuts": _SHORTCUTS})
 
 st.markdown("<style>.st-key-global_search_open_main{position:absolute;width:0;height:0;overflow:hidden;opacity:0;}</style>", unsafe_allow_html=True)
+st.markdown("""<style>
+[data-testid="stMainBlockContainer"] { padding-top: 1.4rem; }            /* Streamlit leaves ~6rem empty above every page */
+[data-testid="stMainBlockContainer"] h2 { color: #0B4F8A; }               /* page titles in Slick's blue, like Home */
+[data-testid="stMainBlockContainer"] h3 { color: #1f2937; }
+button[kind="primary"] { background-color: #0B4F8A; border-color: #0B4F8A; }
+button[kind="primary"]:hover { background-color: #0a2c4d; border-color: #0a2c4d; }
+[data-testid="stMetric"] { border-top: 3px solid #F3E03B; }               /* the yellow accent of the shop sign on the figure cards */
+</style>""", unsafe_allow_html=True)
 if may_search(_role) and st.button("Search everything", key="global_search_open_main"):
     global_search_dialog()
 
@@ -661,7 +505,6 @@ page.run()          # only the open page runs; the others cost nothing
 
 # Guardrail (2026-09-27): reminder for checks typed but never parked -- in the sidebar, and a browser prompt if the page is
 # about to be closed/refreshed while any are pending.
-_pending_drafts = list_park_drafts() if may_search(_role) else []      # the check-drafts reminder is the owner's
 if _pending_drafts:
     park_draft_slot.warning(
         ":material/edit_note: **Checks typed but not parked yet**" + chr(10) + chr(10)
@@ -699,8 +542,9 @@ components.html(r"""<script>
     d.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1f3a5f;color:#fff;padding:10px 18px;border-radius:8px;z-index:99999;font-size:14px;';
     D.body.appendChild(d); setTimeout(function () { d.remove(); }, 2600);
   }
-  function allMenuLinks() { return Array.from(D.querySelectorAll('[data-testid="stSidebarNav"] a')); }   // the sidebar menu, top to bottom (Home first)
-  function menuLinks() { return allMenuLinks().slice(1); }   // without Home, so Alt+1 is still Payment run
+  function pageLink(p) { return Array.from(D.querySelectorAll('.st-key-topbar a')).find(function (a) { var h = (a.getAttribute('href') || '').replace(/\/$/, ''); return h === '/' + p || h.slice(-(p.length + 1)) === '/' + p; }); }
+  function allMenuLinks() { return [pageLink('home')]; }                                  // Home
+  function menuLinks() { return CFG.order.map(pageLink); }                                // Alt+1 ... Alt+0: a fixed list of pages, whatever the menu order (undefined = not open to this role)
   function searchBox() { return Array.from(D.querySelectorAll('input')).find(function (i) { return (i.placeholder || '').indexOf('Check #') === 0; }); }
   var handler = function (e) {
     var dlg = D.querySelector('[role=dialog]');
@@ -772,6 +616,7 @@ components.html(r"""<script>
   // hovering a menu item shows its hotkey (Streamlit redraws the menu now and then, so this is re-applied every second)
   function labelTabs() {
     menuLinks().slice(0, 10).forEach(function (t, i) {
+      if (!t) return;
       var tip = CFG.pages.mod + '+' + ((i + 1) % 10);
       if (t.title !== tip) t.title = tip;
     });
@@ -780,4 +625,4 @@ components.html(r"""<script>
   P.__apHotkeyTimer = P.setInterval(labelTabs, 1000);
   labelTabs();
 })();
-</script>""".replace("__HOTKEY_CONFIG__", json.dumps(_hotkeys())), height=0)
+</script>""".replace("__HOTKEY_CONFIG__", json.dumps({**_hotkeys(), "order": views.topbar.HOTKEY_PAGES})), height=0)

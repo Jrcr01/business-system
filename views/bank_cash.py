@@ -499,23 +499,12 @@ def _forecast_tab() -> None:
 
 
 def _float_tab() -> None:
-    fs = float_summary()
-    if not fs:
-        st.info("Import a bank statement first.")
-        return
-    overdue, ahead = fs["overdue"], fs["ahead"]
-    m1, m2 = st.columns(2)
-    m1.metric(f"Past their date, not cleared (to {fs['as_of']:%b %d})", php(float(overdue["amount"].sum()) if not overdue.empty else 0.0),
-              f"{len(overdue)} check(s)", delta_color="off", delta_arrow="off", border=True,
-              help="Checks dated on or before the last imported bank date that the bank has not cleared: suppliers have not deposited them yet.")
-    m2.metric("Dated ahead (not due yet)", php(float(ahead["amount"].sum()) if not ahead.empty else 0.0), f"{len(ahead)} check(s)",
-              delta_color="off", delta_arrow="off", border=True, help='Checks dated after the last bank date — not due to clear yet.')
-    if overdue.empty:
-        st.caption("No check is waiting to be deposited within the imported period.")
-        return
-    st.dataframe(fs["buckets"], hide_index=True, column_config={"age": "Waiting", "checks": "Checks", "amount": money_col("Amount")})
-    st.markdown("**By payee**")
-    st.dataframe(fs["by_payee"], hide_index=True, column_config={"payee": "Payee", "checks": "Checks", "amount": money_col("Amount")})
+    """The list of checks past their date that the bank has not cleared lives in ONE place now: Payables due, Past their date (owner, 2026-10-03: one list, not three)."""
+    from views.shared import go_to
+    st.info("The checks past their date that the bank has not cleared yet are listed in one place: **Payables due → Past their date**. "
+            "Settling one that was paid outside the bank is under Need a look, below the reconciliation.", icon=":material/hourglass_top:")
+    if st.button("Open Payables due: Past their date", icon=":material/open_in_new:", key="bank_float_link", type="primary"):
+        go_to("payables-due", pd_tab="Past their date")
 
 
 def _inflow_tab() -> None:
@@ -591,6 +580,8 @@ def _working_capital_tab() -> None:
 
 def render() -> None:
     page_header("Bank and cash", "Drop the MBOS bank statement here: the app matches your checks and shows only what needs a look.")
+    from views.shared import cycle_bar
+    cycle_bar("Bank")
     li = last_import()
     if li:
         st.caption(f"Last statement imported {str(li['imported_at'])[:16]} · covers {li['period_from']} to {li['period_to']}.")

@@ -137,6 +137,72 @@ def _assert_no_negative_balance(cur: sqlite3.Cursor, loan_note_id: int) -> None:
         )
 
 
+def preview_schedule(loan_note_id: int, first_due: date, installments: int) -> list[dict]:
+    """A monthly schedule to look at before it is saved: the principal in equal parts (the last one takes the odd centavos), the interest each month = the monthly rate x the balance
+    still owed, one month apart from `first_due`. Rows: due_date, principal, interest, total, balance after."""
+    from engines.common import add_months
+    with _get_conn() as conn:
+        row = conn.execute("SELECT principal_amount, monthly_interest_rate FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,)).fetchone()
+    if not row or not row[0] or installments < 1:
+        return []
+    principal, rate = float(row[0]), float(row[1] or 0)
+    part = round(principal / installments, 2)
+    out, balance = [], principal
+    for i in range(installments):
+        pay = round(balance, 2) if i == installments - 1 else part
+        interest = round(balance * rate / 100, 2)
+        balance = round(balance - pay, 2)
+        out.append({"due_date": add_months(first_due, i), "principal": pay, "interest": interest, "total": round(pay + interest, 2), "balance": balance})
+    return out
+
+
+def generate_schedule(loan_note_id: int, first_due: date, installments: int) -> tuple[bool, str]:
+    """Saves preview_schedule() as the loan note's repayment schedule. Only for a note with no installment yet (a schedule that exists is edited, never replaced)."""
+    with _get_conn() as conn:
+        n = conn.execute("SELECT COUNT(*) FROM loan_installments WHERE loan_note_id = ?", (loan_note_id,)).fetchone()[0]
+    if n:
+        return False, "This loan note already has a schedule. Edit its rows, or delete them first."
+    rows = preview_schedule(loan_note_id, first_due, int(installments))
+    if not rows:
+        return False, "Set the loan note's principal first (Edit loan note terms), and use at least one installment."
+    try:
+        with _get_conn() as conn:
+            cur = conn.cursor()
+            for r in rows:
+                cur.execute("INSERT INTO loan_installments (loan_note_id, installment_no, due_date, principal, interest, outstanding_balance) VALUES (?, 0, ?, ?, ?, 0)",
+                            (loan_note_id, str(r["due_date"]), r["principal"], r["interest"]))
+            _recompute_schedule(cur, loan_note_id)
+            _assert_no_negative_balance(cur, loan_note_id)
+            cur.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'LOAN_SCHEDULE_GENERATED', 'loan_notes', ?, ?)",
+                        (loan_note_id, f"{len(rows)} monthly installment(s) from {rows[0]['due_date']}"))
+    except _ScheduleError as e:
+        return False, str(e)
+    return True, f"{len(rows)} installment(s) added."
+
+
+def issue_all_pdcs(loan_note_id: int) -> tuple[bool, str, int]:
+    """Parks a post-dated check for every installment that has none yet, each for its scheduled amount on its due date (the same thing 'Issue PDC' does one by one).
+    Stops at the first refusal and says which; the checks already parked stay. Returns (ok, message, how many were parked)."""
+    from engines.check_rules import issue_check
+    with _get_conn() as conn:
+        note = conn.execute("SELECT creditor_id, status FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,)).fetchone()
+        pending = conn.execute("SELECT installment_id, installment_no, due_date, principal + interest FROM loan_installments WHERE loan_note_id = ? AND status = 'Pending' ORDER BY due_date",
+                               (loan_note_id,)).fetchall()
+    if not note:
+        return False, "Loan note not found.", 0
+    if note[1] in ("Settled", "Defaulted", "Cancelled"):
+        return False, f"This loan note is {note[1]}: no further checks can be issued.", 0
+    if not pending:
+        return False, "Every installment already has its check.", 0
+    done = 0
+    for iid, no, due, amount in pending:
+        ok, msg, _cid = issue_check(note[0], round(float(amount), 2), date.fromisoformat(str(due)[:10]), loan_note_id=loan_note_id, installment_id=int(iid))
+        if not ok:
+            return False, f"Stopped at installment #{no} ({due}): {msg} {done} check(s) were parked before it.", done
+        done += 1
+    return True, f"{done} post-dated check(s) parked, one per installment.", done
+
+
 def add_loan_installment(loan_note_id: int, due_date: date, principal: float, interest: float) -> tuple[bool, str]:
     if principal < 0 or interest < 0:
         return False, "Principal and Interest cannot be negative."

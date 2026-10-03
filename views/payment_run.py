@@ -102,6 +102,16 @@ def _open_schedule_row(row: pd.Series) -> None:
     go_to({"Bank Loan": "bank-loans", "Credit Card": "credit-cards"}.get(row["track"], "order-statements"))
 
 
+def _loan_installments_without_checks() -> pd.DataFrame:
+    """Loan-note installments due within 45 days that have no check yet (the schedule rows still Pending), one row per loan note."""
+    from datetime import timedelta
+    from engines.clock import manila_today
+    return q("""SELECT ln.loan_note_id, ln.note_ref, c.creditor_name, COUNT(*) AS installments, SUM(i.principal + i.interest) AS total
+                FROM loan_installments i JOIN loan_notes ln ON ln.loan_note_id = i.loan_note_id JOIN creditors c ON c.creditor_id = ln.creditor_id
+                WHERE i.status = 'Pending' AND ln.status NOT IN ('Cancelled', 'Settled', 'Defaulted') AND i.due_date <= ?
+                GROUP BY ln.loan_note_id ORDER BY MIN(i.due_date)""", (str(manila_today() + timedelta(days=45)),))
+
+
 def _stage_row(step: str, color: str, done: bool, text: str, detail: str | None = None) -> st.delta_generator.DeltaGenerator:
     """One stage line: coloured step pill, what is waiting, and a right-hand column (returned) for its button(s)."""
     with st.container(border=True):
@@ -260,6 +270,17 @@ def render() -> None:
         pick = right.selectbox("Batch", options=list(opts), format_func=opts.get, key="pr_need_pick", label_visibility="collapsed")
         if right.button("Issue checks", icon=":material/payments:", type="primary", key="pr_need_btn", width="stretch"):
             go_to("order-statements", selected_statement_id=int(pick), os_mode=OS_BROWSE, os_subtab="Checks")
+
+    loans_due = _loan_installments_without_checks()
+    right = _stage_row("1b · Loan checks", "gray", loans_due.empty,
+                       "Every loan installment due soon has its check." if loans_due.empty else
+                       f"**{int(loans_due['installments'].sum())} loan installment(s)** due in the next 45 days have no check yet — {php(float(loans_due['total'].sum()))}",
+                       None if loans_due.empty else ", ".join(f"{r['note_ref']} ({r['creditor_name']})" for _, r in loans_due.head(6).iterrows()))
+    if not loans_due.empty:
+        lopts = {int(r["loan_note_id"]): f"{r['note_ref']} · {r['creditor_name']} · {int(r['installments'])} installment(s) · {php(r['total'])}" for _, r in loans_due.iterrows()}
+        lpick = right.selectbox("Loan note", options=list(lopts), format_func=lopts.get, key="pr_loan_pick", label_visibility="collapsed")
+        if right.button("Issue the checks", icon=":material/payments:", type="primary", key="pr_loan_btn", width="stretch"):
+            go_to("lenders", selected_loan_note_id=int(lpick), ln_mode=LN_BROWSE, ln_subtab="Checks")
 
     parked = stg["parked"]
     right = _stage_row("2 · Parked", "orange", parked.empty,

@@ -14,6 +14,7 @@ import json
 import os
 import sqlite3
 
+from engines import settings_store
 from engines.settings_store import get_setting
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
@@ -96,6 +97,23 @@ def _write(conn, key: str, new_value: str, category: str, description: str) -> N
         conn.execute("INSERT INTO settings (key, value, category, description) VALUES (?, ?, ?, ?)", (key, new_value, category, description))
 
 
+NOTICE_KEY = "home_notice"
+
+
+def save_notice(text: str) -> tuple[bool, str]:
+    """The owner's notice for everyone, shown in the yellow strip on Home (blank = no notice). Audited."""
+    from engines.permissions import require
+    ok, why = require("settings.edit")
+    if not ok:
+        return False, why
+    text = " ".join(str(text or "").split())[:300]
+    settings_store._CACHE.clear()
+    with get_conn(DB_PATH) as conn:
+        _write(conn, NOTICE_KEY, text, "general", "Notice shown to everyone on Home")
+        _audit(conn, "SETTING_CHANGED", NOTICE_KEY, f"Home notice: {text or '(removed)'}")
+    return True, "Notice saved: everyone sees it on Home." if text else "Notice removed."
+
+
 def _fmt(v: float, decimals: int) -> str:
     return f"{v:,.{decimals}f}" if decimals else f"{int(round(v)):,}"
 
@@ -114,6 +132,7 @@ def save(key: str, new_value) -> tuple[bool, str]:
     if abs(old - v) < 1e-9:
         return True, f"{m['label']}: unchanged."
     stored = str(int(round(v))) if m["decimals"] == 0 else str(round(v, m["decimals"]))
+    settings_store._CACHE.clear()                     # the next read sees the change at once
     with get_conn(DB_PATH) as conn:
         _write(conn, key, stored, "settings", m["label"])
         _audit(conn, "SETTING_CHANGED", key, f"{m['label']}: {_fmt(old, m['decimals'])} -> {_fmt(v, m['decimals'])} {m['unit']}")
@@ -125,6 +144,7 @@ def reset(key: str) -> tuple[bool, str]:
         return False, "Unknown setting."
     m = _meta(key)
     old = value(key)
+    settings_store._CACHE.clear()                     # the next read sees the change at once
     with get_conn(DB_PATH) as conn:
         conn.execute("DELETE FROM settings WHERE key = ?", (key,))
         if abs(old - m["default"]) > 1e-9:
@@ -216,6 +236,7 @@ def save_shortcuts(config: dict) -> tuple[bool, str]:
     changes = [f"{text}: {label(old[a])} -> {label(cfg[a])}" for a, text in SHORTCUT_ACTIONS.items() if old[a] != cfg[a]]
     if old["pages"] != cfg["pages"]:
         changes.append(f"Menu pages: {old['pages']['mod']}+1..0 -> {cfg['pages']['mod']}+1..0")
+    settings_store._CACHE.clear()                     # the next read sees the change at once
     with get_conn(DB_PATH) as conn:
         _write(conn, SHORTCUT_KEY, json.dumps(cfg), "settings", "Keyboard shortcuts")
         _audit(conn, "SHORTCUTS_CHANGED", SHORTCUT_KEY, "; ".join(changes))
@@ -223,6 +244,7 @@ def save_shortcuts(config: dict) -> tuple[bool, str]:
 
 
 def reset_shortcuts() -> tuple[bool, str]:
+    settings_store._CACHE.clear()                     # the next read sees the change at once
     with get_conn(DB_PATH) as conn:
         had = conn.execute("SELECT 1 FROM settings WHERE key = ?", (SHORTCUT_KEY,)).fetchone()
         conn.execute("DELETE FROM settings WHERE key = ?", (SHORTCUT_KEY,))

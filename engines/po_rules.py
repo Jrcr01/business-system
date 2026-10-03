@@ -21,6 +21,9 @@ from engines import settings_registry
 from engines.clock import manila_now, manila_today
 from engines.common import get_conn, write_tx
 from engines.db_engine import next_doc_number
+from engines.acting_user import acting_email
+from engines.permissions import require as require_permission
+from engines.discount_rules import chain_text, net_price, parse_chain, standing_chain
 from engines.price_list_service import add_price, price_on
 from engines.statement_rules import resolve_due_date
 
@@ -58,22 +61,50 @@ def _clean_lines(creditor_id: int, order_date: date, lines: list[dict]) -> tuple
             qty = 0
         if qty <= 0:
             return None, f"Line {n} ({name}): the quantity must be more than zero."
-        unit, price_id, price = str(ln.get("unit") or "").strip(), None, ln.get("est_unit_price")
-        if price is None or price == "":
-            listed = price_on(creditor_id, name, order_date)              # not typed: use the price in force on the order date, if the supplier has one
+        unit, price_id, price, list_price = str(ln.get("unit") or "").strip(), None, ln.get("est_unit_price"), ln.get("list_price")
+        chain = ln.get("discount_chain")                                  # None = the supplier's standing chain; '' = no discount on this line (an override)
+        if chain is not None and parse_chain(chain) is None:
+            return None, f"Line {n} ({name}): the discount '{chain}' is not readable. Type percentages like 5, 5."
+        listed = price_on(creditor_id, name, order_date)
+        if listed:
+            name = listed["item_name"]                                    # keep the list's spelling so the item is one item everywhere
+        if list_price is not None and list_price != "":                   # a list price (typed or taken from the list) less its discount chain
+            list_price = float(list_price)
+            if list_price < 0:
+                return None, f"Line {n} ({name}): the price cannot be negative."
+            chain = standing_chain(creditor_id, name, order_date) if chain is None else chain
+            price = net_price(list_price, chain)
+            if listed and abs(listed["unit_price"] - list_price) < 0.005:
+                price_id, unit = listed["price_id"], unit or listed["unit"]
+        elif price is None or price == "":                                # nothing typed: the price in force on the order date, if the supplier has one
             if listed:
-                price, price_id = listed["unit_price"], listed["price_id"]
-                unit = unit or listed["unit"]
-                name = listed["item_name"]                                # keep the list's spelling so the item is one item everywhere
+                list_price, price_id, unit = listed["unit_price"], listed["price_id"], unit or listed["unit"]
+                chain = standing_chain(creditor_id, name, order_date) if chain is None else chain
+                price = net_price(list_price, chain)
             else:
-                price = 0.0
+                price, chain = 0.0, None                          # a draft may wait for its price; ordering refuses a line with none (order_po)
+        else:                                                             # a net price typed straight in: no list price, no chain
+            chain, list_price = None, None
         price = float(price)
         if price < 0:
             return None, f"Line {n} ({name}): the price cannot be negative."
-        clean.append({"price_id": price_id, "item_name": name, "unit": unit or None, "qty": qty, "est_unit_price": price, "est_amount": round(qty * price, 2)})
+        clean.append({"item_id": (listed or {}).get("product_id"), "price_id": price_id, "item_name": name, "unit": unit or None, "qty": qty, "est_unit_price": price, "est_amount": round(qty * price, 2),
+                      "list_price": list_price, "discount_chain": chain_text(chain) if list_price is not None else None})
     if not clean:
         return None, "Add at least one item."
     return clean, ""
+
+
+def _may(action: str, po_id: int | None) -> tuple[bool, str]:
+    """The permission guard for a purchase order: a role with 'own' (Purchasing) may only change orders it created."""
+    created_by = acting_email()                                      # a new order is the signer's own
+    if po_id is not None:
+        with get_conn() as conn:
+            row = conn.execute("SELECT created_by FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()
+        created_by = row[0] if row else None
+        if not row:
+            return True, ""                                           # not found: the function says so itself
+    return require_permission(action, created_by)
 
 
 def _has_receipt(conn, po_id: int) -> bool:
@@ -83,6 +114,9 @@ def _has_receipt(conn, po_id: int) -> bool:
 def save_po(po_id: int | None, creditor_id: int, order_date, expected_delivery, lines: list[dict], notes: str = "") -> tuple[bool, str, int | None]:
     """Creates a draft order, or changes an open one (Draft / Ordered with nothing received yet): the lines are replaced and the estimate and pay date
     worked out again. Each line: item_name, qty, optional unit and est_unit_price (left out = the supplier's list price on the order date)."""
+    allowed, why = _may("po.create", po_id)
+    if not allowed:
+        return False, why, None
     order = _as_date(order_date)
     delivery = _as_date(expected_delivery)
     if order is None:
@@ -120,8 +154,8 @@ def save_po(po_id: int | None, creditor_id: int, order_date, expected_delivery, 
             conn.execute("DELETE FROM purchase_order_lines WHERE po_id = ?", (po_id,))
             action = "PO_EDITED"
         for ln in clean:
-            conn.execute("INSERT INTO purchase_order_lines (po_id, price_id, item_name, unit, qty, est_unit_price, est_amount) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                         (po_id, ln["price_id"], ln["item_name"], ln["unit"], ln["qty"], ln["est_unit_price"], ln["est_amount"]))
+            conn.execute("INSERT INTO purchase_order_lines (po_id, item_id, price_id, item_name, unit, qty, est_unit_price, est_amount, list_price, discount_chain) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         (po_id, ln["item_id"], ln["price_id"], ln["item_name"], ln["unit"], ln["qty"], ln["est_unit_price"], ln["est_amount"], ln["list_price"], ln["discount_chain"]))
         total = sum(ln["est_amount"] for ln in clean)
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), ?, 'purchase_orders', ?, ?)",
                      (action, po_id, f"{len(clean)} line(s), estimated {total:,.2f}, pay date {pay}"))
@@ -131,6 +165,9 @@ def save_po(po_id: int | None, creditor_id: int, order_date, expected_delivery, 
 
 def order_po(po_id: int) -> tuple[bool, str]:
     """Marks a draft as ordered and gives it its permanent number 'YYYY - PO NNNN' (the year of the order date). Already ordered: nothing changes."""
+    allowed, why = _may("po.order", po_id)
+    if not allowed:
+        return False, why
     with write_tx() as conn:
         row = conn.execute("SELECT status, po_no, order_date, expected_delivery_date FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()
         if not row:
@@ -143,6 +180,9 @@ def order_po(po_id: int) -> tuple[bool, str]:
         total = conn.execute("SELECT COALESCE(SUM(est_amount), 0) FROM purchase_order_lines WHERE po_id = ?", (po_id,)).fetchone()[0]
         if total <= 0:
             return False, "No price on this order yet. Add the supplier's price (Price lists), or type a price on each line."
+        unpriced = [r[0] for r in conn.execute("SELECT item_name FROM purchase_order_lines WHERE po_id = ? AND est_unit_price <= 0", (po_id,))]
+        if unpriced:                                         # one line at zero would make the money owed look smaller than it is
+            return False, "These lines have no price yet: " + ", ".join(unpriced) + ". Type their price (Change), or add them to the price list."
         year = int(str(order_date)[:4])
         prefix = f"{year} - PO "
         used = [int(r[0][len(prefix):]) for r in conn.execute("SELECT po_no FROM purchase_orders WHERE po_no LIKE ?", (prefix + "%",)) if r[0][len(prefix):].strip().isdigit()]
@@ -155,6 +195,9 @@ def order_po(po_id: int) -> tuple[bool, str]:
 
 
 def cancel_po(po_id: int, reason: str = "") -> tuple[bool, str]:
+    allowed, why = _may("po.cancel", po_id)
+    if not allowed:
+        return False, why
     with write_tx() as conn:
         row = conn.execute("SELECT status, po_no FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()
         if not row:
@@ -167,6 +210,28 @@ def cancel_po(po_id: int, reason: str = "") -> tuple[bool, str]:
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_CANCELLED', 'purchase_orders', ?, ?)",
                      (po_id, f"{row[1]}" + (f": {reason.strip()}" if reason and reason.strip() else "")))
     return True, f"{row[1]} cancelled."
+
+
+def close_short(po_id: int, reason: str) -> tuple[bool, str]:
+    """A partly received order whose rest will not come (the supplier dropped it): the order is closed as Received, and what was not delivered stops counting as
+    money owed. Same permission as cancelling. A reason is required; audited."""
+    allowed, why = _may("po.cancel", po_id)
+    if not allowed:
+        return False, why
+    reason = " ".join(str(reason or "").split())
+    if not reason:
+        return False, "Say why the rest will not come (e.g. 'supplier out of stock')."
+    with write_tx() as conn:
+        row = conn.execute("SELECT status, po_no FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()
+        if not row:
+            return False, "Order not found."
+        if row[0] != "PARTIAL":
+            return False, "Only a partly received order can be closed short. An order with nothing received can be cancelled instead."
+        left = conn.execute("SELECT COALESCE(SUM((qty - qty_received) * est_unit_price), 0) FROM purchase_order_lines WHERE po_id = ?", (po_id,)).fetchone()[0]
+        conn.execute("UPDATE purchase_orders SET status = 'RECEIVED', over_cash_plan = 0, cash_note = NULL, updated_at = CURRENT_TIMESTAMP WHERE po_id = ?", (po_id,))
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_CLOSED_SHORT', 'purchase_orders', ?, ?)",
+                     (po_id, f"{row[1]}: closed with {left:,.2f} not delivered ({reason})"))
+    return True, f"{row[1]} closed. The {left:,.2f} not delivered no longer counts as owed."
 
 
 def get_po(po_id: int) -> dict | None:
@@ -202,15 +267,16 @@ def list_pos(status: str | None = None, creditor_id: int | None = None, today: d
 # --- the cash plan (stage B3) ------------------------------------------------------------------------------------------------------------------
 
 def open_commitments(start: date, end: date) -> pd.DataFrame:
-    """What ordered purchase orders still owe, by pay date (inside start..end; a pay date already past counts on `start`). The unreceived part only:
-    each line's estimate times the share of its quantity not yet received. Columns: po_id, po_no, supplier, day, amount."""
+    """What ordered purchase orders still owe, by pay date (inside start..end; a pay date already past counts on `start`): each line's estimate times the share of its
+    quantity the supplier has not yet INVOICED -- goods still to come and goods received but not yet invoiced both count, until the real invoice (a payable) replaces them.
+    A closed-short order counts only what was delivered. Columns: po_id, po_no, supplier, day, amount."""
     cols = ["po_id", "po_no", "supplier", "day", "amount"]
     with get_conn() as conn:
         df = pd.read_sql_query(
             """SELECT p.po_id, p.po_no, c.creditor_name AS supplier, p.expected_pay_date,
-                      SUM(l.est_amount * MAX(l.qty - l.qty_received, 0) / l.qty) AS amount
+                      SUM(l.est_amount * MAX(CASE WHEN p.status = 'RECEIVED' THEN l.qty_received ELSE l.qty END - COALESCE(l.qty_invoiced, l.qty_received), 0) / l.qty) AS amount
                FROM purchase_orders p JOIN creditors c ON c.creditor_id = p.creditor_id JOIN purchase_order_lines l ON l.po_id = p.po_id
-               WHERE p.status IN ('ORDERED', 'PARTIAL') AND p.expected_pay_date IS NOT NULL GROUP BY p.po_id""", conn)
+               WHERE p.status IN ('ORDERED', 'PARTIAL', 'RECEIVED') AND p.expected_pay_date IS NOT NULL GROUP BY p.po_id""", conn)
     if df.empty:
         return pd.DataFrame(columns=cols)
     blocked = _blocked_days()
@@ -337,6 +403,9 @@ def orders_over_plan(include_acknowledged: bool = False) -> pd.DataFrame:
 
 
 def acknowledge_over_plan(po_id: int) -> tuple[bool, str]:
+    allowed, why = require_permission("po.ack_over_plan")
+    if not allowed:
+        return False, why
     with write_tx() as conn:
         row = conn.execute("SELECT po_no FROM purchase_orders WHERE po_id = ? AND over_cash_plan = 1", (po_id,)).fetchone()
         if not row:
@@ -363,13 +432,26 @@ def _week_of(day: date) -> tuple[date, date]:
     return start, start + timedelta(days=6)
 
 
+_COMMITTED: dict = {}
+
+
 def _committed_rows(end: date, exclude_po_id: int | None = None) -> pd.DataFrame:
     """Everything committed from today to `end`, as scheduled_outflows() counts it (a check already past its date sits on today), with a kind label.
     Columns: day, payee, kind, reference, amount. An order being changed is left out."""
-    from engines.cash_insights_service import scheduled_outflows
+    from engines import cash_insights_service as cis
     from engines.payables_due_service import KINDS
+    from engines.settings_store import _stamp
 
-    out = scheduled_outflows(manila_today(), max(end, manila_today()))
+    today = manila_today()
+    stamp = (cis.DB_PATH, today, _stamp(cis.DB_PATH))
+    hit = _COMMITTED.get("rows")
+    if hit and hit[0] == stamp and hit[1] >= end:               # the schedule, the 8-week strip and the daily view share one build until something is saved
+        out = hit[2]
+    else:
+        far = max(end, today + timedelta(days=400))
+        out = cis.scheduled_outflows(today, far)
+        _COMMITTED["rows"] = (stamp, far, out)
+    out = out[pd.to_datetime(out["day"]).dt.date <= max(end, today)] if not out.empty else out
     cols = ["day", "payee", "kind", "reference", "amount"]
     if out.empty:
         return pd.DataFrame(columns=cols)
@@ -416,6 +498,24 @@ def weeks_strip(pay_date, before: int = 3, after: int = 4, exclude_po_id: int | 
     if table["lightest"].sum() > 1:                               # ties: mark the earliest only
         first_idx = table[table["lightest"]].index[0]
         table["lightest"] = table.index == first_idx
+    return table
+
+
+def days_strip(pay_date, before: int = 10, after: int = 20, exclude_po_id: int | None = None) -> pd.DataFrame:
+    """The daily view of what is committed: one row per day from `before` days ahead of the pay day (never earlier than today) to `after` days after it:
+    day, total, selected (the pay day), lightest (the weekday with the least committed; weekends are not bank days, so never 'lightest')."""
+    day = _as_date(pay_date) or manila_today()
+    first = max(day - timedelta(days=before), manila_today())
+    days = [first + timedelta(days=i) for i in range(((day + timedelta(days=after)) - first).days + 1)]
+    rows = _committed_rows(days[-1], exclude_po_id)
+    sums = rows.groupby("day")["amount"].sum() if not rows.empty else pd.Series(dtype=float)
+    table = pd.DataFrame({"day": days})
+    table["total"] = table["day"].map(sums).fillna(0.0)
+    table["selected"] = table["day"] == day
+    weekdays = table[table["day"].map(lambda d: d.weekday() < 5)]
+    table["lightest"] = False
+    if not weekdays.empty:
+        table.loc[weekdays["total"].idxmin(), "lightest"] = True
     return table
 
 
@@ -470,12 +570,98 @@ def receivable_lines(creditor_id: int) -> pd.DataFrame:
     return df[cols] if not df.empty else pd.DataFrame(columns=cols)
 
 
+def receive_goods(creditor_id: int, picks: list[dict], received_date=None, ref: str = "", doc_type: str = "delivery receipt", book_stock: bool = True) -> tuple[bool, str, None]:
+    """Step 1 of receiving (Purchasing): the goods that arrived. picks: [{'line_id', 'qty'}]. Records the quantity on the order lines and moves the order to Partly
+    received / Received; no invoice and no batch -- the supplier's invoice is matched later (receive_into_batch with goods_received=True). Received-but-not-invoiced goods
+    keep counting as owed at the order price. `ref` = the number of the paper that came with the goods: a delivery receipt (stored as "DR <no>") or, for a supplier who gives
+    no delivery receipt, their invoice (doc_type="invoice": stored as the invoice number, and offered again when Payables matches the invoice). Everything is checked first; a refusal writes nothing."""
+    allowed, why = require_permission("po.receive_goods")
+    if not allowed:
+        return False, why, None
+    if not picks:
+        return False, "Tick at least one line that arrived.", None
+    rows = []
+    with get_conn() as conn:
+        for n, pk in enumerate(picks, start=1):
+            ln = conn.execute(
+                """SELECT l.line_id, l.po_id, l.item_name, l.qty, l.qty_received, l.est_unit_price, p.status, p.creditor_id, p.po_no, l.item_id
+                   FROM purchase_order_lines l JOIN purchase_orders p ON p.po_id = l.po_id WHERE l.line_id = ?""", (int(pk["line_id"]),)).fetchone()
+            if not ln:
+                return False, f"Line {n}: order line not found.", None
+            if int(ln[7]) != int(creditor_id):
+                return False, f"Line {n} ({ln[2]}): that order is for another supplier.", None
+            if ln[6] not in LIVE_STATUSES:
+                return False, f"Line {n} ({ln[2]}): {ln[8]} has not been sent to the supplier or is closed, so it cannot be received.", None
+            try:
+                qty = float(pk["qty"])
+            except (TypeError, ValueError):
+                return False, f"Line {n} ({ln[2]}): enter the quantity that arrived.", None
+            if qty <= 0:
+                return False, f"Line {n} ({ln[2]}): the quantity that arrived must be more than zero.", None
+            remaining = float(ln[3]) - float(ln[4])
+            if qty > remaining + 1e-6:
+                return False, f"Line {n} ({ln[2]}): {qty:g} is more than is still to come ({remaining:g}).", None
+            rows.append({"line_id": ln[0], "po_id": ln[1], "item": ln[2], "qty": qty, "prior": float(ln[4]), "est_price": float(ln[5]), "item_id": ln[9]})
+    received = _as_date(received_date) or manila_today()
+    ref = " ".join(str(ref or "").split())
+    is_invoice = str(doc_type).lower().startswith("inv")
+    stored = (ref if is_invoice or ref.upper().startswith("DR") else f"DR {ref}") if ref else None          # a delivery receipt number already written "DR-77" is kept as typed
+    with write_tx() as conn:
+        from engines.stock_ledger import stock_in
+        for r in rows:
+            conn.execute("UPDATE purchase_order_lines SET qty_invoiced = COALESCE(qty_invoiced, qty_received), qty_received = ? WHERE line_id = ?", (r["prior"] + r["qty"], r["line_id"]))
+            if book_stock:                                       # the parked Django site books its own stock in (book_stock=False), so it is never counted twice
+                stock_in(conn, r["item_id"], r["qty"], r["est_price"], "purchase_order_lines", r["line_id"], received, note="received, counted at the order's net price")
+        for po_id in sorted({r["po_id"] for r in rows}):
+            mine = [r for r in rows if r["po_id"] == po_id]
+            est = round(sum(r["qty"] * r["est_price"] for r in mine), 2)
+            conn.execute("INSERT INTO po_receipts (po_id, received_date, supplier_invoice_no, actual_amount, est_amount, invoice_id) VALUES (?, ?, ?, ?, ?, NULL)",
+                         (po_id, str(received), stored, est, est))
+            left = conn.execute("SELECT COUNT(*) FROM purchase_order_lines WHERE po_id = ? AND qty - qty_received > 0.0000001", (po_id,)).fetchone()[0]
+            conn.execute("UPDATE purchase_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE po_id = ?", ("PARTIAL" if left else "RECEIVED", po_id))
+            po_no = conn.execute("SELECT po_no FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()[0]
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_GOODS_RECEIVED', 'purchase_orders', ?, ?)",
+                         (po_id, f"{po_no}: " + ", ".join(f"{r['qty']:g} x {r['item']}" for r in mine) + (f" ({'supplier invoice' if is_invoice else 'delivery receipt'} {ref})" if ref else "") + ", waiting for the supplier's invoice"))
+    from engines.review_flags import flag, sod_flag
+    with write_tx() as conn:                                             # controls flag, they do not block: ordering and receiving the same order goes on the Review list
+        for po_id in sorted({r["po_id"] for r in rows}):
+            made_by, po_no = conn.execute("SELECT created_by, po_no FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()
+            note = sod_flag("SOD_ORDERED_RECEIVED", made_by, po_no)
+            if note:
+                flag(conn, "SOD_ORDERED_RECEIVED", "purchase_orders", po_id, note)
+    for po_id in sorted({r["po_id"] for r in rows}):
+        update_cash_flag(po_id)
+    return True, f"Received {sum(r['qty'] for r in rows):g} piece(s) on {len({r['po_id'] for r in rows})} order(s). Payables matches the supplier's invoice when it comes.", None
+
+
+def invoiceable_lines(creditor_id: int) -> pd.DataFrame:
+    """Goods received and not yet covered by a supplier invoice, for this supplier. Columns: po_id, po_no, line_id, item_name, unit, qty_received, qty_invoiced,
+    remaining (to invoice), est_unit_price, received_date, received_ref (the DR no. or the supplier invoice no. that came with the goods)."""
+    cols = ["po_id", "po_no", "line_id", "item_name", "unit", "qty_received", "qty_invoiced", "remaining", "est_unit_price", "received_date", "received_ref"]
+    with get_conn() as conn:
+        df = pd.read_sql_query(
+            """SELECT p.po_id, p.po_no, l.line_id, l.item_name, l.unit, l.qty_received, COALESCE(l.qty_invoiced, l.qty_received) AS qty_invoiced,
+                      l.qty_received - COALESCE(l.qty_invoiced, l.qty_received) AS remaining, l.est_unit_price,
+                      (SELECT MAX(r.received_date) FROM po_receipts r WHERE r.po_id = p.po_id) AS received_date,
+                      (SELECT r.supplier_invoice_no FROM po_receipts r WHERE r.po_id = p.po_id AND r.invoice_id IS NULL AND r.supplier_invoice_no IS NOT NULL
+                        ORDER BY r.receipt_id DESC LIMIT 1) AS received_ref
+               FROM purchase_orders p JOIN purchase_order_lines l ON l.po_id = p.po_id
+               WHERE p.creditor_id = ? AND p.status IN ('ORDERED', 'PARTIAL', 'RECEIVED') AND l.qty_received - COALESCE(l.qty_invoiced, l.qty_received) > 0.0000001
+               ORDER BY p.po_id, l.line_id""", conn, params=(creditor_id,))
+    return df[cols] if not df.empty else pd.DataFrame(columns=cols)
+
+
 def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoice_date, picks: list[dict], update_prices: bool = False,
-                       received_date=None, gross_override: float | None = None) -> tuple[bool, str, int | None]:
+                       received_date=None, gross_override: float | None = None, goods_received: bool = False, book_stock: bool = True) -> tuple[bool, str, int | None]:
     """Matches the supplier's invoice to one or more orders and puts it in the batch. picks: [{'line_id', 'qty', 'actual_unit_price'}]. The ACTUAL price
     prevails: the invoice is made at what the supplier charged (qty x actual price, or `gross_override` when the invoice total is typed), the order line keeps both
     prices, and the received quantity leaves the commitments. Everything is checked first; a refusal writes nothing. update_prices: add the actual price to the
-    price list (starting on the invoice date) wherever it differs from the estimate. Returns (ok, message, invoice_id)."""
+    price list (starting on the invoice date) wherever it differs from the estimate. Returns (ok, message, invoice_id).
+    goods_received=True (step 2, Payables): the lines were already recorded as received (receive_goods); the invoice covers goods received and not yet invoiced, and the
+    order's received quantity is left alone. False: receiving and invoicing in one step, as before."""
+    allowed, why = require_permission("po.receive")
+    if not allowed:
+        return False, why, None
     from engines.statement_rules import add_invoice, delete_invoice
 
     doc = " ".join(str(doc_ref or "").split())
@@ -502,13 +688,14 @@ def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoic
         rows = []
         for n, pk in enumerate(picks, start=1):
             ln = conn.execute(
-                """SELECT l.line_id, l.po_id, l.item_name, l.unit, l.qty, l.qty_received, l.est_unit_price, l.actual_amount, p.status, p.creditor_id, p.po_no
+                """SELECT l.line_id, l.po_id, l.item_name, l.unit, l.qty, l.qty_received, l.est_unit_price, l.actual_amount, p.status, p.creditor_id, p.po_no,
+                          l.list_price, l.discount_chain, l.qty_invoiced, l.item_id
                    FROM purchase_order_lines l JOIN purchase_orders p ON p.po_id = l.po_id WHERE l.line_id = ?""", (int(pk["line_id"]),)).fetchone()
             if not ln:
                 return False, f"Line {n}: order line not found.", None
             if int(ln[9]) != int(creditor_id):
                 return False, f"Line {n} ({ln[2]}): that order is for another supplier.", None
-            if ln[8] not in LIVE_STATUSES:
+            if ln[8] not in (LIVE_STATUSES + ("RECEIVED",) if goods_received else LIVE_STATUSES):
                 return False, f"Line {n} ({ln[2]}): {ln[10]} has not been sent to the supplier or is closed, so it cannot be received.", None
             try:
                 qty, price = float(pk["qty"]), float(pk["actual_unit_price"])
@@ -518,14 +705,19 @@ def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoic
                 return False, f"Line {n} ({ln[2]}): the quantity received must be more than zero.", None
             if price < 0:
                 return False, f"Line {n} ({ln[2]}): the price cannot be negative.", None
-            remaining = float(ln[4]) - float(ln[5])
+            invoiced_before = float(ln[13]) if ln[13] is not None else float(ln[5])
+            remaining = (float(ln[5]) - invoiced_before) if goods_received else (float(ln[4]) - float(ln[5]))
             if qty > remaining + 1e-6:
-                return False, f"Line {n} ({ln[2]}): {qty:g} is more than is still to come ({remaining:g}).", None
+                return False, (f"Line {n} ({ln[2]}): {qty:g} is more than the received goods still waiting for an invoice ({remaining:g})." if goods_received
+                               else f"Line {n} ({ln[2]}): {qty:g} is more than is still to come ({remaining:g})."), None
             rows.append({"line_id": ln[0], "po_id": ln[1], "item": ln[2], "unit": ln[3], "qty": qty, "price": price, "est_price": float(ln[6]),
-                         "amount": round(qty * price, 2), "est": round(qty * float(ln[6]), 2), "prior_actual": float(ln[7] or 0.0), "prior_qty": float(ln[5])})
-    gross = round(sum(r["amount"] for r in rows), 2) if gross_override is None else round(float(gross_override), 2)
+                         "amount": round(qty * price, 2), "est": round(qty * float(ln[6]), 2), "prior_actual": float(ln[7] or 0.0), "prior_qty": float(ln[5]),
+                         "prior_invoiced": invoiced_before, "list_price": ln[11], "chain": ln[12] or "", "item_id": ln[14]})
+    lines_total = round(sum(r["amount"] for r in rows), 2)
+    gross = lines_total if gross_override is None else round(float(gross_override), 2)
     if gross <= 0:
         return False, "The invoice amount must be more than zero.", None
+    scale = gross / lines_total if lines_total else 1.0           # a typed invoice total (freight, rounding) is what each order's receipt records, shared by amount
     due = resolve_due_date(inv_date, creditor[0])
     add_invoice(creditor_id, doc, inv_date, due, gross, [], statement_id)              # the invoice is the payable from here on
     with get_conn() as conn:
@@ -533,32 +725,63 @@ def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoic
     received = _as_date(received_date) or manila_today()
     try:
         with write_tx() as conn:
+            from engines.stock_ledger import correct_cost, stock_in
             for r in rows:
-                new_qty = r["prior_qty"] + r["qty"]
+                if not book_stock:
+                    pass
+                elif goods_received:                                                         # the goods were counted at the order's price: the invoice says what they really cost
+                    correct_cost(conn, r["item_id"], r["qty"], r["est_price"], r["price"], "purchase_order_lines", r["line_id"], received, note=f"invoice {doc}")
+                else:                                                                        # received and invoiced in one step: counted at the price charged
+                    stock_in(conn, r["item_id"], r["qty"], r["price"], "purchase_order_lines", r["line_id"], received, note=f"received on invoice {doc}")
+                new_received = r["prior_qty"] + (0 if goods_received else r["qty"])         # step 2 leaves the received quantity alone
+                new_invoiced = r["prior_invoiced"] + r["qty"]
                 new_actual = round(r["prior_actual"] + r["amount"], 2)
-                conn.execute("UPDATE purchase_order_lines SET qty_received = ?, actual_amount = ?, actual_unit_price = ? WHERE line_id = ?",
-                             (new_qty, new_actual, round(new_actual / new_qty, 4), r["line_id"]))
+                conn.execute("UPDATE purchase_order_lines SET qty_received = ?, qty_invoiced = ?, actual_amount = ?, actual_unit_price = ? WHERE line_id = ?",
+                             (new_received, new_invoiced, new_actual, round(new_actual / new_invoiced, 4), r["line_id"]))
             for po_id in sorted({r["po_id"] for r in rows}):
                 mine = [r for r in rows if r["po_id"] == po_id]
                 conn.execute(
                     """INSERT INTO po_receipts (po_id, received_date, supplier_invoice_no, supplier_invoice_date, actual_amount, est_amount, invoice_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""", (po_id, str(received), doc, str(inv_date), sum(r["amount"] for r in mine), sum(r["est"] for r in mine), inv_id))
-                left = conn.execute("SELECT COUNT(*) FROM purchase_order_lines WHERE po_id = ? AND qty - qty_received > 0.0000001", (po_id,)).fetchone()[0]
-                conn.execute("UPDATE purchase_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE po_id = ?", ("PARTIAL" if left else "RECEIVED", po_id))
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""", (po_id, str(received), doc, str(inv_date), round(sum(r["amount"] for r in mine) * scale, 2), sum(r["est"] for r in mine), inv_id))
+                if not goods_received:
+                    left = conn.execute("SELECT COUNT(*) FROM purchase_order_lines WHERE po_id = ? AND qty - qty_received > 0.0000001", (po_id,)).fetchone()[0]
+                    conn.execute("UPDATE purchase_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE po_id = ?", ("PARTIAL" if left else "RECEIVED", po_id))
                 po_no = conn.execute("SELECT po_no FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()[0]
-                conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_RECEIVED', 'purchase_orders', ?, ?)",
-                             (po_id, f"{po_no} received on invoice {doc}: actual {sum(r['amount'] for r in mine):,.2f} against estimate {sum(r['est'] for r in mine):,.2f}"))
+                conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), ?, 'purchase_orders', ?, ?)",
+                             ("PO_INVOICED" if goods_received else "PO_RECEIVED", po_id, f"{po_no} {'invoiced' if goods_received else 'received'} on invoice {doc}: actual {sum(r['amount'] for r in mine):,.2f} against estimate {sum(r['est'] for r in mine):,.2f}"))
     except Exception:
         delete_invoice(inv_id)                                                            # nothing half-done: take the invoice back out
         raise
-    if update_prices:
+    price_notes = []
+    if update_prices:                                                                     # part of receiving: the receiver may update the list from the invoice
+        from engines.discount_rules import parse_chain
         for r in rows:
             if abs(r["price"] - r["est_price"]) > 0.005:
-                add_price(creditor_id, r["item"], r["unit"] or "", r["price"], inv_date, replace=True)
+                factor = 1.0
+                for d in (parse_chain(r["chain"]) or []) if r["list_price"] is not None else []:
+                    factor *= 1 - d / 100
+                new_list = round(r["price"] / factor, 2) if factor else r["price"]       # the invoice price is NET: the list gets it back before the discount
+                ok_p, msg_p = add_price(creditor_id, r["item"], r["unit"] or "", new_list, inv_date, trusted=True)
+                price_notes.append(f"{r['item']}: list price now {new_list:,.2f}" if ok_p else msg_p)
+    from engines.review_flags import PRICE_OVER_PCT, flag, sod_flag
+    with write_tx() as conn:                                             # controls flag, they do not block: duty overlaps and prices far above the order go on the Review list
+        for po_id in sorted({r["po_id"] for r in rows}):
+            po_no = conn.execute("SELECT po_no FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()[0]
+            if goods_received:
+                got = conn.execute("SELECT user_email FROM audit_logs WHERE entity_name = 'purchase_orders' AND entity_id = ? AND user_action = 'PO_GOODS_RECEIVED' "
+                                   "ORDER BY rowid DESC LIMIT 1", (po_id,)).fetchone()
+                note = sod_flag("SOD_RECEIVED_MATCHED", got[0] if got else None, f"{po_no}, invoice {doc}")
+                if note:
+                    flag(conn, "SOD_RECEIVED_MATCHED", "purchase_orders", po_id, note)
+        for r in rows:
+            if r["est_price"] > 0 and r["price"] > r["est_price"] * (1 + PRICE_OVER_PCT / 100):
+                flag(conn, "PRICE_OVER_PO", "invoices", inv_id, f"{r['item']} on invoice {doc}: {r['price']:,.2f} against {r['est_price']:,.2f} on the order "
+                                                                  f"(+{(r['price'] / r['est_price'] - 1) * 100:.0f}%)")
     for po_id in sorted({r["po_id"] for r in rows}):
         update_cash_flag(po_id)
     changed = sum(1 for r in rows if abs(r["price"] - r["est_price"]) > 0.005)
-    return True, f"Invoice {doc} for {gross:,.2f} added to the batch from {len({r['po_id'] for r in rows})} order(s)" + (f"; {changed} price(s) differ from the estimate." if changed else "."), int(inv_id)
+    return True, (f"Invoice {doc} for {gross:,.2f} added to the batch from {len({r['po_id'] for r in rows})} order(s)" + (f"; {changed} price(s) differ from the estimate." if changed else ".")
+                  + (" Price list: " + "; ".join(price_notes) + "." if price_notes else "")), int(inv_id)
 
 
 def po_links_for_batch(statement_id: int) -> pd.DataFrame:

@@ -5,27 +5,18 @@ row for the same item. A purchase order line takes its ESTIMATE from here (price
 prevails and the list can be updated with a new dated row. Names are matched ignoring case and extra spaces, and keep the spelling they were first typed with.
 
   * add_price / set_price_active          -- typing one price in
-  * parse_price_list_file / import_price_rows / template_csv -- a CSV or Excel file from the supplier
+  * import_price_rows                -- many prices at once (used by the Excel template, engines/price_template_service.py)
   * price_on / current_prices / price_history / item_names   -- looking prices up"""
 from __future__ import annotations
 
-import io
 import re
 from datetime import date, datetime
 
 import pandas as pd
 
+from engines.permissions import require as require_permission
 from engines.clock import manila_today
 from engines.common import get_conn, write_tx
-
-_HEADER_SYNONYMS = {
-    "item_name": ["item", "item name", "items", "description", "particulars", "product", "product name", "name", "article", "size", "item description"],
-    "item_code": ["item code", "code", "sku", "part no", "part number", "part #", "product code"],
-    "unit": ["unit", "uom", "unit of measure", "measure"],
-    "unit_price": ["unit price", "price", "cost", "unit cost", "net price", "amount", "srp", "dealer price", "list price", "net"],
-    "effective_date": ["effective date", "effective", "as of", "date", "valid from", "price date"],
-}
-
 
 def _clean_name(name) -> str:
     return " ".join(str(name or "").split())
@@ -90,7 +81,13 @@ def _put(conn, creditor_id: int, name: str, unit: str, price: float, on: date, c
 
 # --- typing prices in ---------------------------------------------------------------------------------------------------------------------------
 
-def add_price(creditor_id: int, item_name: str, unit: str, unit_price, effective_date: date, item_code: str = "", replace: bool = False) -> tuple[bool, str]:
+def add_price(creditor_id: int, item_name: str, unit: str, unit_price, effective_date: date, item_code: str = "", replace: bool = False,
+              trusted: bool = False) -> tuple[bool, str]:
+    """trusted=True: called by another step that already checked its own permission (receiving an order updates the list from the invoice)."""
+    if not trusted:
+        _ok, _msg = require_permission('price.write')
+        if not _ok:
+            return False, _msg
     name = _clean_name(item_name)
     if not name:
         return False, "Type the item name."
@@ -105,12 +102,17 @@ def add_price(creditor_id: int, item_name: str, unit: str, unit_price, effective
         if result == "skipped":
             return False, f"{name} already has a price starting {on:%b %d, %Y}. Use Replace to change it, or pick a later date for the new price."
         spelling = _existing_spelling(conn, creditor_id, name) or name
+        conn.execute("UPDATE supplier_price_list SET item_id = (SELECT id FROM items WHERE lower(name) = ? LIMIT 1) "       # a price for an item we already have belongs to that item
+                     "WHERE creditor_id = ? AND lower(item_name) = ? AND item_id IS NULL", (_key(spelling), creditor_id, _key(spelling)))
         _audit(conn, "PRICE_ADDED" if result == "added" else "PRICE_REPLACED", creditor_id, f"{spelling}: {price:,.2f} from {on} (supplier {creditor_id})")
     return True, f"{spelling}: {price:,.2f} from {on:%b %d, %Y} saved."
 
 
 def set_price_active(price_id: int, active: bool) -> tuple[bool, str]:
     """Switches one price row off (a wrong or withdrawn price) or back on. Rows are never deleted: the history stays."""
+    _ok, _msg = require_permission('price.write')
+    if not _ok:
+        return False, _msg
     with write_tx() as conn:
         row = conn.execute("SELECT item_name, creditor_id FROM supplier_price_list WHERE price_id = ?", (price_id,)).fetchone()
         if not row:
@@ -127,17 +129,21 @@ def price_on(creditor_id: int, item_name: str, on: date | None = None) -> dict |
     on = _to_date(on) or manila_today()
     with get_conn() as conn:
         row = conn.execute(
-            """SELECT price_id, item_name, item_code, unit, unit_price, effective_date FROM supplier_price_list
+            """SELECT price_id, item_name, item_code, unit, unit_price, effective_date, item_id FROM supplier_price_list
                WHERE creditor_id = ? AND lower(item_name) = ? AND is_active = 1 AND effective_date <= ?
+                 AND (item_id IS NULL OR item_id IN (SELECT id FROM items WHERE is_active = 1))     -- a discontinued item is not offered
                ORDER BY effective_date DESC, price_id DESC LIMIT 1""", (creditor_id, _key(item_name), str(on))).fetchone()
     if not row:
         return None
-    return {"price_id": row[0], "item_name": row[1], "item_code": row[2] or "", "unit": row[3] or "", "unit_price": float(row[4]), "effective_date": row[5]}
+    return {"price_id": row[0], "item_name": row[1], "item_code": row[2] or "", "unit": row[3] or "", "unit_price": float(row[4]), "effective_date": row[5], "product_id": row[6]}
 
 
 def item_names(creditor_id: int) -> list[str]:
+    """The items this supplier has a price for (prices switched off and discontinued products left out): what the order form offers."""
     with get_conn() as conn:
-        rows = conn.execute("SELECT item_name FROM supplier_price_list WHERE creditor_id = ? GROUP BY lower(item_name) ORDER BY lower(item_name)", (creditor_id,)).fetchall()
+        rows = conn.execute("SELECT item_name FROM supplier_price_list WHERE creditor_id = ? AND is_active = 1 "
+                            "AND (item_id IS NULL OR item_id IN (SELECT id FROM items WHERE is_active = 1)) "
+                            "GROUP BY lower(item_name) ORDER BY lower(item_name)", (creditor_id,)).fetchall()
     return [r[0] for r in rows]
 
 
@@ -167,72 +173,14 @@ def price_history(creditor_id: int, item_name: str) -> pd.DataFrame:
                WHERE creditor_id = ? AND lower(item_name) = ? ORDER BY effective_date DESC, price_id DESC""", conn, params=(creditor_id, _key(item_name)))
 
 
-# --- a file from the supplier -------------------------------------------------------------------------------------------------------------------
-
-def template_csv() -> bytes:
-    """A starter file with the recognised headings and one obviously fake row."""
-    return ("Item,Unit,Price,Effective Date,Item Code\n"
-            "SAMPLE TIRE 175/70R13,pc,1000.00,2026-01-01,\n").encode("utf-8")
-
-
-def _map_columns(columns) -> dict[str, str]:
-    normalized = {" ".join(str(c).strip().lower().replace("_", " ").split()): c for c in columns}
-    mapping = {}
-    for canonical, synonyms in _HEADER_SYNONYMS.items():
-        for syn in synonyms:
-            if syn in normalized and normalized[syn] not in mapping.values():
-                mapping[canonical] = normalized[syn]
-                break
-    return mapping
-
-
-def parse_price_list_file(file_bytes: bytes, filename: str) -> tuple[list[dict], list[str]]:
-    """Reads a supplier's .csv or .xlsx. Returns (rows, messages): a row for every line with an item and a readable price; a line that cannot be read
-    is reported by its row number instead of silently dropped; a completely blank line is skipped. Never raises."""
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    try:
-        if ext == "csv":
-            df = pd.read_csv(io.BytesIO(file_bytes), dtype=str, keep_default_na=False)
-        elif ext == "xlsx":
-            df = pd.read_excel(io.BytesIO(file_bytes), dtype=str, engine="openpyxl").fillna("")
-        else:
-            return [], ["Unsupported file type (use .csv or .xlsx)."]
-    except Exception as e:                                           # a damaged or odd file is reported, not raised
-        return [], [f"Could not read the file: {e}"]
-    if df.empty:
-        return [], ["The file has no rows."]
-    cols = _map_columns(df.columns)
-    if "item_name" not in cols or "unit_price" not in cols:
-        return [], ["Could not find the item and price columns. Expected headings like 'Item' (or Description / Particulars) and 'Price' (or Unit Price)."]
-
-    rows, messages = [], []
-    for i, r in df.iterrows():
-        n = i + 2                                                    # +1 for the heading row, +1 because spreadsheets count from 1
-
-        def cell(key: str) -> str:
-            return str(r[cols[key]]).strip() if key in cols else ""
-
-        if not any(str(v).strip() for v in r.values):
-            continue
-        name = _clean_name(cell("item_name"))
-        if not name:
-            messages.append(f"Row {n}: no item name, skipped.")
-            continue
-        price = _to_price(cell("unit_price"))
-        if price is None:
-            messages.append(f"Row {n} ({name}): the price '{cell('unit_price')}' could not be read, skipped.")
-            continue
-        raw_date = cell("effective_date")
-        on = _to_date(raw_date)
-        if raw_date and on is None:
-            messages.append(f"Row {n} ({name}): the date '{raw_date}' could not be read, so the date you pick below is used.")
-        rows.append({"item_code": _clean_name(cell("item_code")), "item_name": name, "unit": _clean_name(cell("unit")), "unit_price": price, "effective_date": on})
-    return rows, messages
-
+# --- many prices at once (the Excel template: engines/price_template_service.py) ---------------------------------------------------------------
 
 def import_price_rows(creditor_id: int, rows: list[dict], default_date: date, on_duplicate: str = "skip") -> dict[str, int]:
     """Saves parsed rows in one step. A row without its own date uses default_date. on_duplicate ('skip' or 'replace') decides what happens when the
     same item already has a price for that date. Returns the counts and writes one audit line."""
+    _ok, _msg = require_permission('price.write')
+    if not _ok:
+        raise PermissionError(_msg)
     counts = {"added": 0, "replaced": 0, "skipped": 0}
     with write_tx() as conn:
         for r in rows:

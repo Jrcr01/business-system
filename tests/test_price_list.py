@@ -1,12 +1,11 @@
 """Supplier price lists (B1): typed prices and a CSV/Excel import. Free-text item name per supplier; a price applies from its effective date until a later one."""
-import io
 from datetime import date
 
 import pandas as pd
 
 from conftest import fetchone, make_creditor
 from engines.price_list_service import (
-    add_price, current_prices, import_price_rows, item_names, parse_price_list_file, price_history, price_on, set_price_active, template_csv,
+    add_price, current_prices, import_price_rows, item_names, price_history, price_on, set_price_active,
 )
 
 
@@ -69,36 +68,6 @@ def test_a_deactivated_price_is_not_used(db):
     pid = fetchone(db, "SELECT price_id FROM supplier_price_list")[0]
     assert set_price_active(pid, False)[0]
     assert price_on(cid, "Tire", date(2026, 10, 5)) is None
-
-
-def test_parse_a_csv_with_the_suppliers_own_headings(db):
-    csv = ("Particulars,UOM,Price,Item Code\n"
-           "Tire 175/70R13,pc,\"1,850.00\",T-1\n"
-           "Tube 14,pc,120,\n"
-           ",,,\n"                      # blank row skipped
-           "Valve,pc,abc,\n").encode()
-    rows, messages = parse_price_list_file(csv, "prices.csv")
-    assert [r["item_name"] for r in rows] == ["Tire 175/70R13", "Tube 14"]
-    assert rows[0]["unit_price"] == 1850.0 and rows[0]["item_code"] == "T-1" and rows[0]["unit"] == "pc"
-    assert any("row 5" in m.lower() or "valve" in m.lower() for m in messages)         # the unreadable price is reported, not silently dropped
-
-
-def test_parse_an_excel_file_and_a_date_column(db):
-    buf = io.BytesIO()
-    pd.DataFrame({"Item": ["Tire"], "Unit Price": [1850], "Effective Date": ["2026-10-15"]}).to_excel(buf, index=False)
-    rows, messages = parse_price_list_file(buf.getvalue(), "list.xlsx")
-    assert rows == [{"item_code": "", "item_name": "Tire", "unit": "", "unit_price": 1850.0, "effective_date": date(2026, 10, 15)}] and messages == []
-
-
-def test_a_file_without_item_and_price_columns_is_explained(db):
-    rows, messages = parse_price_list_file(b"foo,bar\n1,2\n", "x.csv")
-    assert rows == [] and messages and "item" in messages[0].lower()
-    assert parse_price_list_file(b"x", "x.pdf")[0] == []
-
-
-def test_the_template_has_the_recognised_headings(db):
-    rows, messages = parse_price_list_file(template_csv(), "template.csv")
-    assert rows and not messages
 
 
 def test_import_adds_new_prices_and_skips_or_replaces_ones_already_there(db):

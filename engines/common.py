@@ -101,6 +101,28 @@ def prospective_year(month: int, today: date | None = None) -> int:
     return today.year if month >= today.month else today.year + 1
 
 
+def add_months(d: date, months: int = 1) -> date:
+    """The same day `months` later; a day that does not exist there (Jan 31 + 1) becomes the month's last day."""
+    import calendar
+    y, m = divmod(d.year * 12 + d.month - 1 + months, 12)
+    return date(y, m + 1, min(d.day, calendar.monthrange(y, m + 1)[1]))
+
+
+def booklet_defaults(bank_account_id: int = 1) -> dict:
+    """What a new booklet usually is: the next code, the number after the last booklet's end, and the same size as that booklet. Empty/1000-1050 when none is registered."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT booklet_code, start_number, end_number FROM check_booklets WHERE bank_account_id = ? ORDER BY end_number DESC LIMIT 1", (bank_account_id,)).fetchone()
+    if not row:
+        return {"code": "Booklet A", "start": 1000, "end": 1050}
+    size = int(row[2]) - int(row[1])
+    code = str(row[0] or "")
+    tail = code.rstrip()[-1:] if code else ""
+    nxt = (code[:-1] + chr(ord(tail) + 1)) if tail.isalpha() and tail.upper() != "Z" else (code + " 2" if code else "")
+    if code and code.split()[-1].isdigit():
+        nxt = " ".join(code.split()[:-1] + [str(int(code.split()[-1]) + 1)])
+    return {"code": nxt or "Booklet", "start": int(row[2]) + 1, "end": int(row[2]) + 1 + size}
+
+
 def set_blocked_date(d: date, label: str, kind: str = "custom") -> None:
     with get_conn() as conn:
         conn.execute(

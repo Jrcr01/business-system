@@ -1,5 +1,6 @@
 import sqlite3
 
+from engines.memo import until_saved
 from engines.cc_rules import cc_owed_case, superseded_sql
 from datetime import date, timedelta
 
@@ -223,6 +224,7 @@ def get_payment_calendar_items() -> pd.DataFrame:
     return out.sort_values(["actual_payment_date", "_rank", "amount"], kind="stable").drop(columns="_rank").reset_index(drop=True)
 
 
+@until_saved('engines.reports_service')
 def get_payment_calendar_daily_totals() -> pd.DataFrame:
     """Per-day totals for the calendars, one row per day: actual_payment_date, due_amount / due_items (still owed: today and later) and paid_amount /
     paid_items (fell due on a day that has passed). A weekend due date lands on the next banking day, as everywhere else, so a day can in rare cases

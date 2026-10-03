@@ -7,7 +7,10 @@ from core.models import Role
 
 # The sidebar: (section, label, url name, icon, roles). Pages not built yet are shown as "Coming soon".
 NAV = [
-    (None, "Home", "home", "home", {Role.OWNER, Role.SALES, Role.VIEWER}),
+    (None, "Home", "home", "home", {Role.OWNER, Role.SALES, Role.PAYABLES, Role.PURCHASING, Role.VIEWER}),
+    ("Purchasing", "Price lists", "pl_home", "tag", {Role.OWNER, Role.PURCHASING, Role.PAYABLES, Role.VIEWER}),
+    ("Purchasing", "Purchase orders", "po_list", "shopping-cart", {Role.OWNER, Role.PURCHASING, Role.PAYABLES, Role.VIEWER}),
+    ("Purchasing", "Receive an invoice", "po_receive", "truck-delivery", {Role.OWNER, Role.PAYABLES}),
     ("Sales and AR", "Sales", "sales_list", "receipt", {Role.OWNER, Role.SALES}),
     ("Sales and AR", "New sale", "sales_new", "plus", {Role.OWNER, Role.SALES}),
     ("Sales and AR", "Day sheet", "sales_daysheet", "file-spreadsheet", {Role.OWNER, Role.SALES}),

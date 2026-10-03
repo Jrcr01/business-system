@@ -6,6 +6,18 @@ from engines.acting_user import acting_user
 from engines.clock import sql_now, sql_today
 
 
+def point_engines_at(path: str) -> list[str]:
+    """Every engines module already imported reads the same database file as Django (a module imported later reads AP_DB_PATH, which
+    settings.py has set). Returns the module names that were changed."""
+    import sys
+    changed = []
+    for name, mod in list(sys.modules.items()):
+        if mod is not None and name.startswith("engines.") and isinstance(getattr(mod, "DB_PATH", None), str) and mod.DB_PATH != path:
+            mod.DB_PATH = path
+            changed.append(name)
+    return changed
+
+
 def add_sql_functions(sender, connection, **kwargs):
     if connection.vendor != "sqlite":
         return

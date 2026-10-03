@@ -144,6 +144,10 @@ def _allocate_fifo(check_id: int, amount: float, statement_id: int) -> None:
 def record_handwritten_checks(creditor_id: int, checks: list[dict], statement_id: int | None = None, loan_note_id: int | None = None,
                               invoice: dict | None = None, replaces_check_id: int | None = None) -> tuple[bool, str, list[int]]:
     """checks: [{'number': '3992554297', 'date': date, 'amount': 30400.0}, ...]; invoice: {'doc_ref', 'invoice_date', 'gross', 'less_pct'} or None."""
+    from engines.permissions import require
+    _ok, _msg = require("check.issue")                # a handwritten check is issued with its number in one step: checked before anything is saved
+    if not _ok:
+        return False, _msg, []
     problem, facts = _problems(creditor_id, checks, statement_id, loan_note_id, invoice, replaces_check_id)
     if problem:
         return False, problem, []

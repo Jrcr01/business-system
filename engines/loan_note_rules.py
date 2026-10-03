@@ -115,6 +115,10 @@ def cancel_loan_note(loan_note_id: int) -> tuple[bool, str]:
     """Cancels a loan note: every Active check issued against it gets cancelled (restores the
     bank balance, stays on record — never deleted, per the audit-trail rule), and the note
     itself is marked Cancelled permanently. Mirrors cancel_order_statement()'s exact pattern."""
+    from engines.permissions import require
+    _ok, _msg = require("check.void")                 # it cancels the note's checks: the same permission as voiding a check, checked BEFORE anything changes
+    if not _ok:
+        return False, _msg
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT status FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))

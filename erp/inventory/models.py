@@ -14,17 +14,23 @@ class Category(models.TextChoices):
     TIRE = "tire", "Tire"
     BATTERY = "battery", "Battery"
     MAGS = "mags", "Mags"
+    RIMS = "rims", "Rims"
 
 
-CODE_PREFIX = {Category.TIRE: "TR", Category.BATTERY: "BA", Category.MAGS: "MG"}
-SIZE_LABEL = {Category.TIRE: "Size", Category.BATTERY: "Model", Category.MAGS: "Model"}
+CODE_PREFIX = {Category.TIRE: "TR", Category.BATTERY: "BA", Category.MAGS: "MG", Category.RIMS: "RM"}
+SIZE_LABEL = {Category.TIRE: "Size", Category.BATTERY: "Model", Category.MAGS: "Model", Category.RIMS: "Size"}
 
 
 class Item(models.Model):
-    code = models.CharField(max_length=10, unique=True)                  # TR-0001 / BA-0001 / MG-0001
+    """The ITEM MASTER row (table `items`, created by schema.sql and shared with the business rules in engines/product_catalog.py, like AP's creditors:
+    Django reads and updates it but does not create it). Price lists, purchase orders, stock and sales all point at it."""
+    code = models.CharField(max_length=10, unique=True)                  # TR-0001 / BA-0001 / MG-0001 / RM-0001
     category = models.CharField(max_length=10, choices=Category.choices)
     brand = models.CharField(max_length=60)
-    size_model = models.CharField(max_length=60)                         # tires: size; batteries / mags: model or type
+    size_model = models.CharField(max_length=60)                         # the headline: tires, mags, rims: size; batteries: model
+    specs = models.JSONField(default=dict, blank=True)                   # the other standard fields of the category (engines/product_catalog.CATEGORY_FIELDS)
+    name = models.CharField(max_length=200, blank=True)                  # the standard name: "Westlake 285/50R20 (A/T) SL369"
+    unit = models.CharField(max_length=20, blank=True, null=True)
     remark = models.CharField(max_length=120, blank=True)                # e.g. "old stock 2023" -- also tells two rows apart
     key = models.CharField(max_length=260, unique=True)                  # category|brand|size|remark, lower-case, single spaces
     reorder_level = models.PositiveIntegerField(default=2)               # low stock at or below this (owner's default 2)
@@ -35,6 +41,8 @@ class Item(models.Model):
     created_by = models.CharField(max_length=254)
 
     class Meta:
+        managed = False
+        db_table = "items"
         ordering = ["category", "brand", "size_model", "remark"]
 
     def __str__(self):
@@ -42,7 +50,7 @@ class Item(models.Model):
 
     @property
     def description(self) -> str:
-        return f"{self.brand} {self.size_model}" + (f" ({self.remark})" if self.remark else "")
+        return (self.name or f"{self.brand} {self.size_model}") + (f" ({self.remark})" if self.remark else "")
 
     @property
     def is_low(self) -> bool:

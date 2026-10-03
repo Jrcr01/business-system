@@ -15,8 +15,10 @@ class ActingUserMiddleware:
 
     def __call__(self, request):
         user = getattr(request, "user", None)
-        email = user.email if user is not None and user.is_authenticated else ANONYMOUS
-        with acting_as(email):
+        signed_in = user is not None and user.is_authenticated
+        email = user.email if signed_in else ANONYMOUS
+        role = user.role if signed_in else ANONYMOUS        # engines/permissions.require(): 'anonymous' may do nothing (no role would mean the owner)
+        with acting_as(email, role):
             return self.get_response(request)
 
 

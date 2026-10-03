@@ -38,9 +38,19 @@ def _terms_text(terms) -> str:
     return f"{text} days" if text.isdigit() else text
 
 
+def _may_send(po_id: int) -> bool:
+    from engines.permissions import require
+    from engines.common import get_conn
+    with get_conn() as conn:
+        row = conn.execute("SELECT created_by FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()
+    return require("po.order", row[0] if row else None)[0]
+
+
 def build_po_pdf(po_id: int) -> bytes | None:
     po = get_po(po_id)
     if po is None or po["header"]["status"] in ("DRAFT", "CANCELLED") or str(po["header"]["po_no"]).startswith("DRAFT-"):
+        return None
+    if not _may_send(po_id):                                # the supplier PDF IS the order being sent: same permission as ordering
         return None
     h = po["header"]
     with get_conn() as conn:
@@ -77,16 +87,28 @@ def build_po_pdf(po_id: int) -> bytes | None:
     top.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
     story += [top, Spacer(1, 14)]
 
-    rows = [["#", "Item", "Unit", "Qty", "Unit price", "Amount"]]
-    for i, ln in enumerate(po["lines"].itertuples(), start=1):
-        rows.append([str(i), Paragraph(escape(str(ln.item_name)), cell), ln.unit or "", _qty(ln.qty), f"{ln.est_unit_price:,.2f}", f"{ln.est_amount:,.2f}"])
-    rows.append(["", "", "", "", Paragraph("<b>TOTAL</b>", cell), Paragraph(f"<b>{po['total']:,.2f}</b>", cell)])
-    table = Table(rows, colWidths=[0.35 * inch, width - 0.35 * inch - 3.9 * inch, 0.6 * inch, 0.7 * inch, 1.15 * inch, 1.45 * inch], repeatRows=1)
+    from engines.discount_rules import chain_label
+    discounted = any(chain_label(c) for c in po["lines"]["discount_chain"].fillna(""))      # the list price and the agreed discount are shown only when there is one
+    if discounted:
+        rows = [["#", "Item", "Unit", "Qty", "List price", "Discount", "Net price", "Amount"]]
+        for i, ln in enumerate(po["lines"].itertuples(), start=1):
+            listed = ln.list_price if ln.list_price == ln.list_price and ln.list_price is not None else ln.est_unit_price
+            rows.append([str(i), Paragraph(escape(str(ln.item_name)), cell), ln.unit or "", _qty(ln.qty), f"{listed:,.2f}", Paragraph(chain_label(ln.discount_chain or "") or "-", cell),
+                         f"{ln.est_unit_price:,.2f}", f"{ln.est_amount:,.2f}"])
+        rows.append(["", "", "", "", "", "", Paragraph("<b>TOTAL</b>", cell), Paragraph(f"<b>{po['total']:,.2f}</b>", cell)])
+        widths = [0.3 * inch, width - 0.3 * inch - 5.5 * inch, 0.45 * inch, 0.5 * inch, 0.95 * inch, 1.1 * inch, 0.95 * inch, 1.25 * inch]
+    else:
+        rows = [["#", "Item", "Unit", "Qty", "Unit price", "Amount"]]
+        for i, ln in enumerate(po["lines"].itertuples(), start=1):
+            rows.append([str(i), Paragraph(escape(str(ln.item_name)), cell), ln.unit or "", _qty(ln.qty), f"{ln.est_unit_price:,.2f}", f"{ln.est_amount:,.2f}"])
+        rows.append(["", "", "", "", Paragraph("<b>TOTAL</b>", cell), Paragraph(f"<b>{po['total']:,.2f}</b>", cell)])
+        widths = [0.35 * inch, width - 0.35 * inch - 3.9 * inch, 0.6 * inch, 0.7 * inch, 1.15 * inch, 1.45 * inch]
+    table = Table(rows, colWidths=widths, repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), ACCENT), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 9), ("GRID", (0, 0), (-1, -2), 0.5, BORDER), ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, ACCENT_LIGHT]),
         ("ALIGN", (3, 0), (-1, -1), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LINEABOVE", (4, -1), (-1, -1), 1, ACCENT),
+        ("LINEABOVE", (len(rows[0]) - 2, -1), (-1, -1), 1, ACCENT),
     ]))
     story += [table, Spacer(1, 10)]
 

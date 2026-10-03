@@ -343,6 +343,11 @@ def _cash_ahead() -> None:
 
 def render() -> None:
     page_header("Analytics", "Where the money goes, who we owe, how we pay, what borrowing costs and what cash is ahead.")
+    render_body()
+
+
+def render_body() -> None:
+    """The analytics tabs without the page header: Reports shows them as the 'Analytics' report (the Analytics page is gone, 2026-10-03)."""
     st.caption("This system tracks the AP side only (no sales or general ledger), so ratios like current ratio are not offered — everything here comes from the checks, loans, "
                "cards and bank statements on file.")
     from engines.settings_registry import forecast_shown

@@ -93,7 +93,9 @@ def render_new_bank_loan_form() -> None:
             )
         c1, c2, c3 = st.columns(3)
         bl_start = c1.date_input("Start date", value=manila_today())
-        bl_maturity = c2.date_input("Maturity date", value=manila_today())
+        from engines.common import add_months
+        bl_maturity = c2.date_input("Maturity date", value=add_months(manila_today(), 12),
+                                    help="Starts a year after today, because a maturity on the start date is never right. Change it to the date in the bank's document.")
         bl_repricing = c3.date_input("Repricing date (optional)", value=None, help='When the bank may change the interest rate (from the loan document) — for your reference.')
         bl_principal = st.number_input("Principal amount (original loan amount)", min_value=0.0, step=10000.0, help='The original amount borrowed. The monthly dues come from the schedule you enter or import, not from this.')
         bl_mode_of_payment = st.text_input("Mode of payment (informational only, from the bank's document)", value="ADA")
@@ -206,6 +208,18 @@ def render_bank_loan_schedule(selected_blid: int) -> None:
                     st.session_state[bl_import_errors_key] = []
                     st.rerun()
 
+    if bl_schedule_df.empty:
+        from engines.bank_loan_service import fill_flat_schedule
+        from engines.common import add_months
+        with st.expander("Same amount every month: fill the schedule in one go", expanded=True):
+            st.caption("For a loan the bank collects in equal monthly amounts. Type the first due date, how many months and the amount; the rows can still be edited to match the bank's own schedule.")
+            f1, f2, f3 = st.columns(3)
+            first = f1.date_input("First due date", value=add_months(manila_today(), 1), key=f"bl_flat_first_{selected_blid}")
+            months = f2.number_input("Months", min_value=1, max_value=240, value=12, step=1, key=f"bl_flat_n_{selected_blid}")
+            monthly = f3.number_input("Amount each month", min_value=0.0, step=1000.0, format="%.2f", key=f"bl_flat_amt_{selected_blid}")
+            if st.button("Fill the schedule", icon=":material/calendar_add_on:", type="primary", key=f"bl_flat_go_{selected_blid}", disabled=monthly <= 0):
+                ok, msg = fill_flat_schedule(int(selected_blid), first, int(months), float(monthly))
+                (refresh(done=msg) if ok else st.error(msg))
     bl_editor_template = bl_schedule_df if not bl_schedule_df.empty else pd.DataFrame(columns=["installment_id", "installment_no", "due_date", "amount", "interest_portion", "status"])
     bl_edited_schedule_df = st.data_editor(
         bl_editor_template,

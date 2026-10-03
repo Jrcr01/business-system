@@ -32,14 +32,16 @@ def test_totals_are_computed_from_the_lines_not_the_stored_total(db):
     assert "NET AMOUNT DUE" in text and "PHP 3,300.50" in text and "999,999" not in text
 
 
-def test_no_line_is_wider_than_48_columns_and_copy_labels_and_signature(db):
+def test_no_line_is_wider_than_48_columns_and_all_three_copies_carry_the_slip_block(db):
     sid = _batch(db)
-    file_text, supplier_text = render_text(build_slip(sid, "FILE")), render_text(build_slip(sid, "SUPPLIER"))
-    for text in (file_text, supplier_text):
-        assert max(len(line) for line in text.split("\n")) <= COLUMNS
+    texts = {c: render_text(build_slip(sid, c, slip_no="RS-2026-0007")) for c in ("SUPPLIER", "FILE", "FINANCE")}
+    for text in texts.values():
+        assert max(len(line) for line in text.splitlines()) <= COLUMNS
         assert "None" not in text and "₱" not in text
-    assert "FILE COPY" in file_text and "Received by:" in file_text and "Date:" in file_text
-    assert "SUPPLIER COPY" in supplier_text and "Received by:" not in supplier_text
+        assert "Release slip: RS-2026-0007" in text and "Please issue a collection receipt." in text                  # every copy: the slip number, the request, the signature
+        assert "Received by:" in text and "Date:" in text and "Signature:" in text
+    assert "SUPPLIER COPY" in texts["SUPPLIER"] and "FILING COPY" in texts["FILE"] and "FINANCE COPY" in texts["FINANCE"]
+    assert "no. given when printed" in render_text(build_slip(sid, "SUPPLIER"))                                   # a preview has no number yet
 
 
 def test_reprint_and_revised_headers(db):

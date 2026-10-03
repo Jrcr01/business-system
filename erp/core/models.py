@@ -9,8 +9,12 @@ from core.clock import now_aware
 
 
 class Role(models.TextChoices):
+    ADMIN = "admin", "System admin"   # JRCR only (2026-10-03): the AP app's System admin; this paused site does not give it extra pages yet
     OWNER = "owner", "Owner"          # everything: approvals, family / personal records, users, audit log
     SALES = "sales", "Sales"          # Sales and AR pages only
+    PAYABLES = "payables", "Payables"  # the payables clerk: invoices, batches, parks checks, receives orders (engines/permissions.ACTIONS)
+    PURCHASING = "purchasing", "Purchasing"  # price lists, discounts and their own purchase orders
+    RELEASER = "releaser", "Releaser"  # hands the checks to the supplier (marks them released)
     VIEWER = "viewer", "Viewer"       # reads reports, changes nothing
 
 

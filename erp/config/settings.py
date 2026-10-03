@@ -27,6 +27,11 @@ DB_PATH = os.environ.get("ERP_DB_PATH") or str(REPO_ROOT / "data" / "ap_disburse
 if Path(DB_PATH).name.lower() == LIVE_DB_FILENAME and os.environ.get("ERP_LIVE") != "1":
     raise ImproperlyConfigured(f"Refusing to open the LIVE database ({DB_PATH}) without ERP_LIVE=1.")
 
+# The shared business rules (engines/) open their own connections with AP_DB_PATH, which defaults to the LIVE file. In the ERP the database
+# named by ERP_DB_PATH is the only one: AP_DB_PATH is set to it (overriding anything inherited) before any engine is imported, and
+# core.apps re-points engines imported earlier (e.g. by the test suite).
+os.environ["AP_DB_PATH"] = DB_PATH
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -91,6 +96,7 @@ INSTALLED_APPS = [
     "core",
     "inventory",                            # items and stock (Sales step S1)
     "sales",                                # counter sale, day sheet, invoice booklets (Sales step S2)
+    "purchasing",                           # price lists, purchase orders, receiving (D2)
 ]
 
 MIDDLEWARE = [

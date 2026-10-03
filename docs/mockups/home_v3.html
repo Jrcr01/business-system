@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mock-up: Home v3, top bar, next steps, release slip</title>
+<style>
+:root{--blue:#1d4f91;--navy:#0f2a4a;--yellow:#f6c935;--bg:#f3f5f8;--ink:#1c2733;--mut:#64748b;--red:#c62828;--org:#c26a00;--grn:#2e7d32}
+*{box-sizing:border-box}body{margin:0;font:15px/1.4 system-ui,Segoe UI,Arial;background:var(--bg);color:var(--ink)}
+.note{background:#fff8d6;border-bottom:1px solid #e6d27a;padding:8px 16px;font-size:13px}
+nav{background:var(--navy);color:#fff;display:flex;align-items:center;gap:4px;padding:0 12px;height:48px;position:relative;z-index:5}
+.logo{font-weight:800;letter-spacing:.5px;margin-right:12px;color:var(--yellow)}
+.sec{position:relative;padding:14px 12px;cursor:pointer;font-size:14px}.sec:hover{background:#1b3f6b}
+.sec .dd{display:none;position:absolute;top:48px;left:0;background:#fff;color:var(--ink);min-width:230px;box-shadow:0 8px 24px #0003;border-radius:0 0 8px 8px;padding:6px 0}
+.sec:hover .dd{display:block}.dd a{display:flex;justify-content:space-between;padding:8px 14px;color:inherit;text-decoration:none;font-size:14px}.dd a:hover{background:#eef3fa}
+.dd .b{background:var(--org);color:#fff;border-radius:10px;padding:0 7px;font-size:12px}
+.sp{flex:1}.ic{padding:10px;cursor:pointer;position:relative}.ic:hover{background:#1b3f6b}.badge{position:absolute;top:4px;right:2px;background:var(--red);border-radius:9px;font-size:11px;padding:0 5px}
+.wrap{max-width:1180px;margin:0 auto;padding:16px}
+.strip{background:#e8f1fc;border-left:4px solid var(--blue);padding:10px 14px;border-radius:6px;margin-bottom:10px}
+.attn{background:#fff;border-radius:8px;padding:10px 14px;margin-bottom:14px;box-shadow:0 1px 3px #0001}
+.attn summary{cursor:pointer;font-weight:600}.attn li{margin:4px 0}
+.grp{background:var(--blue);color:#fff;padding:8px 14px;border-radius:6px 6px 0 0;margin-top:14px;display:flex;justify-content:space-between}
+.grp small{opacity:.8}
+.row{display:flex;flex-wrap:wrap;gap:12px;padding:12px;background:#dfe8f5;border-radius:0 0 6px 6px}
+.tile{width:172px;height:128px;background:var(--yellow);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 2px 5px #0002;cursor:pointer}
+.tile:hover{transform:translateY(-2px)}.tile b{font-size:14px}.tile .f{font-size:26px;font-weight:800;text-align:right;line-height:1}.tile .u{font-size:11px;text-align:right;color:#3b3b3b}
+.tile.new{outline:3px dashed var(--grn)}.tile.warn .f{color:var(--org)}.tile.alert .f{color:var(--red)}.tile.grey{background:#e7e9ee}
+.lab{font-size:11px;background:var(--grn);color:#fff;border-radius:4px;padding:0 5px;margin-left:6px}
+h2{margin:30px 0 8px}.card{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px #0001;margin-bottom:14px}
+.steps{display:flex;gap:6px;flex-wrap:wrap;font-size:13px;margin-bottom:10px}.steps span{padding:4px 10px;border-radius:14px;background:#e7e9ee;color:var(--mut)}
+.steps .on{background:var(--blue);color:#fff;font-weight:700}.steps .no{opacity:.45}
+.btn{display:inline-block;background:var(--blue);color:#fff;padding:8px 14px;border-radius:6px;margin:4px 6px 0 0;font-size:14px}.btn.o{background:#fff;color:var(--blue);border:1px solid var(--blue)}.btn.y{background:var(--yellow);color:#222}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;font-size:12px}.cal div{background:#fff;border:1px solid #dde3ec;border-radius:4px;min-height:56px;padding:3px}
+.cal .h{background:#fde3e3}.cal .c{background:#ffe9cc}.cal .n{background:#dcecff}.cal .t{outline:2px solid var(--blue)}.cal .hd{background:none;border:none;min-height:0;color:var(--mut);text-align:center}
+.slip{width:300px;font-family:Consolas,monospace;font-size:12px;background:#fff;border:1px solid #bbb;padding:10px 12px;line-height:1.5}
+.slip hr{border:0;border-top:1px dashed #666;margin:8px 0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:800px){.two{grid-template-columns:1fr}.sec{display:none}}
+.legend span{display:inline-block;padding:2px 8px;border-radius:4px;margin-right:6px;font-size:12px}
+table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px solid #e3e7ee;padding:6px 8px;text-align:left}
+</style></head><body>
+<div class="note"><b>MOCK-UP, not the real app.</b> Nothing is saved. Move the mouse over the top-bar menus (Buy, Pay suppliers, …). Green dashed tiles are new. Tell me what to change.</div>
+
+<nav>
+  <span class="logo">SLICK'S</span>
+  <div class="sec">Home</div>
+  <div class="sec">Buy<div class="dd"><a>Price lists</a><a>Purchase orders <span class="b">2 open</span></a><a>Receive goods <span class="b">3 waiting</span></a></div></div>
+  <div class="sec">Pay suppliers<div class="dd"><a>Match invoices <span class="b">2</span></a><a>Order statements</a><a>Payment run <span class="b">5</span></a><a>Checks and checkbook</a><a>Payables due</a><a>Add data</a></div></div>
+  <div class="sec">Bank<div class="dd"><a>Bank and cash</a></div></div>
+  <div class="sec">Other payables<div class="dd"><a>Lenders</a><a>Bank loans</a><a>Credit cards</a></div></div>
+  <div class="sec">Records<div class="dd"><a>Reports</a></div></div>
+  <div class="sec">Set-up<div class="dd"><a>Creditors</a><a>Settings</a><a>Admin and audit</a><a>Data health</a></div></div>
+  <span class="sp"></span>
+  <span class="ic" title="Search">🔍</span><span class="ic" title="Calendar">📅</span>
+  <span class="ic" title="Reminders">🔔<span class="badge">3</span></span>
+  <span class="ic" title="Account">👤 JRCR · Admin ▾</span>
+</nav>
+
+<div class="wrap">
+  <div class="strip"><b>Notice:</b> Month-end: please send all invoices by Friday. &nbsp;·&nbsp; <b>3 to review</b> &nbsp;·&nbsp; 2 slips printed but not collected after 7 days</div>
+  <details class="attn" open><summary>Needs attention (4)</summary><ul>
+    <li>Check #3992554301 for Acme is past its date and not yet cleared</li>
+    <li>2 deliveries have no invoice for over 14 days</li>
+    <li>Bank loan installment due Oct 6 has no bank debit yet</li>
+    <li>New supplier "Delta Trading" added by Payables (review)</li></ul></details>
+
+  <div class="grp"><b>Buy</b><small>Prices and orders, before the invoice</small></div>
+  <div class="row">
+    <div class="tile"><b>Price lists</b><div><div class="f">9</div><div class="u">suppliers with prices</div></div></div>
+    <div class="tile"><b>Purchase orders</b><div><div class="f">2</div><div class="u">open</div></div></div>
+    <div class="tile new warn"><b>Receive goods <span class="lab">NEW</span></b><div><div class="f">3</div><div class="u">orders waiting · 1 late</div></div></div>
+  </div>
+  <div class="grp"><b>Pay suppliers</b><small>Invoice to check to bank</small></div>
+  <div class="row">
+    <div class="tile new warn"><b>Match invoices <span class="lab">NEW</span></b><div><div class="f">2</div><div class="u">deliveries without invoice</div></div></div>
+    <div class="tile warn"><b>Order statements</b><div><div class="f">4</div><div class="u">with a balance</div></div></div>
+    <div class="tile warn"><b>Payment run</b><div><div class="f">5</div><div class="u">waiting</div></div></div>
+    <div class="tile"><b>Checks and checkbook</b><div><div class="f">2</div><div class="u">to print · 3 to release</div></div></div>
+    <div class="tile"><b>Payables due</b><div><div class="f">₱412K</div><div class="u">next 7 days · 6 checks</div></div></div>
+    <div class="tile grey"><b>Add data</b><div><div class="u">Invoices without an order, handwritten checks, loans, cards</div></div></div>
+  </div>
+  <div class="grp"><b>Bank</b><small>The bank statement is the truth</small></div>
+  <div class="row"><div class="tile"><b>Bank and cash</b><div><div class="f">₱1.24M</div><div class="u">as of Oct 02</div></div></div></div>
+  <div class="grp"><b>Other payables</b><small>Loans and cards</small></div>
+  <div class="row">
+    <div class="tile"><b>Lenders</b><div><div class="f">7</div><div class="u">active loan notes</div></div></div>
+    <div class="tile warn"><b>Bank loans</b><div><div class="f">₱86K</div><div class="u">due in 30 days</div></div></div>
+    <div class="tile alert"><b>Credit cards</b><div><div class="f">1</div><div class="u">due within 3 days</div></div></div>
+  </div>
+  <div class="grp"><b>Records</b><small>Look things up</small></div>
+  <div class="row"><div class="tile grey"><b>Reports</b><div class="u">6 reports · Analytics inside Overview</div></div></div>
+  <div class="grp"><b>Set-up and system</b><small>Settings and safety</small></div>
+  <div class="row">
+    <div class="tile grey"><b>Creditors</b><div><div class="f">64</div><div class="u">active suppliers</div></div></div>
+    <div class="tile grey"><b>Settings</b></div><div class="tile grey"><b>Admin and audit</b></div>
+    <div class="tile"><b>Data health</b><div><div class="f">3</div><div class="u">to look at</div></div></div>
+  </div>
+  <p style="color:var(--mut);font-size:13px">Later rows, added only when built: <b>Sell</b> and <b>Stock</b> above Buy. Removed: Dashboard, Analytics, Check-date planner (hidden), the sidebar.</p>
+
+  <h2>1. Next-step bar after an action (example: after "Save and order" a PO)</h2>
+  <div class="card">
+    <div class="steps"><span class="on">Order</span><span>Receive</span><span>Match</span><span>Batch</span><span>Check</span><span>Bank</span></div>
+    <p><b>PO 2026 - PO 0012 is ordered.</b> Next: receive the goods when they arrive.</p>
+    <span class="btn">Download PO PDF</span><span class="btn o">New order</span><span class="btn o">Back to orders</span>
+    <p style="color:var(--mut);font-size:13px">For Payables, the same bar shows <i>Match</i> highlighted. Steps a role can't open are grey with no link (Purchasing sees Match, Batch, Check greyed).</p>
+  </div>
+
+  <h2>2. Calendar pop-up (📅 in the top bar) with marked days</h2>
+  <div class="card">
+    <div class="legend"><span class="h" style="background:#fde3e3">Holiday</span><span style="background:#ffe9cc">No-check day</span><span style="background:#dcecff">Note</span><span style="outline:2px solid var(--blue)">Today</span></div>
+    <div class="cal" style="margin-top:8px"><div class="hd">Mon</div><div class="hd">Tue</div><div class="hd">Wed</div><div class="hd">Thu</div><div class="hd">Fri</div><div class="hd">Sat</div><div class="hd">Sun</div>
+      <div>29</div><div>30</div><div>1</div><div>2<br><small>₱120K</small></div><div class="t">3<br><small>₱88K</small></div><div>4</div><div>5</div>
+      <div>6<br><small>₱210K</small></div><div class="n">7<br><small>Supplier visit</small></div><div>8</div><div class="c">9<br><small>No checks</small></div><div>10</div><div>11</div><div>12</div>
+      <div>13</div><div class="h">14<br><small>Holiday</small></div><div>15</div><div>16</div><div>17</div><div>18</div><div>19</div></div>
+    <p style="font-size:13px;color:var(--mut)">Click a day: what is due, then Mark as <b>Holiday</b> / <b>No-check day</b> / <b>Note</b>. Marking a holiday or no-check day shows which due dates would move first.</p>
+  </div>
+
+  <h2>3. Release slip (thermal printer; draft, not final)</h2>
+  <div class="card two">
+    <div class="slip">
+      <b>AP DISBURSEMENT SYSTEM</b><br>BATCH / ORDER STATEMENT<br><b>[ SUPPLIER COPY ]</b> &nbsp;(or FILING COPY, FINANCE COPY)<hr>
+Ref: 2026 - OS 0148<br>Supplier: Westlake Trading<br>INVOICES &nbsp; (as now)<br>CHECKS &nbsp; (as now)<br>NET TOTAL: PHP 357,596.15<hr>
+<i>Please issue a collection receipt. Ensure everything stated in the statement is included.</i><br>Slip RS-2026-0001<br>Received by: ____________<br>Date: ____________<br>Signature: ____________<hr>
+Metrobank Account 1 - Branch 399
+    </div>
+    <div>
+      <p><b>How it works</b><br><i>No separate slip: the statement is printed <b>3 times</b>, headed SUPPLIER COPY, FILING COPY and FINANCE COPY. The end of each copy gets the receipt text and signature lines.</i></p>
+      <ol style="padding-left:18px"><li>Print the slip with the bundle (invoices + checks + statement).</li>
+      <li>The supplier signs and dates. <b>Supplier copy:</b> the supplier keeps it. <b>Filing copy:</b> your mother keeps it, filed with the invoices. <b>Finance copy:</b> goes to finance for their records.</li>
+      <li>She opens <i>Checks → For release</i>, picks the slip no., types who received and the date. All checks on the slip are marked released.</li>
+      <li>You see, from anywhere: <b>Printed, not collected</b> or <b>Released (date, received by)</b>.</li></ol>
+      <table><tr><th>Slip</th><th>Supplier</th><th>Status</th></tr>
+      <tr><td>RS-0001</td><td>Westlake</td><td style="color:var(--org)">Printed, not collected (9 days)</td></tr>
+      <tr><td>RS-0002</td><td>Acme</td><td style="color:var(--grn)">Released Oct 02 · received by R. Cruz</td></tr></table>
+    </div>
+  </div>
+
+  <h2>4. Review list (instead of blocking people)</h2>
+  <div class="card"><table><tr><th>What</th><th>Who</th><th>When</th><th></th></tr>
+    <tr><td>Goods received on his own PO 0011</td><td>Purchasing</td><td>Oct 02</td><td><span class="btn o" style="margin:0">OK</span></td></tr>
+    <tr><td>New supplier "Delta Trading"</td><td>Payables</td><td>Oct 02</td><td><span class="btn o" style="margin:0">OK</span></td></tr>
+    <tr><td>Invoice price 12% above PO (Tire SL369)</td><td>Payables</td><td>Oct 01</td><td><span class="btn o" style="margin:0">OK</span></td></tr></table>
+    <p style="font-size:13px;color:var(--mut)">Nobody is stopped or asked for a reason. These only show here, and in "3 to review" on Home. Only 4 things are blocked: a check above the batch balance, the same invoice no. twice for one supplier, a reused check number, releasing an unprinted check.</p></div>
+</div>
+</body></html>

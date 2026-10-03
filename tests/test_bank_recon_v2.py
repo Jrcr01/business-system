@@ -235,3 +235,21 @@ def test_a_well_fitting_suggestion_is_high(db, monkeypatch, tmp_path):
     ids = _setup(db, monkeypatch, tmp_path)
     t = next(s for s in suggestions() if s["check_id"] == ids["T"])          # our T dated Oct 3, bank paid Oct 6, only candidate
     assert t["confidence"] == "High" and "paid 3 day(s) after its date" in t["reasons"]
+
+
+def test_a_card_debit_of_exactly_the_statement_total_marks_that_card_paid_on_the_bank_date(db, monkeypatch, tmp_path):
+    """The bank statement is the truth (2026-10-03): the card is Paid because the bank debited it, on the day the bank posted it."""
+    ids = _setup(db, monkeypatch, tmp_path)
+    with sqlite3.connect(db) as conn:
+        row = conn.execute("SELECT status, payment_method, payment_date, amount_paid FROM cc_statements WHERE cc_statement_id = ?", (ids["cc"],)).fetchone()
+        audit = conn.execute("SELECT COUNT(*) FROM audit_logs WHERE user_action = 'CC_STATEMENT_PAID_FROM_BANK'").fetchone()[0]
+    assert row == ("Paid", "Direct Debit", "2026-10-08", 8000.0) and audit == 1
+
+
+def test_a_loan_installment_with_no_bank_debit_is_a_data_health_finding_but_a_matched_one_is_not(db, monkeypatch, tmp_path):
+    from engines import data_health_service as dh
+    ids = _setup(db, monkeypatch, tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO bank_loan_installments (bank_loan_id, installment_no, due_date, amount) VALUES (1, 2, '2026-10-01', 31000)")
+    flagged = [f for f in dh.findings(today=date(2026, 10, 9)) if f["check"] == "Bank loan installment with no bank debit"]
+    assert len(flagged) == 1 and "31,000.00" in flagged[0]["detail"]                 # the Oct 1 installment has no debit; the Oct 3 one (25,000) does

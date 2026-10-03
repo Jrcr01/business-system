@@ -10,11 +10,12 @@ import re
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
-from django.db import transaction
+from django.db import connection, transaction
 
 from core import audit
 from core.clock import now_aware
 from core.numbering import next_number
+from engines import product_catalog as catalog
 from engines.acting_user import acting_user
 from engines.clock import manila_today
 from inventory.models import CODE_PREFIX, Category, ImportStatus, Item, MoveKind, OpeningImport, StockIn, StockMove
@@ -28,8 +29,9 @@ class StockError(ValueError):
 
 
 def item_key(category: str, brand: str, size_model: str, remark: str = "") -> str:
-    clean = lambda v: re.sub(r"\s+", " ", (v or "").strip().lower()).rstrip(".").strip()
-    return "|".join([category, clean(brand), clean(size_model), clean(remark)])
+    """The item's identity (engines/product_catalog.product_key): category, brand, the headline field (size, or the model of a battery) and the remark."""
+    label = catalog.label_of(category)
+    return catalog.product_key(label, brand, remark, **{catalog.HEADLINE[label]: size_model})
 
 
 def _money(v) -> Decimal:
@@ -52,26 +54,20 @@ def _qty(v) -> int:
     return int(q)
 
 
-def _next_code(category: str) -> str:
-    prefix = CODE_PREFIX[category]
-    last = (Item.objects.filter(code__startswith=prefix + "-").order_by("-code").values_list("code", flat=True).first())
-    return f"{prefix}-{int(last.split('-')[1]) + 1 if last else 1:04d}"
-
-
-def add_item(category: str, brand: str, size_model: str, remark: str = "", reorder_level: int = 2) -> Item:
+def add_item(category: str, brand: str, size_model: str, remark: str = "", reorder_level: int = 2, **fields) -> Item:
+    """Add one item through the shared item rules (engines/product_catalog.get_or_create_product: the code, the identity key, the standard name). `fields` = the
+    category's other standard fields (pattern, terrain, pcd ...); a plain add (brand + size or model) works as before."""
     if category not in Category.values:
-        raise StockError("Pick Tire, Battery or Mags.")
+        raise StockError("Pick Tire, Battery, Mags or Rims.")
     brand, size_model, remark = (" ".join((v or "").split()) for v in (brand, size_model, remark))
     if not brand or not size_model:
         raise StockError("Brand and size (or model) are both needed.")
-    key = item_key(category, brand, size_model, remark)
     with transaction.atomic():
-        same = Item.objects.filter(key=key).first()
-        if same:
-            raise StockError(f"{same.code} {same.description} is already on the list. Add a remark if this is a different lot.")
-        item = Item.objects.create(code=_next_code(category), category=category, brand=brand, size_model=size_model, remark=remark,
-                                   key=key, reorder_level=reorder_level, created_by=acting_user())
-        audit.log("INV_ITEM_ADDED", "inventory_item", item.pk, new=f"{item.code} {item.description}")
+        item_id, _, created = catalog.get_or_create_product(category, brand, conn=connection.connection, remark=remark, size_model=size_model,
+                                                          reorder_level=reorder_level, **fields)       # on Django's own connection, inside its locked save
+        item = Item.objects.get(pk=item_id)
+        if not created:
+            raise StockError(f"{item.code} {item.description} is already on the list. Add a remark if this is a different lot.")
     return item
 
 
@@ -194,8 +190,8 @@ def confirm_opening(imp: OpeningImport) -> dict:
             key = item_key(r["category"], r["brand"], r["size_model"], r.get("remark", ""))
             item = Item.objects.filter(key=key).first()
             if item is None:
-                item = Item.objects.create(code=_next_code(r["category"]), category=r["category"], brand=r["brand"],
-                                           size_model=r["size_model"], remark=r.get("remark", ""), key=key, created_by=acting_user())
+                item_id, _, _ = catalog.get_or_create_product(r["category"], r["brand"], conn=connection.connection, remark=r.get("remark", ""), size_model=r["size_model"])
+                item = Item.objects.get(pk=item_id)
                 created += 1
             elif item.moves.exists():
                 skipped.append(f"{item.code} {item.description}")

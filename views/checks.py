@@ -4,7 +4,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from engines.check_rules import assign_check_numbers_manual
+from engines.check_rules import assign_check_numbers_manual, numbers_in_sequence
 from engines.check_rules import get_booklets
 from engines.check_rules import get_check_print_calibration
 from engines.check_rules import link_replacement
@@ -62,6 +62,8 @@ def render_log_spoiled_form() -> None:
     st.caption("Routed to the internal control payee 'Error Checks Only (for control)' — amount and date are always null since no real transaction occurred. A number logged here is treated as unavailable everywhere else from now on, so it won't show up in a booklet's dropdown.")
     spoil_booklets_df = get_booklets(PRIMARY_BANK_ACCOUNT_ID, statuses=("Active",))
     suggested_number = ""
+    if len(spoil_booklets_df) == 1:                                                  # one active booklet: no need to pick it
+        st.session_state.setdefault("spoil_booklet_pick", int(spoil_booklets_df.iloc[0]["booklet_id"]))
     if not spoil_booklets_df.empty:
         sb_options = {int(r["booklet_id"]): (r["booklet_code"] or f"Booklet #{int(r['booklet_id'])}") for _, r in spoil_booklets_df.iterrows()}
         spoil_booklet_pick = st.selectbox(
@@ -98,7 +100,7 @@ def render_for_release() -> None:
     from engines.clock import manila_today
 
     with st.container(border=True):
-        st.subheader("For release")
+        section("For release")
         st.caption("Printed checks still in the office. When a supplier collects theirs, tick them here and say who took them: from then the supplier can deposit on the check date. "
                    "Checks written by hand are handed over when recorded, so they are not listed.")
         waiting = for_release()
@@ -111,7 +113,7 @@ def render_for_release() -> None:
             edited = st.data_editor(
                 grid, hide_index=True, width="stretch", key="release_grid", disabled=["supplier", "check_number", "check_date", "amount", "days_waiting"],
                 column_config={"collect": st.column_config.CheckboxColumn("Collected"), "supplier": "Supplier", "check_number": "Check no.",
-                               "check_date": st.column_config.DateColumn("Check date"), "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
+                               "check_date": date_col("Check date"), "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
                                "days_waiting": st.column_config.NumberColumn("Days in office", format="%d")})
             ticked = [int(waiting.loc[i, "check_id"]) for i in edited.index[edited["collect"]]]
             c1, c2, c3 = st.columns([2, 1.4, 1.4], vertical_alignment="bottom")
@@ -140,8 +142,8 @@ def render_for_release() -> None:
             with st.expander(f"Released in the last 30 days ({len(recent)})", icon=":material/history:"):
                 st.dataframe(recent.assign(state=["Cleared by the bank" if c else "With the supplier" for c in recent["cleared"]])[
                     ["released_date", "supplier", "check_number", "check_date", "amount", "released_to", "state"]], hide_index=True, width="stretch",
-                    column_config={"released_date": st.column_config.DateColumn("Released"), "supplier": "Supplier", "check_number": "Check no.",
-                                   "check_date": st.column_config.DateColumn("Check date"), "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
+                    column_config={"released_date": date_col("Released"), "supplier": "Supplier", "check_number": "Check no.",
+                                   "check_date": date_col("Check date"), "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT),
                                    "released_to": "Collected by", "state": "Now"})
                 undoable = recent[recent["cleared"] == 0]
                 if not undoable.empty:
@@ -153,12 +155,20 @@ def render_for_release() -> None:
 
 
 def render() -> None:
-    page_header("Checks and checkbook")
+    from views.login import can_now
 
-    render_for_release()
+    page_header("Checks and checkbook", "Print the checks, give them their numbers, and record when the supplier collects them.")
+    from views.shared import cycle_bar
+    cycle_bar("Check")
+
+    if not can_now("check.issue"):                         # printing, numbering and spoiled leaves are the owner's (Settings > Who can do what)
+        st.caption("Printing checks, giving them numbers and logging spoiled checks are done by the owner.")
+        render_voided_checks_register()
+        render_guarantee_list()
+        return
 
     with st.container(border=True):
-        st.subheader("Checks to print")
+        section("Checks to print")
         st.caption(
             "Every check already issued (recorded) but not yet printed, across every batch — pick "
             "as many as you like and print them together in one pass. Printing needs no check "
@@ -263,7 +273,7 @@ def render() -> None:
                         st.warning("Please note:" + chr(10) + chr(10).join(f"- {p}" for p in _last["problems"]))
 
     with st.container(border=True):
-        st.subheader("Batch run history")
+        section("Batch run history")
         st.caption("Every export batch logged so far — what went out for printing, and when. Check numbers/booklets shown reflect whatever's been assigned since, not a snapshot frozen at export time.")
         batches_df = get_check_print_batches()
         if batches_df.empty:
@@ -334,7 +344,7 @@ def render() -> None:
                 )
 
     with st.container(border=True):
-        st.subheader("Assign check numbers")
+        section("Assign check numbers")
         st.caption(
             "Every Active check that doesn't have a number yet, across every batch — regardless of "
             "whether it's been printed. Type each one's number in directly (a backfill — checks "
@@ -375,14 +385,16 @@ def render() -> None:
             if not assign_picked_ids:
                 st.caption("Pick at least one check above.")
             else:
+                first_no = st.text_input("First check number of this run", key="check_assign_first", placeholder="e.g. 3992554370",
+                                         help="Type the number of the first check as printed; the others follow in the order listed below. Look the list over, and change any number that differs.")
                 manual_df = pd.DataFrame({
                     "check_id": assign_picked_ids,
                     "check": [assign_options[cid] for cid in assign_picked_ids],
-                    "check_number": [""] * len(assign_picked_ids),
+                    "check_number": numbers_in_sequence(first_no, len(assign_picked_ids)),
                 })
                 edited_manual_df = st.data_editor(
                     manual_df, hide_index=True, num_rows="fixed", disabled=["check_id", "check"],
-                    key="check_assign_manual_editor",
+                    key=f"check_assign_manual_editor_{first_no.strip()}_{len(assign_picked_ids)}",
                     column_config={
                         "check_id": st.column_config.NumberColumn("ID"),
                         "check": st.column_config.TextColumn("Check"),
@@ -420,7 +432,7 @@ def render_voided_checks_register() -> None:
     warning when the bank paid a check we had voided."""
     df_all = voided_checks()
     with st.container(border=True):
-        st.subheader("Voided, replaced and spoiled checks")
+        section("Voided, replaced and spoiled checks")
         st.caption("Every check we voided or replaced, and every spoiled leaf: when, why, and which check replaced it. "
                    "\"Bank paid it anyway\" means the bank statement shows a payment under a number we had voided — check it with the bank.")
         if df_all.empty:
@@ -445,7 +457,8 @@ def render_voided_checks_register() -> None:
         export_buttons(df.drop(columns=["check_id"]), "voided_replaced_spoiled_checks", key="dl_voided", labels=VOIDED_LABELS,
                        what="voided checks", kinds=VOIDED_KINDS)
         voided_only = df_all[(df_all["what"] == "Voided") & df_all["check_id"].notna()]
-        if not voided_only.empty:
+        from views.login import can_now
+        if not voided_only.empty and can_now("check.void"):
             with st.expander("Link a voided check to the check that replaced it", icon=":material/link:"):
                 st.caption("Use this when the replacement was written by hand and recorded separately: the voided check is then shown as replaced by it.")
                 old_opts = {int(r.check_id): f"{r.check_number or 'no number'} · {php(r.amount)} · {r.payee}" for r in voided_only.itertuples()}

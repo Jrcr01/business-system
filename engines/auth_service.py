@@ -16,10 +16,11 @@ from datetime import timedelta
 
 import pandas as pd
 
+from engines.permissions import require as require_permission
 from engines.clock import manila_now
 from engines.common import get_conn, write_tx
 
-ROLES = ("owner", "purchasing")
+from engines.permissions import ROLES
 MAX_TRIES = 5
 LOCK_MINUTES = 15
 _N, _R, _P = 2 ** 14, 8, 1
@@ -111,15 +112,18 @@ def create_owner(email: str, name: str, password: str) -> tuple[bool, str, int |
         return False, problem, None
     with write_tx() as conn:
         if conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0]:
-            return False, "An owner account already exists. Sign in with it.", None
-        uid = conn.execute("INSERT INTO app_users (email, name, role, password_hash, must_change_password) VALUES (?, ?, 'owner', ?, 0) RETURNING user_id",
+            return False, "An account already exists. Sign in with it.", None
+        uid = conn.execute("INSERT INTO app_users (email, name, role, password_hash, must_change_password) VALUES (?, ?, 'admin', ?, 0) RETURNING user_id",
                            (email, name.strip(), hash_password(password))).fetchone()[0]
-        _audit(conn, "USER_CREATED", uid, f"{email} as owner (first account)", who=email)
+        _audit(conn, "USER_CREATED", uid, f"{email} as System admin (first account)", who=email)
     return True, "Owner account created.", int(uid)
 
 
 def create_user(email: str, name: str, role: str) -> tuple[bool, str, int | None, str | None]:
     """The owner adds a person. Returns (ok, message, user_id, temporary_password): the temporary password is shown once and must be changed at first sign-in."""
+    _ok, _msg = require_permission('users.manage')
+    if not _ok:
+        raise PermissionError(_msg)
     email = _clean_email(email)
     if role not in ROLES:
         return False, "Pick a role.", None, None
@@ -184,11 +188,14 @@ def change_password(user_id: int, old_password: str, new_password: str) -> tuple
 
 
 def _other_active_owners(conn, user_id: int) -> int:
-    return conn.execute("SELECT COUNT(*) FROM app_users WHERE role = 'owner' AND is_active = 1 AND user_id != ?", (user_id,)).fetchone()[0]
+    return conn.execute("SELECT COUNT(*) FROM app_users WHERE role = 'admin' AND is_active = 1 AND user_id != ?", (user_id,)).fetchone()[0]
 
 
 def reset_password(user_id: int) -> tuple[bool, str, str | None]:
     """The owner issues a new temporary password (the person must change it) and clears any lock."""
+    _ok, _msg = require_permission('users.manage')
+    if not _ok:
+        raise PermissionError(_msg)
     temp = _temp_password()
     with write_tx() as conn:
         row = conn.execute("SELECT email FROM app_users WHERE user_id = ?", (user_id,)).fetchone()
@@ -200,26 +207,32 @@ def reset_password(user_id: int) -> tuple[bool, str, str | None]:
 
 
 def set_active(user_id: int, active: bool) -> tuple[bool, str]:
+    _ok, _msg = require_permission('users.manage')
+    if not _ok:
+        return False, _msg
     with write_tx() as conn:
         row = conn.execute("SELECT email, role, is_active FROM app_users WHERE user_id = ?", (user_id,)).fetchone()
         if not row:
             return False, "Account not found."
-        if not active and row[1] == "owner" and row[2] and _other_active_owners(conn, user_id) == 0:
-            return False, "This is the last active owner: switching it off would lock everyone out."
+        if not active and row[1] == "admin" and row[2] and _other_active_owners(conn, user_id) == 0:
+            return False, "This is the last active System admin: switching it off would lock everyone out."
         conn.execute("UPDATE app_users SET is_active = ? WHERE user_id = ?", (1 if active else 0, user_id))
         _audit(conn, "USER_SWITCHED_ON" if active else "USER_SWITCHED_OFF", user_id, row[0])
     return True, f"{row[0]} switched {'on' if active else 'off'}."
 
 
 def set_role(user_id: int, role: str) -> tuple[bool, str]:
+    _ok, _msg = require_permission('users.manage')
+    if not _ok:
+        return False, _msg
     if role not in ROLES:
         return False, "Pick a role."
     with write_tx() as conn:
         row = conn.execute("SELECT email, role, is_active FROM app_users WHERE user_id = ?", (user_id,)).fetchone()
         if not row:
             return False, "Account not found."
-        if row[1] == "owner" and role != "owner" and row[2] and _other_active_owners(conn, user_id) == 0:
-            return False, "This is the last active owner: changing its role would lock everyone out."
+        if row[1] == "admin" and role != "admin" and row[2] and _other_active_owners(conn, user_id) == 0:
+            return False, "This is the last active System admin: changing its role would lock everyone out."
         conn.execute("UPDATE app_users SET role = ? WHERE user_id = ?", (role, user_id))
         _audit(conn, "USER_ROLE_CHANGED", user_id, f"{row[0]}: {row[1]} -> {role}")
     return True, f"{row[0]} is now {role}."
@@ -228,4 +241,4 @@ def set_role(user_id: int, role: str) -> tuple[bool, str]:
 def list_users() -> pd.DataFrame:
     """Everyone, without the password hashes: user_id, email, name, role, is_active, must_change_password, last_login_at, locked_until."""
     with get_conn() as conn:
-        return pd.read_sql_query("SELECT user_id, email, name, role, is_active, must_change_password, last_login_at, locked_until FROM app_users ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, name", conn)
+        return pd.read_sql_query("SELECT user_id, email, name, role, is_active, must_change_password, last_login_at, locked_until FROM app_users ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'owner' THEN 1 ELSE 2 END, name", conn)

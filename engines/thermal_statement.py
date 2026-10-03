@@ -29,7 +29,8 @@ DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 COLUMNS = 48                       # Font A on 80mm paper
 DASH = "—"                         # printed for any missing value (code page 1252 has it)
 COMPANY = "SLICK'S TIRE SUPPLY"
-COPY_LABELS = {"FILE": "FILE COPY", "SUPPLIER": "SUPPLIER COPY"}
+COPY_LABELS = {"SUPPLIER": "SUPPLIER COPY", "FILE": "FILING COPY", "FINANCE": "FINANCE COPY"}      # three copies of the statement (owner, 2026-10-03): the supplier keeps one, the filing copy goes with the sales invoice original, finance keeps one
+RECEIPT_TEXT = "Please issue a collection receipt. Ensure everything stated in the statement is included."
 QR_LINES_ESTIMATE = 22             # a native QR at size 6 plus its spacing, in text lines (for the Bluetooth guardrail)
 FEED_BEFORE_CUT = 6              # cut(feed=True) feeds 6 lines (ESC d 6) so the last line clears the cutter
 
@@ -205,12 +206,12 @@ def statement_totals(data: dict) -> dict:
 
 def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: bool = True, include_unprinted_checks: bool = True,
                print_type: str = "ORIGINAL", version: int = 1, reprint_date: str | None = None, qr_link: str | None = None,
-               printed_at: datetime | None = None, link_until=None) -> Slip | None:
+               printed_at: datetime | None = None, link_until=None, slip_no: str | None = None) -> Slip | None:
     """One copy of the slip. print_type ORIGINAL / REPRINT (with reprint_date) / REVISED (version N supersedes N-1) -- the header lines for
     REPRINT / REVISED are here already; deciding which one applies is build step 3."""
     copy = copy.upper()
     if copy not in COPY_LABELS:
-        raise ValueError(f"copy must be FILE or SUPPLIER, not {copy!r}")
+        raise ValueError(f"copy must be SUPPLIER, FILE or FINANCE, not {copy!r}")
     data = _fetch_batch_data(statement_id, include_full_history, include_unprinted_checks)
     if data is None:
         return None
@@ -275,12 +276,18 @@ def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: b
             add(Line(ln))
     rule("=")
 
-    if copy == "FILE":
-        add(Line(""))
-        add(Line("Received by: " + "_" * (COLUMNS - 13)))
-        add(Line(""))
-        add(Line("Date: " + "_" * 20))
-        add(Line(""))
+    # the hand-over block, on every copy: the slip number the release is recorded by, the receipt request, and the supplier's signature
+    add(Line(""))
+    add(Line(f"Release slip: {slip_no}" if slip_no else "Release slip: no. given when printed", bold=True))
+    for ln in wrap(RECEIPT_TEXT, COLUMNS):
+        add(Line(ln))
+    add(Line(""))
+    add(Line("Received by: " + "_" * (COLUMNS - 13)))
+    add(Line(""))
+    add(Line("Date: " + "_" * 20))
+    add(Line(""))
+    add(Line("Signature: " + "_" * (COLUMNS - 11)))
+    add(Line(""))
     add(Line("Scan for the full statement:", "center"))
     if not qr_link:
         add(Line("[QR code to the A4 copy goes here]", "center"))

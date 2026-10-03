@@ -139,17 +139,16 @@ def render_add_cc_statement_form() -> None:
         if stmt_holder_cards_df.empty:
             st.caption("No cards assigned to this cardholder yet — assign one via \"Edit a card\" in Cards & cardholders.")
         else:
-            stmt_issuer_names = sorted(stmt_holder_cards_df["issuer"].unique(), key=str.lower)
-            stmt_issuer = st.selectbox("Issuer (bank)", options=stmt_issuer_names, key=f"stmt_issuer_pick_{stmt_holder}")
-            stmt_issuer_cards_df = stmt_holder_cards_df[stmt_holder_cards_df["issuer"] == stmt_issuer].sort_values(
-                ["card_name", "card_number_last4"], key=lambda col: col.astype(str).str.lower()
-            )
+            stmt_issuer_cards_df = stmt_holder_cards_df.sort_values(["issuer", "card_name", "card_number_last4"], key=lambda col: col.astype(str).str.lower())       # no separate bank pick: the card says its bank
             stmt_card = st.selectbox(
                 "Card", options=stmt_issuer_cards_df["card_id"],
-                format_func=lambda cid: _card_label(cid, stmt_issuer_cards_df),
-                key=f"stmt_card_pick_{stmt_holder}_{stmt_issuer}",
+                format_func=lambda cid: f"{stmt_issuer_cards_df.set_index('card_id').loc[cid, 'issuer']} · {_card_label(cid, stmt_issuer_cards_df)}",
+                key=f"stmt_card_pick_{stmt_holder}",
             )
-            stmt_due = st.date_input("Due date", value=manila_today(), key="stmt_due_date", help='The payment due date printed on the statement.')
+            from engines.common import add_months
+            last_due = q_live("SELECT MAX(due_date) AS d FROM cc_statements WHERE card_id = ? AND status != 'Cancelled'", (int(stmt_card),))["d"][0]
+            due_default = add_months(date.fromisoformat(str(last_due)[:10])) if last_due and str(last_due) not in ("None", "nan") else manila_today()          # a month after the last statement
+            stmt_due = st.date_input("Due date", value=due_default, key=f"stmt_due_date_{int(stmt_card)}", help='The payment due date printed on the statement. Starts a month after the last statement of this card.')
             # Owner, 2026-09-29: the statement month is the month of the card's statement date -- usually the month before the due
             # date, sometimes the same month (engines/cc_dates.py). Pre-filled from the due date; can be changed.
             stmt_card_day = stmt_issuer_cards_df.set_index("card_id").loc[stmt_card, "statement_day"]

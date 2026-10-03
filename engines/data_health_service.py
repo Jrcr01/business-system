@@ -133,6 +133,24 @@ def _guarantee_checks(conn, out: list) -> None:
            r["face_amount"], r["creditor_name"], ("bank-cash", {}))
 
 
+def _bank_loan_dues(conn, today: date, out: list) -> None:
+    """The bank statement is the truth: a bank loan installment is paid when the bank debits it, not when its date passes. One that fell due, at least five days before the last
+    bank line we have (the matching window), and has no debit to show for it needs a look."""
+    if not (_has_table(conn, "bank_loan_installments") and _has_table(conn, "bank_transactions")):
+        return
+    last = _d(conn.execute("SELECT MAX(posting_date) FROM bank_transactions").fetchone()[0])
+    if last is None:
+        return
+    for r in conn.execute("""SELECT i.installment_id, i.due_date, i.amount, bl.loan_ref, bl.bank_loan_id, cr.creditor_name
+                            FROM bank_loan_installments i JOIN bank_loans bl ON bl.bank_loan_id = i.bank_loan_id JOIN creditors cr ON cr.creditor_id = bl.creditor_id
+                            WHERE bl.is_cancelled = 0 AND i.due_date <= ? AND i.due_date >= ?
+                              AND i.installment_id NOT IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)
+                            ORDER BY i.due_date""", (str(last - timedelta(days=5)), str(last - timedelta(days=90)))):
+        _f(out, "Bank vs our records", "Bank loan installment with no bank debit", f"loan_no_debit|{r['installment_id']}",
+           f"{r['creditor_name']} loan {r['loan_ref']}: the installment of {float(r['amount']):,.2f} due {r['due_date']} has no matching debit on the bank statement (imported up to {last:%b %d}).",
+           r["amount"], r["creditor_name"], ("bank-loans", {"selected_bank_loan_id": int(r["bank_loan_id"]), "bl_mode": "Browse bank loans"}))
+
+
 def _invoices_and_batches(conn, today: date, out: list) -> None:
     from engines.check_rules import get_batch_balance
 
@@ -291,19 +309,36 @@ def _credit_cards(conn, today: date, out: list) -> None:
            "typed twice, or have the wrong due date (or the card's statement day is wrong).", None, card, ("credit-cards", {}))
 
 
+_MEMO: dict = {}          # (db path, day) -> (database file stamp, all findings): the scan runs once until something is saved, however many tiles and badges ask
+
+
 def findings(include_fine: bool = False, today: date | None = None) -> list[dict]:
-    """Everything the scan flags, grouped in GROUPS order. Items marked "It's fine" are left out unless include_fine (then 'fine' + 'note')."""
+    """Everything the scan flags, grouped in GROUPS order. Items marked "It's fine" are left out unless include_fine (then 'fine' + 'note').
+    The scan is remembered until the database file changes (the Dashboard tile, the Data health tile and the Payment run reminder all ask for it)."""
+    from engines.settings_store import _stamp
     today = today or manila_today()
+    memo_key, stamp = (DB_PATH, today), _stamp(DB_PATH)
+    hit = _MEMO.get(memo_key)
+    if not (hit and hit[0] == stamp):
+        hit = (stamp, _scan(today))
+        _MEMO.clear()
+        _MEMO[memo_key] = hit
+    every = [dict(f) for f in hit[1]]
+    return every if include_fine else [f for f in every if not f["fine"]]
+
+
+def _scan(today: date) -> list[dict]:
     out: list[dict] = []
     with _conn() as conn:
         for part in (_checks, _invoices_and_batches, _bank, _suppliers, _credit_cards, _audit_log):
             part(conn, today, out)
         _guarantee_checks(conn, out)
+        _bank_loan_dues(conn, today, out)
         fine = {r["dup_key"]: r["note"] for r in conn.execute("SELECT dup_key, note FROM duplicate_dismissals WHERE dup_key LIKE ?", (KEY_PREFIX + "%",))}
     for f in out:
         f["fine"], f["note"] = f["key"] in fine, fine.get(f["key"]) or ""
     out.sort(key=lambda f: (GROUPS.index(f["group"]), f["check"], f["payee"]))
-    return out if include_fine else [f for f in out if not f["fine"]]
+    return out
 
 
 def open_count() -> int:

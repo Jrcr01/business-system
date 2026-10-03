@@ -34,11 +34,13 @@ from engines.clock import manila_today
 
 def render_new_booklet_form() -> None:
     """Register a new check booklet (leaf range). Shared by Admin and audit and Add data."""
+    from engines.common import booklet_defaults
+    dflt = booklet_defaults(PRIMARY_BANK_ACCOUNT_ID)                                     # the next booklet follows the last one: its code, the number after its end, the same size
     with st.form("new_booklet_form", border=False):
-        bk_code = st.text_input("Booklet code", value="Booklet A", help='Your own label for the booklet (e.g. the number on its cover), so booklets are easy to tell apart.')
+        bk_code = st.text_input("Booklet code", value=dflt["code"], help='Your own label for the booklet (e.g. the number on its cover), so booklets are easy to tell apart.')
         bk1, bk2 = st.columns(2)
-        bk_start = bk1.number_input("Start check number", min_value=1, step=1, value=1000, help="The full number printed on the first leaf, e.g. 3992554301. It is used exactly as typed.")
-        bk_end = bk2.number_input("End check number", min_value=1, step=1, value=1050, help="The full number printed on the last leaf, e.g. 3992554400.")
+        bk_start = bk1.number_input("Start check number", min_value=1, step=1, value=dflt["start"], help="The full number printed on the first leaf, e.g. 3992554301. It is used exactly as typed.")
+        bk_end = bk2.number_input("End check number", min_value=1, step=1, value=dflt["end"], help="The full number printed on the last leaf, e.g. 3992554400.")
         bk_received = st.date_input("Date received", value=manila_today(), help='When the booklet arrived from Metrobank — for your records.')
         if st.form_submit_button("Register booklet", icon=":material/menu_book:", type="primary"):
             if bk_end < bk_start:

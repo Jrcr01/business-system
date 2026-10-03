@@ -57,6 +57,10 @@ def _invoices() -> None:
     labels = {int(r["statement_id"]): f"{r['statement_ref']} · {r['status']}{' (has checks)' if int(r['has_checks']) else ''} · "
                                          f"{int(r['invoices'])} invoice(s) · net {php(r['net_total'])} · created {str(r['created_at'])[:10]}"
               for _, r in batches.iterrows()}
+    if batches.empty and guard_duplicate_submit("auto_create_first_batch", supplier):          # a supplier with no open batch: one is made, so there is no separate click before typing the invoice
+        st.session_state["_ad_batch_next"] = create_order_statement(int(supplier))
+        st.session_state["selected_statement_id"] = st.session_state["_ad_batch_next"]
+        st.rerun()
     options = list(labels) + ["new"]
     has_draft = not batches.empty and (batches["status"] == "Draft").any()
     radio_key = f"ad_batch_{int(supplier)}"

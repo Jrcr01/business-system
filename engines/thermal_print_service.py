@@ -72,8 +72,8 @@ def open_printer(backend: str, cfg: dict):
 
 
 def print_statement(statement_id: int, copies: list[str], backend: str, drive, cfg: dict, *, sandbox: bool, record: bool = True,
-                    include_full_history: bool = True, opener=open_printer, today=None) -> dict:
-    """Print the given copies ('FILE' / 'SUPPLIER') of a batch's statement. record=False (the test printer on the live system) prints
+                    include_full_history: bool = True, opener=open_printer, today=None, slip_no: str | None = None) -> dict:
+    """Print the given copies ('SUPPLIER' / 'FILE' / 'FINANCE') of a batch's statement. record=False (the test printer on the live system) prints
     without recording or auditing anything. Returns {'version', 'types', 'done', 'revoked', 'jobs'}; raises PrintAborted."""
     sid = int(statement_id)
 
@@ -97,7 +97,7 @@ def print_statement(statement_id: int, copies: list[str], backend: str, drive, c
     try:
         for i, c in enumerate(copies):
             slip = build_slip(sid, c, include_full_history=include_full_history, print_type=types[c], version=v["version_no"],
-                              reprint_date=(today.isoformat() if today else None), qr_link=v["drive_link"], link_until=until)
+                              reprint_date=(today.isoformat() if today else None), qr_link=v["drive_link"], link_until=until, slip_no=slip_no)
             lines[c] = estimate_lines(slip)
             job = build_job([slip], int(cfg["thermal_qr_size"]))
             try:

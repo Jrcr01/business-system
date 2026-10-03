@@ -525,6 +525,8 @@ def render_batch_memos(statement_id: int) -> None:
 
 def render() -> None:
     page_header("Order statements")
+    from views.shared import cycle_bar
+    cycle_bar("Batch")
     st.caption("Supplier records are on the Creditors page. Open or create a batch below — Invoices, Credit Memo, and Checks all follow whichever batch is open.")
 
     statements_df = q(
@@ -972,6 +974,18 @@ def render() -> None:
                 _park_flash = st.session_state.pop("_park_flash", None)
                 if _park_flash:
                     st.success(_park_flash)
+                    from engines.payment_run_service import get_run_stages
+                    from views.shared import go_to
+                    _waiting = get_run_stages(light=True)["needs_checks"]
+                    _next = _waiting[_waiting["statement_id"] != int(batch_scope_pick)]
+                    n1, n2, _ = st.columns([1.5, 1.8, 2.7])
+                    if n1.button("Print them: Chrysanth", icon=":material/print:", key=batch_scoped_key("after_park_checks"), type="primary", width="stretch",
+                                 help="Opens Checks and checkbook: the parked checks are listed under Checks to print, ready for the Chrysanth file."):
+                        go_to("checks")
+                    if n2.button("Next batch" + (f": {_next.iloc[0]['statement_ref']}" if not _next.empty else ""), icon=":material/arrow_forward:", width="stretch",
+                                 key=batch_scoped_key("after_park_next"), disabled=_next.empty,
+                                 help="Opens the next batch that still needs checks." if not _next.empty else "No other batch is waiting for checks."):
+                        go_to("order-statements", selected_statement_id=int(_next.iloc[0]["statement_id"]), os_mode=OS_BROWSE)
                 net_total, active_checks_sum, remaining_balance = get_batch_balance(int(batch_scope_pick))
                 is_balanced = abs(remaining_balance) <= 0.005
                 is_overpaid = remaining_balance < -0.005
@@ -1149,6 +1163,13 @@ def render() -> None:
                             preview_df = waterfall_allocate_preview(rows, open_invoices_df)
                             if preview_df.empty:
                                 st.error("Couldn't auto-allocate — check the amounts above.")
+                            elif len(rows) == 1 and len(preview_df) == 1:                  # one check, one invoice: only one split is possible, so no grid to look at
+                                only = preview_df.iloc[0]
+                                edited_alloc_df = preview_df[["check_row", "check_date", "doc_ref", "allocated"]].copy()
+                                edited_alloc_df["invoice_id"] = preview_df["invoice_id"].values
+                                inv_left = float(open_invoices_df.iloc[0]["remaining"])
+                                alloc_ready = abs(float(only["allocated"]) - float(rows[0]["amount"])) <= 0.01 and float(only["allocated"]) <= inv_left + 0.01
+                                st.markdown(f"This check pays invoice **{only['doc_ref']}**: {php(only['allocated'])} of {php(inv_left)}.")
                             else:
                                 edited_alloc_df = st.data_editor(
                                     preview_df[["check_row", "check_date", "doc_ref", "allocated"]],
@@ -1183,17 +1204,14 @@ def render() -> None:
                                 alloc_ready = alloc_ok
 
                     memo_status = get_batch_memo_status(int(batch_scope_pick))
-                    memo_guard_blocking = memo_status["unapplied_count"] > 0 and not memo_status["confirmed"]
-                    if memo_guard_blocking:
+                    memo_guard_blocking = False                                   # the credit-memo review is part of the one park confirmation below, not a separate button
+                    memo_pending = memo_status["unapplied_count"] > 0 and not memo_status["confirmed"]
+                    if memo_pending:
                         st.warning(
                             f"This batch has {memo_status['unapplied_count']} credit memo(s) totaling {php(memo_status['total_amount'])} "
-                            f"reducing the net total to {php(net_total)} — confirm you've reviewed them, or remove one, before issuing checks."
+                            f"reducing the net total to {php(net_total)}. Parking the checks confirms you have reviewed them; remove one first if it is wrong."
                         )
                         mc1, mc2 = st.columns(2)
-                        with mc1:
-                            if st.button("Confirm", icon=":material/check:", key=batch_scoped_key("confirm_memos_btn")):
-                                confirm_credit_memos(int(batch_scope_pick))
-                                refresh()
                         with mc2:
                             remove_toggle_key = batch_scoped_key("show_remove_memo_form")
                             if st.button("Remove memo", key=batch_scoped_key("remove_memo_toggle_btn")):
@@ -1244,6 +1262,8 @@ def render() -> None:
                                 _mark = ":green[:material/check_circle: matches the invoice]" if _full else ":orange[:material/warning: check the split]"
                                 _park_lines.append(f"- {_row['check_date']} · **{php(_row['amount'])}** → " + " + ".join(_bits) + f" — {_mark}")
                             _is_draft = str(scoped_row["status"]) == "Draft"
+                            if memo_pending:
+                                _park_lines.append(f"- Credit memos reviewed: {memo_status['unapplied_count']} totaling **{php(memo_status['total_amount'])}** (net total {php(net_total)}).")
                             _park_summary = (
                                 f"Park **{len(rows)} check(s)** totaling **{php(sum(float(r['amount']) for r in rows))}** for this batch?" + chr(10) + chr(10)
                                 + chr(10).join(_park_lines) + chr(10) + chr(10)
@@ -1251,10 +1271,12 @@ def render() -> None:
                                    else "The batch is already Issued.")
                             )
 
-                            def _do_park(sid=int(batch_scope_pick), cid=scoped_creditor_id, park_rows=list(rows), alloc_df=edited_alloc_df.copy(), draft=_is_draft):
+                            def _do_park(sid=int(batch_scope_pick), cid=scoped_creditor_id, park_rows=list(rows), alloc_df=edited_alloc_df.copy(), draft=_is_draft, memos=memo_pending):
                                 ok, msg, check_ids = issue_checks_grid(cid, sid, park_rows)
                                 if not ok:
                                     return False, msg
+                                if memos:
+                                    confirm_credit_memos(sid)
                                 alloc_by_row: dict[int, list[tuple[int, float]]] = {i + 1: [] for i in range(len(park_rows))}
                                 for _, arow in alloc_df.iterrows():
                                     alloc_by_row[int(arow["check_row"])].append((int(arow["invoice_id"]), float(arow["allocated"])))
@@ -1499,32 +1521,6 @@ def render() -> None:
 
     # Rarely used tools, kept together at the bottom so the browser and the open batch sit near the top (2026-09-27).
     section("More tools")
-    with st.expander("Promote statement status"):
-        st.caption("Informational only — checks can be issued from any status once the batch has a payable balance. Promotion is not required.")
-        promotable = statements_df[statements_df["status"] == "Draft"]
-        with st.form("promote_statement_form", border=False):
-            if promotable.empty:
-                st.caption("No draft statements to promote.")
-                stmt_choice = None
-            else:
-                stmt_choice = st.selectbox(
-                    "Statement",
-                    options=promotable["statement_id"],
-                    format_func=lambda sid: f"{promotable.set_index('statement_id').loc[sid, 'statement_ref']} ({promotable.set_index('statement_id').loc[sid, 'status']})",
-                    index=default_index(promotable["statement_id"], st.session_state.get("selected_statement_id")),
-                    key=batch_scoped_key("stmt_choice"),
-                )
-            if st.form_submit_button("Promote to Issued", icon=":material/arrow_upward:") and stmt_choice is not None:
-                def _promote_stmt(sid=int(stmt_choice)):
-                    try:
-                        flash(f"Promoted to Issued as {promote_draft_statement(sid, 'Issued')}.")
-                        return True, ""
-                    except ValueError as e:
-                        return False, str(e)
-
-                confirm_change_dialog(f"Promote this draft batch to **Issued**?  \nIt gets its permanent OS number, and the next number in the sequence cannot be given back.",
-                                      "promote_statement_confirm", _promote_stmt, "Yes, promote it")
-
     with st.expander("Vendor SOA matcher"):
         soa_creditor = selectbox_creditor("Supplier", "SUPPLIER", "soa_creditor")
         soa_file = st.file_uploader("Upload vendor statement of account", type=["csv", "xlsx", "xls", "pdf", "png", "jpg", "jpeg", "tiff", "bmp"])

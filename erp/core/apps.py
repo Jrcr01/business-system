@@ -12,3 +12,7 @@ class CoreConfig(AppConfig):
         from core.db import add_sql_functions
 
         connection_created.connect(add_sql_functions, dispatch_uid="core.add_sql_functions")
+        from django.conf import settings
+
+        from core.db import point_engines_at
+        point_engines_at(settings.DATABASES["default"]["NAME"])

@@ -155,6 +155,27 @@ def add_bank_loan_installment(bank_loan_id: int, due_date: date, amount: float, 
     return True, "Installment added."
 
 
+def fill_flat_schedule(bank_loan_id: int, first_due: date, installments: int, amount: float, interest_portion: float = 0.0) -> tuple[bool, str]:
+    """The same amount every month for `installments` months from `first_due` (the day is kept; a short month gives its last day): a bank's fixed monthly amortization, typed once.
+    Only for a loan with no installment yet; the rows can be edited afterwards to match the bank's own schedule."""
+    from engines.common import add_months
+    if installments < 1 or amount <= 0:
+        return False, "Enter how many installments and the monthly amount."
+    with _get_conn() as conn:
+        if conn.execute("SELECT COUNT(*) FROM bank_loan_installments WHERE bank_loan_id = ?", (bank_loan_id,)).fetchone()[0]:
+            return False, "This loan already has a schedule. Edit its rows, or delete them first."
+        cur = conn.cursor()
+        for i in range(int(installments)):
+            cur.execute("INSERT INTO bank_loan_installments (bank_loan_id, installment_no, due_date, amount, interest_portion) VALUES (?, 0, ?, ?, ?)",
+                        (bank_loan_id, str(add_months(first_due, i)), round(float(amount), 2), round(float(interest_portion), 2)))
+        _renumber_installments(cur, bank_loan_id)
+        _sync_loan_status(cur, bank_loan_id)
+        cur.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BANK_LOAN_SCHEDULE_FILLED', 'bank_loans', ?, ?)",
+                    (bank_loan_id, f"{int(installments)} x {float(amount):,.2f} from {first_due}"))
+        conn.commit()
+    return True, f"{int(installments)} installment(s) of {float(amount):,.2f} added."
+
+
 def edit_bank_loan_installment(installment_id: int, due_date: date, amount: float, interest_portion: float = 0.0) -> tuple[bool, str]:
     if amount < 0:
         return False, "Amount cannot be negative."

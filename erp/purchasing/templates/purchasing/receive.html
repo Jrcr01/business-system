@@ -1,0 +1,25 @@
+{% extends "core/base.html" %}
+{% load humanize %}
+{% block title %}Receive an invoice{% endblock %}
+{% block content %}
+<div class="head"><h1>Receive an invoice</h1></div>
+<p class="note">A delivery arrived with the supplier's invoice. It goes into a payables batch at the price the supplier actually charged, and into stock at that cost.</p>
+{% if not sup %}<div class="card">No suppliers yet.</div>{% else %}
+<form class="card" method="get"><label for="supplier" style="margin-top:0">Supplier</label>
+  <select id="supplier" name="supplier" onchange="this.form.submit()">{% for s in suppliers %}<option value="{{ s.creditor_id }}" {% if s.creditor_id == sup.creditor_id %}selected{% endif %}>{{ s.creditor_name }}</option>{% endfor %}</select></form>
+{% if not rows %}<div class="card note">No order from this supplier is waiting for delivery.</div>{% else %}
+<form method="post" class="card" style="margin-top:14px">{% csrf_token %}<input type="hidden" name="step" value="receive"><input type="hidden" name="supplier" value="{{ sup.creditor_id }}">
+<div class="grid3">
+  <div><label style="margin-top:0">Supplier invoice no.</label><input name="invoice_no" type="text" value="{{ f.invoice_no }}" required></div>
+  <div><label style="margin-top:0">Invoice date</label><input name="invoice_date" type="date" value="{{ f.invoice_date|default:today }}" required></div>
+  <div><label style="margin-top:0">Put it in batch</label><select name="batch"><option value="0">A new batch</option>{% for id, ref in batches %}<option value="{{ id }}">{{ ref }} (open)</option>{% endfor %}</select></div></div>
+<table class="stack" style="margin-top:12px"><thead><tr><th></th><th>Order</th><th>Item</th><th class="num">Still to come</th><th class="num" style="width:90px">Qty now</th><th class="num">Estimated</th><th class="num" style="width:120px">Actual price</th></tr></thead><tbody>
+{% for r in rows %}<tr><td><input type="checkbox" name="pick_{{ r.line_id }}" {% if r.ticked %}checked{% endif %}></td><td data-label="Order">{{ r.po_no }}</td><td data-label="Item">{{ r.item_name }}</td><td class="num" data-label="To come">{{ r.remaining|floatformat:"-2" }}</td>
+<td data-label="Qty now"><input name="qty_{{ r.line_id }}" type="text" value="{{ r.remaining|floatformat:'-2' }}" style="text-align:right"></td><td class="num" data-label="Estimated">₱{{ r.est_unit_price|floatformat:2|intcomma }}</td>
+<td data-label="Actual price"><input name="price_{{ r.line_id }}" type="text" value="{{ r.est_unit_price|floatformat:2 }}" style="text-align:right"></td></tr>{% endfor %}</tbody></table>
+<div class="grid3" style="margin-top:12px"><div><label style="margin-top:0">Invoice total (only if different, e.g. freight)</label><input name="gross" type="text" inputmode="decimal" style="text-align:right"></div></div>
+<label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" name="update_prices"> Update the supplier's price list from this invoice (the list price is worked back from the net price)</label>
+<p class="note small">When you press the button: the invoice is created in the batch (due date = invoice date + the supplier's terms); the order becomes Received or Partly received and leaves the committed payables; the goods go into stock at the price charged.</p>
+<button class="btn btn-main" type="submit">Add to the batch and into stock</button></form>
+{% endif %}{% endif %}
+{% endblock %}

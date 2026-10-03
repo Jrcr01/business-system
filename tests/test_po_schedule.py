@@ -120,3 +120,15 @@ def test_committed_load_still_answers_for_the_form(statement, db):
     _ordered(db, cid, 50, date(2026, 10, 20))
     load = committed_load(date(2026, 11, 20), 2000.0)
     assert load["orders"] == 5000.0 and load["total"] == 5000.0 and load["adds"] == 2000.0
+
+
+def test_the_daily_strip_covers_the_days_around_the_pay_day_and_marks_it(db):
+    from engines.clock import manila_today
+    from engines.po_rules import days_strip
+    pay = manila_today() + timedelta(days=30)
+    d = days_strip(pay)
+    assert d["day"].iloc[0] == pay - timedelta(days=10) and d["day"].iloc[-1] == pay + timedelta(days=20) and len(d) == 31
+    assert list(d[d["selected"]]["day"]) == [pay] and d["lightest"].sum() == 1
+    assert d.loc[d["lightest"], "day"].iloc[0].weekday() < 5                     # a weekend is never the 'lightest day'
+    near = days_strip(manila_today() + timedelta(days=3))
+    assert near["day"].iloc[0] == manila_today()                                  # never starts in the past

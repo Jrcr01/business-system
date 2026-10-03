@@ -168,6 +168,7 @@ def erp(tmp_path_factory):
     conn.close()
 
     os.environ["ERP_DB_PATH"] = db_path
+    os.environ["AP_DB_PATH"] = db_path                    # the business rules (engines/) read the same file as Django (settings.py insists)
     os.environ["ERP_DEBUG"] = "1"
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
     erp_dir = os.path.join(PROJECT_ROOT, "erp")

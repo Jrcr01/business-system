@@ -528,6 +528,14 @@ def _match_other_debits(conn) -> int:
                                (t["posting_date"], t["debit"], t["debit"], t["posting_date"])).fetchone()
             if hit:
                 conn.execute("UPDATE bank_transactions SET match_status = 'matched_card', matched_cc_statement_id = ? WHERE txn_id = ?", (hit[0], t["txn_id"]))
+                # the bank statement is the truth: a debit of exactly the statement's total is that card paid. Marked Paid on the day the bank posted it (an amount that
+                # differs from the total stays matched only, for the owner to look at).
+                paid = conn.execute("""UPDATE cc_statements SET status = 'Paid', payment_method = 'Direct Debit', payment_date = ?, amount_paid = total_amount_due, unpaid_balance_next = 0
+                                       WHERE cc_statement_id = ? AND status IN ('Unpaid', 'Partially Paid') AND ABS(total_amount_due - ?) < 0.005""",
+                                    (str(t["posting_date"])[:10], hit[0], t["debit"])).rowcount
+                if paid:
+                    conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CC_STATEMENT_PAID_FROM_BANK', 'cc_statements', ?, ?)",
+                                 (hit[0], f"Paid PHP {float(t['debit']):,.2f} on {str(t['posting_date'])[:10]} (matched to the bank debit)"))
         if hit:
             n += 1
         else:

@@ -21,6 +21,7 @@ try:
 except ImportError:
     PdfWriter = PdfReader = None
 
+from engines.permissions import require as require_permission
 from engines.check_engine import generate_metrobank_check_pdf
 
 import os
@@ -89,6 +90,9 @@ def mark_checks_printed(check_ids: list[int]) -> None:
     reprint doesn't overwrite the original first-printed timestamp. Independent of check_number
     (Phase 6 Redux: printing and number-assignment are separate actions) -- this never touches
     check_number/booklet_id."""
+    _ok, _msg = require_permission('check.issue')
+    if not _ok:
+        raise PermissionError(_msg)
     if not check_ids:
         return
     with get_conn(DB_PATH) as conn:
@@ -104,6 +108,9 @@ def create_check_print_batch(check_ids: list[int]) -> int | None:
     mark_checks_printed() did for the old in-app print button, and for the same reason: this
     export IS the moment these checks left for printing. Returns None (and touches nothing) if
     check_ids is empty -- there's no batch to log."""
+    _ok, _msg = require_permission('check.issue')
+    if not _ok:
+        raise PermissionError(_msg)
     if not check_ids:
         return None
     with get_conn(DB_PATH) as conn:
@@ -136,6 +143,9 @@ def get_check_print_batches() -> pd.DataFrame:
 def mark_batch_printed(print_batch_id: int, printed: bool = True) -> tuple[bool, str]:
     """Records that an export run has (or has not) actually been printed in Chrysanth -- Chrysanth itself never remembers, so this
     is the app's memory of it (2026-09-27). Logged in the audit trail."""
+    _ok, _msg = require_permission('check.issue')
+    if not _ok:
+        return False, _msg
     with get_conn(DB_PATH) as conn:
         if not conn.execute("SELECT 1 FROM check_print_batches WHERE print_batch_id = ?", (int(print_batch_id),)).fetchone():
             return False, "Run not found."

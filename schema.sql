@@ -826,6 +826,7 @@ CREATE TABLE IF NOT EXISTS bank_transactions (
     matched_installment_id INTEGER,
     matched_cc_statement_id INTEGER,
     rejected_check_ids TEXT,
+    deposit_kind TEXT CHECK(deposit_kind IS NULL OR deposit_kind IN ('sales', 'other')),   -- migration 074: a deposit tagged as sales (or other money in)
     FOREIGN KEY (import_id) REFERENCES bank_statement_imports(import_id),
     FOREIGN KEY (matched_check_id) REFERENCES checks_issued(check_id)
 );
@@ -881,6 +882,40 @@ CREATE TABLE IF NOT EXISTS doc_counters (
 -- PURCHASING (migration 061, 2026-10-01; see the plan "Cash disbursement cycle: order to pay"). Supplier price lists, purchase orders and what was
 -- received, so an order shows in the cash forecast on its expected payment date BEFORE the supplier's invoice exists. The price list gives the ESTIMATE
 -- for a PO line; when the goods and the supplier's invoice arrive, the ACTUAL price prevails (purchase_order_lines.actual_*, po_receipts.actual_amount).
+-- THE ITEM MASTER (2026-10-02): one row per product we buy or sell (Tires, Battery, Mags, Rims), whichever supplier sells it. Stock, sales, price lists and
+-- purchase orders all point at it. Shared by the business rules (engines/product_catalog.py) and the Django ERP (inventory.Item, managed=False).
+-- code = our own item code (TR-0001 / BA- / MG- / RM-). size_model = the headline (tires, mags, rims: size; battery: model); specs = JSON with the other
+-- standard fields of the category (engines/product_catalog.CATEGORY_FIELDS); key = identity (category + brand + identity fields + remark) ignoring case/spaces.
+CREATE TABLE IF NOT EXISTS items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    category TEXT NOT NULL CHECK(category IN ('tire', 'battery', 'mags', 'rims')),
+    brand TEXT NOT NULL,
+    size_model TEXT NOT NULL,
+    remark TEXT NOT NULL DEFAULT '',                                -- tells two lots of the same item apart (e.g. "old stock 2023"); not part of a price list
+    key TEXT NOT NULL UNIQUE,
+    specs TEXT NOT NULL DEFAULT '{}',
+    name TEXT NOT NULL DEFAULT '',                                  -- the standard name, in the spelling first saved: "Westlake 285/50R20 (A/T) SL369"
+    unit TEXT,
+    reorder_level INTEGER NOT NULL DEFAULT 2,                       -- low stock at or below this
+    on_hand INTEGER NOT NULL DEFAULT 0,                             -- may go below zero (a sale is never blocked; flagged)
+    avg_cost DECIMAL NOT NULL DEFAULT 0,                            -- weighted average of what was actually paid
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)), -- never deleted: a discontinued item is switched off
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT NOT NULL DEFAULT ''
+);
+-- What each supplier calls an item (their own item code), so their code and our code point at the same thing.
+CREATE TABLE IF NOT EXISTS supplier_items (
+    supplier_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    creditor_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL,
+    supplier_code TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (creditor_id, item_id),
+    FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
+    FOREIGN KEY (item_id) REFERENCES items(id)
+);
+
 CREATE TABLE IF NOT EXISTS supplier_price_list (
     price_id INTEGER PRIMARY KEY AUTOINCREMENT,
     creditor_id INTEGER NOT NULL,
@@ -889,12 +924,28 @@ CREATE TABLE IF NOT EXISTS supplier_price_list (
     unit TEXT,
     unit_price REAL NOT NULL CHECK(unit_price >= 0),
     effective_date DATE NOT NULL,                                   -- the price applies from this date until a later row for the same item
+    item_id INTEGER REFERENCES items(id),                           -- the item this price is for (none for a free-text item)
     is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (creditor_id, item_name, effective_date),
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id)
 );
 CREATE INDEX IF NOT EXISTS idx_price_list_lookup ON supplier_price_list (creditor_id, item_name, effective_date);
+CREATE INDEX IF NOT EXISTS idx_price_list_item ON supplier_price_list (item_id);
+
+-- A supplier's chain of discounts on its list prices ("less 5%, less 5%"), per brand ('' = all brands), from a date. PO lines keep list price, chain and net.
+CREATE TABLE IF NOT EXISTS supplier_discounts (
+    discount_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    creditor_id INTEGER NOT NULL,
+    brand TEXT NOT NULL DEFAULT '',
+    chain TEXT NOT NULL DEFAULT '',                                 -- '5,5' = less 5%, then less 5% of what is left; '' = no discount from this date
+    effective_date DATE NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (creditor_id, brand, effective_date),
+    FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id)
+);
+CREATE INDEX IF NOT EXISTS idx_supplier_discounts_lookup ON supplier_discounts (creditor_id, brand, effective_date);
 
 CREATE TABLE IF NOT EXISTS purchase_orders (
     po_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -920,12 +971,16 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
     line_id INTEGER PRIMARY KEY AUTOINCREMENT,
     po_id INTEGER NOT NULL,
     price_id INTEGER,                                               -- the price-list row the estimate came from (none for a typed price)
+    item_id INTEGER REFERENCES items(id),                           -- the item (none for a free-text item)
     item_name TEXT NOT NULL,
     unit TEXT,
     qty REAL NOT NULL CHECK(qty > 0),
+    list_price REAL CHECK(list_price IS NULL OR list_price >= 0),     -- the supplier's list price; est_unit_price is the NET after discount_chain (the amount uses net)
+    discount_chain TEXT,                                            -- '5,5' = less 5% and 5%; empty = no discount
     est_unit_price REAL NOT NULL DEFAULT 0 CHECK(est_unit_price >= 0),
     est_amount REAL NOT NULL DEFAULT 0 CHECK(est_amount >= 0),
     qty_received REAL NOT NULL DEFAULT 0 CHECK(qty_received >= 0),
+    qty_invoiced REAL CHECK(qty_invoiced IS NULL OR qty_invoiced >= 0),   -- of the quantity received, how much the supplier's invoice has covered (NULL = all received, as before receiving was two steps)
     actual_unit_price REAL CHECK(actual_unit_price IS NULL OR actual_unit_price >= 0),
     actual_amount REAL CHECK(actual_amount IS NULL OR actual_amount >= 0),
     FOREIGN KEY (po_id) REFERENCES purchase_orders(po_id),
@@ -963,4 +1018,96 @@ CREATE TABLE IF NOT EXISTS app_users (
     locked_until DATETIME,
     last_login_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- REVIEW LIST (2026-10-03). Applied by update_database.bat (schema.sql carries the table; this file is the record).
+-- Controls guide and record; they rarely block. A step that breaks a duty rule (the same person ordered and received, received and matched), a new payee, or a price far above
+-- its order goes through at once and lands here for the System admin or an owner to tick off. Nothing is deleted: a ticked flag keeps who ticked it and when.
+CREATE TABLE IF NOT EXISTS review_flags (
+    flag_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,                      -- SOD_ORDERED_RECEIVED, SOD_RECEIVED_MATCHED, PRICE_OVER_PO, NEW_PAYEE, ...
+    ref_type TEXT,                           -- the table the flag is about
+    ref_id INTEGER,
+    detail TEXT NOT NULL,                    -- plain words for the reviewer
+    raised_by TEXT,
+    raised_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    reviewed_by TEXT,
+    reviewed_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_review_flags_open ON review_flags (reviewed_at);
+
+-- PAYMENT CALENDAR NOTES (2026-10-03). Applied by update_database.bat (schema.sql carries the table; this file is the record).
+-- A note on a day (a supplier visit, payday): shown on the calendar, moves no date. Holidays and no-check days stay in calendar_blocked_dates, which do move dates.
+CREATE TABLE IF NOT EXISTS calendar_notes (
+    note_date DATE PRIMARY KEY,
+    label TEXT NOT NULL,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CHECK RELEASE SLIPS (2026-10-03). Applied by update_database.bat (schema.sql carries the tables; this file is the record).
+-- The statement printed for hand-over carries a slip number (RS-2026-0001, doc_counters series 'RS'). Releasing is recorded by that number: every check on the slip is marked
+-- released at once, with who received them and when.
+CREATE TABLE IF NOT EXISTS release_slips (
+    slip_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slip_no TEXT NOT NULL UNIQUE,
+    statement_id INTEGER NOT NULL REFERENCES order_statements(statement_id),
+    creditor_id INTEGER NOT NULL REFERENCES creditors(creditor_id),
+    check_count INTEGER NOT NULL,
+    total REAL NOT NULL,
+    printed_by TEXT,
+    printed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    released_at DATETIME,
+    received_by TEXT,
+    released_by TEXT
+);
+CREATE TABLE IF NOT EXISTS release_slip_checks (
+    slip_id INTEGER NOT NULL REFERENCES release_slips(slip_id),
+    check_id INTEGER NOT NULL REFERENCES checks_issued(check_id),
+    PRIMARY KEY (slip_id, check_id)
+);
+CREATE INDEX IF NOT EXISTS idx_release_slips_open ON release_slips (released_at);
+
+-- STOCK LEDGER (2026-10-03). Applied by update_database.bat (schema.sql carries the table; this file is the record).
+-- Stock as a ledger, not a number: every movement is one row, and items.on_hand / items.avg_cost follow from the rows. Receiving goods writes IN at the order's net price; matching
+-- the supplier's invoice corrects the cost to what was actually charged. (Named stock_ledger so it never clashes with the parked Django site's own inventory_stockmove.)
+CREATE TABLE IF NOT EXISTS stock_ledger (
+    move_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES items(id),
+    kind TEXT NOT NULL CHECK(kind IN ('IN', 'OUT', 'ADJ', 'RETURN', 'COST')),   -- COST = the cost corrected to the invoice price (qty 0 here, the pieces already counted)
+    qty REAL NOT NULL,                                                          -- + in, - out
+    unit_cost REAL NOT NULL DEFAULT 0,
+    on_hand_after REAL NOT NULL,
+    avg_after REAL NOT NULL,
+    ref_type TEXT,
+    ref_id INTEGER,
+    moved_on DATE NOT NULL,
+    note TEXT,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_stock_ledger_item ON stock_ledger (item_id, move_id);
+
+-- PREPARING FOR SELL (migration 074, 2026-10-03)
+CREATE TABLE IF NOT EXISTS customers (
+    customer_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_name TEXT NOT NULL UNIQUE,
+    customer_type TEXT NOT NULL DEFAULT 'RETAIL' CHECK(customer_type IN ('RETAIL', 'FLEET', 'DEALER', 'OTHER')),
+    terms TEXT,
+    contact_person TEXT,
+    contact_number TEXT,
+    email TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT
+);
+CREATE TABLE IF NOT EXISTS item_prices (
+    price_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES items(id),
+    price REAL NOT NULL CHECK(price >= 0),
+    effective_date DATE NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT,
+    UNIQUE (item_id, effective_date)
 );

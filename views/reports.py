@@ -88,23 +88,27 @@ c_duplicates = _cached(scan_possible_duplicates)
 # report with a By batch / By invoice switch, and the three master rollups are one report with a switch.
 REPORT_OPTIONS = [
     "Overview — highlights & insights",
+    "Analytics — trends and mix",
     "Possible duplicates — check everything on file",
     "Schedule of payments — all tracks",
     "Cleared checks — from the bank",
-    "Supplier — invoice & check history",
-    "Supplier — rundown (paid / partial / pending)",
-    "Private lender — loan note & check history",
-    "Bank loan — installment history",
-    "Credit card — statement history",
+    "Statement of account — supplier, lender, bank loan or card",
     "Master rollups — aging and exposure",
     "Lists — suppliers, lenders, banks, batches and more",
     "Decision reports — answers for choices",
 ]
 # the old menu names (a browser tab left open on one of them) -> (new report, sub-view state to set)
+SOA_REPORT = "Statement of account — supplier, lender, bank loan or card"
+SOA_VIEWS = ["Supplier history", "Supplier rundown", "Private lender", "Bank loan", "Credit card"]
 OLD_REPORTS = {
+    "Supplier — invoice & check history": (SOA_REPORT, {"rpt_soa_view": "Supplier history"}),
+    "Supplier — rundown (paid / partial / pending)": (SOA_REPORT, {"rpt_soa_view": "Supplier rundown"}),
+    "Private lender — loan note & check history": (SOA_REPORT, {"rpt_soa_view": "Private lender"}),
+    "Bank loan — installment history": (SOA_REPORT, {"rpt_soa_view": "Bank loan"}),
+    "Credit card — statement history": (SOA_REPORT, {"rpt_soa_view": "Credit card"}),
     "Parked checks (not yet printed)": ("Schedule of payments — all tracks", {"sched_show": "Checks not yet printed (parked)"}),
-    "Supplier — batch rundown (paid / partial / pending)": ("Supplier — rundown (paid / partial / pending)", {"rpt_rundown_view": "By batch"}),
-    "Supplier — invoice rundown (paid / partial / pending)": ("Supplier — rundown (paid / partial / pending)", {"rpt_rundown_view": "By invoice"}),
+    "Supplier — batch rundown (paid / partial / pending)": (SOA_REPORT, {"rpt_soa_view": "Supplier rundown", "rpt_rundown_view": "By batch"}),
+    "Supplier — invoice rundown (paid / partial / pending)": (SOA_REPORT, {"rpt_soa_view": "Supplier rundown", "rpt_rundown_view": "By invoice"}),
     "Master rollup — supplier AP aging": ("Master rollups — aging and exposure", {"rpt_rollup_view": "Supplier AP aging"}),
     "Master rollup — private lender exposure": ("Master rollups — aging and exposure", {"rpt_rollup_view": "Private lender exposure"}),
     "Master rollup — bank loan servicing": ("Master rollups — aging and exposure", {"rpt_rollup_view": "Bank loan servicing"}),
@@ -797,8 +801,19 @@ def _decisions() -> None:
     render_decisions()
 
 
-REPORTS = dict(zip(REPORT_OPTIONS, [_overview, _duplicates, _schedule, _cleared_checks, _supplier_history, _rundown, _lender_history,
-                                    _bank_loan_history, _card_history, _rollups, _lists, _decisions]))
+def _analytics() -> None:
+    from views.analytics import render_body
+    render_body()
+
+
+def _statement_of_account() -> None:
+    """One report for every party's statement of account (owner, 2026-10-03: fewer reports): pick whose, then the same filters, tables and Statement of Account PDF as before."""
+    which = st.segmented_control("Whose statement?", SOA_VIEWS, **_default("rpt_soa_view", "Supplier history"), required=True, key="rpt_soa_view")
+    st.divider()
+    {"Supplier history": _supplier_history, "Supplier rundown": _rundown, "Private lender": _lender_history, "Bank loan": _bank_loan_history, "Credit card": _card_history}[which]()
+
+
+REPORTS = dict(zip(REPORT_OPTIONS, [_overview, _analytics, _duplicates, _schedule, _cleared_checks, _statement_of_account, _rollups, _lists, _decisions]))
 
 
 def render() -> None:

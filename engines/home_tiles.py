@@ -32,10 +32,11 @@ class Action:
     state: tuple = ()                                # ((widget key, value), ...) -- a tuple so the dataclass stays hashable
     page_id: str | None = None
     forecast: bool = False                           # belongs to the cash forecast: hidden while the forecast is switched off (Settings)
+    needs: str | None = None                         # the access-matrix action this button leads to (engines/permissions.py): hidden from a role without it
 
 
-def act(label: str, hint: str = "", icon: str = "", page_id: str | None = None, forecast: bool = False, **state) -> Action:
-    return Action(label, hint, icon, tuple(state.items()), page_id, forecast)
+def act(label: str, hint: str = "", icon: str = "", page_id: str | None = None, forecast: bool = False, needs: str | None = None, **state) -> Action:
+    return Action(label, hint, icon, tuple(state.items()), page_id, forecast, needs)
 
 
 @dataclass
@@ -47,23 +48,43 @@ class Tile:
     icon: str = ""                                   # Material icon, ':material/...:'; empty = the page's own menu icon
     hint: str = ""                                   # shown under the title when there is no figure
     actions: list = field(default_factory=list)      # Action buttons; two or more make the tile open a panel, fewer open the page straight away
+    key: str = ""                                    # a tile of its own on a page that already has a tile (Receive goods opens Purchase orders): its unique id; empty = the page id
+    state: tuple = ()                                # ((widget key, value), ...) pre-set on the page when the tile is pressed (the same keys the actions use)
+    needs: str | None = None                         # the access-matrix action behind the tile: the tile is left out for a role without it
+
+    @property
+    def tid(self) -> str:
+        return self.key or self.page_id
 
     @property
     def visible_actions(self) -> list:
+        from engines.acting_user import acting_email, acting_role
+        from engines.permissions import can
         from engines.settings_registry import forecast_shown
-        return [a for a in self.actions if forecast_shown() or not a.forecast]
+        shown, role, me = forecast_shown(), acting_role() or "admin", acting_email()
+        return [a for a in self.actions if (shown or not a.forecast) and (a.needs is None or can(role, a.needs, created_by=me, me=me))]
 
     @property
     def has_panel(self) -> bool:
         return len(self.visible_actions) >= 2
 
 
-GROUPS: list[Group] = [
-    Group("daily", "Daily work", "What you open every day"),
-    Group("purchasing", "Purchasing", "Orders and prices, before the invoice"),
+PANELS_KEY = "home_tile_panels"
+
+
+def panels_enabled() -> bool:
+    """Do tiles with several actions open the 'What do you want to do?' pop-up? Off by default (owner, 2026-10-02: a tile opens its page); Settings can switch it on."""
+    from engines.settings_store import get_setting
+    return str(get_setting(PANELS_KEY, "0")) == "1"
+
+
+GROUPS: list[Group] = [                              # in the order the money moves (2026-10-03); a new module adds its row with register_group(..., before="buy")
+    Group("buy", "Buy", "Prices and orders, before the invoice"),
+    Group("pay", "Pay suppliers", "Invoice to check to bank"),
+    Group("bank", "Bank", "The bank statement is the truth"),
     Group("other", "Other payables", "Loans and cards"),
-    Group("records", "Records and reports", "Look things up, decide"),
-    Group("system", "System", "Settings and safety"),
+    Group("records", "Records", "Look things up"),
+    Group("system", "Set-up and system", "Settings and safety"),
 ]
 TILES: list[Tile] = []
 
@@ -100,11 +121,19 @@ def evaluate(tile: Tile) -> dict:
         return {"figure": "—", "unit": "", "level": "none"}
 
 
+def _tile_allowed(tile: Tile) -> bool:
+    if tile.needs is None:
+        return True
+    from engines.acting_user import acting_email, acting_role
+    from engines.permissions import can
+    return can(acting_role() or "admin", tile.needs, created_by=acting_email(), me=acting_email())
+
+
 def layout(installed_pages: set[str]) -> list[tuple[str, list[Tile]]]:
     """[(group key, tiles)] in group order, tiles in registration order, leaving out tiles whose page is not installed and groups left empty."""
     rows = []
     for g in GROUPS:
-        tiles = [t for t in TILES if t.group == g.key and t.page_id in installed_pages]
+        tiles = [t for t in TILES if t.group == g.key and t.page_id in installed_pages and _tile_allowed(t)]
         if tiles:
             rows.append((g.key, tiles))
     return rows
@@ -124,7 +153,7 @@ def _waiting(n: int, unit: str, level: str = "warn") -> tuple[str, str, str]:
 
 def _payment_run():
     from engines.payment_run_service import get_run_stages, waiting_count
-    return _waiting(waiting_count(get_run_stages()), "waiting")
+    return _waiting(waiting_count(get_run_stages(light=True)), "waiting")
 
 
 def _order_statements():
@@ -157,6 +186,13 @@ def _payables_due():
     return peso_short(r["amount"]), f"next 7 days · {r['checks']} check(s)", "warn" if r["amount"] else "none"
 
 
+def _release():
+    from engines.release_slip_service import open_slips
+    slips = open_slips()
+    late = int((slips["days_waiting"] > 7).sum()) if not slips.empty else 0
+    return str(len(slips)), "slips to collect" + (f" · {late} over a week" if late else ""), "alert" if late else ("warn" if len(slips) else "none")
+
+
 def _planner():
     from engines.check_date_planner import open_items
     return _waiting(len(open_items()), "to plan")
@@ -169,6 +205,18 @@ def _purchase_orders():
     if over:
         return str(n), f"open · {over} over plan", "alert"
     return _waiting(n, "open", "ok")
+
+
+def _receive_goods():
+    from engines.clock import manila_today
+    n = _count("SELECT COUNT(DISTINCT po_id) FROM purchase_order_lines WHERE qty - qty_received > 0.0000001 AND po_id IN (SELECT po_id FROM purchase_orders WHERE status IN ('ORDERED', 'PARTIAL'))")
+    late = _count("SELECT COUNT(*) FROM purchase_orders WHERE status IN ('ORDERED', 'PARTIAL') AND expected_delivery_date < ?", (str(manila_today()),))
+    return str(n), "orders waiting" + (f" · {late} late" if late else ""), "alert" if late else ("warn" if n else "none")
+
+
+def _match_invoices():
+    n = _count("SELECT COUNT(DISTINCT po_id) FROM purchase_order_lines WHERE qty_received - COALESCE(qty_invoiced, qty_received) > 0.0000001")
+    return _waiting(n, "orders without an invoice")
 
 
 def _price_lists():
@@ -217,8 +265,28 @@ def _data_health():
 
 A = act
 for _t in (
-    Tile("payment-run", "daily", "Payment run", _payment_run),
-    Tile("add-data", "daily", "Add data", hint="Invoices, checks, memos", actions=[
+    Tile("price-lists", "buy", "Price lists", _price_lists, actions=[
+        A("Current prices", "What each supplier charges", ":material/sell:", pl_tab="Current prices"),
+        A("Add a price", "Type one in", ":material/edit:", needs="price.write", pl_tab="Add a price"),
+        A("Import the Excel price list", "The template with Tires, Battery, Mags, Rims", ":material/upload_file:", needs="price.write", pl_tab="Import Excel"),
+        A("Products and prices side by side", "Our item codes; which supplier is cheapest", ":material/compare_arrows:", pl_tab="Products")]),
+    Tile("purchase-orders", "buy", "Purchase orders", _purchase_orders, actions=[
+        A("New order", "From a supplier's price list", ":material/add_shopping_cart:", needs="po.create", po_mode="New order"),
+        A("Orders", "Open, late and over-plan orders; PO PDF", ":material/list_alt:", po_mode="Orders")]),
+    Tile("purchase-orders", "buy", "Receive goods", _receive_goods, key="receive-goods", icon=":material/inventory_2:", state=(("po_mode", "Receive"),), needs="po.receive_goods"),
+    Tile("purchase-orders", "pay", "Match invoices", _match_invoices, key="match-invoices", icon=":material/receipt_long:", state=(("po_mode", "Match invoice"),), needs="po.receive"),
+    Tile("order-statements", "pay", "Order statements", _order_statements, actions=[
+        A("Find a batch", "Open a supplier's batch: invoices, checks, void, print", ":material/search:", os_mode="Browse batches"),
+        A("New batch", "Start a batch for a supplier", ":material/add:", os_mode="New batch"),
+        A("Print statements in bulk", "One PDF for many batches", ":material/picture_as_pdf:", os_mode="Browse batches", bulk_print_exp=True)]),
+    Tile("payment-run", "pay", "Payment run", _payment_run),
+    Tile("checks", "pay", "Checks and checkbook", _checks),
+    Tile("release", "pay", "Release checks", _release),
+    Tile("payables-due", "pay", "Payables due", _payables_due, actions=[
+        A("Week by week", "What can hit the bank, by week", ":material/calendar_view_week:", pd_tab="Week by week"),
+        A("By supplier", "Who holds checks, which orders are coming", ":material/groups:", pd_tab="By supplier"),
+        A("Past their date", "Checks the suppliers have not deposited yet", ":material/hourglass_top:", pd_tab="Past their date")]),
+    Tile("add-data", "pay", "Add data", hint="Invoices without an order, handwritten checks, loans, cards", actions=[
         A("Enter an invoice", "Supplier invoice into a batch", ":material/receipt:", ad_kind="Invoices / credit memos", ad_inv_what="Invoices"),
         A("Credit memo", "A discount or return from a supplier", ":material/undo:", ad_kind="Invoices / credit memos", ad_inv_what="Credit memos"),
         A("Handwritten check", "Record a check written by hand", ":material/edit_note:", ad_kind="Handwritten check"),
@@ -226,29 +294,12 @@ for _t in (
         A("Credit card statement", "Enter a card's statement", ":material/credit_card:", ad_kind="Credit card statement"),
         A("Loan note or bank loan", "New loan, installment or schedule", ":material/handshake:", ad_kind="Loans"),
         A("Supplier, booklet or spoiled check", "Records and checkbook", ":material/contacts:", ad_kind="Records and checkbook")]),
-    Tile("order-statements", "daily", "Order statements", _order_statements, actions=[
-        A("Find a batch", "Open a supplier's batch: invoices, checks, void, print", ":material/search:", os_mode="Browse batches"),
-        A("New batch", "Start a batch for a supplier", ":material/add:", os_mode="New batch"),
-        A("Print statements in bulk", "One PDF for many batches", ":material/picture_as_pdf:", os_mode="Browse batches", bulk_print_exp=True)]),
-    Tile("checks", "daily", "Checks and checkbook", _checks),
-    Tile("bank-cash", "daily", "Bank and cash", _bank_cash, actions=[
+    Tile("planner", "pay", "Check-date planner", _planner),
+    Tile("bank-cash", "bank", "Bank and cash", _bank_cash, actions=[
         A("Import a bank statement", "Match your checks to the bank", ":material/upload_file:", bank_cash_tab=":material/upload_file: Import a statement"),
         A("Reconciliation", "What still needs a look", ":material/rule:", bank_cash_tab=":material/rule: Reconciliation"),
         A("Cash forecast", "Day by day, orders included", ":material/trending_up:", forecast=True, bank_cash_tab=":material/trending_up: Cash forecast"),
         A("Checks not yet cleared", "Waiting to be deposited", ":material/hourglass_top:", bank_cash_tab=":material/hourglass_top: Checks not yet cleared")]),
-    Tile("payables-due", "daily", "Payables due", _payables_due, actions=[
-        A("Week by week", "What can hit the bank, by week", ":material/calendar_view_week:", pd_tab="Week by week"),
-        A("By supplier", "Who holds checks, which orders are coming", ":material/groups:", pd_tab="By supplier"),
-        A("Past their date", "Checks the suppliers have not deposited yet", ":material/hourglass_top:", pd_tab="Past their date")]),
-    Tile("planner", "daily", "Check-date planner", _planner),
-    Tile("purchase-orders", "purchasing", "Purchase orders", _purchase_orders, actions=[
-        A("Match a supplier invoice", "Goods arrived: invoice into a batch at the actual price", ":material/inventory_2:", po_mode="Receive"),
-        A("New order", "From a supplier's price list", ":material/add_shopping_cart:", po_mode="New order"),
-        A("Orders", "Open, late and over-plan orders; PO PDF", ":material/list_alt:", po_mode="Orders")]),
-    Tile("price-lists", "purchasing", "Price lists", _price_lists, actions=[
-        A("Current prices", "What each supplier charges", ":material/sell:", pl_tab="Current prices"),
-        A("Add a price", "Type one in", ":material/edit:", pl_tab="Add a price"),
-        A("Import a supplier file", "CSV or Excel", ":material/upload_file:", pl_tab="Import a file")]),
     Tile("lenders", "other", "Lenders", _lenders, actions=[
         A("Browse loan notes", "Schedule, checks, status", ":material/search:", ln_mode="Browse loan notes"),
         A("New loan note", "", ":material/add:", ln_mode="New loan note")]),
@@ -259,16 +310,16 @@ for _t in (
         A("Statements", "Who, how much, when due", ":material/receipt_long:", cc_tab=":material/receipt_long: Statements"),
         A("Cards and cardholders", "", ":material/credit_card:", cc_tab=":material/credit_card: Cards & cardholders"),
         A("Missing statement check", "", ":material/fact_check:", cc_tab=":material/fact_check: Missing statement check")]),
-    Tile("dashboard", "records", "Dashboard", _dashboard),
-    Tile("creditors", "records", "Creditors", _creditors),
-    Tile("analytics", "records", "Analytics", hint="Trends and mix"),
     Tile("reports", "records", "Reports", hint="Lists and decisions", actions=[
         A("Overview", "Highlights and insights", ":material/insights:", rpt_mode="Standard reports", report_type_picker="Overview — highlights & insights"),
         A("Schedule of payments", "Everything still owed, by date", ":material/event:", rpt_mode="Standard reports", report_type_picker="Schedule of payments — all tracks"),
         A("Cleared checks", "From the bank", ":material/done_all:", rpt_mode="Standard reports", report_type_picker="Cleared checks — from the bank"),
-        A("Supplier history", "Invoices and checks of one supplier", ":material/history:", rpt_mode="Standard reports", report_type_picker="Supplier — invoice & check history"),
+        A("Statement of account", "A supplier's, lender's, bank loan's or card's invoices, checks and dues", ":material/history:", rpt_mode="Standard reports",
+          report_type_picker="Statement of account — supplier, lender, bank loan or card", rpt_soa_view="Supplier history"),
         A("Possible duplicates", "Check everything on file", ":material/content_copy:", rpt_mode="Standard reports", report_type_picker="Possible duplicates — check everything on file"),
         A("Decision reports", "Answers for choices", ":material/lightbulb:", rpt_mode="Standard reports", report_type_picker="Decision reports — answers for choices")]),
+    Tile("creditors", "system", "Creditors", _creditors),
+    Tile("controls", "system", "Roles and controls", hint="Who can do what, and what is checked"),
     Tile("settings", "system", "Settings", hint="Numbers and shortcuts"),
     Tile("admin", "system", "Admin and audit", hint="Booklets, backup"),
     Tile("data-health", "system", "Data health", _data_health),

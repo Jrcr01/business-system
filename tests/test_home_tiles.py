@@ -62,16 +62,16 @@ def test_a_broken_source_shows_a_dash_not_an_error(db):
 
 def test_a_new_module_adds_its_tile_without_touching_home(db, monkeypatch):
     monkeypatch.setattr(home_tiles, "TILES", list(home_tiles.TILES))
-    register_tile(Tile("sales-invoices", "daily", "Sales invoices", lambda: ("3", "today", "ok")))
+    register_tile(Tile("sales-invoices", "pay", "Sales invoices", lambda: ("3", "today", "ok")))
     rows = layout({t.page_id for t in home_tiles.TILES})
-    daily = dict(rows)["daily"]
+    daily = dict(rows)["pay"]
     assert "sales-invoices" in [t.page_id for t in daily]
     assert "sales-invoices" not in [t.page_id for g, ts in layout(_menu_pages()) for t in ts]     # page not installed yet: not drawn
 
 
 def test_layout_keeps_group_order_and_drops_empty_groups():
     rows = layout({"payment-run", "settings"})
-    assert [g for g, _ in rows] == ["daily", "system"]
+    assert [g for g, _ in rows] == ["pay", "system"]
 
 
 @pytest.mark.parametrize("amount,text", [(0, "₱0"), (950, "₱950"), (287_943.21, "₱288K"), (1_480_000, "₱1.48M"), (-3_726_506, "-₱3.73M")])
@@ -119,7 +119,7 @@ def test_the_mode_values_the_actions_set_are_the_pages_own_constants_and_labels(
 
 def test_only_tiles_with_two_or_more_actions_get_a_panel_and_the_daily_ones_are_in_priority_order():
     by = {t.page_id: t for t in TILES}
-    assert not by["payment-run"].has_panel and not by["checks"].has_panel and not by["dashboard"].has_panel
+    assert not by["payment-run"].has_panel and not by["checks"].has_panel and not by["creditors"].has_panel
     assert by["add-data"].has_panel and by["order-statements"].has_panel and by["bank-cash"].has_panel
     assert by["add-data"].actions[0].label == "Enter an invoice"                    # invoice entry first, as the owner uses it most
     assert all(len(t.actions) != 1 for t in TILES)                                  # one action would just be the page itself
@@ -128,6 +128,41 @@ def test_only_tiles_with_two_or_more_actions_get_a_panel_and_the_daily_ones_are_
 def test_a_module_can_bring_its_own_actions(monkeypatch):
     from engines.home_tiles import act
     monkeypatch.setattr(home_tiles, "TILES", list(home_tiles.TILES))
-    register_tile(Tile("sales", "daily", "Sales", actions=[act("New sale", sales_mode="New"), act("Day sheet", sales_mode="Day")]))
+    register_tile(Tile("sales", "pay", "Sales", actions=[act("New sale", sales_mode="New"), act("Day sheet", sales_mode="Day")]))
     t = next(x for x in home_tiles.TILES if x.page_id == "sales")
     assert t.has_panel and dict(t.actions[0].state) == {"sales_mode": "New"}
+
+
+def test_the_rows_follow_the_cycle_and_the_two_receiving_steps_have_tiles_of_their_own():
+    assert [g.key for g in GROUPS] == ["buy", "pay", "bank", "other", "records", "system"]
+    rows = dict(layout(_menu_pages()))
+    assert [t.tid for t in rows["buy"]][:2] == ["price-lists", "purchase-orders"] and "receive-goods" in [t.tid for t in rows["buy"]]
+    assert "match-invoices" in [t.tid for t in rows["pay"]]
+    by = {t.tid: t for t in TILES}
+    assert dict(by["receive-goods"].state) == {"po_mode": "Receive"} and dict(by["match-invoices"].state) == {"po_mode": "Match invoice"}
+    assert all(by[k].page_id == "purchase-orders" for k in ("receive-goods", "match-invoices"))
+
+
+def test_each_role_sees_only_the_receiving_tiles_it_may_use(db):
+    from engines.acting_user import acting_as
+    seen = {}
+    for role in ("purchasing", "payables", "releaser"):
+        with acting_as(f"{role}@example.com", role):
+            seen[role] = {t.tid for _, ts in layout(_menu_pages()) for t in ts}
+    assert "receive-goods" in seen["purchasing"] and "match-invoices" not in seen["purchasing"]
+    assert {"receive-goods", "match-invoices"} <= seen["payables"]
+    assert "receive-goods" in seen["releaser"] and "match-invoices" not in seen["releaser"]
+
+
+def test_the_new_tile_figures_count_orders_waiting_and_deliveries_without_an_invoice(db):
+    from datetime import date
+    from conftest import make_creditor
+    from engines.po_rules import order_po, receive_goods, save_po, get_po
+    cid = make_creditor(db)
+    ok, msg, po = save_po(None, cid, date(2026, 9, 1), date(2026, 9, 5), [{"item_name": "Tire", "qty": 2, "est_unit_price": 100}])
+    assert ok and order_po(po)[0]
+    assert evaluate(next(t for t in TILES if t.tid == "receive-goods"))["figure"] == "1"
+    line = int(get_po(po)["lines"].iloc[0]["line_id"])
+    assert receive_goods(cid, [{"line_id": line, "qty": 2}])[0]
+    assert evaluate(next(t for t in TILES if t.tid == "receive-goods"))["figure"] == "0"
+    assert evaluate(next(t for t in TILES if t.tid == "match-invoices"))["figure"] == "1"

@@ -15,6 +15,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from engines.memo import until_saved
 from engines.check_run_service import get_pending_check_run, get_unprinted_batches
 from engines.last_modified_sql import statement_modified_sql
 from engines.reports_service import get_payment_schedule_all_tracks, next_banking_day
@@ -112,7 +113,8 @@ def last_check_print_day() -> str | None:
     return str(v)[:10] if v else None
 
 
-def get_run_stages() -> dict:
+@until_saved('engines.payment_run_service')
+def get_run_stages(light: bool = False) -> dict:
     """What is waiting at each stage of the supplier payment cycle:
 
     needs_checks  batches (not cancelled) whose net total is not yet fully covered by active checks -- Draft batches with
@@ -122,7 +124,8 @@ def get_run_stages() -> dict:
     to_number     checks in runs marked printed that still have no check number, one row per order statement / loan note
                   (numbers are still assigned one batch at a time, with its own confirmation).
     to_print      order statements created or changed since the last check print day (the default range of Print statements
-                  in bulk); last_print_day is that day."""
+                  in bulk); last_print_day is that day.
+    light=True skips to_print (the slowest part, and not part of the waiting count): the menu badge and the Home tile only need the count."""
     needs_checks = _read(
         """SELECT os.statement_id, os.statement_ref, c.creditor_name, v.net_total,
                   COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active'), 0) AS checks_total,
@@ -155,7 +158,7 @@ def get_run_stages() -> dict:
 
     last_day = last_check_print_day()
     since = f"{last_day} 00:00:00" if last_day else "0000-00-00"
-    to_print = _read(
+    to_print = pd.DataFrame(columns=["statement_id", "statement_ref"]) if light else _read(
         "SELECT os.statement_id, os.statement_ref FROM order_statements os WHERE os.status != 'Cancelled' AND "
         + statement_modified_sql("os") + " >= ? ORDER BY os.statement_ref",
         (since,),

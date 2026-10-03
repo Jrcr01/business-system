@@ -4,27 +4,70 @@ change is recorded under that person's email (the audit log), and the menu and t
 A signed-in session lives in the browser tab: reloading the page asks for the password again. That is deliberate for now; phase 2 (Google sign-in at hosting) keeps people signed in."""
 from __future__ import annotations
 
+import base64
+import os
+
 import streamlit as st
 
 from engines import auth_service as au
-from engines.acting_user import OWNER_EMAIL, set_acting
+from engines.acting_user import OWNER_EMAIL, register_fallback, set_acting
 
-ROLE_LABEL = {"owner": "Payables (owner)", "purchasing": "Purchasing"}
+
+def _tab_user() -> dict | None:
+    """Who is signed in to this browser tab (for button callbacks and pop-ups, which run before gate())."""
+    return st.session_state.get("auth_user") if st.runtime.exists() else None
+
+
+register_fallback(_tab_user)
+
+from engines.permissions import ROLE_LABEL
 
 
 def current_user() -> dict | None:
     return st.session_state.get("auth_user")
 
 
-def current_role() -> str | None:
-    """The signed-in role. Outside a real page run (tests, scripts) there is no sign-in, so the owner's."""
+def current_email() -> str | None:
     user = current_user()
-    return user["role"] if user else ("owner" if not st.runtime.exists() else None)
+    return (user or {}).get("email") or None
+
+
+def can_now(action: str, created_by: str | None = None) -> bool:
+    """May the person signed in to this tab do it? The one check every screen uses to show or hide a button (the engines check again when it is pressed).
+    Outside a real page run (tests, scripts) it is the owner."""
+    from engines.permissions import can
+    return can(current_role(), action, created_by=created_by, me=current_email())
+
+
+def current_role() -> str | None:
+    """The signed-in role. Outside a real page run (tests, scripts) there is no sign-in, so the System admin's."""
+    user = current_user()
+    return user["role"] if user else ("admin" if not st.runtime.exists() else None)
+
+
+BACKGROUND = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "login_bg.jpg")
+
+
+@st.cache_resource
+def _background_css() -> str:
+    """The shop's photo behind the sign-in screens (assets/login_bg.jpg), darkened a little so the form reads well; the form sits on a white card. No file: plain page."""
+    try:
+        with open(BACKGROUND, "rb") as fh:
+            encoded = base64.b64encode(fh.read()).decode()
+    except OSError:
+        return ""
+    return ("<style>.stApp{background:linear-gradient(rgba(10,25,50,.45),rgba(10,25,50,.45)),url(data:image/jpeg;base64," + encoded + ") center/cover no-repeat fixed;}"
+            "[data-testid='stHeader']{background:transparent;}"
+            ".st-key-login_card{background:rgba(255,255,255,.95);border-radius:14px;padding:1.6rem 1.8rem;box-shadow:0 10px 40px rgba(0,0,0,.35);margin-top:6vh;}</style>")
 
 
 def _centered():
+    css = _background_css()
+    if css:
+        st.markdown(css, unsafe_allow_html=True)
     _, mid, _ = st.columns([1, 1.4, 1])
-    return mid
+    with mid:
+        return st.container(key="login_card")
 
 
 def _setup() -> None:
@@ -105,10 +148,38 @@ def _hide_menu() -> None:
     st.navigation([st.Page(_blank, title="Sign in", url_path="sign-in")], position="hidden")
 
 
+def _sign_in_off() -> bool:
+    """The test copy can skip the sign-in (run_test_streamlit.bat sets AP_SKIP_LOGIN=1) so trying things out is no hassle. Only ever on a database whose file name says
+    _TEST: on any other file the setting is ignored and the sign-in stays."""
+    return os.environ.get("AP_SKIP_LOGIN") == "1" and "_test" in os.path.basename(os.environ.get("AP_DB_PATH", "")).lower()
+
+
+def _apply_view_as(user: dict) -> dict:
+    """Developer view: the System admin can look at the system as another role (menu, pages, buttons and the rules' permission checks all behave as that role) without
+    changing anyone's role. The real person stays the admin: changes are still recorded under their email. Only a real System admin can do this."""
+    from engines.permissions import ROLES
+    choice = st.session_state.get("view_as")
+    if user.get("role") == "admin" and choice in ROLES and choice != "admin":
+        return {**user, "role": choice, "real_role": "admin"}
+    return user
+
+
+def _set_view_as(role: str) -> None:
+    if role == "admin":
+        st.session_state.pop("view_as", None)
+    else:
+        st.session_state["view_as"] = role
+
+
 def gate() -> dict:
     """Returns the signed-in person, or shows the right screen and stops the run. Outside a real page run (tests importing the app) there is nobody to ask."""
     if not st.runtime.exists():
-        return {"user_id": 0, "email": OWNER_EMAIL, "name": "Owner", "role": "owner", "is_active": 1, "must_change_password": 0}
+        return {"user_id": 0, "email": OWNER_EMAIL, "name": "System admin", "role": "admin", "is_active": 1, "must_change_password": 0}
+    if _sign_in_off():
+        user = st.session_state["auth_user"] = {"user_id": 0, "email": OWNER_EMAIL, "name": "System admin (sign-in is off)", "role": "admin", "is_active": 1, "must_change_password": 0}
+        user = st.session_state["auth_user"] = _apply_view_as(user)
+        set_acting(user["email"], user["role"])
+        return user
     user = current_user()
     if user:
         fresh = au.get_user(user["user_id"])                         # the owner may have switched them off, or changed their role, since they signed in
@@ -125,13 +196,24 @@ def gate() -> dict:
         _hide_menu()
         _must_change(user)
         st.stop()
-    set_acting(user["email"])                                         # every change this run is recorded under their email
+    user = st.session_state["auth_user"] = _apply_view_as(user)
+    set_acting(user["email"], user["role"])                           # every change this run is recorded under their email, and the permission guards know their role
     return user
 
 
 def render_account_box(user: dict) -> None:
     """In the sidebar: who is signed in, change my password, sign out."""
     st.caption(f":material/person: **{user['name']}** · {ROLE_LABEL.get(user['role'], user['role'])}")
+    if user.get("real_role") == "admin" or user.get("role") == "admin":
+        from engines.permissions import ROLES
+        viewing = user["role"] if user.get("real_role") == "admin" else "admin"
+        with st.expander("Developer view" + (f": as {ROLE_LABEL[viewing]}" if viewing != "admin" else ""), icon=":material/visibility:", expanded=viewing != "admin"):
+            st.caption("Look at the system as another role, to see what they see. Nothing about anyone's role changes, and the rules refuse what that role may not do.")
+            pick = st.selectbox("See it as", list(ROLES), index=list(ROLES).index(viewing), format_func=lambda r: ROLE_LABEL[r] + (" (me)" if r == "admin" else ""),
+                                key="view_as_pick")
+            if pick != viewing:
+                _set_view_as(pick)
+                st.rerun()
     with st.expander("My account", icon=":material/lock:"):
         with st.form("change_my_password", clear_on_submit=True):
             old = st.text_input("Current password", type="password")

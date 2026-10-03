@@ -102,16 +102,17 @@ def render() -> None:
     original_master_df = original_master_df.reset_index(drop=True)
 
     st.caption(
-        "Add, edit, or deactivate creditors directly in the grid below, then Save. A new row needs a Name and Type. "
-        "Uncheck Active to deactivate (reversible — check it again to reactivate); deleting a row outright only "
-        "removes it completely if it has no transaction history yet, otherwise it's deactivated instead, same as "
-        "unchecking Active. A row's Type can't be changed once it has transaction history, to avoid silently "
-        "reclassifying existing batches, loan notes, or bank loans."
+        "Edit or deactivate creditors in the grid below, then Save. A new creditor is added in one place only: Add data → Records and checkbook → New creditor. "
+        "Uncheck Active to deactivate (reversible — check it again to reactivate). A row's Type can't be changed once it has transaction history, "
+        "to avoid silently reclassifying existing batches, loan notes, or bank loans."
     )
+    from views.shared import go_to
+    if st.button("Add a creditor", icon=":material/person_add:", key="cm_add_creditor"):
+        go_to("add-data", ad_kind="Records and checkbook", ad_rec_what="New creditor")
     edited_master_df = st.data_editor(
         original_master_df,
         hide_index=True,
-        num_rows="dynamic",
+        num_rows="fixed",                                                   # one way to add a creditor: Add data (2026-10-03)
         disabled=["creditor_id", "created_at"],
         key="creditor_master_editor",
         column_config={

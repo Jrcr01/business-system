@@ -10,6 +10,7 @@ import sqlite3
 
 from datetime import date
 from datetime import datetime
+from engines.permissions import require as require_permission
 from engines.check_engine import DEFAULT_BRANCH_CODE
 from engines.check_engine import DEFAULT_CHECK_HEIGHT_MM
 from engines.check_engine import DEFAULT_CHECK_WIDTH_MM
@@ -232,6 +233,9 @@ def assign_check_number(check_id: int, booklet_id: int | None, chosen_number: in
     all) and needs no unlock: filling in a still-missing number isn't a correction to an existing
     value, so it doesn't need that workflow's audit friction. Once a number exists, changing it
     goes through apply_check_correction() instead (locked)."""
+    _ok, _msg = require_permission('check.issue')
+    if not _ok:
+        return False, _msg
     with write_tx() as conn:          # Phase F1.4: check and save in ONE locked step
         cur = conn.cursor()
         cur.execute(
@@ -306,6 +310,9 @@ def assign_check_number_manual(cur: sqlite3.Cursor, bank_account_id: int, raw_nu
 def assign_check_numbers_from_booklet(assignments: list[tuple[int, int]], booklet_id: int) -> tuple[bool, str, list[int]]:
     """Assigns the planned (check_id, leaf) pairs in ONE transaction -- all or nothing. Every leaf is re-validated at write time (inside the
     booklet, still free, not spoiled) exactly as a single assignment is, and the booklet's next-free pointer moves on. Each is audit-logged."""
+    _ok, _msg = require_permission('check.issue')
+    if not _ok:
+        return False, _msg, []
     if not assignments:
         return False, "Nothing to assign.", []
     try:
@@ -336,12 +343,25 @@ def assign_check_numbers_from_booklet(assignments: list[tuple[int, int]], bookle
     return True, f"Assigned {len(done)} check numbers.", done
 
 
+def numbers_in_sequence(first: str, count: int) -> list[str]:
+    """The check numbers from `first` on, one per check, in the order given: the same digits (a leading-zero number keeps its width). The person types the first one only
+    (owner, 2026-10-03: not each 10-digit number in full); anything that is not a number gives blanks to type in by hand."""
+    first = (first or "").strip()
+    if not first.isdigit() or count <= 0:
+        return [""] * max(count, 0)
+    width = len(first)
+    return [str(int(first) + i).zfill(width) for i in range(count)]
+
+
 def assign_check_numbers_manual(assignments: dict[int, str], booklet_id: int | None) -> tuple[bool, str, list[int]]:
     """assignments: {check_id: raw_check_number}. Assigns exactly what's typed per check — no
     booklet cursor is touched. Works regardless of printed_at (a backfill/handwritten check may
     never go through this software's printer at all). booklet_id is optional, purely for
     record-keeping, and may be any status (Active/Exhausted/Archived) since a backfill is often
     against an already-exhausted one."""
+    _ok, _msg = require_permission('check.issue')
+    if not _ok:
+        return False, _msg, []
     if not assignments:
         return False, "No checks selected.", []
     seen = set()
@@ -400,6 +420,9 @@ def build_dual_copy_check_pdf(payee_name: str, amount: float, check_date: date, 
 
 def cancel_check(check_id: int, reason: str = "") -> tuple[bool, str]:
     """Voids a check. The reason and the moment are kept on the check itself (and in the audit log) so the voided-checks register can show them."""
+    _ok, _msg = require_permission('check.void')
+    if not _ok:
+        return False, _msg
     reason = (reason or "").strip()
     with get_conn() as conn:
         cur = conn.cursor()
@@ -435,6 +458,9 @@ def cancel_order_statement(statement_id: int) -> tuple[bool, str]:
     invoices.status='Cancelled' is already excluded from AP totals/aging everywhere in this app,
     same as sync_invoice_payment_status already protects it from being overwritten). The batch
     itself is locked permanently; unlock_statement() refuses to reopen a Cancelled batch."""
+    _ok, _msg = require_permission('check.void')
+    if not _ok:
+        return False, _msg
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT status FROM order_statements WHERE statement_id = ?", (statement_id,))
@@ -651,6 +677,9 @@ def issue_check(
     separately, whenever it's actually known (see assign_check_number()), independent of
     printing. Every check still belongs to a batch and is fully recorded the moment it's issued,
     same as before; only the number is deferred."""
+    _ok, _msg = require_permission('check.park')
+    if not _ok:
+        return False, _msg, None
     # Phase F1.4: the payable-ceiling check and the save are ONE locked step -- two people issuing on the same batch at the same moment
     # can never both pass the check and overpay it (the second waits, then sees the first check).
     with write_tx() as conn:
@@ -702,6 +731,9 @@ def issue_checks_grid(
     """Bulk-issues (parks) multiple checks against a batch in one transaction — the discretionary
     split-into-N-checks workflow. No check number is collected here (Phase 6 Redux: assigned at
     print time), just date + amount per row."""
+    _ok, _msg = require_permission('check.park')
+    if not _ok:
+        return False, _msg, []
     cleaned = []
     for r in rows:
         amount = float(r["amount"])
@@ -831,6 +863,9 @@ def replace_check(check_id: int, new_check_date: date, reason: str) -> tuple[boo
     Redux: no number until print time) — if the original check had already been printed, that
     physical leaf's number is simply retired (still on file, permanently tied to the voided
     check) rather than reused."""
+    _ok, _msg = require_permission('check.void')
+    if not _ok:
+        return False, _msg, None
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -927,6 +962,9 @@ def retract_check_number(check_id: int) -> tuple[bool, str]:
     came from a booklet, that leaf becomes available again (no false gap) and the booklet's next-number pointer
     steps back over the freed leaves. Logged in the audit trail. Refused for a locked batch (unlock it first),
     the same rule as any other correction to an existing check value."""
+    _ok, _msg = require_permission('check.void')
+    if not _ok:
+        return False, _msg
     with write_tx() as conn:          # Phase F1.4: check and save in ONE locked step
         cur = conn.cursor()
         cur.execute("SELECT check_number, booklet_id, status, statement_id, bank_account_id FROM checks_issued WHERE check_id = ?", (check_id,))

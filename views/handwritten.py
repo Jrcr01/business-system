@@ -106,9 +106,18 @@ def render_handwritten_form() -> None:
                                  "The new check starts with the same date and amount — change them if they differ.")
     start_date, start_amount = _old_check_terms(cid, statement_id, loan_note_id).get(replaces, (manila_today(), 0.0)) if replaces else (manila_today(), 0.0)
 
+    if invoice and not replaces and float(invoice["gross"] or 0) > 0:      # a new invoice typed above: the check starts at what it pays (less the discount), dated when the invoice falls due
+        start_amount = round(float(invoice["gross"]) * (1 - float(invoice["less_pct"] or 0) / 100), 2)
+        terms = q("SELECT terms FROM creditors WHERE creditor_id = ?", (cid,))
+        try:
+            from engines.statement_rules import resolve_due_date
+            start_date = resolve_due_date(invoice["invoice_date"], terms["terms"][0] if not terms.empty else None)
+        except Exception:
+            start_date = manila_today()
+
     st.markdown("**The handwritten check(s)**")
     grid = st.data_editor(
-        pd.DataFrame({"check_number": [""], "check_date": [start_date], "amount": [start_amount]}), num_rows="dynamic", hide_index=True, key=f"hw_checks_{cid}_{n}_{replaces}",
+        pd.DataFrame({"check_number": [""], "check_date": [start_date], "amount": [start_amount]}), num_rows="dynamic", hide_index=True, key=f"hw_checks_{cid}_{n}_{replaces}_{start_amount}_{start_date}",
         column_config={"check_number": st.column_config.TextColumn("Check number", help="Exactly as printed on the check, e.g. 3992554297."),
                        "check_date": st.column_config.DateColumn("Check date", default=manila_today()),
                        "amount": st.column_config.NumberColumn("Amount", format=MONEY_FORMAT, min_value=0.0, step=0.01, default=0.0)})

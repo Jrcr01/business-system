@@ -1,0 +1,64 @@
+{% extends "core/base.html" %}
+{% load humanize %}
+{% block title %}Price lists{% endblock %}
+{% block content %}
+<div class="head"><h1>Price lists</h1></div>
+<p class="note">Each supplier's prices. An order takes its estimate from here; the actual invoice price always prevails.</p>
+{% if not sup %}<div class="card">No suppliers yet.</div>{% else %}
+<form class="card" method="get"><label for="supplier" style="margin-top:0">Supplier</label>
+  <select id="supplier" name="supplier" onchange="this.form.submit()">{% for s in suppliers %}<option value="{{ s.creditor_id }}" {% if s.creditor_id == sup.creditor_id %}selected{% endif %}>{{ s.creditor_name }}</option>{% endfor %}</select>
+  <input type="hidden" name="tab" value="{{ tab }}"></form>
+<div class="chips" style="margin-top:12px">
+  <a class="chip {% if tab == 'current' %}on{% endif %}" href="?supplier={{ sup.creditor_id }}&tab=current">Current prices</a>
+  {% if writer %}<a class="chip {% if tab == 'import' %}on{% endif %}" href="?supplier={{ sup.creditor_id }}&tab=import">Import Excel</a>
+  <a class="chip {% if tab == 'discounts' %}on{% endif %}" href="?supplier={{ sup.creditor_id }}&tab=discounts">Discounts</a>{% endif %}
+  <a class="chip {% if tab == 'side' %}on{% endif %}" href="?supplier={{ sup.creditor_id }}&tab=side">Items side by side</a>
+</div>
+
+{% if tab == 'current' %}
+<form class="filters" method="get"><input type="hidden" name="supplier" value="{{ sup.creditor_id }}"><div><label for="on">Prices in force on</label><input id="on" type="date" name="on" value="{{ on }}"></div><button class="btn" type="submit">Show</button></form>
+<div class="card tablecard"><table class="stack"><thead><tr><th>Code</th><th>Item</th><th class="num">List price</th><th>Discount</th><th class="num">Net price</th><th>Since</th><th class="num">Change</th></tr></thead><tbody>
+{% for r in rows %}<tr><td data-label="Code">{{ r.code }}</td><td data-label="Item">{{ r.item }}</td><td class="num" data-label="List">₱{{ r.list|floatformat:2|intcomma }}</td><td data-label="Discount">{{ r.chain|default:"—" }}</td>
+<td class="num" data-label="Net">₱{{ r.net|floatformat:2|intcomma }}</td><td data-label="Since">{{ r.since }}</td><td class="num" data-label="Change">{% if r.change is not None %}{{ r.change|floatformat:1 }}%{% else %}—{% endif %}</td></tr>
+{% empty %}<tr><td colspan="7" class="note">No prices for this supplier yet.{% if writer %} Use Import Excel.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+
+{% elif tab == 'import' %}
+{% if preview %}
+<div class="card"><h3>{{ fname }}</h3>
+  <p>Rows read: {% for k, v in parsed_counts.items %}{{ k }} {{ v }}{% if not forloop.last %}, {% endif %}{% empty %}none{% endfor %}.
+  <b>{{ summary.new|default:0 }}</b> new · <b>{{ summary.changed|default:0 }}</b> changed · {{ summary.same|default:0 }} same · {{ summary.missing|default:0 }} not in file.</p>
+  {% for p in problems %}<div class="msg error">{{ p }}</div>{% endfor %}
+  {% if n_rows %}<table class="stack"><thead><tr><th>Item</th><th class="num">List before</th><th class="num">List now</th><th class="num">Change</th><th>Status</th></tr></thead><tbody>
+  {% for c in cmp %}<tr><td data-label="Item">{{ c.category }}: {{ c.name }}</td><td class="num" data-label="Before">{% if c.old_price is not None %}₱{{ c.old_price|floatformat:2|intcomma }}{% endif %}</td><td class="num" data-label="Now">{% if c.new_price is not None %}₱{{ c.new_price|floatformat:2|intcomma }}{% endif %}</td><td class="num" data-label="Change">{% if c.change_pct is not None %}{{ c.change_pct|floatformat:1 }}%{% endif %}</td><td data-label="Status">{{ c.status }}</td></tr>{% endfor %}</tbody></table>
+  <form method="post" style="margin-top:12px">{% csrf_token %}<input type="hidden" name="tab" value="import"><input type="hidden" name="supplier" value="{{ sup.creditor_id }}"><input type="hidden" name="step" value="confirm">
+    <label style="margin-top:0">If a product already has a price on the same date</label><select name="dup"><option value="skip">Keep the old price</option><option value="replace">Replace it with the file's price</option></select>
+    <p><button class="btn btn-main" type="submit">Import {{ n_rows }} row(s)</button> <a class="btn" href="?supplier={{ sup.creditor_id }}&tab=import">Cancel</a></p></form>{% endif %}
+</div>
+{% else %}
+<div class="card"><p>Download the template, fill the sheet for each kind of product (Tires, Battery, Mags, Rims), and upload it. You see every line first; nothing is saved until you press Import. List prices only: the supplier's discount is set on the Discounts tab.</p>
+  <p><a class="btn" href="{% url 'pl_template' %}">⬇ Blank template</a> <a class="btn" href="{% url 'pl_template' %}?supplier={{ sup.creditor_id }}&filled=1">⬇ With this supplier's current prices</a></p>
+  <form method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="tab" value="import"><input type="hidden" name="supplier" value="{{ sup.creditor_id }}"><input type="hidden" name="step" value="preview">
+    <label for="file" style="margin-top:0">The filled template (.xlsx)</label><input id="file" name="file" type="file" accept=".xlsx" required>
+    <label for="start">Prices start on (used for rows without a date)</label><input id="start" name="start" type="date" value="{{ today }}">
+    <p><button class="btn btn-main" type="submit">Check the file</button></p></form></div>
+{% endif %}
+
+{% elif tab == 'discounts' %}
+<div class="card"><p class="note">Suppliers give a chain of discounts on their list prices, like less 5%, less 5%. Each is taken off what is left by the one before, so 5, 5 on 7,600 gives 6,859.00 (not 10% off). An order line starts with the discount set here and can be changed on that line.</p>
+<table class="stack"><thead><tr><th>Brand</th><th>Discount</th><th>Since</th></tr></thead><tbody>{% for d in discounts %}<tr><td data-label="Brand">{{ d.brand|default:"All brands" }}</td><td data-label="Discount">{{ d.label }}</td><td data-label="Since">{{ d.effective_date }}</td></tr>{% empty %}<tr><td colspan="3" class="note">No discount set: list prices are used as they are.</td></tr>{% endfor %}</tbody></table></div>
+<form class="card" method="post">{% csrf_token %}<input type="hidden" name="tab" value="discounts"><input type="hidden" name="supplier" value="{{ sup.creditor_id }}">
+  <h3>Set a discount</h3><datalist id="brands">{% for b in brands %}<option value="{{ b }}">{% endfor %}</datalist>
+  <div class="grid3"><div><label style="margin-top:0">Brand (empty = all brands)</label><input name="brand" list="brands" type="text"></div>
+  <div><label style="margin-top:0">Discounts in %, in order</label><input name="chain" type="text" placeholder="5, 5"></div>
+  <div><label style="margin-top:0">Starts on</label><input name="start" type="date" value="{{ today }}"></div></div>
+  <p><button class="btn btn-main" type="submit">Save discount</button></p></form>
+
+{% else %}
+<form class="filters" method="get"><input type="hidden" name="supplier" value="{{ sup.creditor_id }}"><input type="hidden" name="tab" value="side">
+  <div><label for="category">Category</label><select id="category" name="category" onchange="this.form.submit()"><option value="">All</option>{% for c in categories %}<option {% if c == category %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div></form>
+<div class="card tablecard"><table class="stack"><thead><tr><th>Code</th><th>Item</th><th>Supplier</th><th class="num">List</th><th>Discount</th><th class="num">Net</th><th></th></tr></thead><tbody>
+{% for r in side %}<tr><td data-label="Code">{{ r.sku }}</td><td data-label="Item">{{ r.product }}</td><td data-label="Supplier">{{ r.supplier }}</td><td class="num" data-label="List">₱{{ r.list_price|floatformat:2|intcomma }}</td><td data-label="Discount">{{ r.chain|default:"—" }}</td><td class="num" data-label="Net">₱{{ r.net_price|floatformat:2|intcomma }}</td><td>{% if r.cheapest %}<span class="chip on">cheapest</span>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="7" class="note">Nothing priced yet.</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+{% endif %}
+{% endblock %}

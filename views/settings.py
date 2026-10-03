@@ -3,15 +3,30 @@ Each number shows what it does and its default; a change is audited (old -> new)
 engines/settings_registry.py (the screens and engines read the numbers through it)."""
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
 from engines import auth_service as au
 from engines import settings_registry as sr
-from views.shared import page_header, refresh, section
+from views.shared import confirm_change_dialog, done_or_error, flash, page_header, refresh, section
 
 
 def _numbers_tab() -> None:
     st.caption("Change a number and press **Save**. The grey line shows what it was before this page existed (the default). Every change is written to the audit log.")
+    from engines.home_tiles import PANELS_KEY, panels_enabled
+    from engines.settings_store import set_setting
+    on = st.toggle("Tiles on Home open a menu of actions first", value=panels_enabled(), key="set_home_panels",
+                   help="Off: pressing a tile opens its page straight away. On: tiles with several actions first show a small pop-up of what you can do.")
+    if on != panels_enabled():
+        set_setting(PANELS_KEY, "1" if on else "0", "general", "Home tiles open an action pop-up")
+        st.rerun()
+    section("Notice on Home", help="A short message everyone sees in the yellow strip at the top of Home (e.g. 'No check release on Friday'). Leave it empty for none.")
+    n1, n2 = st.columns([5, 1.2], vertical_alignment="bottom")
+    from engines.settings_store import get_setting
+    note = n1.text_input("Notice", value=get_setting(sr.NOTICE_KEY, "") or "", max_chars=300, key="set_home_notice", label_visibility="collapsed",
+                         placeholder="Type a notice for everyone, or leave empty")
+    if n2.button("Save notice", icon=":material/campaign:", key="set_home_notice_save", width="stretch"):
+        done_or_error(*sr.save_notice(note))
     for group in sr.GROUPS:
         section(group)
         for m in [x for x in sr.registry() if x["group"] == group]:
@@ -30,8 +45,7 @@ def _numbers_tab() -> None:
                     refresh(msg)
                 st.error(msg)
             if c4.button("Back to default", key=f"set_reset_{key}", disabled=abs(cur - m["default"]) < 1e-9, width="stretch"):
-                _, msg = sr.reset(key)
-                refresh(msg)
+                done_or_error(*sr.reset(key))
         st.divider()
 
 
@@ -60,9 +74,15 @@ def _shortcuts_tab() -> None:
             refresh(msg)
         st.error(msg)
     if b2.button("Reset to defaults", icon=":material/restart_alt:", width="stretch"):
-        _, msg = sr.reset_shortcuts()
-        refresh(msg)
+        done_or_error(*sr.reset_shortcuts())
     st.markdown("**Fixed keys** (always the same): **Enter** = Yes in a pop-up, **Esc** = go back, **Tab / Shift+Tab** = next / previous box.")
+
+
+def _then_flash(result: tuple[bool, str]) -> tuple[bool, str]:
+    """For confirm_change_dialog: a successful change shows its message as a toast after the redraw."""
+    if result[0]:
+        flash(result[1])
+    return result
 
 
 def _users_tab() -> None:
@@ -86,7 +106,7 @@ def _users_tab() -> None:
         c1, c2, c3 = st.columns([2, 2, 1.4], vertical_alignment="bottom")
         email = c1.text_input("Email", key="usr_new_email")
         name = c2.text_input("Name", key="usr_new_name")
-        role = c3.selectbox("Role", list(au.ROLES), format_func=lambda r: ROLE_LABEL[r], key="usr_new_role", index=1)
+        role = c3.selectbox("Role", list(au.ROLES), format_func=lambda r: ROLE_LABEL[r], key="usr_new_role", index=list(au.ROLES).index("purchasing"))
         added = st.form_submit_button("Add", icon=":material/person_add:")
     if added:
         ok, msg, uid, temp = au.create_user(email, name, role)
@@ -107,24 +127,40 @@ def _users_tab() -> None:
             st.session_state["_temp_pw_shown"] = (row["email"], temp)
             refresh(done=msg)
         st.error(msg)
+    is_me = int(pick) == me.get("user_id")
     if row["is_active"]:
-        if b2.button("Switch off", icon=":material/person_off:", key="usr_off", width="stretch", disabled=int(pick) == me.get("user_id")):
-            ok, msg = au.set_active(int(pick), False)
-            (refresh(done=msg) if ok else st.error(msg))
+        if b2.button("Switch off", icon=":material/person_off:", key="usr_off", width="stretch", disabled=is_me,
+                     help="You cannot switch yourself off." if is_me else "They can no longer sign in. Nothing they did is removed."):
+            confirm_change_dialog(f"Switch off **{row['name']}** ({row['email']})?", "usr_off_confirm", lambda: _then_flash(au.set_active(int(pick), False)), "Yes, switch off",
+                                  warning="They can no longer sign in. Their records and the audit log stay. You can switch them back on.")
     elif b2.button("Switch on", icon=":material/person:", key="usr_on", width="stretch"):
-        ok, msg = au.set_active(int(pick), True)
-        (refresh(done=msg) if ok else st.error(msg))
-    new_role = b3.selectbox("Role", list(au.ROLES), index=list(au.ROLES).index(row["role"]), format_func=lambda r: ROLE_LABEL[r], key=f"usr_role_{pick}", label_visibility="collapsed")
-    if new_role != row["role"]:
-        ok, msg = au.set_role(int(pick), new_role)
-        (refresh(done=msg) if ok else st.error(msg))
+        done_or_error(*au.set_active(int(pick), True))
+    r1, r2 = b3.columns([2, 1.3], vertical_alignment="bottom")
+    new_role = r1.selectbox("Role", list(au.ROLES), index=list(au.ROLES).index(row["role"]), format_func=lambda r: ROLE_LABEL[r], key=f"usr_role_{pick}",
+                            disabled=is_me, help="Your own role cannot be changed here (another owner can change it)." if is_me else None)
+    if r2.button("Change", key="usr_role_go", disabled=is_me or new_role == row["role"], width="stretch"):
+        confirm_change_dialog(f"Change **{row['name']}** from **{ROLE_LABEL.get(row['role'], row['role'])}** to **{ROLE_LABEL[new_role]}**?", "usr_role_confirm",
+                              lambda: _then_flash(au.set_role(int(pick), new_role)), "Yes, change the role",
+                              warning="What they can see and do changes at their next click. See 'Who can do what'.")
+
+
+def _matrix_tab() -> None:
+    """The access matrix, printed from the same table the menu, the buttons and the engines read (engines/permissions.py)."""
+    from engines.permissions import ROLE_LABEL as labels, ROLES, matrix_table
+
+    st.caption("Who can do what. Yes = may do it. View only = may see it, not change it. Own only = only what they created themselves. "
+               "Nothing is ever hard-deleted by any role: 'delete' means cancel, void or switch off, with a reason, kept in the audit log. "
+               "The Viewer sees records through Reports and the Dashboard; the menu pages that hold change forms stay closed to the Viewer.")
+    df = pd.DataFrame(matrix_table())
+    st.dataframe(df, hide_index=True, width="stretch", height=min(40 + 35 * len(df), 900),
+                 column_config={"group": "Area", "operation": st.column_config.TextColumn("Operation", width="large"), **{labels[r]: labels[r] for r in ROLES}})
 
 
 def render() -> None:
-    page_header("Settings", "Adjustable numbers and keyboard shortcuts. Nothing here changes a record — only how the system warns, forecasts and checks.")
+    page_header("Settings", "Adjustable numbers and keyboard shortcuts, and (for the owner) who can sign in and what each role may do.")
     from views.login import current_role
 
-    labels = ["Numbers", "Keyboard shortcuts"] + (["Users"] if current_role() == "owner" else [])
+    labels = ["Numbers", "Keyboard shortcuts"] + (["Users", "Who can do what"] if current_role() == "admin" else [])
     tabs = st.tabs(labels, key="settings_tab", default=labels[0], on_change="rerun")        # keyed, so the page stays on the Users tab after Add / Reset
     tab_numbers, tab_keys = tabs[0], tabs[1]
     with tab_numbers:
@@ -134,3 +170,5 @@ def render() -> None:
     if len(tabs) > 2:
         with tabs[2]:
             _users_tab()
+        with tabs[3]:
+            _matrix_tab()

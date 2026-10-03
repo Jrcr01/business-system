@@ -28,7 +28,8 @@ def render_guarantee_form() -> None:
     cid = int(holder)
     notes = q("SELECT loan_note_id, note_ref, status FROM loan_notes WHERE creditor_id = ? ORDER BY loan_note_id DESC", (cid,))
     labels = {int(r["loan_note_id"]): f"{r['note_ref']} · {r['status']}" for _, r in notes.iterrows()}
-    loan_note = st.selectbox("Loan note it guarantees (optional)", [None] + list(labels), format_func=lambda n: "— none / not recorded yet —" if n is None else labels[n],
+    open_notes = [int(r["loan_note_id"]) for _, r in notes.iterrows() if str(r["status"]) == "Active"]
+    loan_note = st.selectbox("Loan note it guarantees (optional)", [None] + list(labels), index=1 + list(labels).index(open_notes[0]) if len(open_notes) == 1 else 0, format_func=lambda n: "— none / not recorded yet —" if n is None else labels[n],
                              key=f"gc_ln_{cid}")
     number = st.text_input("Check number", key="gc_number", help="Exactly as printed on the check, e.g. 3992554212.")
     c1, c2 = st.columns(2)
@@ -46,6 +47,8 @@ def render_guarantee_form() -> None:
             ok, msg, _ = record_guarantee_check(c, n, f if f > 0 else None, g, ln, nt)
             if ok:
                 st.toast(msg)
+                for k in ("gc_number", "gc_face", "gc_note"):                      # an empty form for the next one: no double save by a second click
+                    st.session_state.pop(k, None)
             return ok, msg
 
         confirm_create_dialog(f"Record check **{number.strip()}** as a **guarantee check held by {who}**"

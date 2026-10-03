@@ -5,6 +5,7 @@ the list and counts error + warning as "Needs attention"; info items are shown b
 from __future__ import annotations
 
 from engines.clock import manila_today
+from engines.memo import until_saved
 from engines.common import get_conn
 import sqlite3
 from datetime import date
@@ -149,6 +150,7 @@ def _purchasing() -> list[dict]:
 SOURCES = (_cards, _booklets, _guarantees, _bank, _stale, _health, _concentration, _to_print, _purchasing)
 
 
+@until_saved("engines.common")
 def attention_items() -> list[dict]:
     """Every item, most urgent first (errors, then warnings, then info; stable inside a level)."""
     out: list[dict] = []

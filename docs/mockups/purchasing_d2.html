@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Purchasing mock-ups (D2)</title>
+<style>
+:root{--blue:#0B4F8A;--navy:#0a2c4d;--yellow:#F3E03B;--red:#C62828;--ink:#1f2937;--mut:#6b7280;--line:#e5e7eb;--bg:#f4f6f9}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,Segoe UI,Arial;color:var(--ink);background:var(--bg)}
+.app{display:grid;grid-template-columns:210px 1fr;min-height:100vh}
+.side{background:var(--navy);color:#cfe0f3;padding:14px 0}.side b{display:block;color:#fff;padding:0 16px 10px;font-size:15px}
+.side a{display:block;padding:7px 16px;color:#cfe0f3;text-decoration:none}.side a.on{background:#123a63;color:#fff;border-left:4px solid var(--yellow)}
+.side h6{margin:12px 16px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#7fa3c9}
+.top{background:#fff;border-bottom:1px solid var(--line);padding:8px 20px;display:flex;gap:16px;align-items:center}
+.top .logo{background:var(--blue);color:var(--yellow);font-weight:800;padding:5px 9px;border-radius:6px;font-style:italic}
+.top .r{margin-left:auto;color:var(--mut)}.pill{background:#eef1f5;border-radius:99px;padding:3px 10px;font-size:12px}
+.main{padding:18px 22px}h1{margin:0 0 4px;font-size:22px}.sub{color:var(--mut);margin-bottom:14px}
+.tabs{display:flex;gap:4px;border-bottom:2px solid var(--line);margin-bottom:14px}
+.tabs span{padding:8px 14px;cursor:pointer;color:var(--mut)}.tabs span.on{color:var(--blue);font-weight:700;border-bottom:3px solid var(--blue);margin-bottom:-2px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.card h3{margin:0 0 8px;font-size:15px}table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:12px;color:var(--mut);font-weight:600;border-bottom:1px solid var(--line);padding:6px 8px}
+td{padding:7px 8px;border-bottom:1px solid #f0f2f5}td.n,th.n{text-align:right}
+.btn{display:inline-block;border:1px solid #c9d1dc;background:#fff;border-radius:7px;padding:7px 13px;margin-right:6px}
+.btn.main{background:var(--blue);color:#fff;border-color:var(--blue);font-weight:600}
+.ok{color:#0b6e4f;font-weight:700}.warn{color:#9a3412;font-weight:700}.chip{background:var(--yellow);border-radius:5px;padding:1px 7px;font-size:12px;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.field label{display:block;font-size:12px;color:var(--mut)}
+.field div{border:1px solid #c9d1dc;border-radius:7px;padding:7px 9px;background:#fff}
+.bars{display:flex;align-items:flex-end;gap:8px;height:120px;margin:6px 0}.bars i{flex:1;background:#9FB3D1;border-radius:4px 4px 0 0;position:relative}
+.bars i.sel{background:#C26A00}.bars i.low{background:#2E7D32}.bars i b{position:absolute;bottom:-18px;left:0;right:0;text-align:center;font-size:10px;font-weight:400;color:var(--mut)}
+.weeks{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-top:22px}.weeks span{border:1px solid #c9d1dc;border-radius:7px;text-align:center;padding:5px;background:#fff;font-size:12px}
+.weeks span.sel{background:#fdf1e0;border-color:#C26A00}.note{background:#fffbe0;border-left:4px solid var(--yellow);padding:8px 12px;border-radius:6px;margin:8px 0}
+.screen{display:none}.screen.show{display:block}.nav{margin:14px 22px 0}.nav button{border:1px solid var(--blue);background:#fff;color:var(--blue);border-radius:7px;padding:8px 14px;margin-right:6px;cursor:pointer;font-weight:600}
+.nav button.on{background:var(--blue);color:#fff}.cap{color:var(--mut);font-size:12px;margin:4px 22px}
+@media(max-width:760px){.app{grid-template-columns:1fr}.side{display:none}.grid{grid-template-columns:1fr 1fr}.weeks{grid-template-columns:repeat(4,1fr)}}
+</style></head><body>
+<div class="nav">
+  <button class="on" onclick="show(1,this)">1 · Price lists</button><button onclick="show(2,this)">2 · New purchase order</button><button onclick="show(3,this)">3 · Receive an invoice</button>
+</div>
+<div class="cap">Mock-ups for approval (D2). Slick's colours: navy sidebar, white cards, one blue main button, yellow only for highlights. Numbers are sample data. On a phone the sidebar hides, tables become cards, and the 8 weeks show 4 per row.</div>
+
+<div class="app">
+<div class="side"><b>SLICK'S ERP</b><a>Home</a><h6>Purchasing</h6><a id="m1" class="on">Price lists</a><a id="m2">Purchase orders</a><a>Receive</a><h6>Stock</h6><a>Items and stock</a><a>Stock in</a><h6>Sales</h6><a>Sales</a><a>Day sheet</a><h6>System</h6><a>Users</a><a>Audit log</a></div>
+<div>
+<div class="top"><span class="logo">SLICK'S</span><b>Home</b><span>Welcome, Rap</span><span class="r"><span class="pill">Purchasing</span> &nbsp; Fri Oct 02, 2026 · Password · Sign out</span></div>
+
+<!-- 1 PRICE LISTS -->
+<div class="main screen show" id="s1">
+<h1>Price lists</h1><div class="sub">Each supplier's prices. An order takes its estimate from here; the actual invoice price always prevails.</div>
+<div class="card"><div class="grid"><div class="field"><label>Supplier</label><div>Acom Trading ▾</div></div><div class="field"><label>Prices in force on</label><div>Oct 02, 2026</div></div></div></div>
+<div class="tabs"><span class="on">Current prices</span><span>Import Excel</span><span>Discounts</span><span>Items side by side</span></div>
+<div class="card"><table><tr><th>Code</th><th>Item</th><th>Category</th><th class="n">List price</th><th>Discount</th><th class="n">Net price</th><th>Since</th><th class="n">Change</th></tr>
+<tr><td>TR-0001</td><td>Westlake 285/50R20 (A/T) SL369</td><td>Tire</td><td class="n">₱7,450.00</td><td>less 3%</td><td class="n">₱7,226.50</td><td>Sep 15, 2026</td><td class="n warn">+2.1%</td></tr>
+<tr><td>TR-0003</td><td>Westlake 265/65R17 SU318</td><td>Tire</td><td class="n">₱5,750.00</td><td>less 3%</td><td class="n">₱5,577.50</td><td>Sep 15, 2026</td><td class="n">—</td></tr>
+<tr><td>TR-0006</td><td>Giti 205/55R16 GitiComfort</td><td>Tire</td><td class="n">₱3,900.00</td><td>less 2%</td><td class="n">₱3,822.00</td><td>Sep 15, 2026</td><td class="n ok">−1.0%</td></tr>
+<tr><td>BA-0001</td><td>Motolite NS60 12V 45Ah L</td><td>Battery</td><td class="n">₱4,350.00</td><td>—</td><td class="n">₱4,350.00</td><td>Sep 15, 2026</td><td class="n">—</td></tr></table></div>
+<div class="card"><h3>Import Excel (second tab)</h3><span class="btn">⬇ Blank template</span><span class="btn">⬇ With this supplier's current prices</span><span class="btn">Choose file…</span>
+<div class="note">Preview before saving: <b>12 new</b> · <b>5 changed</b> · 40 same · 2 not in file. Problem rows are listed as “Tires row 14: List price ‘call’ is not a number” and are not saved.</div>
+<span class="btn main">Import 57 rows</span></div>
+<div class="card"><h3>Items side by side (fourth tab)</h3><table><tr><th>Code</th><th>Item</th><th>Supplier</th><th class="n">List</th><th>Discount</th><th class="n">Net</th><th></th></tr>
+<tr><td rowspan="2">TR-0001</td><td rowspan="2">Westlake 285/50R20 (A/T) SL369</td><td>New Century</td><td class="n">₱7,600</td><td>5% + 5%</td><td class="n">₱6,859</td><td><span class="chip">cheapest</span></td></tr>
+<tr><td>Acom Trading</td><td class="n">₱7,450</td><td>3%</td><td class="n">₱7,226.50</td><td></td></tr></table></div>
+</div>
+
+<!-- 2 PURCHASE ORDER -->
+<div class="main screen" id="s2">
+<h1>New purchase order</h1><div class="sub">See what is already due before you order. Pick a lighter week if cash is tight.</div>
+<div class="card"><div class="grid"><div class="field"><label>Supplier</label><div>New Century City Marketing ▾</div></div><div class="field"><label>Order date</label><div>Oct 02, 2026</div></div><div class="field"><label>Expected delivery</label><div>Oct 09, 2026</div></div><div class="field"><label>Terms</label><div>150 days</div></div></div></div>
+<div class="card"><h3>Payables when this order falls due <span class="pill">Weekly | Daily</span></h3>
+This order would fall due on <b>Tue, Mar 09, 2027</b> (delivery Oct 09 plus the supplier's terms).
+<div class="bars"><i style="height:70%"><b>Feb 15</b></i><i style="height:100%"><b>Feb 22</b></i><i style="height:80%"><b>Mar 01</b></i><i class="sel" style="height:88%"><b>Mar 08</b></i><i style="height:45%"><b>Mar 15</b></i><i style="height:50%"><b>Mar 22</b></i><i class="low" style="height:22%"><b>Mar 29</b></i><i style="height:42%"><b>Apr 05</b></i></div>
+<div class="weeks"><span>Feb 15<br>₱627K</span><span>Feb 22<br>₱841K</span><span>Mar 01<br>₱667K</span><span class="sel">Mar 08<br>₱725K</span><span>Mar 15<br>₱370K</span><span>Mar 22<br>₱401K</span><span>Mar 29 ★<br>₱183K</span><span>Apr 05<br>₱379K</span></div>
+<div class="note">Pressing a week moves the delivery date so the order falls due then. ★ = the lightest week. <b>This order adds ₱27,436 → that week becomes ₱752K.</b></div></div>
+<div class="card"><h3>Items</h3><table><tr><th>Code</th><th>Item</th><th class="n">Qty</th><th class="n">List price</th><th>Discount %</th><th class="n">Net</th><th class="n">Amount</th></tr>
+<tr><td>TR-0001</td><td>Westlake 285/50R20 (A/T) SL369</td><td class="n">4</td><td class="n">₱7,600.00</td><td>5, 5</td><td class="n">₱6,859.00</td><td class="n">₱27,436.00</td></tr></table>
+<div style="margin-top:8px">+ Add an item (pick by code or name)</div></div>
+<span class="btn">Save draft</span><span class="btn main">Save and order</span> <span class="btn">Download PO (PDF)</span>
+<div class="cap" style="margin:8px 0">After ordering: Cancel (Purchasing: own orders only) · Close short (when part is delivered and the rest will not come).</div>
+</div>
+
+<!-- 3 RECEIVE -->
+<div class="main screen" id="s3">
+<h1>Receive an invoice</h1><div class="sub">A delivery arrived with the supplier's invoice. It goes into a payables batch at the price the supplier actually charged, and into stock at that cost.</div>
+<div class="card"><div class="grid"><div class="field"><label>Supplier</label><div>New Century City Marketing ▾</div></div><div class="field"><label>Supplier invoice no.</label><div>SI-1001</div></div><div class="field"><label>Invoice date</label><div>Oct 09, 2026</div></div><div class="field"><label>Put it in batch</label><div>OS-2026-0412 (open) ▾</div></div></div></div>
+<div class="card"><table><tr><th></th><th>PO</th><th>Item</th><th class="n">Still to come</th><th class="n">Qty now</th><th class="n">Estimated</th><th class="n">Actual price</th><th class="n">Amount</th></tr>
+<tr><td>☑</td><td>2026 - PO 0007</td><td>TR-0001 Westlake 285/50R20 (A/T) SL369</td><td class="n">4</td><td class="n">4</td><td class="n">₱6,859.00</td><td class="n warn">₱6,900.00</td><td class="n">₱27,600.00</td></tr></table>
+<div class="note"><b>Invoice total ₱27,600.00</b> (+₱164.00 against the estimate). Type a different total if the invoice adds freight. <br>☑ Update the supplier's price list from this invoice (list price becomes ₱7,645.43 so the next order nets ₱6,900 again).</div>
+<span class="btn main">Add to the batch and into stock</span></div>
+<div class="card"><h3>What happens when you press it</h3><table>
+<tr><td>1</td><td>The invoice is created in batch OS-2026-0412, due invoice date + 30 days (Nov 08, 2026)</td></tr>
+<tr><td>2</td><td>PO 0007 becomes <b>Received</b> (or Partly received); its commitment leaves the “payables by week” totals</td></tr>
+<tr><td>3</td><td>TR-0001 stock +4 at ₱6,900; the average cost is recalculated</td></tr>
+<tr><td>4</td><td>The audit log records who did each step</td></tr></table>
+<div class="cap" style="margin:6px 0">Payables and Owner can receive. Purchasing sees the order marked received but cannot receive.</div></div>
+</div>
+</div></div>
+<script>
+function show(n,b){document.querySelectorAll('.screen').forEach((e,i)=>e.classList.toggle('show',i==n-1));document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+document.getElementById('m1').className=n==1?'on':'';document.getElementById('m2').className=n==2?'on':'';}
+</script></body></html>

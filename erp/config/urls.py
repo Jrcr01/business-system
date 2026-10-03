@@ -8,5 +8,6 @@ urlpatterns = [
     path("offline/", pwa.offline, name="offline"),
     path("", include("inventory.urls")),
     path("", include("sales.urls")),
+    path("", include("purchasing.urls")),
     path("", include("core.urls")),
 ]

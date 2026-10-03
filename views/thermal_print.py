@@ -25,7 +25,7 @@ from engines.thermal_statement import (
 from views.shared import guard_duplicate_submit, q, refresh
 from engines.clock import manila_today
 
-COPY_CHOICES = {"Both": ["FILE", "SUPPLIER"], "File copy": ["FILE"], "Supplier copy": ["SUPPLIER"]}
+COPY_CHOICES = {"All three": ["SUPPLIER", "FILE", "FINANCE"], "Supplier copy": ["SUPPLIER"], "Filing copy": ["FILE"], "Finance copy": ["FINANCE"]}
 TYPE_LABELS = {"ORIGINAL": "original", "REPRINT": "REPRINT", "REVISED": "REVISED"}
 
 
@@ -69,7 +69,8 @@ def render_thermal_printer_section(statement_id: int, include_full_history: bool
     else:
         st.caption(":material/cloud_upload: Google Drive connected. The A4 copy is uploaded and shared by link when you print.")
 
-    choice = st.segmented_control("Copies", list(COPY_CHOICES), default="Both", required=True, key=f"th_copies_{sid}", label_visibility="collapsed", help="Which slips to print: the supplier's copy to hand over, the filing copy to keep, or both.")
+    choice = st.segmented_control("Copies", list(COPY_CHOICES), default="All three", required=True, key=f"th_copies_{sid}", label_visibility="collapsed",
+                                  help="The statement is printed three times: the supplier's copy, the filing copy (attached to the sales invoice original) and the finance copy. Each ends with the release slip number and the supplier's signature.")
     planned = {c: planned_print(sid, c) for c in COPY_CHOICES[choice]}
     today = manila_today().isoformat()
     slips = []
@@ -159,7 +160,12 @@ def _do_print(sid: int, copies: list, backend: str, cfg: dict, record: bool, inc
     try:
         try:
             with st.spinner("Preparing the QR copy and printing..."):
-                r = print_statement(sid, copies, backend, GoogleDrive(), cfg, sandbox=_sandbox(), record=record, include_full_history=include_full_history)
+                slip_no = None
+                if record:                                               # the release slip number printed on every copy; the release is recorded by it later
+                    from engines.release_slip_service import create_slip
+                    ok_slip, _msg_slip, made = create_slip(sid)
+                    slip_no = made["slip_no"] if ok_slip else None
+                r = print_statement(sid, copies, backend, GoogleDrive(), cfg, sandbox=_sandbox(), record=record, include_full_history=include_full_history, slip_no=slip_no)
         except (DriveNotConnected, DriveError) as e:                   # GoogleDrive() itself could not start
             raise PrintAborted("drive", f"The QR copy could not be made, and a slip without a working QR is never printed. {e}")
         st.session_state[result_key] = {"done": r["done"], "types": r["types"], "version_no": r["version"]["version_no"], "backend": backend,

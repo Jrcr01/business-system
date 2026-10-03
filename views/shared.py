@@ -55,6 +55,13 @@ def q(sql: str, params: tuple = ()) -> pd.DataFrame:
     return df_query(sql, params)
 
 
+def done_or_error(ok: bool, msg: str) -> None:
+    """The usual ending of a save: on success redraw with a 'Saved ...' toast; on refusal show the reason in place (nothing was changed)."""
+    if ok:
+        refresh(done=msg)
+    st.error(msg)
+
+
 def refresh(done: str | None = None) -> None:
     """Reload the data and redraw the page. `done` = a short 'Saved ...' message shown as a toast after the redraw (a plain
     st.success() right before a refresh is wiped by the redraw before anyone can read it)."""
@@ -848,6 +855,43 @@ def go_to(page_id: str, **state) -> None:
     and Add data pages. Uses the same path as the search pop-up, which applies the state before any page draws."""
     st.session_state["_global_jump"] = {"page": page_id, "state": state}
     st.rerun()
+
+
+def _go_cb(page_id: str, state: dict) -> None:
+    """Button callback: open a page with some widgets pre-set (the page changes on the rerun the callback triggers)."""
+    st.session_state["_global_jump"] = {"page": page_id, "state": dict(state)}
+
+
+# The supplier cycle, in order (2026-10-03). Each step: name, the page and mode that does it, the access-matrix action behind it.
+CYCLE = [("Order", "purchase-orders", {"po_mode": "New order"}, "po.view"), ("Receive", "purchase-orders", {"po_mode": "Receive"}, "po.receive_goods"),
+         ("Match", "purchase-orders", {"po_mode": "Match invoice"}, "po.receive"), ("Batch", "order-statements", {}, "invoice.enter"),
+         ("Check", "checks", {}, "check.park"), ("Bank", "bank-cash", {}, "bank.use")]
+
+
+def cycle_bar(current: str) -> None:
+    """Where am I in the cycle: Order > Receive > Match > Batch > Check > Bank. The current step is highlighted and every step is a button; a step this role may not open is greyed."""
+    from engines.permissions import level
+    from views.login import current_role
+    role = current_role()
+    cols = st.columns(len(CYCLE), gap="small")
+    for col, (name, page, state, needs) in zip(cols, CYCLE):
+        col.button(name, key=f"cyc_{name}", type="primary" if name == current else "secondary", disabled=level(role, needs) is None, width="stretch",
+                   on_click=_go_cb, args=(page, state))
+
+
+def next_steps(message: str, buttons: list) -> None:
+    """What to do now, after a step is done: a short line and one button per sensible next step. buttons: [(label, icon, page, state, needs or None, primary)]. A button the
+    signed-in role may not use is left out, so nobody meets a dead end."""
+    from engines.permissions import level
+    from views.login import current_role
+    role = current_role()
+    shown = [b for b in buttons if b[4] is None or level(role, b[4]) is not None]
+    with st.container(border=True):
+        st.markdown(f":material/check_circle: {message}")
+        if shown:
+            cols = st.columns(len(shown))
+            for i, (col, (label, icon, page, state, _needs, primary)) in enumerate(zip(cols, shown)):
+                col.button(label, key=f"nxt_{page}_{label}_{i}", icon=icon, type="primary" if primary else "secondary", width="stretch", on_click=_go_cb, args=(page, state))
 
 
 @st.dialog("Search everything", width="large")

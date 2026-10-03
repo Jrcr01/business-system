@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Slick's — Owner demo (sample demo)</title>
+<style>
+:root{--blue:#0B4F8A;--navy:#0a2c4d;--yellow:#F3E03B;--red:#C62828;--ink:#1f2937;--mut:#6b7280;--line:#e5e7eb;--bg:#f4f6f9;--orange:#C26A00}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,Segoe UI,Arial;color:var(--ink);background:var(--bg)}
+.demo{background:var(--yellow);color:#111;text-align:center;padding:6px 10px;font-weight:700;font-size:13px}
+.app{display:grid;grid-template-columns:215px 1fr;min-height:calc(100vh - 30px)}
+.side{background:var(--navy);color:#cfe0f3;padding:14px 0}.side b{display:block;color:#fff;padding:0 16px 10px;font-size:15px}
+.side a{display:block;padding:8px 16px;color:#cfe0f3;text-decoration:none;cursor:pointer}.side a:hover{background:#123a63}.side a.on{background:#123a63;color:#fff;border-left:4px solid var(--yellow);padding-left:12px}
+.side h6{margin:12px 16px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#7fa3c9}
+.top{background:#fff;border-bottom:1px solid var(--line);padding:8px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.logo{background:var(--blue);color:var(--yellow);font-weight:800;padding:5px 9px;border-radius:6px;font-style:italic}
+.pill{background:#eef1f5;border-radius:99px;padding:3px 10px;font-size:12px}.r{margin-left:auto;color:var(--mut)}
+.main{padding:18px 22px;max-width:1150px}h1{margin:0 0 4px;font-size:22px;color:var(--blue)}.sub{color:var(--mut);margin-bottom:14px}h3{margin:0 0 8px;font-size:15px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;color:var(--mut);font-weight:600;border-bottom:1px solid var(--line);padding:6px 8px}
+td{padding:7px 8px;border-bottom:1px solid #f0f2f5;vertical-align:middle}.n{text-align:right}
+button,.btn{border:1px solid #c9d1dc;background:#fff;border-radius:7px;padding:7px 13px;font:inherit;cursor:pointer;margin:2px 4px 2px 0}
+button.main{background:var(--blue);color:#fff;border-color:var(--blue);font-weight:600}button:disabled{opacity:.45;cursor:not-allowed}button.danger{color:var(--red);border-color:#f09595}
+button.seg.on{background:#e6eef7;border-color:var(--blue);color:var(--blue);font-weight:700}
+input,select{font:inherit;border:1px solid #c9d1dc;border-radius:7px;padding:7px 9px;background:#fff;max-width:100%}
+label{display:block;font-size:12px;color:var(--mut);margin:8px 0 3px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.ok{color:#0b6e4f;font-weight:700}.warn{color:#9a3412;font-weight:700}.chip{background:var(--yellow);border-radius:5px;padding:1px 7px;font-size:12px;font-weight:700}
+.note{background:#fffbe0;border-left:4px solid var(--yellow);padding:8px 12px;border-radius:6px;margin:8px 0}.msg{background:#e7f6ee;border-left:4px solid #2E7D32;padding:8px 12px;border-radius:6px;margin:8px 0}
+.err{background:#fdeaea;border-left:4px solid var(--red);padding:8px 12px;border-radius:6px;margin:8px 0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;margin-bottom:10px}
+.tile{background:var(--yellow);border-radius:10px;height:130px;padding:12px 14px;display:flex;flex-direction:column;justify-content:space-between;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.18);transition:.12s}
+.tile:hover{transform:translateY(-3px);box-shadow:0 8px 16px rgba(0,0,0,.22)}.tile .t{font-weight:700}.tile .f{text-align:right}.tile .f b{font-size:26px;font-weight:600;display:block;line-height:1}.tile .f span{font-size:12px}
+.tile.off{background:#e5e7eb;color:var(--mut);cursor:default}.tile.off:hover{transform:none;box-shadow:none}
+.sec{font-size:17px;color:#374151;margin:18px 0 4px}.groups{display:flex;gap:22px;flex-wrap:wrap;background:var(--blue);border-radius:6px;padding:10px 18px;margin:10px 0}.groups span{color:#fff}
+.bars{display:flex;align-items:flex-end;gap:3px;height:150px;margin:8px 0 34px;border-bottom:1px solid var(--line)}.bars .b{flex:1;position:relative;min-width:6px}
+.bars .b i{display:block;width:100%;background:#9FB3D1;border-radius:3px 3px 0 0}.bars .b.sel i{background:#F2B880}.bars .b.low i{background:#2E7D32}
+.bars .b u{display:block;width:100%;background:var(--orange);text-decoration:none;border-radius:3px 3px 0 0}.bars .b s{position:absolute;top:100%;left:0;font-size:9px;white-space:nowrap;transform:rotate(55deg);transform-origin:0 0;text-decoration:none;color:var(--mut)}
+.bars .b em{position:absolute;top:-16px;left:-8px;font-size:11px;font-style:normal;font-weight:700;color:var(--orange);white-space:nowrap}
+.seg-row{display:inline-flex;gap:0}.seg-row button{margin:0;border-radius:0}.seg-row button:first-child{border-radius:7px 0 0 7px}.seg-row button:last-child{border-radius:0 7px 7px 0}
+.small{font-size:12px;color:var(--mut)}
+@media(max-width:760px){.app{grid-template-columns:1fr}.side{display:flex;overflow:auto;padding:6px}.side b,.side h6{display:none}.side a{white-space:nowrap}}
+</style></head><body>
+<div class="demo">SAMPLE DEMO for the Owner — made-up suppliers, prices and orders. Nothing here is saved or connected to the real system. Reload the page to start over.</div>
+<div class="app"><div class="side" id="side"></div><div><div class="top"><span class="logo">SLICK'S</span><b id="ttl">Home</b><span>Welcome, Owner</span><span class="r"><span class="pill">the Owner</span> &nbsp; Fri Oct 02, 2026</span></div><div class="main" id="main"></div></div></div>
+<script>
+const ROLE="owner", OWNER=ROLE==="owner", ME=OWNER?"Owner":"Brother";
+const TODAY=new Date(2026,9,2), D=864e5;
+const fmt=n=>"₱"+Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtK=n=>n>=1e6?"₱"+(n/1e6).toFixed(2)+"M":n>=1e3?"₱"+Math.round(n/1e3)+"K":"₱"+Math.round(n);
+const ds=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"), pd=s=>{const [y,m,dd]=s.split("-").map(Number);return new Date(y,m-1,dd)};
+const dlab=d=>d.toLocaleDateString("en-US",{month:"short",day:"2-digit"}), dfull=d=>d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"2-digit",year:"numeric"});
+const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
+const bankDay=d=>{while(d.getDay()===0||d.getDay()===6)d=addDays(d,1);return d};
+const SUP=[{id:1,name:"AMK Auto Parts and Accessories Trading",terms:150},{id:2,name:"Acom Trading",terms:120},{id:3,name:"Battery Depot of Central Luzon Inc.",terms:140},{id:4,name:"CSS Autoparts Inc.",terms:140}];
+const ITEMS={"TR-0001":["Westlake 285/50R20 (A/T) SL369","Westlake"],"TR-0002":["Westlake 305/35R24 SA57","Westlake"],"TR-0003":["Westlake 265/65R17 SU318","Westlake"],"TR-0004":["Westlake 315/80R22.5 20PR CR976A","Westlake"],
+"TR-0005":["Apollo 12R22.5 16PR EnduTrax MA","Apollo"],"TR-0006":["Giti 205/55R16 GitiComfort","Giti"],"TR-0008":["Dunlop 185/65R15 Enasave","Dunlop"],"BA-0001":["Motolite NS60 12V 45Ah L","Motolite"],"BA-0002":["Motolite NS40 12V 35Ah L","Motolite"],
+"MG-0001":["Enkei RPF1 17x7.5 5x114.3 ET40 Silver","Enkei"],"RM-0001":["Westlake 8.25x22.5 10H Tubeless","Westlake"]};
+const PRICE={1:{"TR-0001":7600,"TR-0002":8400,"TR-0003":5600,"TR-0004":15700,"TR-0005":18600,"MG-0001":9800,"RM-0001":4150},2:{"TR-0001":7450,"TR-0003":5750,"TR-0006":3900,"TR-0008":3450,"BA-0001":4350,"BA-0002":3500},
+3:{"BA-0001":4200,"BA-0002":3550},4:{"TR-0006":3800,"TR-0008":3500,"MG-0001":9500,"RM-0001":4250}};
+const DISC={1:{Westlake:[5,5],Apollo:[5,5]},2:{Westlake:[3]},3:{"*":[10,5]},4:{}};
+const chainOf=(sid,code)=>{const b=ITEMS[code][1],t=DISC[sid]||{};return t[b]||t["*"]||[]};
+const net=(list,chain)=>Math.round(chain.reduce((p,d)=>p*(1-d/100),list)*100)/100;
+const chainTxt=c=>c.length?"less "+c.map(x=>x+"%").join(" + "):"none";
+const parseChain=t=>{t=String(t).replace(/less|%/gi," ").trim();if(!t)return[];const a=t.split(/[ ,;+]+/).map(Number);return a.every(x=>!isNaN(x)&&x>=0&&x<100)?a.filter(x=>x>0):null};
+const hash=n=>{const x=Math.sin(n*12.9898)*43758.5453;return x-Math.floor(x)};
+let ORDERS=[{id:1,no:"2026 - PO 0001",sid:2,date:"2026-09-21",delivery:"2026-09-28",by:"Brother",status:"ORDERED",lines:[{code:"BA-0001",qty:6,list:4350,chain:[],recv:0,inv:0}]},
+{id:2,no:"2026 - PO 0002",sid:1,date:"2026-09-25",delivery:"2026-10-05",by:"Owner",status:"ORDERED",lines:[{code:"TR-0005",qty:3,list:18600,chain:[5,5],recv:0,inv:0}]}];
+let INVOICES=[]; let nextId=3, nextNo=3;
+const payDate=(sid,delivery)=>bankDay(addDays(pd(delivery),SUP.find(s=>s.id==sid).terms));
+const lineNet=l=>net(l.list,l.chain), orderTotal=o=>o.lines.reduce((s,l)=>s+l.qty*lineNet(l),0);
+function committedOn(d){let base=(d.getDay()===0||d.getDay()===6)?0:Math.round(hash(d.getTime()/D)*hash(d.getTime()/D+7)*420)*1000;
+  ORDERS.filter(o=>o.status==="ORDERED"||o.status==="PARTIAL"||o.status==="RECEIVED").forEach(o=>{if(ds(payDate(o.sid,o.delivery))===ds(d))base+=o.lines.reduce((s,l)=>s+(l.qty-l.inv)*lineNet(l),0)});return base}
+const STATUS={DRAFT:"Draft",ORDERED:"Ordered",PARTIAL:"Partly received",RECEIVED:"Received",CANCELLED:"Cancelled"};
+const NAV=[["home","Home",""],["price","Price lists","Purchasing"],["orders","Purchase orders","Purchasing"]].concat(OWNER?[["due","Payables due","Daily work"],["who","Who can do what","System"]]:[]);
+let screen="home", sub="orders", F=null, flash="";
+function go(s,x){screen=s;if(x)sub=x;flash="";render()}
+function side(){let h='<b>SLICK\'S</b>',last="";NAV.forEach(([id,label,sec])=>{if(sec&&sec!==last){h+='<h6>'+sec+'</h6>';last=sec}h+=`<a class="${screen===id?'on':''}" onclick="go('${id}')">${label}</a>`});document.getElementById("side").innerHTML=h}
+function render(){side();document.getElementById("ttl").textContent=(NAV.find(n=>n[0]===screen)||[0,"Home"])[1];const m=document.getElementById("main");
+  m.innerHTML=(flash?`<div class="msg">${flash}</div>`:"")+({home:homeV,price:priceV,orders:ordersV,due:dueV,who:whoV}[screen])();window.scrollTo(0,0)}
+function homeV(){const open=ORDERS.filter(o=>["DRAFT","ORDERED","PARTIAL"].includes(o.status)).length;
+  const t=(title,fig,unit,to)=>`<div class="tile ${to?'':'off'}" ${to?`onclick="go('${to[0]}','${to[1]||''}')"`:''}><div class="t">${title}</div><div class="f"><b>${fig}</b><span>${unit}</span></div></div>`;
+  return `<div class="groups"><span><b>SLICK'S</b></span><span>Purchasing</span>${OWNER?'<span>Daily work</span><span>System</span>':''}</div>
+  <div class="sec">Purchasing <span class="small">Orders and prices, before the invoice</span></div><div class="tiles">${t("Purchase orders",open,"open",["orders","orders"])}${t("Price lists",SUP.length,"suppliers with prices",["price"])}${t("Receive goods","","record a delivery",["orders","recv"])}
+  ${OWNER?t("Match a supplier invoice",ORDERS.reduce((n,o)=>n+(o.lines.some(l=>l.recv>l.inv)?1:0),0),"waiting for invoice",["orders","match"]):""}</div>
+  ${OWNER?`<div class="sec">Daily work <span class="small">What you open every day</span></div><div class="tiles">${t("Payables due","₱5.93M","next 7 days",["due"])}${t("Payment run",1,"waiting",null)}${t("Order statements","","not in this demo",null)}${t("Checks and checkbook","","not in this demo",null)}</div>
+  <div class="sec">System</div><div class="tiles">${t("Who can do what","","access matrix",["who"])}</div>`:""}
+  <div class="note">This is a sample of the Purchasing part of the new system. ${OWNER?"You are the <b>Owner</b>: you also match supplier invoices into payables batches.":"You are <b>Purchasing</b>: you make price lists and your own orders, and record deliveries. Payables, checks and batches are not yours."}</div>`}
+let PS=1;
+function priceV(){const rows=Object.entries(PRICE[PS]).map(([c,p])=>{const ch=chainOf(PS,c);return `<tr><td>${c}</td><td>${ITEMS[c][0]}</td><td class="n">${fmt(p)}</td><td>${chainTxt(ch)}</td><td class="n"><b>${fmt(net(p,ch))}</b></td></tr>`}).join("");
+  const side=Object.keys(ITEMS).filter(c=>SUP.filter(s=>PRICE[s.id][c]).length>1).map(c=>{const o=SUP.filter(s=>PRICE[s.id][c]).map(s=>({s,l:PRICE[s.id][c],n:net(PRICE[s.id][c],chainOf(s.id,c))})).sort((a,b)=>a.n-b.n);
+    return o.map((x,i)=>`<tr><td>${i?"":c}</td><td>${i?"":ITEMS[c][0]}</td><td>${x.s.name}</td><td class="n">${fmt(x.l)}</td><td class="n">${fmt(x.n)}</td><td>${i===0?'<span class="chip">cheapest</span>':""}</td></tr>`).join("")}).join("");
+  return `<h1>Price lists</h1><div class="sub">Each supplier's prices. An order takes its estimate from here; the actual invoice price always prevails.</div>
+  <div class="card"><label>Supplier</label><select onchange="PS=+this.value;render()">${SUP.map(s=>`<option value="${s.id}" ${s.id===PS?"selected":""}>${s.name}</option>`).join("")}</select></div>
+  <div class="card"><h3>Current prices</h3><table><tr><th>Code</th><th>Item</th><th class="n">List price</th><th>Discount</th><th class="n">Net price</th></tr>${rows}</table>
+  <p class="small">The discount is taken one after the other: 5, 5 on 7,600 gives 6,859.00 (not 10% off). In the real system, prices come from the Excel template, one sheet each for Tires, Battery, Mags and Rims.</p></div>
+  <div class="card"><h3>Items side by side</h3><table><tr><th>Code</th><th>Item</th><th>Supplier</th><th class="n">List</th><th class="n">Net</th><th></th></tr>${side}</table></div>`}
+function ordersV(){const tabs=[["orders","Orders"],["new","New order"],["recv","Receive goods"]].concat(OWNER?[["match","Match invoice"]]:[]);
+  const bar=`<div class="seg-row">${tabs.map(([k,l])=>`<button class="seg ${sub===k?"on":""}" onclick="go('orders','${k}')">${l}</button>`).join("")}</div><p></p>`;
+  return `<h1>Purchase orders</h1><div class="sub">An order shows what we will owe, and when, before the supplier's invoice exists.</div>${bar}`+({orders:ordersList,new:newOrder,recv:recvGoods,match:matchInv}[sub]||ordersList)()}
+function ordersList(){const rows=ORDERS.slice().reverse().map(o=>`<tr><td>${o.no}</td><td>${SUP.find(s=>s.id==o.sid).name}</td><td>${o.date}</td><td>${o.delivery}</td><td>${dlab(payDate(o.sid,o.delivery))}</td><td class="n">${fmt(orderTotal(o))}</td><td>${STATUS[o.status]}</td><td>${o.by}</td>
+  <td>${o.status==="DRAFT"?`<button onclick="orderIt(${o.id})">Order it</button>`:""}${(o.status==="DRAFT"||o.status==="ORDERED")&&(OWNER||o.by===ME)?`<button class="danger" onclick="cancelO(${o.id})">Cancel</button>`:(o.status==="ORDERED"&&!OWNER?'<span class="small">not yours</span>':"")}</td></tr>`).join("");
+  return `<div class="card"><table><tr><th>PO no.</th><th>Supplier</th><th>Ordered</th><th>Delivery</th><th>Falls due</th><th class="n">Estimated</th><th>Status</th><th>By</th><th></th></tr>${rows}</table>
+  <p class="small">${OWNER?"As owner you can order or cancel any order.":"You can order and cancel only your own orders (made by Brother). The first order was made by the owner."}</p></div>`}
+function orderIt(id){const o=ORDERS.find(x=>x.id===id);o.status="ORDERED";o.no="2026 - PO "+String(nextNo++).padStart(4,"0");flash=`${o.no} ordered. The supplier's PDF would be ready to download here.`;render()}
+function cancelO(id){const o=ORDERS.find(x=>x.id===id);o.status="CANCELLED";flash=`${o.no} cancelled. It stops counting as money owed.`;render()}
+function newOrder(){if(!F)F={sid:1,delivery:ds(addDays(TODAY,7)),lines:[],preview:false,view:"daily",pick:"",qty:1,disc:null};
+  const sid=F.sid,avail=Object.keys(PRICE[sid]);if(!F.pick||!PRICE[sid][F.pick])F.pick=avail[0];
+  const chain=F.disc===null?chainOf(sid,F.pick):parseChain(F.disc)||[];const lp=PRICE[sid][F.pick];
+  const total=F.lines.reduce((s,l)=>s+l.qty*net(l.list,l.chain),0), pay=payDate(sid,F.delivery);
+  return `<div class="card"><div class="grid"><div><label>Supplier</label><select onchange="F.sid=+this.value;F.lines=[];F.disc=null;F.delivery=ds(addDays(TODAY,7));render()">${SUP.map(s=>`<option value="${s.id}" ${s.id===sid?"selected":""}>${s.name}</option>`).join("")}</select></div>
+  <div><label>Order date</label><input value="Oct 02, 2026" disabled></div><div><label>Expected delivery</label><input type="date" value="${F.delivery}" onchange="F.delivery=this.value;render()"></div>
+  <div><label>Terms</label><input value="${SUP.find(s=>s.id==sid).terms} days" disabled></div></div></div>
+  <div class="card"><h3>Payables when this order falls due</h3>This order would fall due on <b>${dfull(pay)}</b> (delivery plus the supplier's terms).<p>
+  <button class="main" ${total<=0?"disabled":""} onclick="F.preview=${!F.preview};render()">${F.preview?"Clear preview":"Preview"}</button>
+  <span class="seg-row"><button class="seg ${F.view==="weekly"?"on":""}" onclick="F.view='weekly';render()">Weekly</button><button class="seg ${F.view==="daily"?"on":""}" onclick="F.view='daily';render()">Daily</button></span>
+  <span class="small"> ${total<=0?"Add an item first, then press Preview.":(F.preview?"This order is shown on the day it falls due.":"Press Preview to see this order on the chart.")}</span></p>
+  ${F.preview&&total>0?`<p><b>Preview:</b> ${fmt(total)} falls due on <b>${dfull(pay)}</b>.</p>`:""}${chart(pay,F.preview?total:0)}</div>
+  <div class="card"><h3>Add an item</h3><div class="grid"><div><label>Item</label><select onchange="F.pick=this.value;F.disc=null;render()">${avail.map(c=>`<option value="${c}" ${c===F.pick?"selected":""}>${c} · ${ITEMS[c][0]}</option>`).join("")}</select></div>
+  <div><label>Qty</label><input type="number" min="1" value="${F.qty}" onchange="F.qty=+this.value||1"></div><div><label>List price</label><input value="${fmt(lp)}" disabled></div>
+  <div><label>Discount % (usual: ${chainTxt(chainOf(sid,F.pick))})</label><input value="${F.disc===null?chain.join(", "):F.disc}" placeholder="5, 5" onchange="F.disc=this.value;render()"></div></div>
+  <p class="small">After ${chainTxt(chain)}: <b>${fmt(net(lp,chain))}</b> each. Type 5, 5 for less 5%, less 5%.</p><button onclick="addLine()">+ Add to the order</button></div>
+  <div class="card"><h3>Items on this order</h3>${F.lines.length?`<table><tr><th>Item</th><th class="n">Qty</th><th class="n">List</th><th>Discount</th><th class="n">Net</th><th class="n">Amount</th><th></th></tr>${F.lines.map((l,i)=>`<tr><td>${l.code} · ${ITEMS[l.code][0]}</td><td class="n">${l.qty}</td><td class="n">${fmt(l.list)}</td><td>${chainTxt(l.chain)}</td><td class="n">${fmt(net(l.list,l.chain))}</td><td class="n">${fmt(l.qty*net(l.list,l.chain))}</td><td><button onclick="F.lines.splice(${i},1);render()">×</button></td></tr>`).join("")}</table><p><b>Estimated total ${fmt(total)}</b></p>`:'<p class="small">No items yet.</p>'}
+  <button ${total<=0?"disabled":""} onclick="saveO(false)">Save draft</button><button class="main" ${total<=0?"disabled":""} onclick="saveO(true)">Save and order</button></div>`}
+function addLine(){const ch=F.disc===null?chainOf(F.sid,F.pick):parseChain(F.disc);if(ch===null){flash="";alert("Type the discount as percentages, like 5, 5.");return}F.lines.push({code:F.pick,qty:F.qty,list:PRICE[F.sid][F.pick],chain:ch,recv:0,inv:0});F.disc=null;render()}
+function saveO(order){const o={id:nextId++,no:order?"2026 - PO "+String(nextNo++).padStart(4,"0"):"DRAFT-PO-26-10-"+String(nextId).padStart(2,"0"),sid:F.sid,date:"2026-10-02",delivery:F.delivery,by:ME,status:order?"ORDERED":"DRAFT",lines:F.lines};
+  ORDERS.push(o);F=null;sub="orders";flash=order?`${o.no} ordered. It now counts in the payables on ${dfull(payDate(o.sid,o.delivery))}.`:"Draft saved.";render()}
+function chart(pay,add){const days=[];for(let d=addDays(pay,-10);d<=addDays(pay,20);d=addDays(d,1))if(d>=TODAY)days.push(d);
+  if(F&&F.view==="weekly"){const wk={};days.forEach(d=>{const m=addDays(d,-((d.getDay()+6)%7)),k=ds(m);wk[k]=(wk[k]||0)+committedOn(d)});const e=Object.entries(wk),mx=Math.max(...e.map(x=>x[1]),1)+add;
+    const pk=ds(addDays(pay,-((pay.getDay()+6)%7)));return `<div class="bars">${e.map(([k,v])=>`<div class="b ${k===pk?"sel":""}" title="${k}: ${fmt(v)}">${k===pk&&add?`<em>+${Math.round(add).toLocaleString()}</em><u style="height:${add/mx*140}px"></u>`:""}<i style="height:${v/mx*140}px"></i><s>Wk ${dlab(pd(k))}</s></div>`).join("")}</div><p class="small">Each bar is what is already due that week.</p>`}
+  const vals=days.map(committedOn),mx=Math.max(...vals,1)+add,wd=days.map((d,i)=>[d,vals[i]]).filter(x=>x[0].getDay()%6!==0),low=wd.length?wd.reduce((a,b)=>b[1]<a[1]?b:a)[0]:null;
+  return `<div class="bars">${days.map((d,i)=>{const sel=ds(d)===ds(pay);return `<div class="b ${sel?"sel":""} ${low&&ds(d)===ds(low)&&!sel?"low":""}" title="${dlab(d)}: ${fmt(vals[i])}">${sel&&add?`<em>+${Math.round(add).toLocaleString()}</em><u style="height:${add/mx*140}px"></u>`:""}<i style="height:${Math.max(2,vals[i]/mx*140)}px"></i><s>${dlab(d)}</s></div>`}).join("")}</div>
+  <p class="small"><span style="color:#F2B880">■</span> the day this order falls due &nbsp; <span style="color:#2E7D32">■</span> the lightest weekday &nbsp; <span style="color:#9FB3D1">■</span> other days. Each bar is what is already due that day (checks, loan and card dues, other orders).</p>`}
+function recvGoods(){const lines=[];ORDERS.filter(o=>o.status==="ORDERED"||o.status==="PARTIAL").forEach(o=>o.lines.forEach((l,i)=>{if(l.qty-l.recv>0)lines.push({o,l,i})}));
+  if(!lines.length)return '<div class="card">No order is waiting for goods. Make one under New order.</div>';
+  return `<div class="card"><p>Tick what arrived and how many. This only records the delivery: the supplier's invoice is matched later by Payables, and until then the goods still count as money owed.</p>
+  <table><tr><th></th><th>Order</th><th>Item</th><th class="n">Still to come</th><th class="n">Qty arrived</th></tr>${lines.map((x,k)=>`<tr><td><input type="checkbox" id="r${k}"></td><td>${x.o.no}</td><td>${ITEMS[x.l.code][0]}</td><td class="n">${x.l.qty-x.l.recv}</td><td class="n"><input id="q${k}" type="number" min="1" max="${x.l.qty-x.l.recv}" value="${x.l.qty-x.l.recv}" style="width:80px"></td></tr>`).join("")}</table>
+  <div class="grid"><div><label>The supplier gave us</label><select id="rk"><option>Delivery receipt</option><option>Invoice</option></select></div><div><label>Number (optional)</label><input id="rn"></div></div>
+  <p><button class="main" onclick="doRecv()">Record goods received</button></p><p class="small">Some suppliers give no delivery receipt, only their invoice: choose Invoice and type its number; Payables finds it later.</p></div>`}
+function doRecv(){const lines=[];ORDERS.filter(o=>o.status==="ORDERED"||o.status==="PARTIAL").forEach(o=>o.lines.forEach((l,i)=>{if(l.qty-l.recv>0)lines.push({o,l})}));let n=0;
+  lines.forEach((x,k)=>{if(document.getElementById("r"+k).checked){const q=Math.min(+document.getElementById("q"+k).value||0,x.l.qty-x.l.recv);if(q>0){x.l.recv+=q;n+=q;x.l.ref=document.getElementById("rn").value||""}}});
+  if(!n){alert("Tick at least one line that arrived.");return}ORDERS.forEach(o=>{if(o.lines.every(l=>l.recv>=l.qty)&&o.status!=="CANCELLED"&&o.status!=="DRAFT")o.status="RECEIVED";else if(o.lines.some(l=>l.recv>0)&&o.status==="ORDERED")o.status="PARTIAL"});
+  flash=`Received ${n} piece(s). ${OWNER?"Match the supplier's invoice when it comes (Match invoice).":"Payables matches the supplier's invoice when it comes."} Until then the goods still count as owed.`;sub="orders";render()}
+function matchInv(){const lines=[];ORDERS.forEach(o=>o.lines.forEach(l=>{if(l.recv>l.inv)lines.push({o,l})}));
+  const inv=INVOICES.length?`<div class="card"><h3>Invoices in payables batches</h3><table><tr><th>Batch</th><th>Invoice</th><th>Date</th><th>Due (invoice + terms)</th><th class="n">Amount</th></tr>${INVOICES.map(i=>`<tr><td>${i.batch}</td><td>${i.no}</td><td>${i.date}</td><td>${dfull(i.due)}</td><td class="n">${fmt(i.amt)}</td></tr>`).join("")}</table></div>`:"";
+  if(!lines.length)return '<div class="card">No received goods are waiting for an invoice.</div>'+inv;
+  return `<div class="card"><p>The supplier's invoice arrived: match it to the goods received. It goes into a payables batch at the price the supplier actually charged.</p>
+  <table><tr><th></th><th>Order</th><th>Item</th><th class="n">To invoice</th><th class="n">Estimated</th><th class="n">Actual price</th></tr>${lines.map((x,k)=>`<tr><td><input type="checkbox" id="m${k}"></td><td>${x.o.no}</td><td>${ITEMS[x.l.code][0]}</td><td class="n">${x.l.recv-x.l.inv}</td><td class="n">${fmt(lineNet(x.l))}</td><td class="n"><input id="p${k}" type="number" step="0.01" value="${lineNet(x.l)}" style="width:110px"></td></tr>`).join("")}</table>
+  <div class="grid"><div><label>Supplier's invoice no.</label><input id="mi" value="SI-1001"></div><div><label>Invoice date</label><input id="md" type="date" value="2026-10-09"></div><div><label>Put it in batch</label><select id="mb"><option>A new batch</option><option>OS-2026-0412 (open)</option></select></div></div>
+  <p><button class="main" onclick="doMatch()">Add to the batch</button></p></div>`+inv}
+function doMatch(){const lines=[];ORDERS.forEach(o=>o.lines.forEach(l=>{if(l.recv>l.inv)lines.push({o,l})}));let amt=0,n=0;
+  lines.forEach((x,k)=>{if(document.getElementById("m"+k).checked){const q=x.l.recv-x.l.inv,p=+document.getElementById("p"+k).value;amt+=q*p;x.l.inv+=q;n++}});
+  if(!n){alert("Tick at least one line.");return}const d=pd(document.getElementById("md").value),sup=SUP.find(s=>s.id==lines[0].o.sid);
+  INVOICES.push({batch:document.getElementById("mb").value==="A new batch"?"OS-2026-0413 (new)":"OS-2026-0412",no:document.getElementById("mi").value,date:ds(d),due:bankDay(addDays(d,30)),amt});
+  flash=`Invoice ${document.getElementById("mi").value} for ${fmt(amt)} added to the batch. It is now a payable, due on the next bank day after invoice date + the supplier's terms.`;render()}
+function dueV(){const w=[["Sep 28","₱3,014,565.00","₱2,392,565.00","₱622,000.00","₱0.00"],["Oct 05","₱2,801,099.50","₱1,968,992.00","₱618,000.00","₱214,107.50"],["Oct 12","₱2,082,969.39","₱1,380,908.00","₱510,334.00","₱191,727.39"],["Oct 19","₱3,206,290.10","₱2,195,001.00","₱588,300.00","₱422,989.10"],["Oct 26","₱2,063,939.46","₱1,495,335.00","₱496,000.00","₱72,604.46"]];
+  return `<h1>Payables due</h1><div class="sub">What can hit the bank, by week. (Sample figures; the real page reads your checks, loans and card dues. Purchasing does not see this page.)</div><div class="card"><table><tr><th>Week of</th><th class="n">Total</th><th class="n">Supplier checks</th><th class="n">Lender checks</th><th class="n">Bank loans</th></tr>${w.map(r=>`<tr><td>${r[0]}</td><td class="n"><b>${r[1]}</b></td><td class="n">${r[2]}</td><td class="n">${r[3]}</td><td class="n">${r[4]}</td></tr>`).join("")}</table></div>`}
+function whoV(){const R=[["Home","Y","Y","Y","Y"],["See price lists and items side by side","Y","view","Y","view"],["Add or import prices, set discounts","Y","—","Y","—"],["See purchase orders","Y","Y","Y","view"],["Create and edit a purchase order","Y","—","own","—"],["Order it and download the PDF","Y","—","own","—"],["Cancel an order not yet received","Y","—","own","—"],["Record goods received","Y","Y","Y","—"],["Match the supplier's invoice into a payables batch","Y","Y","—","—"],["Park checks","Y","Y","—","—"],["Issue and print checks","Y","—","—","—"],["Cancel or void a check","Y","—","—","—"],["Users, roles, settings, audit log","Y","—","—","—"]];
+  return `<h1>Who can do what</h1><div class="sub">Y = may do it · view = look only · own = only what they made · — = no. The owner can also look at the system as any role (Developer view).</div><div class="card"><table><tr><th>Operation</th><th>Owner</th><th>Payables</th><th>Purchasing</th><th>Viewer</th></tr>${R.map(r=>`<tr><td>${r[0]}</td>${r.slice(1).map(c=>`<td class="${c==="Y"?"ok":""}">${c}</td>`).join("")}</tr>`).join("")}</table></div>`}
+render();
+</script></body></html>

@@ -35,7 +35,7 @@ def test_the_first_run_has_no_users_and_the_first_owner_sets_their_own_password(
     assert au.needs_setup() is True
     assert not au.create_owner(OWNER, "x", "short")[0]                      # the password rules apply to the owner too
     uid = _owner(db)
-    assert au.needs_setup() is False and au.get_user(uid)["role"] == "owner" and au.get_user(uid)["must_change_password"] == 0
+    assert au.needs_setup() is False and au.get_user(uid)["role"] == "admin" and au.get_user(uid)["must_change_password"] == 0
     assert not au.create_owner("other@example.com", "Other", "Another123")[0]   # only while there is nobody
 
 
@@ -50,7 +50,7 @@ def test_passwords_are_stored_scrambled_and_never_in_the_clear(db):
 def test_signing_in_with_the_right_and_wrong_password(db):
     _owner(db)
     ok, user, msg = au.authenticate(" Owner@Example.com ", "Owner123x")
-    assert ok and user["email"] == OWNER and user["role"] == "owner"          # the email is matched ignoring case and spaces
+    assert ok and user["email"] == OWNER and user["role"] == "admin"          # the email is matched ignoring case and spaces
     ok, user, msg = au.authenticate(OWNER, "wrong")
     assert not ok and user is None and msg == "Wrong email or password."
     assert au.authenticate("nobody@example.com", "whatever")[2] == "Wrong email or password."       # the same words: it never says which part was wrong
@@ -102,11 +102,11 @@ def test_the_owner_can_reset_a_password_and_switch_a_person_off_and_on(db):
     assert au.set_active(uid, True)[0] and au.authenticate("brother@example.com", temp2)[0]
 
 
-def test_the_last_owner_cannot_be_switched_off_or_demoted(db):
+def test_the_last_system_admin_cannot_be_switched_off_or_demoted(db):
     owner = _owner(db)
     assert not au.set_active(owner, False)[0] and not au.set_role(owner, "purchasing")[0]
-    _, _, second, temp = au.create_user("second@example.com", "Second", "owner")
-    assert au.set_role(owner, "purchasing")[0]                                           # fine once there is another owner
+    _, _, second, temp = au.create_user("second@example.com", "Second", "admin")
+    assert au.set_role(owner, "purchasing")[0]                                           # fine once there is another System admin
     assert not au.set_active(second, False)[0]                                           # ... which is now the last one
 
 
@@ -122,3 +122,15 @@ def test_users_are_listed_without_their_password_hashes(db):
     au.create_user("brother@example.com", "The Brother", "purchasing")
     df = au.list_users()
     assert list(df["email"]) == [OWNER, "brother@example.com"] and "password_hash" not in df.columns
+
+
+def test_the_sign_in_can_be_skipped_only_on_a_test_database(monkeypatch):
+    from views import login
+    monkeypatch.setenv("AP_SKIP_LOGIN", "1")
+    monkeypatch.setenv("AP_DB_PATH", "data/ap_disbursement_TEST.db")
+    assert login._sign_in_off() is True
+    monkeypatch.setenv("AP_DB_PATH", "data/ap_disbursement.db")
+    assert login._sign_in_off() is False                              # never on the real database
+    monkeypatch.setenv("AP_DB_PATH", "data/ap_disbursement_TEST.db")
+    monkeypatch.delenv("AP_SKIP_LOGIN")
+    assert login._sign_in_off() is False

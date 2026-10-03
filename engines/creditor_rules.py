@@ -34,7 +34,20 @@ def add_creditor(name: str, creditor_type: str, tin: str, contact_person: str, c
             (name, creditor_type, tin, contact_person, contact_number, email, terms or (DEFAULT_SUPPLIER_TERMS if creditor_type == "SUPPLIER" else None), is_lessor),
         )
         conn.commit()
-        return cur.lastrowid
+        new_id = cur.lastrowid
+    _flag_new_payee(new_id, name, creditor_type)
+    return new_id
+
+
+def _flag_new_payee(creditor_id: int, name: str, creditor_type: str) -> None:
+    """Anyone but the System admin may add a supplier or lender and use it at once; it lands on the Review list so the owner notices a new payee before a check is printed."""
+    from engines.acting_user import acting_role
+    if creditor_type not in ("SUPPLIER", "LENDER") or (acting_role() or "admin") == "admin":
+        return
+    from engines.common import write_tx
+    from engines.review_flags import flag
+    with write_tx() as conn:
+        flag(conn, "NEW_PAYEE", "creditors", creditor_id, f"New {creditor_type.lower()}: {name}")
 
 
 def get_or_create_card_issuer(name: str) -> int:

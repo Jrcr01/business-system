@@ -12,6 +12,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from engines.permissions import require as require_permission
 from engines.clock import manila_today
 from engines.common import get_conn, write_tx
 
@@ -46,6 +47,9 @@ def release_summary(today: date | None = None) -> dict:
 
 def mark_released(check_ids: list[int], released_date, released_to: str = "") -> tuple[bool, str]:
     """Records that the supplier collected these checks. All or nothing: an unknown, unprinted, cancelled, handwritten or already released check stops the save."""
+    _ok, _msg = require_permission('check.release')
+    if not _ok:
+        return False, _msg
     ids = [int(c) for c in check_ids or []]
     when = _day(released_date)
     who = " ".join(str(released_to or "").split()) or None
@@ -83,6 +87,9 @@ def mark_released(check_ids: list[int], released_date, released_to: str = "") ->
 
 def undo_release(check_id: int) -> tuple[bool, str]:
     """Takes a release back (it was marked by mistake). Refused once the bank has cleared the check."""
+    _ok, _msg = require_permission('check.release')
+    if not _ok:
+        return False, _msg
     with write_tx() as conn:
         row = conn.execute("SELECT released_date, released_to, bank_cleared_date, check_number FROM checks_issued WHERE check_id = ?", (int(check_id),)).fetchone()
         if not row:
@@ -120,6 +127,9 @@ def preview_release_before(cutoff) -> dict:
 def release_before(cutoff, note: str = "before release tracking") -> tuple[bool, str]:
     """One-time catch-up: every check printed on or before `cutoff` and still waiting is marked released ON ITS PRINT DATE, 'collected by' = the note. For checks that
     were already with their suppliers when release tracking began. One audit line for the whole batch."""
+    _ok, _msg = require_permission('check.release')
+    if not _ok:
+        return False, _msg
     day = _day(cutoff)
     if day is None:
         return False, "Pick the cutoff date."

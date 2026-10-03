@@ -88,6 +88,8 @@ def render_new_loan_note_form() -> None:
                     def _do_create_loan_note(c=ln_creditor, d=ln_issue_date, p=ln_principal, r=ln_rate):
                         ok, msg, new_lnid = create_loan_note(c, d, p, r)
                         if ok:
+                            from engines.loan_note_rules import promote_draft_loan_note
+                            msg += f" It is {promote_draft_loan_note(new_lnid)}."          # given its real number at once: no separate Promote step (owner, 2026-10-03)
                             st.session_state["selected_loan_note_id"] = new_lnid
                             st.session_state["_ln_mode_next"] = LN_BROWSE
                         return ok, msg
@@ -107,7 +109,10 @@ def render_add_installment_form(loan_note_id: int) -> None:
     ln_row = q("SELECT monthly_interest_rate, principal_amount FROM loan_notes WHERE loan_note_id = ?", (selected_lnid,)).iloc[0]
     _bal = q("SELECT outstanding_balance FROM loan_installments WHERE loan_note_id = ? ORDER BY due_date, installment_id", (selected_lnid,))
     current_balance = float(_bal["outstanding_balance"].iloc[-1]) if not _bal.empty else float(ln_row["principal_amount"] or 0.0)
-    add_due_date = st.date_input("Due date", value=manila_today(), key="ln_add_due_date", help='When this installment is due. Its interest is suggested for the days since the previous installment.')
+    from engines.common import add_months
+    last_due = q("SELECT MAX(due_date) AS d FROM loan_installments WHERE loan_note_id = ?", (selected_lnid,))["d"][0]
+    due_default = add_months(date.fromisoformat(str(last_due)[:10])) if last_due and str(last_due) not in ("None", "nan") else manila_today()       # a month after the last installment
+    add_due_date = st.date_input("Due date", value=due_default, key=f"ln_add_due_date_{selected_lnid}_{due_default}", help='When this installment is due. Its interest is suggested for the days since the previous installment.')
     if st.button("Use remaining balance as principal (lump-sum payoff)", icon=":material/payments:", key="ln_lumpsum_btn"):
         st.session_state["ln_add_principal"] = current_balance
     add_principal = st.number_input("Principal", min_value=0.0, step=1000.0, key="ln_add_principal", help='The part of this payment that reduces the loan balance.')
@@ -368,7 +373,24 @@ def render() -> None:
                 st.caption("Add installments as real payment dates are committed to — Interest is a suggested value (rate × outstanding balance × days since the previous row ÷ 30) that you can freely override for lender-specific conventions.")
                 current_balance = float(installments_df["outstanding_balance"].iloc[-1]) if not installments_df.empty else float(ln_row["principal_amount"] or 0.0)
 
-                with st.expander("Add an installment", expanded=installments_df.empty):
+                if installments_df.empty and float(ln_row["principal_amount"] or 0) > 0:
+                    from engines.common import add_months
+                    from engines.loan_schedule_service import generate_schedule, preview_schedule
+                    with st.expander("Make the whole schedule in one go", expanded=True):
+                        st.caption("Equal monthly principal and interest on the balance still owed (the monthly rate × the balance). Look at the table, change the number or the first date, then create it; "
+                                   "every row can still be edited afterwards.")
+                        g1, g2 = st.columns(2)
+                        first_due = g1.date_input("First due date", value=add_months(pd.to_datetime(ln_row["issue_date"]).date(), 1), key=f"ln_gen_first_{selected_lnid}")
+                        how_many = g2.number_input("Number of installments", min_value=1, max_value=120, value=12, step=1, key=f"ln_gen_n_{selected_lnid}")
+                        preview = preview_schedule(int(selected_lnid), first_due, int(how_many))
+                        st.dataframe(pd.DataFrame(preview), hide_index=True, width="stretch",
+                                     column_config={"due_date": date_col("Due"), "principal": st.column_config.NumberColumn("Principal", format=MONEY_FORMAT),
+                                                    "interest": st.column_config.NumberColumn("Interest", format=MONEY_FORMAT), "total": st.column_config.NumberColumn("Pay", format=MONEY_FORMAT),
+                                                    "balance": st.column_config.NumberColumn("Balance after", format=MONEY_FORMAT)})
+                        if st.button("Create this schedule", icon=":material/calendar_add_on:", type="primary", key=f"ln_gen_go_{selected_lnid}"):
+                            ok, msg = generate_schedule(int(selected_lnid), first_due, int(how_many))
+                            (refresh(done=msg) if ok else st.error(msg))
+                with st.expander("Add an installment", expanded=installments_df.empty and not float(ln_row["principal_amount"] or 0) > 0):
                     render_add_installment_form(int(selected_lnid))
                 ln_import_staged_key = f"ln_import_staged_{selected_lnid}"
                 ln_import_errors_key = f"ln_import_errors_{selected_lnid}"
@@ -513,7 +535,19 @@ def render() -> None:
             elif pending_installments.empty:
                 st.caption("No pending installments to issue a check against — add one in the Repayment Schedule tab.")
             else:
-                with st.expander("Issue PDC for an installment", expanded=True):
+                from engines.loan_schedule_service import issue_all_pdcs
+                if len(pending_installments) > 1:
+                    if st.button(f"Issue PDCs for all {len(pending_installments)} pending installments", icon=":material/payments:", type="primary", key="ln_pdc_all_btn"):
+                        def _issue_all(lnid=selected_lnid):
+                            ok, msg, _n = issue_all_pdcs(lnid)
+                            if ok:
+                                flash(msg)
+                            return ok, msg
+
+                        total = float((pending_installments["principal"] + pending_installments["interest"]).sum())
+                        confirm_create_dialog(f"Park **{len(pending_installments)} post-dated checks** totaling **{php(total)}**, one for each pending installment, each dated on its due date?",
+                                              "ln_pdc_all_confirm", _issue_all)
+                with st.expander("Issue PDC for one installment", expanded=len(pending_installments) <= 1):
                     pending_pick = st.selectbox(
                         "Installment",
                         options=pending_installments["installment_id"],

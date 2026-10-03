@@ -15,23 +15,56 @@ from contextvars import ContextVar
 OWNER_EMAIL = "v.jrcroxas@gmail.com"      # the owner; also written on the audit rows made before F1.5 (apply_pending_migrations)
 
 _acting: ContextVar[str | None] = ContextVar("acting_user", default=None)
+_role: ContextVar[str | None] = ContextVar("acting_role", default=None)
+
+
+_FALLBACK = None          # a function () -> {'email', 'role'} | None, registered by a screen layer that keeps the signed-in person elsewhere
+
+
+def register_fallback(fn) -> None:
+    """The Streamlit app registers how to find the person signed in to the browser tab: its button callbacks and pop-ups run before the page's
+    sign-in step, so the per-run value below is not set yet. Django never needs it (its middleware sets the value for every request).
+    Kept here as a hook so engines/ itself never imports a screen framework."""
+    global _FALLBACK
+    _FALLBACK = fn
+
+
+def _signed_in() -> dict | None:
+    if _FALLBACK is None:
+        return None
+    try:
+        return _FALLBACK()
+    except Exception:
+        return None
 
 
 def acting_user() -> str:
-    """The email recorded on audit rows written now: the person set by acting_as(), else the owner (no logins yet)."""
-    return _acting.get() or OWNER_EMAIL
+    """The email recorded on audit rows written now: the person set by acting_as(), else the signed-in person of this tab, else the owner (scripts, tests)."""
+    return _acting.get() or ((_signed_in() or {}).get("email") or "").strip().lower() or OWNER_EMAIL
 
 
-def set_acting(email: str | None) -> None:
-    """Record everything saved for the rest of this page run as done by `email` (the sign-in sets it at the top of every run)."""
+def acting_email() -> str | None:
+    """The signed-in person's email, or None when nobody is signed in (a script or a test)."""
+    return _acting.get() or ((_signed_in() or {}).get("email") or "").strip().lower() or None
+
+
+def acting_role() -> str | None:
+    """The signed-in person's role (engines/permissions.py), or None when nobody is signed in: that acts as the owner."""
+    return _role.get() or (_signed_in() or {}).get("role") or None
+
+
+def set_acting(email: str | None, role: str | None = None) -> None:
+    """Record everything saved for the rest of this page run as done by `email`, with `role` for the permission guards (the sign-in sets both at the top of every run)."""
     _acting.set((email or "").strip().lower() or None)
+    _role.set(role or None)
 
 
 @contextmanager
-def acting_as(email: str | None):
-    """Record everything saved inside this block as done by `email` (None = the owner)."""
-    token = _acting.set((email or "").strip().lower() or None)
+def acting_as(email: str | None, role: str | None = None):
+    """Record everything saved inside this block as done by `email` (None = the owner), with `role` for the permission guards (None = the owner's)."""
+    token, rtoken = _acting.set((email or "").strip().lower() or None), _role.set(role or None)
     try:
         yield
     finally:
         _acting.reset(token)
+        _role.reset(rtoken)
