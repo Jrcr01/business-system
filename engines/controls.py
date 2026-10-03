@@ -7,6 +7,7 @@ CONTROLS = [
     # process, kind, control, what happens, test
     ("Buy", "GUIDE", "Prices come from the price list", "An order line takes the supplier's net price (list less the discount chain); a line with no price cannot be ordered.", "test_discounts.py"),
     ("Buy", "GUIDE", "Delivery date and pay date", "The delivery date starts at the supplier's usual days; the pay date is delivery plus terms on a bank day, and the chart shows what is already due that week.", "test_po_schedule.py"),
+    ("Buy", "FLAG", "A high-payables day", "If the day an order falls due would pass the daily limit (Settings, 0 = off), the form warns and suggests a lighter delivery day; the user decides, and ordering anyway is noted on the Review list.", "test_po_day_guard.py"),
     ("Buy", "FLAG", "Ordered it and received it", "The buyer may record the delivery of his own order; it is flagged for review.", "test_review_flags.py"),
     ("Pay", "FLAG", "Received the goods and matched the invoice", "The same person matching the invoice to goods they received is flagged for review.", "test_review_flags.py"),
     ("Pay", "FLAG", "Invoice price well above the order", "An invoice price more than 10% above the order's net price goes through at the price charged and is flagged.", "test_review_flags.py"),

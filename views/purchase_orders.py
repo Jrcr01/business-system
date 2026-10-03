@@ -70,6 +70,11 @@ def _save(also_order: bool, edit_id, cid, order_date, delivery, lines, notes) ->
     flash(msg if also_order else "Draft saved.")
 
 
+def _use_delivery(delivery) -> None:
+    """Button callback: take the suggested lighter delivery day."""
+    st.session_state["po_delivery"] = delivery
+
+
 def _use_dates(order_date, delivery) -> None:
     """Button callback: take the suggested dates (a callback may change the page's own widgets)."""
     st.session_state["po_order_date"] = order_date
@@ -177,6 +182,17 @@ def _schedule_panel(cid: int, order_date, delivery, edit_id, estimate: float) ->
         st.info("Pick the expected delivery date to see the payables for that week.")
         return
     st.markdown(f"This order would fall due on **{pay:%a, %b %d, %Y}** (delivery {delivery:%b %d} plus the supplier's terms).")
+    from engines.po_rules import day_guard
+    guard = day_guard(cid, delivery, estimate, edit_id)
+    if guard["on"] and guard["over"]:                       # the guard rail: a warning for the user to weigh, never a block
+        st.warning(f"**High payables on {guard['pay_date']:%a, %b %d}.** {php(guard['already'])} is already due that day; with this order it would be {php(guard['with_order'])}, "
+                   f"over your daily limit of {php(guard['limit'])}. You can still order it: it will be noted on the Review list.", icon=":material/warning:")
+        sug = guard["suggestion"]
+        if sug:
+            st.button(f"Deliver on {sug['delivery_date']:%b %d} instead: falls due {sug['pay_date']:%a, %b %d}, that day would be {php(sug['with_order'])}", icon=":material/event_repeat:",
+                      key="po_use_light_day", on_click=_use_delivery, args=(sug["delivery_date"],), help="Moves the expected delivery date to the nearest day whose payables stay within the limit.")
+        else:
+            st.caption("No delivery day in the next three weeks keeps that day within the limit; the order alone may be above it. Consider splitting it into two orders on different days.")
     preview = estimate > 0                                   # the chart always shows this order, on the day or week it falls due, once it has an item (no Preview button, 2026-10-03)
     if preview:
         st.markdown(f"**This order:** ₱{estimate:,.2f} falls due on **{pay:%a, %b %d, %Y}**. The chart follows the items below as you change them.")

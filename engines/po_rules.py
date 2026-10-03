@@ -191,6 +191,7 @@ def order_po(po_id: int) -> tuple[bool, str]:
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_ORDERED', 'purchase_orders', ?, ?)",
                      (po_id, f"{number}, estimated {total:,.2f}"))
     update_cash_flag(po_id)
+    note_high_day(po_id)
     return True, f"Ordered as {number}."
 
 
@@ -461,6 +462,45 @@ def _committed_rows(end: date, exclude_po_id: int | None = None) -> pd.DataFrame
         if po:
             out = out[~((out["kind"] == "Purchase orders") & (out["reference"] == po["header"]["po_no"]))]
     return out[cols].reset_index(drop=True)
+
+
+def day_guard(creditor_id: int, delivery, estimate: float, exclude_po_id: int | None = None) -> dict:
+    """The guard rail on the order form (owner, 2026-10-03): would the day this order falls due carry more payables than the daily limit (Settings, 0 = off)? A warning for the user to
+    weigh, never a block. Returns {'on', 'limit', 'pay_date', 'already', 'with_order', 'over', 'suggestion'}; the suggestion is the nearest later delivery whose pay day stays within the
+    limit ({'delivery_date', 'pay_date', 'with_order'}), or None when no day within three weeks fits (the order alone may be above the limit)."""
+    from engines.settings_registry import value
+    limit = float(value("po_daily_payables_limit"))
+    pay = expected_pay_date(creditor_id, delivery) if delivery else None
+    if limit <= 0 or not estimate or estimate <= 0 or pay is None:
+        return {"on": False, "limit": limit, "pay_date": pay, "already": 0.0, "with_order": 0.0, "over": False, "suggestion": None}
+    rows = _committed_rows(pay + timedelta(days=60), exclude_po_id)
+    sums = rows.groupby("day")["amount"].sum() if not rows.empty else pd.Series(dtype=float)
+    already = float(sums.get(pay, 0.0))
+    out = {"on": True, "limit": limit, "pay_date": pay, "already": already, "with_order": already + float(estimate), "over": already + float(estimate) > limit, "suggestion": None}
+    if out["over"]:
+        first = _as_date(delivery)
+        for k in range(1, 22):
+            d = first + timedelta(days=k)
+            p = expected_pay_date(creditor_id, d)
+            load = float(sums.get(p, 0.0)) + float(estimate)
+            if p and load <= limit:
+                out["suggestion"] = {"delivery_date": d, "pay_date": p, "with_order": load}
+                break
+    return out
+
+
+def note_high_day(po_id: int) -> None:
+    """After an order is placed: if its pay day is over the daily limit, a line goes on the Review list (the user chose to order anyway). Never blocks."""
+    po = get_po(po_id)
+    if not po:
+        return
+    h = po["header"]
+    g = day_guard(int(h["creditor_id"]), h["expected_delivery_date"], float(po["total"]), exclude_po_id=po_id)
+    if g["over"]:
+        from engines.review_flags import flag
+        with write_tx() as conn:
+            flag(conn, "PO_HIGH_DAY", "purchase_orders", po_id,
+                 f"{h['po_no']}: {po['total']:,.2f} falls due {g['pay_date']:%b %d, %Y}, a day that would carry {g['with_order']:,.2f} against the limit of {g['limit']:,.2f}")
 
 
 def week_schedule(pay_date, exclude_po_id: int | None = None) -> dict | None:
