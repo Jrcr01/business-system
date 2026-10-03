@@ -72,11 +72,8 @@ def build_template(creditor_id: int | None = None, on: date | None = None) -> by
         for key, text, required in headers:
             fld = next((f for f in pc.CATEGORY_FIELDS[category] if f["key"] == key), None)
             j = [h[0] for h in headers].index(key) + 1
-            if fld and fld["choices"]:
-                dv = DataValidation(type="list", formula1='"' + ",".join(fld["choices"]) + '"', allow_blank=True, showErrorMessage=True,
-                                    errorTitle=text, error="Pick a value from the list.")
-                ws.add_data_validation(dv)
-                dv.add(f"{get_column_letter(j)}2:{get_column_letter(j)}{MAX_ROWS}")
+            if False:                                   # drop-down lists removed (owner, 2026-10-04: the template is filled by another AI; any value is accepted)
+                pass
             elif fld and fld["note"]:
                 ws.cell(row=1, column=j).comment = None
         for r, rowvals in enumerate(current.get(category, []), start=2):
@@ -170,8 +167,6 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
                 v = pc._clean(v)
                 if fld["required"] and not v:
                     bad.append(f"{fld['label']} is empty")
-                if v and fld["choices"] and v.lower() not in [c.lower() for c in fld["choices"]]:
-                    bad.append(f"{fld['label']} '{v}' is not one of {', '.join(fld['choices'])}")
                 values[fld["key"]] = v
             raw_price = cell("list_price")
             price = pls._to_price(raw_price)

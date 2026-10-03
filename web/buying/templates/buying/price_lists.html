@@ -77,6 +77,7 @@
   <p class="hint">"Prices start on" is used for every row that has no Effective date of its own.</p>
   {% if file %}
     <div class="grp">The file, before anything is saved</div>
+    <div class="msg warning"><b>These prices are for {{ supplier }}.</b> If that is the wrong supplier, pick the right one above and check the file again.</div>
     <p>Rows read: {% for k, v in parsed.counts.items %}{{ k }} {{ v }}{% if not forloop.last %}, {% endif %}{% empty %}no sheets read{% endfor %}.
       {% for label, n in summary %}<b>{{ n }}</b> {{ label }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
     {% if parsed.problems %}<div class="msg warning"><b>{{ parsed.problems|length }} problem(s): these rows are not saved until fixed.</b><ul>{% for pr in parsed.problems %}<li>{{ pr }}</li>{% endfor %}</ul></div>{% endif %}
@@ -89,10 +90,10 @@
       </table></div>
     {% endfor %}
     {% if n_rows %}
-    <form class="bar" method="post" style="margin-top:12px">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="import_file">
+    <form class="bar" method="post" style="margin-top:12px" onsubmit="return confirm('Import these prices to {{ supplier|escapejs }}?');">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="import_file">
       <input type="hidden" name="file" value="{{ file }}"><input type="hidden" name="start" value="{{ start|date:'Y-m-d' }}">
       <div><label for="dup">If a product already has a price on the same date</label><select id="dup" name="dup"><option value="skip">Keep the old price</option><option value="replace">Replace it with the file's price</option></select></div>
-      <button class="btn small" type="submit"><span class="ms">upload_file</span>Import {{ n_rows }} row(s)</button>
+      <button class="btn small" type="submit"><span class="ms">upload_file</span>Import {{ n_rows }} row(s) to {{ supplier }}</button>
     </form>
     {% endif %}
   {% endif %}

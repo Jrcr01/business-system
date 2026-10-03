@@ -39,8 +39,7 @@ def test_the_template_has_a_sheet_per_category_with_the_standard_columns_and_dro
     tires = [c.value for c in wb["Tires"][1]]
     assert tires == ["Brand *", "Size *", "Ply / load-speed", "Terrain", "Pattern *", "Type", "Tube", "Supplier item code", "Unit", "List price *", "Effective date", "Remarks"]
     assert [c.value for c in wb["Battery"][1]][:7] == ["Brand *", "Model / group *", "Volts", "Ah *", "CCA", "Type", "Terminal"]
-    lists = {dv.formula1 for dv in wb["Tires"].data_validations.dataValidation}
-    assert '"A/T,M/T,H/T,R/T"' in lists and '"TL,TT"' in lists and '"PCR,LT,TBR,TBB,OTR"' in lists
+    assert not wb["Tires"].data_validations.dataValidation          # no drop-down lists (owner, 2026-10-04: another AI fills it; any value is accepted)
     assert wb["Tires"].freeze_panes == "A2"
 
 
@@ -63,10 +62,10 @@ def test_every_kind_of_problem_is_named_by_sheet_and_row():
                      {"Brand": "apollo", "Size": "5", "Pattern": "x", "List price": 6, "Effective date": DAY}]}
     parsed = pt.parse_workbook(_fill(bad))
     text = "\n".join(parsed["problems"])
-    for needle in ("Tires row 2: Brand is empty", "Tires row 3: Size is empty", "Tires row 4: Terrain 'Q/Q' is not one of", "Tires row 5: List price 'call'",
+    for needle in ("Tires row 2: Brand is empty", "Tires row 3: Size is empty", "Tires row 5: List price 'call'",
                    "Tires row 6: Effective date 'someday'", "Tires row 7: Effective date is empty", "Tires row 9: the same product and date appears twice"):
         assert needle in text, needle
-    assert [r["row"] for r in parsed["rows"]] == [8]                                                               # only the good row survives
+    assert [r["row"] for r in parsed["rows"]] == [4, 8]                                                            # the good rows survive (an unlisted Terrain is fine since 2026-10-04)
     assert len(pt.parse_workbook(_fill(bad), default_date=DAY)["problems"]) == len(parsed["problems"]) - 1          # a pick-date on upload fills the empty date
 
 
