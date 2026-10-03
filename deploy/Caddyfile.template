@@ -1,7 +1,12 @@
-# Slicks ERP -- Caddy: HTTPS with an automatic certificate, then hands every request to the ERP on this server only.
+# Slick's system -- Caddy: HTTPS with an automatic certificate. /more/... goes to the Streamlit screens not moved yet, everything else to Django.
 __SITE__ {
 	encode zstd gzip
-	reverse_proxy 127.0.0.1:8000
+	handle /more* {
+		reverse_proxy 127.0.0.1:8501
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8000
+	}
 	header {
 		-Server
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"

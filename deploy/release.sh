@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Runs ON THE SERVER as slicks, called by deploy_to_server.sh after it unpacked a release into /srv/slicks/app/releases/<id>.
-# Installs the pinned packages, updates the database (Django migrations only -- the test site's AP tables come with the data copy),
-# collects the static files, checks the security settings, switches "current" to the new release and restarts. If the ERP does not
-# answer after the restart, it switches back to the previous release.
+# Installs the pinned packages, brings the database up to schema.sql (adds what is missing, never changes or removes anything; a copy is
+# made first), collects the static files, checks the security settings, switches "current" to the new release and restarts BOTH programs
+# (the Django system and the Streamlit screens). If the system does not answer after the restart, it switches back to the previous release.
 set -euo pipefail
 
 ID="${1:?release id}"
@@ -14,32 +14,37 @@ set -a; . /etc/slicks-erp/env; set +a
 cd "$NEW"
 "$PY" -m pip install -q --upgrade pip
 "$PY" -m pip install -q -r requirements-server.txt
-if [ -f "$ERP_DB_PATH" ]; then
-  "$PY" erp/manage.py migrate --noinput
+if [ -f "$WEB_DB_PATH" ]; then
+  "$PY" -c "from db_location import safe_copy; import sys; safe_copy(sys.argv[1], sys.argv[2])" "$WEB_DB_PATH" "/srv/slicks/backups/before_release_$ID.db"
+  "$PY" apply_pending_migrations.py --db "$WEB_DB_PATH"
 else
-  echo "No database yet at $ERP_DB_PATH -- run deploy/upload_test_data.sh from the laptop, then deploy again."
+  echo "No database yet at $WEB_DB_PATH -- upload it first (deploy/upload_data.sh), then deploy again."
 fi
-"$PY" erp/manage.py collectstatic --noinput -v 0
-"$PY" erp/manage.py check --deploy --fail-level WARNING
+"$PY" web/manage.py collectstatic --noinput -v 0
+"$PY" web/manage.py check --deploy --fail-level WARNING
 
 PREV="$(readlink -f "$APP/current" 2>/dev/null || true)"
 ln -sfn "$NEW" "$APP/current.tmp" && mv -Tf "$APP/current.tmp" "$APP/current"
 sudo /usr/bin/systemctl restart slicks-erp
+sudo /usr/bin/systemctl restart slicks-streamlit
 
-HOST="${ERP_ALLOWED_HOSTS%%,*}"
+HOST="${WEB_ALLOWED_HOSTS%%,*}"
+code=000
 for i in 1 2 3 4 5 6 7 8 9 10; do
-  code="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $HOST" -H "X-Forwarded-Proto: https" http://127.0.0.1:8000/sign-in/ || true)"
-  [ "$code" = 200 ] && { echo "Release $ID is live (sign-in page answers)."; break; }
+  code="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $HOST" -H "X-Forwarded-Proto: https" http://127.0.0.1:8000/health/ || true)"
+  [ "$code" = 200 ] && { echo "Release $ID is live (the system answers)."; break; }
   sleep 2
 done
 if [ "$code" != 200 ]; then
-  echo "The ERP did not answer after the restart (HTTP $code)."
+  echo "The system did not answer after the restart (HTTP $code)."
   if [ -n "$PREV" ] && [ "$PREV" != "$NEW" ]; then
     ln -sfn "$PREV" "$APP/current.tmp" && mv -Tf "$APP/current.tmp" "$APP/current"
     sudo /usr/bin/systemctl restart slicks-erp
+    sudo /usr/bin/systemctl restart slicks-streamlit
     echo "Switched back to the previous release: $(basename "$PREV")."
   fi
   exit 1
 fi
-# keep the newest 5 releases
+# keep the newest 5 releases and the newest 10 pre-release database copies
 ls -1dt "$APP"/releases/* | tail -n +6 | xargs -r rm -rf
+ls -1t /srv/slicks/backups/before_release_*.db 2>/dev/null | tail -n +11 | xargs -r rm -f

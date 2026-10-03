@@ -224,6 +224,28 @@ The mock-up `docs/mockups/d3_payables.html` was approved, and D3 was split into 
 
 **Tests:** 13 new tests.
 
+## Go-live decision (owner, 2026-10-03): side by side, as soon as possible
+
+- **Streamlit:** JRCR: "stop editing the pilot streamlit ... focus here django because i want to use it live ASAP". The Streamlit screens (`views/`, `app.py`) are no longer changed.
+- **Go live side by side.** On the server, Django is the main system. The project's Streamlit app runs beside it on the **same database** for the screens Django does not have yet: Paying, Release, Loans, Cards, Bank, Reports and Admin. Each later stage moves a screen across.
+- **Day-one set:** D3b (the bulk tools), now built. Then the server and the move of the live data.
+
+## D3b results (2026-10-03), waiting for sign-off
+
+**Built in `web/payables/bulk.py`:**
+
+- **Invoices from photos/PDFs** (read offline by Tesseract, which must be installed on the server too) **or from a spreadsheet**, from a batch.
+  - Read, then check and correct every line, then add.
+  - A double entry asks first. The batch can get its OS number in the same step.
+  - The text read from each file can be shown when a read is bad.
+- **Many batches from one Excel file:** one sheet = one new batch. The supplier is guessed from the sheet name, then created, with OS numbers if wanted. The macro entry workbook can be downloaded.
+- **Print many batches as one PDF:** since the last check print / today / last 7 days / all; untick any; A4 (copies) or thermal; a summary page; history; printed checks only if wanted.
+- **Vendor SOA matcher:** matched, missing in AP, amount mismatches, omitted from the SOA.
+- **Where things wait:** what was read waits on the server between the two steps (`web_uploads/`, beside the database) and is removed when used or after a day.
+- **Shared rule change:** the spreadsheet reader now also knows "Sales invoice no" / "SI number" column headers.
+
+**Tests:** 7 new tests; the full suite passes (1,048).
+
 ## The supplier's sales invoice (owner's decisions, 2026-10-03)
 
 - **The reference is the supplier's sales invoice (SI) number.** It used to be the delivery receipt. "Doc Ref" is now "Sales invoice no. (SI)" on the Django batch, Match invoice, the Streamlit invoice grid and Match box, and the printed statement ("Sales Invoice").

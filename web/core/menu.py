@@ -60,6 +60,15 @@ SECTION_GROUP = {"Buy": "buy", "Pay suppliers": "pay", "Bank": "bank", "Other pa
 TILE_QUERY = {("po_mode", "Receive"): "mode=receive", ("po_mode", "Match invoice"): "mode=match"}
 
 
+def page_url(page_id: str, query: str = "") -> str:
+    """Where a menu entry or a Home tile goes: the Django page; on the server, a page not moved yet opens straight in the Streamlit screens
+    (go-live side by side, 2026-10-03), which run on the same database."""
+    from django.conf import settings
+    if page_id not in BUILT and getattr(settings, "STREAMLIT_URL", ""):
+        return f"{settings.STREAMLIT_URL.rstrip('/')}/{page_id}"
+    return f"/{page_id}/" + (f"?{query}" if query else "")
+
+
 def installed_pages() -> set[str]:
     """Every page id this site knows; the planner only while the cash forecast is switched on (Settings), as in Streamlit."""
     from engines.settings_registry import forecast_shown
@@ -85,9 +94,9 @@ def menu_for(role: str | None) -> list[dict]:
             if isinstance(e, tuple):
                 label, icon, pid, query, needs = e
                 if pid in mine and (needs is None or can(role, needs)):
-                    items.append({"label": label, "icon": icon, "url": f"/{pid}/?{query}", "page": pid})
+                    items.append({"label": label, "icon": icon, "url": page_url(pid, query), "page": pid})
             elif e in mine:
-                items.append({"label": PAGES[e].title, "icon": PAGES[e].icon, "url": f"/{e}/", "page": e})
+                items.append({"label": PAGES[e].title, "icon": PAGES[e].icon, "url": page_url(e), "page": e})
         if items:
             out.append({"title": title, "url": f"/#g-{SECTION_GROUP[title]}", "items": items})
     return out

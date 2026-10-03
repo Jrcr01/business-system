@@ -86,7 +86,8 @@
     <button class="btn small" type="submit"><span class="ms">add</span>{% if warnings %}Yes, add it anyway{% else %}Add invoice{% endif %}</button>
   </form>
   <p class="hint"><b>Type the supplier's sales invoice number</b>, not the delivery receipt's; the DR number, if there is one, goes in its own box. Due = date received + the supplier's terms (today's invoice would be due {{ due_today|date:"M d, Y" }}). A number this supplier already has is refused.
-    <a href="/purchase-orders/match/?s={{ b.creditor_id }}&amp;batch={{ b.statement_id }}">From a purchase order</a> opens Match invoice with this batch chosen.</p>
+    <a href="/purchase-orders/match/?s={{ b.creditor_id }}&amp;batch={{ b.statement_id }}">From a purchase order</a> opens Match invoice with this batch chosen.
+    <a href="/order-statements/{{ b.statement_id }}/import/">From photos, PDFs or a spreadsheet</a> reads many at once.</p>
   {% else %}<p class="hint">{% if cancelled %}This batch is cancelled and can't be edited.{% else %}Closed (fully covered by checks). To change an invoice, use Edit this batch above; a new invoice for this supplier goes in a new batch.{% endif %}</p>{% endif %}
 
 {% elif tab == "memos" %}

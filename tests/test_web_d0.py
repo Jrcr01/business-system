@@ -169,3 +169,20 @@ def test_forms_need_the_page_token(web_setup, db):
     strict = Client(enforce_csrf_checks=True)
     r = strict.post("/setup/", {"name": "A", "email": "a@slicks.test", "password": PW, "password2": PW})
     assert r.status_code == 403
+
+
+def test_on_the_server_pages_not_moved_yet_open_in_the_streamlit_screens(web, settings=None):
+    """Go-live side by side (2026-10-03): with WEB_STREAMLIT_URL set, the menu, the Home tiles and the 'later' page go straight to the Streamlit screens
+    (same database); on the laptop (not set) they stay on the 'later' page."""
+    from django.conf import settings as dj
+    _admin(web)
+    old = dj.STREAMLIT_URL
+    try:
+        dj.STREAMLIT_URL = "/more/"
+        home = web.get("/").content.decode()
+        assert 'href="/more/payment-run"' in home and 'href="/purchase-orders/"' in home      # built pages stay in Django
+        later = web.get("/payment-run/").content.decode()
+        assert 'href="/more/payment-run"' in later and "same email and password" in later
+    finally:
+        dj.STREAMLIT_URL = old
+    assert 'href="/more/' not in web.get("/").content.decode()

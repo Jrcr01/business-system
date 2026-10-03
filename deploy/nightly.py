@@ -12,8 +12,8 @@ from db_location import safe_copy  # noqa: E402
 from engines.audit_seal import seal_and_verify  # noqa: E402
 from engines.clock import manila_now  # noqa: E402
 
-DB = os.environ["ERP_DB_PATH"]
-DEST = os.environ.get("ERP_BACKUP_DIR", "/srv/slicks/backups")
+DB = os.environ["WEB_DB_PATH"]
+DEST = os.environ.get("AP_BACKUP_DIR", "/srv/slicks/backups")
 KEEP = int(os.environ.get("ERP_BACKUP_KEEP", "30"))
 PREFIX = "slicks_erp_backup_"
 

@@ -1,56 +1,86 @@
-# Slicks ERP on the server (step F3)
+# Slick's system on the server: go-live, side by side (2026-10-03)
 
-Owner's choices (2026-09-28): **the ERP test site first** (a copy of the sandbox data at `test.<domain>`; the live AP stays on the
-laptop until the cutover), **DigitalOcean** (Singapore), **Google sign-in** (added in F3.3), a new domain the owner registers.
+**Owner's choices:**
+
+- **Go live as soon as possible.** On the server, the **Django system** is the main site. The project's **Streamlit app** runs beside it on the **same database**, for the screens not moved to Django yet (at `/more/`). Each later stage moves a screen across; at the end Streamlit is switched off.
+- **Domain `slickstiresupply.com`** is at Cloudflare. The system is at **erp.slickstiresupply.com**; the bare domain stays free for a public website.
+- **Server:** DigitalOcean, Singapore, Ubuntu 24.04.
 
 ## What runs where
 
 | On the server | Why |
 |---|---|
-| Ubuntu 24.04, user `slicks` (SSH key only; root and passwords switched off) | Only the laptop's key can sign in to the server |
+| Ubuntu 24.04, user `slicks` (SSH key only; root and passwords switched off) | Only the laptop's key can sign in |
 | Firewall: SSH, 80, 443 only; fail2ban; automatic security updates | Nothing else is reachable from the internet |
-| Caddy (`/etc/caddy/Caddyfile`) | HTTPS with an automatic, self-renewing certificate |
-| `slicks-erp` service (gunicorn, 2 workers, `127.0.0.1:8000` only) | The ERP; restarts by itself after a crash or reboot |
-| `slicks-erp-nightly.timer` (18:00 Manila) → `deploy/nightly.py` | Audit log check + seal, then a backup to `/srv/slicks/backups` (newest 30) |
-| `/etc/slicks-erp/env` | The settings and the secret key — only on the server, never in git |
-| `/srv/slicks/data/` | The test site's database + its audit seal key / state |
+| Caddy (`/etc/caddy/Caddyfile`) | HTTPS with a self-renewing certificate. `/more/...` goes to Streamlit, everything else to Django |
+| `slicks-erp` service: Django, gunicorn, 2 workers, `127.0.0.1:8000` | The main system; restarts by itself |
+| `slicks-streamlit` service: Streamlit, `127.0.0.1:8501`, at `/more/` | The screens not moved yet; same database, its own sign-in with the same accounts |
+| `slicks-erp-nightly.timer` (18:00 Manila) runs `deploy/nightly.py` | Audit log check and seal, then a database backup (newest 30 kept) |
+| `/etc/slicks-erp/env` | The settings and the secret key; only on the server, never in git |
+| `/srv/slicks/data/` | The one database (and its audit seal key and state) |
+| `/srv/slicks/backups/` | Nightly backups, plus a copy before every release and before any database is replaced |
+| Tesseract | Reads invoice photos (Add invoices from photos) |
 
 ## Steps
 
-**F3.1 (done on the laptop):** this folder, production settings (whitenoise, trusted HTTPS origins, logging, `ERP_SITE_LABEL`
-banner), the home-screen app (manifest, icons, a service worker that never stores business pages on the phone).
+### 1. The owner (once)
 
-**Names (owner 2026-09-28):** the ERP at **erp.slickstiresupply.com**, the test site at **test.slickstiresupply.com**; the bare
-domain stays free for a public website. The laptop key `~/.ssh/slicks_erp` has a passphrase only the owner types (`ssh-add` once;
-Windows' ssh-agent keeps it unlocked); the deploy scripts use Windows' own ssh/scp for that reason.
+1. **Domain:** done (`slickstiresupply.com` at Cloudflare).
+2. **DigitalOcean account:** with two-step sign-in and a payment method.
+3. **SSH key on the laptop.** In Git Bash, run `ssh-keygen -t ed25519 -f ~/.ssh/slicks_erp -C "slicks-erp"` with a passphrase only you know. Then run `ssh-add ~/.ssh/slicks_erp` once, so Windows remembers it.
+4. **Create the Droplet:**
+   - Ubuntu 24.04, Singapore, Basic, **1 GB** memory (owner, 2026-10-03; the setup adds a 2 GB swap file and runs 2 Django workers; resize to 2 GB if it feels slow: Power off, Resize, CPU and RAM only). Turn weekly backups on.
+   - **SSH key** = paste the contents of `~/.ssh/slicks_erp.pub` (the public half only).
+5. **Point the name at the server.** In Cloudflare DNS, add an `A` record: name `erp`, value = the Droplet's IP address, proxy **DNS only** (grey cloud) for now.
 
-**Paused after F3.1 (owner 2026-09-28: "we deploy if we are substantially done")** -- F3.2-F3.4 resume when Sales is substantially
-done (around the parallel run, S5). Google sign-in (F3.3) can be built and tested on the laptop before that (Google accepts
-`localhost`). The domain is registered when the server step resumes.
+### 2. From the laptop (Git Bash, `C:\Slicks\Slicks_ERP`)
 
-**F3.2 — the owner, guided:**
-1. Register the domain (e.g. at Cloudflare) and keep its DNS there.
-2. Create the DigitalOcean account, then a Droplet: Ubuntu 24.04, Singapore, the smallest "Basic" size that has 1 GB memory,
-   weekly backups on, and **SSH key** = the laptop's public key `slicks_erp.pub` (the owner makes the key pair with `ssh-keygen` and
-   types its passphrase; the private half never leaves the laptop).
-3. In the DNS: an `A` record `test` → the Droplet's IP address.
-
-**Then, from the laptop (Git Bash, `C:\Slicks\Slicks_ERP`):**
 ```
 scp -r deploy root@<droplet-ip>:/root/deploy
-ssh root@<droplet-ip> "bash /root/deploy/bootstrap_server.sh test.<domain>"
-deploy/upload_test_data.sh slicks@test.<domain>
-deploy/deploy_to_server.sh slicks@test.<domain>
+ssh root@<droplet-ip> "bash /root/deploy/bootstrap_server.sh erp.slickstiresupply.com live"
 ```
-After that, every update is one line: commit, then `deploy/deploy_to_server.sh slicks@test.<domain>` (it refuses uncommitted
-changes, installs pinned packages, migrates, checks the security settings, switches to the new release and **switches back by
-itself if the ERP does not answer**).
 
-**F3.3 — Google sign-in** (the owner creates the Google sign-in client; only emails already on the Users page can sign in).
+From here on, sign in as `slicks` (root sign-in is switched off).
 
-**F3.4 — try it:** open `https://test.<domain>` on the Samsungs → Chrome menu → **Install app**.
+### 3. Rehearsal (before the real move)
+
+1. Upload a **copy** of the live data:
+
+   ```
+   deploy/upload_data.sh slicks@erp.slickstiresupply.com <copy of the live database>
+   ```
+
+2. Deploy:
+
+   ```
+   deploy/deploy_to_server.sh slicks@erp.slickstiresupply.com
+   ```
+
+   It installs the pinned packages, copies the database, adds what schema.sql has that the database lacks (it never changes or removes anything), checks the security settings, switches to the new release and restarts both programs. If the system does not answer, it switches back by itself.
+
+3. Open https://erp.slickstiresupply.com, sign in, and check the totals against the laptop's AP.
+
+### 4. The move (cutover), only with the owner's go-ahead
+
+1. Back up the live database on the laptop.
+2. Stop the laptop's AP.
+3. Upload the live file with `deploy/upload_data.sh`. It asks before replacing the rehearsal copy and keeps that copy.
+4. Deploy, then check the totals again.
+
+From then on, everyone uses https://erp.slickstiresupply.com, and the laptop's AP stays stopped.
+
+### Every update afterwards
+
+Commit, then run:
+
+```
+deploy/deploy_to_server.sh slicks@erp.slickstiresupply.com
+```
+
+Only committed code is sent; the server never needs GitHub access.
 
 ## Rules
-* The test site never holds the live database (settings refuse `ap_disbursement.db` without `ERP_LIVE=1`; the upload script only
-  copies the sandbox). The live move is the cutover (F5), with its own checklist.
-* Secrets only in `/etc/slicks-erp/env` on the server. Nothing in this folder is secret.
+
+- **One database for both programs.** The Django settings refuse a file named `ap_disbursement.db` without `WEB_LIVE=1`, and only the live setup sets it.
+- **Secrets** live only in `/etc/slicks-erp/env` on the server. Nothing in this folder is secret.
+- **Streamlit** is never reachable directly from the internet, only through Caddy at `/more/`. Its sign-in is always on (`AP_SKIP_LOGIN` is never set on the server).

@@ -1,0 +1,35 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Many batches from Excel{% endblock %}
+{% block content %}
+<p class="note"><a href="/order-statements/">← Order statements</a></p>
+<h2><span class="ms" style="font-size:28px">upload_file</span> Many batches from one Excel file</h2>
+
+{% if results %}
+<div class="msg success">Done: the new batches are below.</div>
+<div class="scroll-x"><table class="list"><tr><th>Sheet</th><th>Supplier</th><th>Batch</th><th>Invoices added</th><th>Already on file (skipped)</th></tr>
+  {% for r in results %}<tr><td>{{ r.sheet }}</td><td>{{ r.supplier }}</td><td><a href="/order-statements/{{ r.sid }}/">{{ r.ref }}</a></td><td class="num">{{ r.added }}</td><td>{{ r.skipped }}</td></tr>{% endfor %}</table></div>
+<p><a class="btn small ghost" href="/order-statements/import-many/">Import another workbook</a></p>
+
+{% elif plan %}
+<p class="note">Pick the supplier for each sheet (guessed from the sheet's name). A sheet left on "skip" is ignored. Nothing is saved until you press Create.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="create"><input type="hidden" name="staged" value="{{ token }}">
+  <div class="scroll-x"><table class="list"><tr><th>Sheet</th><th>Invoices</th><th>Total</th><th>Supplier</th></tr>
+    {% for s in plan %}<tr><td><b>{{ s.name }}</b>{% for m in s.messages %}<div class="hint">⚠ {{ m }}</div>{% endfor %}{% if s.bad %}<div class="hint">{{ s.bad }} row(s) will be skipped (missing SI no. or amount)</div>{% endif %}</td>
+      <td class="num">{{ s.good }}</td><td class="num">{{ s.total|floatformat:2|intcomma }}</td>
+      <td><select name="sup_{{ s.i }}" aria-label="Supplier for {{ s.name }}"><option value="">— skip this sheet —</option>
+        {% for id, name in suppliers %}<option value="{{ id }}"{% if id == s.guess %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></td></tr>{% endfor %}</table></div>
+  <label class="inline" style="margin-top:10px"><input type="checkbox" name="promote" value="1" checked> Also give each new batch its OS number</label>
+  <div class="actions"><button class="btn" type="submit"><span class="ms">playlist_add</span>Create the batches and add the invoices</button></div>
+</form>
+
+{% else %}
+<p class="note">Each sheet (tab) holds one supplier's sales invoices in the usual columns (Sales invoice no. / Date / Amount / Less %); name each tab after its supplier.
+  The same supplier can have several tabs: every tab becomes its own new batch. You review everything before anything is saved.</p>
+<form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="read">
+  <div class="grow"><label for="file">The workbook (.xlsx or .xlsm)</label><input id="file" type="file" name="file" accept=".xlsx,.xlsm" required></div>
+  <button class="btn small" type="submit"><span class="ms">upload_file</span>Read the workbook</button>
+  <a class="btn small ghost" href="/order-statements/entry-workbook.xlsm"><span class="ms">download</span>Excel entry template (with the pop-up form)</a>
+</form>
+<p class="hint">The template is a macro workbook with the supplier list filled in from the system right now: open it, enable macros, and use its Add invoice button.</p>
+{% endif %}
+{% endblock %}

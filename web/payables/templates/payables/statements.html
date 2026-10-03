@@ -7,6 +7,11 @@
   <div class="grow"><label for="new_s">New batch for</label><select id="new_s" name="s">{% for id, name in all_suppliers %}<option value="{{ id }}">{{ name }}</option>{% endfor %}</select></div>
   <button class="btn small" type="submit"{% if not all_suppliers %} disabled{% endif %}><span class="ms">note_add</span>New batch</button>
 </form>
+<div class="actions" style="margin-bottom:12px">
+  <a class="btn small ghost" href="/order-statements/print-many/"><span class="ms">picture_as_pdf</span>Print many batches</a>
+  <a class="btn small ghost" href="/order-statements/import-many/"><span class="ms">upload_file</span>Many batches from Excel</a>
+  <a class="btn small ghost" href="/order-statements/soa/"><span class="ms">fact_check</span>Vendor SOA matcher</a>
+</div>
 {% if waiting_by %}
 <div class="warnbox"><b>Sales invoices waiting for a batch</b>
   <div class="scroll-x"><table class="list" style="margin-top:6px"><tr><th>Supplier</th><th>Invoices</th><th>Total</th><th>First due</th><th></th></tr>
@@ -37,5 +42,5 @@
 </table></div>
 <p class="hint">{{ rows|length }} batch(es). Draft = no checks yet · Parked = checks parked, none printed · Issued = at least one check printed.</p>
 {% else %}<p class="note">No batches here yet.</p>{% endif %}
-<p class="hint">Print many batches in one PDF, many batches from one Excel file and the vendor SOA matcher come with stage D3b; until then they are in Streamlit.</p>
+
 {% endblock %}

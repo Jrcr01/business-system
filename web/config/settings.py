@@ -67,7 +67,9 @@ if not DEBUG and _SERVER_HOSTS:                            # on the server: HTTP
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")                # Caddy in front ends HTTPS
 
 # ---- sign-in: a signed cookie, so a refresh never signs anyone out ------------------------------------------------------------
 SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
@@ -106,7 +108,9 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 STATIC_URL = "static/"
-STATIC_ROOT = WEB_DIR / "staticfiles"
+STATIC_ROOT = Path(os.environ.get("WEB_STATIC_ROOT") or WEB_DIR / "staticfiles")
+# where the Streamlit screens are on the server (go-live side by side, 2026-10-03): a page not moved to Django yet links there; empty on the laptop
+STREAMLIT_URL = os.environ.get("WEB_STREAMLIT_URL", "")
 STATICFILES_DIRS = [("assets", REPO_ROOT / "assets")]      # the Slick's logo, shared with Streamlit
 WHITENOISE_USE_FINDERS = DEBUG or not _SERVER_HOSTS          # on the laptop the CSS and logo are served straight from the project (the server runs collectstatic)
 STORAGES = {

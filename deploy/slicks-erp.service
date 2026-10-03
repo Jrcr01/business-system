@@ -1,16 +1,17 @@
 [Unit]
-Description=Slicks ERP (Django, gunicorn)
+Description=Slick's system (Django, gunicorn)
 After=network.target
 
 [Service]
 User=slicks
 Group=slicks
 EnvironmentFile=/etc/slicks-erp/env
-WorkingDirectory=/srv/slicks/app/current/erp
-ExecStart=/srv/slicks/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 30 --access-logfile -
+WorkingDirectory=/srv/slicks/app/current/web
+# 2 worker processes on the 1 GB server (owner, 2026-10-03): enough for fewer than 5 people at once; 3+ when the server grows
+ExecStart=/srv/slicks/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 60 --access-logfile -
 Restart=always
 RestartSec=3
-# hardening: the ERP may write only its data, static and backup folders
+# hardening: the system may write only its data, static and backup folders
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

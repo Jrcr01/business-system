@@ -1,0 +1,21 @@
+[Unit]
+Description=Slick's system: the Streamlit screens not moved to Django yet (same database), at /more/
+After=network.target
+
+[Service]
+User=slicks
+Group=slicks
+EnvironmentFile=/etc/slicks-erp/env
+WorkingDirectory=/srv/slicks/app/current
+# sign-in is on (AP_SKIP_LOGIN is never set on the server); only Caddy on this server can reach it
+ExecStart=/srv/slicks/venv/bin/python -m streamlit run app.py --server.headless true --server.port 8501 --server.address 127.0.0.1 --server.baseUrlPath more --browser.gatherUsageStats false
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/slicks/data /srv/slicks/backups /srv/slicks/static
+
+[Install]
+WantedBy=multi-user.target

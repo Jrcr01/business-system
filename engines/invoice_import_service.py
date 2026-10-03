@@ -22,6 +22,7 @@ from engines.clock import manila_today
 # at random).
 _HEADER_SYNONYMS = {
     "doc_ref": ["doc ref", "docref", "doc_ref", "invoice no", "invoice number", "invoice #",
+                "sales invoice no", "sales invoice number", "sales invoice", "si number", "si #",   # the SI is the reference (owner, 2026-10-03)
                 "reference", "reference no", "ref", "dr no", "si no", "or no", "ci no"],
     "invoice_date": ["invoice date", "date received", "date", "doc date"],
     "amount": ["amount", "gross amount", "gross", "total", "total amount", "net amount"],

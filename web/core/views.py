@@ -96,8 +96,9 @@ def change_password(request):
 
 
 def _tile_url(tile) -> str:
+    from core.menu import page_url
     query = "&".join(TILE_QUERY[s] for s in tile.state if s in TILE_QUERY)
-    return f"/{tile.page_id}/" + (f"?{query}" if query else "")
+    return page_url(tile.page_id, query)
 
 
 def home(request):
@@ -126,7 +127,10 @@ def page(request, page_id: str):
     if page_id not in pages_for(request.slicks_user["role"]):
         return render(request, "core/not_allowed.html", {"page": PAGES[page_id]}, status=403)
     p = PAGES[page_id]
-    return render(request, "core/later.html", {"page": p, "page_id": page_id, "stage_name": STAGE_NAME.get(p.stage, "")})
+    from django.conf import settings
+    base = settings.STREAMLIT_URL
+    return render(request, "core/later.html", {"page": p, "page_id": page_id, "stage_name": STAGE_NAME.get(p.stage, ""),
+                                               "streamlit": f"{base.rstrip('/')}/{page_id}" if base else ""})
 
 
 def whoami(request):

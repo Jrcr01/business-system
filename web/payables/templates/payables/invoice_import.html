@@ -1,0 +1,42 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Add invoices from files{% endblock %}
+{% block content %}
+<p class="note"><a href="/order-statements/{{ b.statement_id }}/">← {% if b.statement_ref|slice:":6" == "DRAFT-" %}Draft batch{% else %}{{ b.statement_ref }}{% endif %} · {{ b.creditor_name }}</a></p>
+<h2>Add invoices from photos, PDFs or a spreadsheet</h2>
+
+{% if not staged %}
+<div class="grp">From photos or PDF scans</div>
+<p class="note">One file per sales invoice. The system reads the SI number, the date and the amount, offline on the server; you check and correct every line before anything is saved.</p>
+<form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="read_ocr">
+  <div class="grow"><label for="files">Invoice photos or PDFs</label><input id="files" type="file" name="files" accept=".png,.jpg,.jpeg,.pdf" multiple required></div>
+  <button class="btn small" type="submit"><span class="ms">document_scanner</span>Read the files</button>
+</form>
+<div class="grp">From a spreadsheet</div>
+<p class="note">A .csv or .xlsx with columns like Sales invoice no. / Date / Amount / Less % (any reasonable header works). More reliable than reading photos.</p>
+<form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="read_sheet">
+  <div class="grow"><label for="file">The spreadsheet</label><input id="file" type="file" name="file" accept=".csv,.xlsx" required></div>
+  <button class="btn small" type="submit"><span class="ms">upload_file</span>Read the spreadsheet</button>
+  <a class="btn small ghost" href="/order-statements/invoice-template.csv"><span class="ms">download</span>CSV template</a>
+</form>
+{% else %}
+<p class="note">{{ rows|length }} line(s) read from the {{ staged.kind }}. Check and correct them, untick any you don't want, then add. Nothing is saved yet.</p>
+{% for n in staged.notes %}<div class="msg warning">{{ n }}</div>{% endfor %}
+{% if warnings %}<div class="msg warning"><b>Is this a double entry?</b><ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul>Press <b>Yes, add them anyway</b> only if they are different invoices.</div>{% endif %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="staged" value="{{ token }}">
+  {% if warnings %}<input type="hidden" name="confirmed" value="1">{% endif %}
+  <div class="scroll-x"><table class="list"><tr><th>Add</th><th>From</th><th>Sales invoice no. (SI)</th><th>Date received</th><th>Due</th><th>Amount</th><th>Less %</th></tr>
+    {% for r in rows %}<tr>
+      <td><input type="checkbox" name="keep_{{ r.i }}" value="1"{% if r.keep is not False %} checked{% endif %} aria-label="Add line {{ forloop.counter }}"></td><td class="hint">{{ r.source }}</td>
+      <td><input class="inline-input" name="doc_{{ r.i }}" value="{{ r.doc }}"></td><td><input type="date" name="date_{{ r.i }}" value="{{ r.date|slice:':10' }}"></td>
+      <td class="hint">{% if r.due %}{{ r.due|date:"M d, Y" }}{% else %}—{% endif %}</td>
+      <td><input class="inline-input" inputmode="decimal" name="gross_{{ r.i }}" value="{{ r.gross }}"></td><td><input class="inline-input" style="width:60px" inputmode="decimal" name="less_{{ r.i }}" value="{{ r.less }}"></td></tr>
+    {% endfor %}</table></div>
+  {% if b.statement_ref|slice:":6" == "DRAFT-" %}<label class="inline" style="margin-top:10px"><input type="checkbox" name="promote" value="1" checked> Also give the batch its OS number once they are added</label>{% endif %}
+  <div class="actions"><button class="btn" type="submit"><span class="ms">playlist_add</span>{% if warnings %}Yes, add them anyway{% else %}Add these invoices to the batch{% endif %}</button></div>
+</form>
+<form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="discard"><input type="hidden" name="staged" value="{{ token }}">
+  <button class="btn small ghost" type="submit"><span class="ms">delete_sweep</span>Discard what was read</button></form>
+{% if staged.raw %}<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Show the text read from each file (for a bad read)</summary>
+  {% for name, text in staged.raw.items %}<p class="hint"><b>{{ name }}</b></p><pre style="white-space:pre-wrap;font-size:.8rem;background:#f8fafc;padding:8px;border-radius:6px">{{ text }}</pre>{% endfor %}</details>{% endif %}
+{% endif %}
+{% endblock %}
