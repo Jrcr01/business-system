@@ -237,11 +237,16 @@ def render_lead_days() -> None:
         if df.empty:
             st.caption("No suppliers yet.")
             return
-        opts = {int(r.creditor_id): f"{r.creditor_name} — {int(r.lead_days)} day(s)" if r.lead_days == r.lead_days and r.lead_days is not None else f"{r.creditor_name} — not set"
-                for r in df.itertuples()}
+        def _days(v):                                    # q() gives an empty text for a missing value: "not set"
+            try:
+                return int(v) if v is not None and str(v).strip() not in ("", "nan", "None") else None
+            except (TypeError, ValueError):
+                return None
+
+        opts = {int(r.creditor_id): f"{r.creditor_name} — {_days(r.lead_days)} day(s)" if _days(r.lead_days) is not None else f"{r.creditor_name} — not set" for r in df.itertuples()}
         pick = st.selectbox("Supplier", list(opts), format_func=opts.get, key="lead_pick")
         cur = df.set_index("creditor_id").loc[pick, "lead_days"]
-        days = st.number_input("Usual delivery days (0 = same day; clear with 'Not set')", min_value=0, max_value=365, value=int(cur) if cur == cur and cur is not None else 7, step=1, key=f"lead_days_{pick}")
+        days = st.number_input("Usual delivery days (0 = same day; clear with 'Not set')", min_value=0, max_value=365, value=_days(cur) if _days(cur) is not None else 7, step=1, key=f"lead_days_{pick}")
         c1, c2, _ = st.columns([1, 1, 3])
         if c1.button("Save", icon=":material/save:", key="lead_save"):
             ok, msg = set_lead_days(int(pick), int(days))

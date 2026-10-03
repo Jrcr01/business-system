@@ -118,6 +118,9 @@ def _users_tab() -> None:
 
     section("Change a person")
     opts = {int(r.user_id): f"{r.name} <{r.email}> · {ROLE_LABEL.get(r.role, r.role)}" + ("" if r.is_active else " · switched off") for r in users.itertuples()}
+    if not opts:
+        st.caption("No one has an account yet.")
+        return
     pick = st.selectbox("Person", list(opts), format_func=opts.get, key="usr_pick")
     row = users.set_index("user_id").loc[pick]
     b1, b2, b3 = st.columns(3)

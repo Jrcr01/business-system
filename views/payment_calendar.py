@@ -10,7 +10,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from engines.calendar_marks import KINDS, mark_day, marks_for_month, moved_by_marking, unmark_day
+from engines.calendar_marks import KINDS, mark_day, marks_for_month, orders_planned_on, unmark_day
 from engines.clock import manila_today
 from engines.common import prospective_year
 from engines.reports_service import attach_calendar_totals, get_payment_calendar_items
@@ -118,9 +118,10 @@ def render(prefix: str = "pcal", height: int = 230) -> None:
         a, b = st.columns([2, 2])
         label = a.text_input("Label (optional for a holiday or no-check day)", key=f"{prefix}_label", placeholder="e.g. Eid'l Fitr, Supplier visit, Payday")
         kind = b.selectbox("Mark as", list(KINDS), format_func=lambda k: KINDS[k], key=f"{prefix}_kind")
-        n = moved_by_marking(day) if kind != "note" else 0
-        if n:
-            st.warning(f"{n} payment(s) fall on this day. Marking it moves them to the next bank day.")
+        if kind != "note":
+            n = orders_planned_on(day)
+            st.caption("New purchase orders and the check-date planner will skip this day. Invoices and checks already written keep their dates."
+                       + (f" {n} open order(s) are planned to be paid this day and keep it." if n else ""))
         st.button("Mark this day", icon=":material/event_busy:", key=f"{prefix}_mark", on_click=_mark, args=(prefix, day, kind, label), type="primary")
 
 

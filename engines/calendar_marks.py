@@ -1,7 +1,9 @@
 """Marking days on the payment calendar (2026-10-03). Three kinds:
-  holiday   a bank day off -- checks and dues move to the next bank day (calendar_blocked_dates, kind 'holiday')
-  custom    a no-check day -- treated like a holiday (calendar_blocked_dates, kind 'custom')
+  holiday   a bank day off (calendar_blocked_dates, kind 'holiday')
+  custom    a no-check day, treated like a holiday (calendar_blocked_dates, kind 'custom')
   note      a coloured reminder (a supplier visit, payday); it moves no date (calendar_notes)
+A holiday or a no-check day is skipped when a NEW purchase order works out its pay date and by the check-date planner (engines/check_date_planner.next_bank_day). It does not move an
+invoice's stored due date or a check already written: those keep their dates.
 Owner and Payables mark (the 'calendar.mark' action); everyone who sees the calendar sees the marks. Every change is audited with the acting email."""
 from __future__ import annotations
 
@@ -67,11 +69,7 @@ def unmark_day(day: date) -> tuple[bool, str]:
     return True, f"{day:%b %d, %Y} is no longer marked." if n else "That day was not marked."
 
 
-def moved_by_marking(day: date) -> int:
-    """How many unpaid checks and dues sit on this day (the ones that would move to the next bank day if it were marked as a holiday or no-check day)."""
-    from engines.reports_service import get_payment_calendar_items
-    import pandas as pd
-    items = get_payment_calendar_items()
-    if items is None or items.empty:
-        return 0
-    return int((pd.to_datetime(items["actual_payment_date"]).dt.date == day).sum())
+def orders_planned_on(day: date) -> int:
+    """How many open purchase orders are planned to be paid on this day. They keep their dates if the day is marked; only new orders skip it."""
+    with get_conn() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE expected_pay_date = ? AND status IN ('DRAFT', 'ORDERED', 'PARTIAL')", (str(day),)).fetchone()[0])
