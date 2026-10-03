@@ -1,0 +1,10 @@
+{% load humanize %}<div class="formgrid" style="margin-top:12px">
+  <div><label for="doc{{ k }}">Supplier's invoice number</label><input id="doc{{ k }}" type="text" name="doc" value="{{ came_with|default:'' }}" required></div>
+  <div><label for="inv_date{{ k }}">Invoice date</label><input id="inv_date{{ k }}" type="date" name="inv_date" value="{{ today|date:'Y-m-d' }}">
+    <div class="hint">The due date is worked out from this date and the supplier's terms.</div></div>
+  <div><label for="override{{ k }}">Invoice total, if it differs</label><input id="override{{ k }}" type="text" inputmode="decimal" name="override" placeholder="as ticked">
+    <div class="hint">Only when the invoice total is not quantity × price (freight, rounding).</div></div>
+  <div><label for="batch{{ k }}">Put the invoice in</label><select id="batch{{ k }}" name="batch">{% for id, label in batches %}<option value="{{ id }}">{{ label }}</option>{% endfor %}<option value="new">A new batch</option></select></div>
+</div>
+<label style="display:flex;gap:6px;color:#1c2733;margin-top:8px"><input type="checkbox" name="update_prices" value="1"> Update the price list where the actual price differs</label>
+<div class="facts" style="margin-top:10px"><div><span>Invoice amount (as ticked)</span><b id="sum_actual{{ k }}">₱0.00</b></div><div><span>Against the estimate</span><b id="sum_est{{ k }}">₱0.00</b></div></div>

@@ -1,0 +1,23 @@
+<script>
+/* The invoice amount and the estimate add up as lines are ticked and changed (the saved amount is worked out again by the rules). */
+(function () {
+  var form = document.getElementById("form{{ k }}");
+  if (!form) return;
+  function num(v) { v = parseFloat(String(v || "").replace(/,/g, "")); return isNaN(v) ? 0 : v; }
+  function money(v) { return "₱" + v.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+  function sum() {
+    var a = 0, e = 0;
+    form.querySelectorAll("tr[data-line]").forEach(function (tr) {
+      var id = tr.dataset.line, tick = form.querySelector('[name="pick_' + id + '"]');
+      if (!tick || !tick.checked) return;
+      var q = num(form.querySelector('[name="qty_' + id + '"]').value), p = form.querySelector('[name="price_' + id + '"]');
+      a += q * (p ? num(p.value) : num(tr.dataset.est)); e += q * num(tr.dataset.est);
+    });
+    var ov = form.querySelector('[name="override"]'), shown = ov && num(ov.value) > 0 ? num(ov.value) : a;
+    var A = document.getElementById("sum_actual{{ k }}"), E = document.getElementById("sum_est{{ k }}");
+    if (A) A.textContent = money(shown);
+    if (E) E.textContent = money(e) + (Math.abs(shown - e) > 0.004 ? (shown > e ? " · +" : " · −") + money(Math.abs(shown - e)) : "");
+  }
+  form.addEventListener("input", sum); form.addEventListener("change", sum); sum();
+})();
+</script>

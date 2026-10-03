@@ -141,6 +141,62 @@ The mock-up `docs/mockups/d1_masters.html` was approved, with keyboard shortcuts
 
 **Tests:** 14 new D1 tests; the whole suite passes (1,000).
 
+## D2a results (2026-10-03), waiting for sign-off
+
+The mock-up `docs/mockups/d2_buying.html` was approved, and D2 was split into D2a (price lists) and D2b (purchase orders, receive goods, match invoice).
+
+**Built in `web/buying/`: Buy → Price lists**
+
+- Pick a supplier; the page remembers it.
+- **Prices:** the prices in force on any date, with the price before and the % change.
+  - **History** for each item, where a wrong price can be switched off (it stays on record).
+  - **"Different from the last invoice"**, with "Update the list".
+- **Add a price:** suggests catalog and price-list names.
+- **Import Excel:**
+  - downloads a blank template, or one filled with the supplier's current prices;
+  - "Check the file" shows the new / changed / same / not-in-file counts and any problems, and saves nothing;
+  - "Import" then saves the rows (keep or replace a price on the same date).
+- **Discounts:** a live example as you type the chain.
+- **Catalog:** suppliers' prices side by side with the cheapest marked, the products (discontinue or bring back), and "Add a product" with the category's fields.
+
+**Roles:** Payables and the Viewer see the prices and the catalog only. Purchasing, the owners and the System admin change them.
+
+**Tests:** 8 new tests; all 36 Django tests pass.
+
+## D2b results (2026-10-03), waiting for sign-off
+
+**Built in `web/buying/`: Buy → Purchase orders, Receive goods; Pay suppliers → Match invoices**
+
+- **Orders:** the list (show by status, by supplier; late deliveries marked). Tabs: Going out (daily or weekly totals), Order to bank, Price differences. Orders over the cash plan show with a Noted button (only while the cash forecast is switched on).
+- **One order:** the facts, the stages from ordered to cleared by the bank, the lines and the actions the role may use.
+  - Actions: Order it, Download PO (PDF), Receive goods, Match invoice, Change, Cancel (with a reason), Close short.
+  - "Follow this order to the bank" lists its invoices and checks; check details are hidden from roles that do not handle checks.
+- **New order, saved as it is built:**
+  - The supplier, the dates and the first item make the draft.
+  - Then you add, change or remove items. Choosing an item fills its unit, list price and the supplier's usual discount.
+  - The payables when the order falls due show by day or by week, with this order on its day.
+  - Pressing a week moves the delivery so the order falls due in that week.
+  - The daily-limit warning offers a lighter delivery day.
+  - The week's list hides check numbers from roles that do not handle checks.
+- **Receive goods:** tick what arrived and how many; delivery receipt or invoice number; date received.
+  - Payables and the owners can also pick "Goods and the invoice" to do both at once.
+- **Match invoice:** goods received waiting for an invoice (lines that came with that invoice arrive ticked).
+  - Enter the actual price, the invoice number and date, an optional invoice total, and the batch (the open draft, or a new one).
+  - Optionally update the price list from the invoice.
+  - Goods not yet recorded can be received and invoiced in one step.
+  - The invoice amount and its difference from the estimate add up as you tick.
+
+**Business rules made safe for several people at once (shared with Streamlit):**
+
+1. **Receiving the same delivery at the same moment** can no longer count it twice. The check now happens inside the locked save.
+2. **Matching the same goods at the same moment** makes one invoice. The other person's invoice is taken back out, with a plain message.
+3. **The same invoice number at the same moment** gets the usual "already exists" message, not a crash.
+4. **Two people changing the same draft:** the second is refused ("someone else changed this order"). The fingerprint is `po_stamp`, and `save_po` takes `expected_stamp`.
+
+`tests/test_po_concurrency.py` proves points 1–4 with two threads. Against the old rules, points 1–3 failed.
+
+**Tests:** 10 new D2b tests and 4 same-moment tests.
+
 ## 7. Housekeeping before D0
 
 - Commit the removal of the old Django site, when you say so.

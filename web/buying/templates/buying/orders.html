@@ -1,0 +1,65 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Purchase orders{% endblock %}
+{% block content %}
+{% with page_kind="orders" %}{% include "buying/_po_head.html" %}{% endwith %}
+<nav class="tabs">
+  <a href="/purchase-orders/"{% if tab == "orders" %} class="on"{% endif %}>Orders</a>
+  <a href="/purchase-orders/?tab=out"{% if tab == "out" %} class="on"{% endif %}>Going out</a>
+  <a href="/purchase-orders/?tab=pipeline"{% if tab == "pipeline" %} class="on"{% endif %}>Order to bank</a>
+  <a href="/purchase-orders/?tab=diffs"{% if tab == "diffs" %} class="on"{% endif %}>Price differences</a>
+</nav>
+
+{% if tab == "orders" %}
+  {% if over %}
+  <div class="warnbox"><b><span class="ms">warning</span> {{ over|length }} order(s) placed over the cash plan</b>
+    {% for o in over %}<div class="actions" style="margin-top:6px"><span><b>{{ o.po_no }}</b> · {{ o.supplier }} · ₱{{ o.total|floatformat:2|intcomma }} — {{ o.cash_note|default:"" }}</span>
+      {% if may_ack %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="noted"><input type="hidden" name="po_id" value="{{ o.po_id }}">
+        <button class="btn small ghost" type="submit"><span class="ms">done</span>Noted</button></form>{% endif %}</div>{% endfor %}</div>
+  {% endif %}
+  <form class="bar" method="get" action="/purchase-orders/">
+    <div><label for="show">Show</label><select id="show" name="show" onchange="this.form.submit()">{% for k, label in scopes %}<option value="{{ k }}"{% if k == scope %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="grow"><label for="s">Supplier</label><select id="s" name="s" onchange="this.form.submit()"><option value="">All suppliers</option>
+      {% for id, name in names %}<option value="{{ id }}"{% if id|stringformat:"s" == sup %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+  </form>
+  {% if rows %}
+  <p class="note">{{ rows|length }} order(s), estimated ₱{{ total|floatformat:2|intcomma }}.{% if late %} <b>{{ late }} past the expected delivery date and not yet received.</b>{% endif %}</p>
+  <div class="scroll-x"><table class="list">
+    <tr><th>PO no.</th><th>Supplier</th><th>Ordered</th><th>Delivery</th><th>Falls due</th><th>Estimated</th><th>Status</th><th></th></tr>
+    {% for r in rows %}<tr>
+      <td><a href="/purchase-orders/{{ r.po_id }}/">{% if r.is_draft %}Draft{% else %}{{ r.po_no }}{% endif %}</a></td><td>{{ r.supplier }}</td>
+      <td>{{ r.order_date|slice:":10" }}</td><td>{{ r.expected_delivery_date|default:"—"|slice:":10" }}</td><td>{{ r.expected_pay_date|default:"—"|slice:":10" }}</td>
+      <td class="num">{{ r.total|floatformat:2|intcomma }}</td>
+      <td><span class="pill{% if r.is_draft or r.status == 'CANCELLED' %} off{% endif %}">{{ r.status_label }}</span></td>
+      <td>{% if r.delivery_overdue %}<span class="pill warn">Late</span>{% endif %}</td></tr>{% endfor %}
+  </table></div>
+  {% else %}<p class="note">No orders here yet.{% if may_create %} Make one under New order.{% endif %}</p>{% endif %}
+
+{% elif tab == "out" %}
+  <div class="seg"><a href="/purchase-orders/?tab=out"{% if not weekly %} class="on"{% endif %}>Daily</a><a href="/purchase-orders/?tab=out&amp;by=week"{% if weekly %} class="on"{% endif %}>Weekly</a></div>
+  {% if out %}
+  <table class="list" style="max-width:560px"><tr><th>{% if weekly %}Week of{% else %}Day{% endif %}</th><th>Total going out</th></tr>
+    {% for r in out %}<tr><td>{{ r.day|date:"D, M d, Y" }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table>
+  <p class="hint">Checks, loan and card dues, and open purchase orders, from today. See the day-by-day detail on an order before you order.</p>
+  {% else %}<p class="note">Nothing is scheduled to go out in the next 120 days.</p>{% endif %}
+
+{% elif tab == "pipeline" %}
+  <p class="hint"><a href="/purchase-orders/?tab=pipeline{% if only_open %}&amp;all=1{% endif %}">{% if only_open %}Also show orders already cleared by the bank{% else %}Only orders not yet cleared by the bank{% endif %}</a></p>
+  {% if pipe %}
+  <div class="scroll-x"><table class="list"><tr><th>PO</th><th>Supplier</th><th>Estimated</th><th>Invoiced</th><th>Reached</th><th>Next</th><th></th></tr>
+    {% for r in pipe %}<tr><td><a href="/purchase-orders/{{ r.po_id }}/">{{ r.po_no }}</a></td><td>{{ r.supplier }}</td><td class="num">{{ r.estimated|floatformat:2|intcomma }}</td>
+      <td class="num">{% if r.invoiced %}{{ r.invoiced|floatformat:2|intcomma }}{% endif %}</td><td>{{ r.stage }}</td><td>{{ r.next_step }}</td><td>{% if r.late %}<span class="pill warn">Late</span>{% endif %}</td></tr>{% endfor %}
+  </table></div>
+  {% else %}<p class="note">No orders to show.</p>{% endif %}
+
+{% elif tab == "diffs" %}
+  {% if n_all %}
+  <p class="note">{{ n_changed }} of {{ n_all }} received line(s) were charged a different price than estimated; net ₱{{ net|floatformat:2|intcomma }} (positive = the suppliers charged more). Keep the price lists current to shrink this.</p>
+  <div class="scroll-x"><table class="list"><tr><th>PO</th><th>Supplier</th><th>Item</th><th>Qty</th><th>Estimated</th><th>Charged</th><th>Difference</th><th>%</th></tr>
+    {% for r in diffs %}<tr><td>{{ r.po_no }}</td><td>{{ r.supplier }}</td><td>{{ r.item_name }}</td><td class="num">{{ r.qty_received|floatformat:"-2" }}</td>
+      <td class="num">{{ r.est_unit_price|floatformat:2|intcomma }}</td><td class="num">{{ r.actual_unit_price|floatformat:2|intcomma }}</td>
+      <td class="num {% if r.difference > 0 %}chg-up{% elif r.difference < 0 %}chg-down{% endif %}">{{ r.difference|floatformat:2|intcomma }}</td>
+      <td class="num">{% if r.difference_pct == r.difference_pct and r.difference_pct is not None %}{{ r.difference_pct|floatformat:1 }}%{% endif %}</td></tr>{% endfor %}
+  </table></div>
+  {% else %}<p class="note">No order has been received yet, so there is no price difference to show.</p>{% endif %}
+{% endif %}
+{% endblock %}

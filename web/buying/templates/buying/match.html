@@ -1,0 +1,53 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Match invoice{% endblock %}
+{% block content %}
+{% with page_kind="match" %}{% include "buying/_po_head.html" %}{% endwith %}
+<p class="note">The supplier's invoice arrived: match it to the goods received. It goes into a payables batch at the price the supplier actually charged.</p>
+{% if not suppliers %}<div class="later-box"><p>No supplier yet.</p></div>{% else %}
+<form class="bar" method="get" action="/purchase-orders/match/">
+  <div class="grow"><label for="s">Supplier</label><select id="s" name="s" onchange="this.form.submit()">{% for id, name in suppliers %}<option value="{{ id }}"{% if id == cid %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+</form>
+{% if not waiting and not unreceived %}
+<p class="note">No received goods are waiting for an invoice from this supplier, and no order is waiting for goods. Type the invoice in directly if it has no order.</p>
+{% endif %}
+
+{% if waiting %}
+<div class="grp">Goods received, waiting for the supplier's invoice</div>
+<form method="post" id="form_m">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="match">
+  <div class="scroll-x"><table class="list">
+    <tr><th>Covered</th><th>PO</th><th>Item</th><th>Unit</th><th>Waiting</th><th>Qty</th><th>Estimated price</th><th>Actual price</th><th>Came with</th></tr>
+    {% for ln in waiting %}<tr data-line="{{ ln.line_id }}" data-est="{{ ln.est_unit_price }}">
+      <td><input type="checkbox" name="pick_{{ ln.line_id }}" value="1"{% if ln.checked %} checked{% endif %} aria-label="Covered"></td>
+      <td>{{ ln.po_no }}</td><td>{{ ln.item_name }}</td><td>{{ ln.unit|default:"" }}</td><td class="num">{{ ln.remaining|floatformat:"-2" }}</td>
+      <td><input class="inline-input" inputmode="decimal" name="qty_{{ ln.line_id }}" value="{{ ln.remaining|floatformat:'-2' }}" aria-label="Qty"></td>
+      <td class="num">{{ ln.est_unit_price|floatformat:2|intcomma }}</td>
+      <td><input class="inline-input" inputmode="decimal" name="price_{{ ln.line_id }}" value="{{ ln.est_unit_price|floatformat:2 }}" aria-label="Actual price"></td>
+      <td>{{ ln.received_ref|default:"" }}</td></tr>{% endfor %}
+  </table></div>
+  {% with k="_m" %}{% include "buying/_invoice_fields.html" %}{% endwith %}
+  <div class="actions"><button class="btn" type="submit"><span class="ms">playlist_add</span>Add to the batch</button></div>
+</form>
+{% with k="_m" %}{% include "buying/_lines_sum.html" %}{% endwith %}
+{% endif %}
+
+{% if unreceived %}
+<details style="margin-top:18px"{% if not waiting %} open{% endif %}><summary style="cursor:pointer"><b>Goods not recorded as received yet: receive and invoice in one step</b></summary>
+<form method="post" id="form_u" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="both">
+  <div class="scroll-x"><table class="list">
+    <tr><th>Arrived</th><th>PO</th><th>Item</th><th>Unit</th><th>Still to come</th><th>Qty</th><th>Estimated price</th><th>Actual price</th></tr>
+    {% for ln in unreceived %}<tr data-line="{{ ln.line_id }}" data-est="{{ ln.est_unit_price }}">
+      <td><input type="checkbox" name="pick_{{ ln.line_id }}" value="1"{% if ln.checked %} checked{% endif %} aria-label="Arrived"></td>
+      <td>{{ ln.po_no }}</td><td>{{ ln.item_name }}</td><td>{{ ln.unit|default:"" }}</td><td class="num">{{ ln.remaining|floatformat:"-2" }}</td>
+      <td><input class="inline-input" inputmode="decimal" name="qty_{{ ln.line_id }}" value="{{ ln.remaining|floatformat:'-2' }}" aria-label="Qty"></td>
+      <td class="num">{{ ln.est_unit_price|floatformat:2|intcomma }}</td>
+      <td><input class="inline-input" inputmode="decimal" name="price_{{ ln.line_id }}" value="{{ ln.est_unit_price|floatformat:2 }}" aria-label="Actual price"></td></tr>{% endfor %}
+  </table></div>
+  {% with k="_u" came_with="" %}{% include "buying/_invoice_fields.html" %}{% endwith %}
+  <div class="actions"><button class="btn" type="submit"><span class="ms">playlist_add</span>Record the goods and add the invoice to the batch</button></div>
+</form>
+{% with k="_u" %}{% include "buying/_lines_sum.html" %}{% endwith %}
+</details>
+{% endif %}
+<p class="hint">The actual price prevails over the estimate. A price far above the order lands on the Review list; an invoice number the supplier already has is refused.</p>
+{% endif %}
+{% endblock %}

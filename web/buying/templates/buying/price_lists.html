@@ -1,0 +1,167 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Price lists{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">sell</span> Price lists</h2>
+<p class="note">Each supplier's prices. A purchase order takes its estimate from here; the actual invoice price always prevails.</p>
+{% if not suppliers %}
+<div class="later-box"><p>No supplier yet. Add one under <a href="/creditors/new/">Set-up → Creditors</a>.</p></div>
+{% else %}
+<form class="bar" method="get" action="/price-lists/">
+  <input type="hidden" name="tab" value="{{ tab }}">
+  <div class="grow"><label for="s">Supplier</label><select id="s" name="s" onchange="this.form.submit()">
+    {% for id, name in suppliers %}<option value="{{ id }}"{% if id == cid %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+  {% if tab == "prices" %}<div><label for="on">Prices in force on</label><input id="on" type="date" name="on" value="{{ as_of|date:'Y-m-d' }}" onchange="this.form.submit()"></div>{% endif %}
+</form>
+<nav class="tabs">{% for key, label in tabs %}<a href="/price-lists/?s={{ cid }}&amp;tab={{ key }}"{% if key == tab %} class="on"{% endif %}>{{ label }}</a>{% endfor %}</nav>
+
+{% if tab == "prices" %}
+  {% if recon %}
+  <div class="warnbox"><b>Different from the last invoice ({{ recon|length }}).</b> The invoice is the truth: update the list when the supplier's new price stands.
+    <div class="scroll-x"><table class="list" style="margin-top:8px"><tr><th>Item</th><th>List, net</th><th>Last invoice, net</th><th>Difference</th><th>Invoice</th>{% if writer %}<th></th>{% endif %}</tr>
+      {% for r in recon %}<tr><td>{{ r.item_name }}</td><td class="num">{% if r.list_net is not None %}{{ r.list_net|floatformat:2|intcomma }}{% else %}not on the list{% endif %}</td>
+        <td class="num">{{ r.invoiced|floatformat:2|intcomma }}</td>
+        <td class="num">{% if r.difference is not None %}{{ r.difference|floatformat:2|intcomma }}{% if r.difference_pct is not None %} ({{ r.difference_pct }}%){% endif %}{% endif %}</td>
+        <td>{{ r.invoice_no }} · {{ r.invoice_date|slice:":10" }}</td>
+        {% if writer %}<td><form method="post">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="update_to_invoice">
+          <input type="hidden" name="item" value="{{ r.item_name }}"><button class="btn small" type="submit">Update the list</button></form></td>{% endif %}</tr>{% endfor %}
+    </table></div></div>
+  {% endif %}
+  {% if rows %}
+  <div class="scroll-x"><table class="list">
+    <tr><th>Item</th><th>Code</th><th>Unit</th><th>Price</th><th>Since</th><th>Price before</th><th>Change</th><th></th></tr>
+    {% for r in rows %}<tr><td>{{ r.item_name }}</td><td>{{ r.item_code|default:"" }}</td><td>{{ r.unit|default:"" }}</td><td class="num">{{ r.unit_price|floatformat:2|intcomma }}</td>
+      <td>{{ r.effective_date|slice:":10" }}</td><td class="num">{% if r.change is not None %}{{ r.previous_price|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+      <td class="num {% if r.change > 0 %}chg-up{% elif r.change < 0 %}chg-down{% endif %}">{% if r.change is not None %}{% if r.change > 0 %}+{% endif %}{{ r.change }}%{% endif %}</td>
+      <td><a href="/price-lists/?s={{ cid }}&amp;tab=prices&amp;item={{ r.item_name|urlencode }}#history">History</a></td></tr>{% endfor %}
+  </table></div>
+  <p class="hint">{{ rows|length }} item(s).</p>
+  {% else %}
+  <p class="note">No prices for this supplier yet.{% if writer %} Add one under Add a price, or use Import Excel.{% endif %}</p>
+  {% endif %}
+  {% if item %}
+  <div class="grp" id="history">History of {{ item }}</div>
+  <table class="list" style="max-width:640px"><tr><th>Price</th><th>Starts</th><th>In use</th>{% if writer %}<th></th>{% endif %}</tr>
+    {% for h in history %}<tr><td class="num">{{ h.unit_price|floatformat:2|intcomma }}</td><td>{{ h.effective_date|slice:":10" }}</td><td>{% if h.is_active %}Yes{% else %}<span class="pill off">off</span>{% endif %}</td>
+      {% if writer %}<td><form method="post"{% if h.is_active %} onsubmit="return confirm('Switch this price off? It stops being used for new orders. It stays in the history and can be switched back on.');"{% endif %}>{% csrf_token %}
+        <input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="price_on_off"><input type="hidden" name="item" value="{{ item }}">
+        <input type="hidden" name="price_id" value="{{ h.price_id }}"><input type="hidden" name="on" value="{% if h.is_active %}0{% else %}1{% endif %}">
+        <button class="btn small ghost" type="submit">{% if h.is_active %}Switch off{% else %}Switch back on{% endif %}</button></form></td>{% endif %}</tr>{% endfor %}
+  </table>
+  {% endif %}
+
+{% elif tab == "add" %}
+  <p class="note">Choose a product from the catalog (or one already on this supplier's list) to give it a price, or type a new item. Many products at once: use Import Excel.</p>
+  <form method="post">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="add_price">
+    <div class="formgrid">
+      <div style="grid-column:span 2"><label for="item">Item</label><input id="item" type="text" name="item" list="item_names" required placeholder="Choose or type an item"></div>
+      <div><label for="unit">Unit</label><input id="unit" type="text" name="unit" placeholder="pc, set, box"></div>
+      <div><label for="price">Price</label><input id="price" type="text" inputmode="decimal" name="price" required></div>
+      <div><label for="start">Starts on</label><input id="start" type="date" name="start" value="{{ today|date:'Y-m-d' }}"><div class="hint">Applies from this date until a later one is added.</div></div>
+      <div><label for="code">Item code (optional)</label><input id="code" type="text" name="code"></div>
+    </div>
+    <datalist id="item_names">{% for n in names %}<option value="{{ n }}">{% endfor %}</datalist>
+    <label class="inline" style="display:flex;gap:6px;color:#1c2733;margin-top:10px"><input type="checkbox" name="replace" value="1"> Replace the price already on this date, if there is one</label>
+    <button class="btn small" type="submit" style="margin-top:10px"><span class="ms">save</span>Save price</button>
+  </form>
+
+{% elif tab == "import" %}
+  <p class="note">Download the template, fill the sheet for each kind of product (Tires, Battery, Mags, Rims), and upload it. You see every line first; nothing is saved until you press Import.
+    List prices only: the supplier's discount is set on the Discounts tab.</p>
+  <div class="actions"><a class="btn small ghost" href="/price-lists/template/"><span class="ms">download</span>Blank template</a>
+    <a class="btn small ghost" href="/price-lists/template/?s={{ cid }}"><span class="ms">edit_note</span>Template with this supplier's prices</a></div>
+  <form class="bar" method="post" enctype="multipart/form-data" style="margin-top:14px">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="check_file">
+    <div class="grow"><label for="file">The filled template (.xlsx)</label><input id="file" type="file" name="file" accept=".xlsx" required></div>
+    <div><label for="istart">Prices start on</label><input id="istart" type="date" name="start" value="{{ today|date:'Y-m-d' }}"></div>
+    <button class="btn small" type="submit"><span class="ms">fact_check</span>Check the file</button>
+  </form>
+  <p class="hint">"Prices start on" is used for every row that has no Effective date of its own.</p>
+  {% if file %}
+    <div class="grp">The file, before anything is saved</div>
+    <p>Rows read: {% for k, v in parsed.counts.items %}{{ k }} {{ v }}{% if not forloop.last %}, {% endif %}{% empty %}no sheets read{% endfor %}.
+      {% for label, n in summary %}<b>{{ n }}</b> {{ label }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+    {% if parsed.problems %}<div class="msg warning"><b>{{ parsed.problems|length }} problem(s): these rows are not saved until fixed.</b><ul>{% for pr in parsed.problems %}<li>{{ pr }}</li>{% endfor %}</ul></div>{% endif %}
+    {% for cat, lines in by_cat.items %}
+      <div class="grp">{{ cat }}</div>
+      <div class="scroll-x"><table class="list"><tr><th>Product</th><th>List before</th><th>List now</th><th>Change</th><th>Status</th></tr>
+        {% for r in lines %}<tr><td>{{ r.name }}</td><td class="num">{% if r.old_price is not None %}{{ r.old_price|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+          <td class="num">{% if r.new_price is not None %}{{ r.new_price|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+          <td class="num">{% if r.change_pct is not None %}{% if r.change_pct > 0 %}+{% endif %}{{ r.change_pct }}%{% endif %}</td><td>{{ r.status_text }}</td></tr>{% endfor %}
+      </table></div>
+    {% endfor %}
+    {% if n_rows %}
+    <form class="bar" method="post" style="margin-top:12px">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="import_file">
+      <input type="hidden" name="file" value="{{ file }}"><input type="hidden" name="start" value="{{ start|date:'Y-m-d' }}">
+      <div><label for="dup">If a product already has a price on the same date</label><select id="dup" name="dup"><option value="skip">Keep the old price</option><option value="replace">Replace it with the file's price</option></select></div>
+      <button class="btn small" type="submit"><span class="ms">upload_file</span>Import {{ n_rows }} row(s)</button>
+    </form>
+    {% endif %}
+  {% endif %}
+
+{% elif tab == "discounts" %}
+  <p class="note">Suppliers give a chain of discounts on their list prices, like less 5%, less 5%. Each discount is taken off what is left by the one before, so 5, 5 on 7,600 gives 6,859.00 (not 10% off).
+    A purchase order line starts with the discount set here and can be changed on that line.</p>
+  {% if discounts %}
+  <table class="list" style="max-width:640px"><tr><th>Brand</th><th>Discount</th><th>Since</th></tr>
+    {% for d in discounts %}<tr><td>{{ d.brand }}</td><td>{{ d.label }}</td><td>{{ d.effective_date|slice:":10" }}</td></tr>{% endfor %}</table>
+  {% else %}<p class="note">No discount set for this supplier. List prices are used as they are.</p>{% endif %}
+  <div class="grp">Set a discount</div>
+  <form class="bar" method="post">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="set_discount">
+    <div class="grow"><label for="brand">Brand</label><input id="brand" type="text" name="brand" list="brands" placeholder="All brands of this supplier"></div>
+    <div class="grow"><label for="chain">Discounts in %, in order</label><input id="chain" type="text" name="chain" placeholder="5, 5"></div>
+    <div><label for="dstart">Starts on</label><input id="dstart" type="date" name="start" value="{{ today|date:'Y-m-d' }}"></div>
+    <button class="btn small" type="submit"><span class="ms">save</span>Save discount</button>
+  </form>
+  <datalist id="brands">{% for b in brands %}<option value="{{ b }}">{% endfor %}</datalist>
+  <p class="hint" id="chain_example">Type 5, 5 for "less 5%, less 5%". Leave blank for no discount from the date.</p>
+  <script>
+  (function () {
+    var box = document.getElementById("chain"), out = document.getElementById("chain_example"), base = out.textContent;
+    box.addEventListener("input", function () {
+      var parts = box.value.split(/[,+]/).map(function (s) { return s.replace("%", "").trim(); }).filter(Boolean), v = 10000, ok = parts.length > 0;
+      parts.forEach(function (p) { var d = parseFloat(p); if (isNaN(d) || d < 0 || d >= 100) ok = false; else v = v * (1 - d / 100); });
+      out.textContent = ok ? "Example: a list price of 10,000 becomes " + v.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + "." : base;
+    });
+  })();
+  </script>
+
+{% elif tab == "catalog" %}
+  <p class="note">The catalog holds each product once, whichever supplier sells it, under our own item code (SKU). Two suppliers' prices for the same product are compared here.</p>
+  <div class="seg">{% for c in categories %}<a href="/price-lists/?s={{ cid }}&amp;tab=catalog&amp;cat={{ c }}"{% if c == cat %} class="on"{% endif %}>{{ c }}</a>{% endfor %}</div>
+  <div class="grp">Prices side by side</div>
+  <p class="hint"><a href="/price-lists/?s={{ cid }}&amp;tab=catalog&amp;cat={{ cat }}{% if not one_too %}&amp;all=1{% endif %}">{% if one_too %}Only products with two or more suppliers{% else %}Also show products with only one supplier{% endif %}</a></p>
+  {% if side %}
+  <div class="scroll-x"><table class="list"><tr><th>SKU</th><th>Product</th><th>Supplier</th><th>List</th><th>Discount</th><th>Net</th><th>Since</th><th></th></tr>
+    {% for r in side %}<tr><td>{{ r.sku }}</td><td>{{ r.product }}</td><td>{{ r.supplier }}</td><td class="num">{{ r.list_price|floatformat:2|intcomma }}</td><td>{{ r.discount|default:"none" }}</td>
+      <td class="num">{{ r.net_price|floatformat:2|intcomma }}</td><td>{{ r.effective_date|slice:":10" }}</td><td>{% if r.cheapest %}<span class="pill">cheapest</span>{% endif %}</td></tr>{% endfor %}
+  </table></div>
+  {% else %}<p class="note">{% if one_too %}No priced products in this category yet.{% else %}No product has prices from two or more suppliers yet.{% endif %}</p>{% endif %}
+
+  <div class="grp">Products in the catalog</div>
+  <p class="hint"><a href="/price-lists/?s={{ cid }}&amp;tab=catalog&amp;cat={{ cat }}{% if not old %}&amp;old=1{% endif %}">{% if old %}Hide discontinued{% else %}Include discontinued{% endif %}</a></p>
+  {% if products %}
+  <div class="scroll-x"><table class="list"><tr><th>SKU</th><th>Standard name</th><th>Brand</th>{% for f in fields %}<th>{{ f.label }}</th>{% endfor %}<th>Suppliers</th><th>Status</th>{% if writer %}<th></th>{% endif %}</tr>
+    {% for p in products %}<tr><td>{{ p.sku }}</td><td>{{ p.name }}</td><td>{{ p.brand }}</td>{% for v in p.spec_values %}<td>{{ v|default:"" }}</td>{% endfor %}<td class="num">{{ p.suppliers }}</td>
+      <td>{% if p.is_active %}<span class="pill">Active</span>{% else %}<span class="pill off">Discontinued</span>{% endif %}</td>
+      {% if writer %}<td><form method="post"{% if p.is_active %} onsubmit="return confirm('Discontinue {{ p.name|escapejs }}? It is no longer offered on new orders. Its prices and history stay, and it can be brought back.');"{% endif %}>{% csrf_token %}
+        <input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="product_on_off"><input type="hidden" name="cat" value="{{ cat }}">
+        <input type="hidden" name="product_id" value="{{ p.product_id }}"><input type="hidden" name="on" value="{% if p.is_active %}0{% else %}1{% endif %}">
+        <button class="btn small ghost" type="submit">{% if p.is_active %}Discontinue{% else %}Bring back{% endif %}</button></form></td>{% endif %}</tr>{% endfor %}
+  </table></div>
+  {% else %}<p class="note">No products in this category yet.</p>{% endif %}
+
+  {% if writer %}
+  <div class="grp">Add a product</div>
+  <form method="post">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="add_product"><input type="hidden" name="cat" value="{{ cat }}">
+    <div class="formgrid">
+      <div><label for="pbrand">Brand *</label><input id="pbrand" type="text" name="brand" list="cat_brands" required></div>
+      {% for f in fields %}<div><label for="f_{{ f.key }}">{{ f.label }}{% if f.required %} *{% endif %}</label>
+        {% if f.choices %}<select id="f_{{ f.key }}" name="{{ f.key }}"><option value=""></option>{% for c in f.choices %}<option>{{ c }}</option>{% endfor %}</select>
+        {% else %}<input id="f_{{ f.key }}" type="text" name="{{ f.key }}" placeholder="{{ f.note }}"{% if f.required %} required{% endif %}>{% endif %}</div>{% endfor %}
+    </div>
+    <datalist id="cat_brands">{% for b in brands %}<option value="{{ b }}">{% endfor %}</datalist>
+    <button class="btn small" type="submit" style="margin-top:10px"><span class="ms">add</span>Add product</button>
+  </form>
+  {% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}

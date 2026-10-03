@@ -111,9 +111,31 @@ def _has_receipt(conn, po_id: int) -> bool:
     return bool(conn.execute("SELECT 1 FROM po_receipts WHERE po_id = ? LIMIT 1", (po_id,)).fetchone())
 
 
-def save_po(po_id: int | None, creditor_id: int, order_date, expected_delivery, lines: list[dict], notes: str = "") -> tuple[bool, str, int | None]:
+def po_stamp(po_id: int, conn=None) -> str | None:
+    """A fingerprint of an order as it was shown (its header and lines): saving with an old one means someone else changed the order in between."""
+    import hashlib
+
+    def work(c):
+        head = c.execute("SELECT status, po_no, order_date, expected_delivery_date, notes, updated_at FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()
+        if not head:
+            return None
+        lines = c.execute("SELECT line_id, item_name, unit, qty, est_unit_price, list_price, discount_chain, qty_received FROM purchase_order_lines WHERE po_id = ? ORDER BY line_id",
+                          (po_id,)).fetchall()
+        return hashlib.sha256(repr((head, lines)).encode()).hexdigest()[:16]
+
+    if conn is not None:
+        return work(conn)
+    with get_conn() as c:
+        return work(c)
+
+
+CHANGED = "CHANGED"          # the message when an order changed since it was shown (the screen then shows the other person's version)
+
+
+def save_po(po_id: int | None, creditor_id: int, order_date, expected_delivery, lines: list[dict], notes: str = "", expected_stamp: str | None = None) -> tuple[bool, str, int | None]:
     """Creates a draft order, or changes an open one (Draft / Ordered with nothing received yet): the lines are replaced and the estimate and pay date
-    worked out again. Each line: item_name, qty, optional unit and est_unit_price (left out = the supplier's list price on the order date)."""
+    worked out again. Each line: item_name, qty, optional unit and est_unit_price (left out = the supplier's list price on the order date).
+    expected_stamp (po_stamp() of the order as it was shown): when given and the order changed since, nothing is saved and the message is CHANGED."""
     allowed, why = _may("po.create", po_id)
     if not allowed:
         return False, why, None
@@ -143,6 +165,8 @@ def save_po(po_id: int | None, creditor_id: int, order_date, expected_delivery, 
             row = conn.execute("SELECT status, creditor_id FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()
             if not row:
                 return False, "Order not found.", None
+            if expected_stamp is not None and po_stamp(po_id, conn) != expected_stamp:
+                return False, CHANGED, None
             if row[0] not in OPEN_STATUSES or _has_receipt(conn, po_id):
                 return False, f"This order is {row[0].lower()} and can no longer be changed.", None
             if int(row[1]) != int(creditor_id):
@@ -620,8 +644,12 @@ def receive_goods(creditor_id: int, picks: list[dict], received_date=None, ref: 
         return False, why, None
     if not picks:
         return False, "Tick at least one line that arrived.", None
+    received = _as_date(received_date) or manila_today()
+    ref = " ".join(str(ref or "").split())
+    is_invoice = str(doc_type).lower().startswith("inv")
+    stored = (ref if is_invoice or ref.upper().startswith("DR") else f"DR {ref}") if ref else None          # a delivery receipt number already written "DR-77" is kept as typed
     rows = []
-    with get_conn() as conn:
+    with write_tx() as conn:                       # checked AND saved in one locked step: two people receiving the same delivery at once can never count it twice (2026-10-03)
         for n, pk in enumerate(picks, start=1):
             ln = conn.execute(
                 """SELECT l.line_id, l.po_id, l.item_name, l.qty, l.qty_received, l.est_unit_price, p.status, p.creditor_id, p.po_no, l.item_id
@@ -642,15 +670,10 @@ def receive_goods(creditor_id: int, picks: list[dict], received_date=None, ref: 
             if qty > remaining + 1e-6:
                 return False, f"Line {n} ({ln[2]}): {qty:g} is more than is still to come ({remaining:g}).", None
             rows.append({"line_id": ln[0], "po_id": ln[1], "item": ln[2], "qty": qty, "prior": float(ln[4]), "est_price": float(ln[5]), "item_id": ln[9]})
-    received = _as_date(received_date) or manila_today()
-    ref = " ".join(str(ref or "").split())
-    is_invoice = str(doc_type).lower().startswith("inv")
-    stored = (ref if is_invoice or ref.upper().startswith("DR") else f"DR {ref}") if ref else None          # a delivery receipt number already written "DR-77" is kept as typed
-    with write_tx() as conn:
         from engines.stock_ledger import stock_in
         for r in rows:
             conn.execute("UPDATE purchase_order_lines SET qty_invoiced = COALESCE(qty_invoiced, qty_received), qty_received = ? WHERE line_id = ?", (r["prior"] + r["qty"], r["line_id"]))
-            if book_stock:                                       # the parked Django site books its own stock in (book_stock=False), so it is never counted twice
+            if book_stock:                                       # False only for a caller that books the stock itself
                 stock_in(conn, r["item_id"], r["qty"], r["est_price"], "purchase_order_lines", r["line_id"], received, note="received, counted at the order's net price")
         for po_id in sorted({r["po_id"] for r in rows}):
             mine = [r for r in rows if r["po_id"] == po_id]
@@ -689,6 +712,10 @@ def invoiceable_lines(creditor_id: int) -> pd.DataFrame:
                WHERE p.creditor_id = ? AND p.status IN ('ORDERED', 'PARTIAL', 'RECEIVED') AND l.qty_received - COALESCE(l.qty_invoiced, l.qty_received) > 0.0000001
                ORDER BY p.po_id, l.line_id""", conn, params=(creditor_id,))
     return df[cols] if not df.empty else pd.DataFrame(columns=cols)
+
+
+class _LinesChanged(Exception):
+    """An order line was received or matched by someone else between the checks and the save."""
 
 
 def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoice_date, picks: list[dict], update_prices: bool = False,
@@ -759,13 +786,21 @@ def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoic
         return False, "The invoice amount must be more than zero.", None
     scale = gross / lines_total if lines_total else 1.0           # a typed invoice total (freight, rounding) is what each order's receipt records, shared by amount
     due = resolve_due_date(inv_date, creditor[0])
-    add_invoice(creditor_id, doc, inv_date, due, gross, [], statement_id)              # the invoice is the payable from here on
+    import sqlite3
+    try:
+        add_invoice(creditor_id, doc, inv_date, due, gross, [], statement_id)          # the invoice is the payable from here on
+    except sqlite3.IntegrityError:                                                      # someone saved the same invoice number a moment ago
+        return False, f"Invoice {doc} already exists for this supplier.", None
     with get_conn() as conn:
         inv_id = conn.execute("SELECT invoice_id FROM invoices WHERE creditor_id = ? AND doc_ref = ?", (creditor_id, doc)).fetchone()[0]
     received = _as_date(received_date) or manila_today()
     try:
         with write_tx() as conn:
             from engines.stock_ledger import correct_cost, stock_in
+            for r in rows:                                                                   # nobody received or matched these lines since they were checked above
+                now = conn.execute("SELECT qty_received, COALESCE(qty_invoiced, qty_received) FROM purchase_order_lines WHERE line_id = ?", (r["line_id"],)).fetchone()
+                if not now or abs(float(now[0]) - r["prior_qty"]) > 1e-6 or abs(float(now[1]) - r["prior_invoiced"]) > 1e-6:
+                    raise _LinesChanged(r["item"])
             for r in rows:
                 if not book_stock:
                     pass
@@ -789,6 +824,9 @@ def receive_into_batch(creditor_id: int, statement_id: int, doc_ref: str, invoic
                 po_no = conn.execute("SELECT po_no FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()[0]
                 conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), ?, 'purchase_orders', ?, ?)",
                              ("PO_INVOICED" if goods_received else "PO_RECEIVED", po_id, f"{po_no} {'invoiced' if goods_received else 'received'} on invoice {doc}: actual {sum(r['amount'] for r in mine):,.2f} against estimate {sum(r['est'] for r in mine):,.2f}"))
+    except _LinesChanged as e:
+        delete_invoice(inv_id)                                                            # nothing half-done: take the invoice back out
+        return False, f"Someone else just received or matched {e} on this order. Open the form again to see what is left.", None
     except Exception:
         delete_invoice(inv_id)                                                            # nothing half-done: take the invoice back out
         raise

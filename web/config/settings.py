@@ -88,6 +88,7 @@ INSTALLED_APPS = [
     "django.contrib.humanize",
     "core",
     "masters",                                             # D1: creditors, settings, users
+    "buying",                                              # D2: price lists, purchase orders, receiving
 ]
 
 MIDDLEWARE = [

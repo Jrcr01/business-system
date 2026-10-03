@@ -1,0 +1,21 @@
+<script>
+/* Choosing an item fills its unit, list price and the supplier's usual discount from the price list (only boxes still empty are filled). */
+(function () {
+  var item = document.getElementById("{{ prefix }}item");
+  if (!item) return;
+  function box(name) { return document.getElementById("{{ prefix }}" + name); }
+  item.addEventListener("change", function () {
+    var on = (document.getElementById("order_date") || {}).value || "";
+    fetch("/purchase-orders/price/?s={{ cid }}&on=" + encodeURIComponent(on) + "&item=" + encodeURIComponent(item.value))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var note = box("hint");
+        if (!d.found) { if (note) note.textContent = "Not on this supplier's price list on the order date. Type the price, or add it under Price lists."; return; }
+        if (box("unit") && !box("unit").value) box("unit").value = d.unit;
+        if (box("list_price") && !box("list_price").value) box("list_price").value = d.list_price.toFixed(2);
+        if (box("chain") && !box("chain").value) box("chain").value = d.chain;
+        if (note) note.textContent = "Price list: " + d.list_price.toLocaleString("en-US", {minimumFractionDigits: 2}) + " since " + d.since + ". Discount " + (d.chain === "0" ? "none" : d.chain + " %") + ".";
+      });
+  });
+})();
+</script>
