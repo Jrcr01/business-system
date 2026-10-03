@@ -56,3 +56,14 @@ def test_stop_4_a_check_that_was_never_printed_cannot_be_released_by_any_role(db
             ok, msg = mark_released([chk], date(2026, 10, 12), "Collector")
             assert not ok, role
     assert fetchone(db, "SELECT released_date FROM checks_issued WHERE check_id = ?", (chk,))[0] is None
+
+
+def test_a_missing_number_stays_missing_and_a_missing_text_is_empty_in_every_screen_query(db):
+    """The query helper mixed empty text into number columns, which broke int() and the Arrow conversion (found by the every-workflow tests, 2026-10-03)."""
+    from engines.db_engine import df_query
+    a, b = make_creditor(db, name="No Days Supplier"), make_creditor(db, name="Five Days Supplier")
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE creditors SET lead_days = 5 WHERE creditor_id = ?", (b,))
+    df = df_query("SELECT creditor_name, lead_days, tin FROM creditors WHERE creditor_id IN (?, ?) ORDER BY creditor_id", (a, b))
+    assert str(df["lead_days"].dtype).startswith("float") and df["lead_days"].isna().tolist() == [True, False]       # one column, numbers only (NaN = not set)
+    assert df["tin"].tolist() == ["", ""] or all(v in ("", None) for v in df["tin"])                                 # text: empty, as the screens expect

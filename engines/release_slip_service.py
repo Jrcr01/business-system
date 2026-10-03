@@ -26,33 +26,38 @@ def slip_label(year: int, number: int) -> str:
     return f"RS-{int(year)}-{int(number):04d}"
 
 
-def _batch_checks(conn, statement_id: int) -> list:
-    return [r[0] for r in conn.execute("SELECT check_id FROM checks_issued WHERE statement_id = ? AND status = 'Active' AND released_date IS NULL AND is_handwritten = 0 ORDER BY check_id",
-                                       (int(statement_id),)).fetchall()]
+def _own_checks(conn, column: str, owner_id: int) -> list:
+    return [r[0] for r in conn.execute(f"SELECT check_id FROM checks_issued WHERE {column} = ? AND status = 'Active' AND released_date IS NULL AND is_handwritten = 0 ORDER BY check_id",
+                                       (int(owner_id),)).fetchall()]
 
 
-def create_slip(statement_id: int) -> tuple[bool, str, dict | None]:
-    """Returns (ok, message, {'slip_id', 'slip_no', 'checks', 'total'}). The batch's active, not yet released checks go on the slip. An open slip with exactly those checks is
-    reused, so printing the statement again does not use up a number."""
+def create_slip(statement_id: int | None = None, *, loan_note_id: int | None = None) -> tuple[bool, str, dict | None]:
+    """Returns (ok, message, {'slip_id', 'slip_no', 'checks', 'total'}). The active, not yet released checks of a supplier batch (statement_id) or of a private lender's loan note
+    (loan_note_id) go on the slip. An open slip with exactly those checks is reused, so printing again does not use up a number."""
     ok, why = require_permission("check.release")
     if not ok:
         return False, why, None
+    if (statement_id is None) == (loan_note_id is None):
+        return False, "A slip is for one batch or one loan note.", None
+    column, owner_id = ("statement_id", statement_id) if statement_id is not None else ("loan_note_id", loan_note_id)
     with write_tx() as conn:
-        batch = conn.execute("SELECT creditor_id FROM order_statements WHERE statement_id = ?", (int(statement_id),)).fetchone()
-        if not batch:
-            return False, "Batch not found.", None
-        ids = _batch_checks(conn, statement_id)
+        owner = conn.execute("SELECT creditor_id FROM order_statements WHERE statement_id = ?" if statement_id is not None else "SELECT creditor_id FROM loan_notes WHERE loan_note_id = ?",
+                             (int(owner_id),)).fetchone()
+        if not owner:
+            return False, "Batch not found." if statement_id is not None else "Loan note not found.", None
+        batch = owner
+        ids = _own_checks(conn, column, owner_id)
         if not ids:
-            return False, "This batch has no check waiting to be handed over, so there is no slip to make.", None
-        for slip_id, slip_no in conn.execute("SELECT slip_id, slip_no FROM release_slips WHERE statement_id = ? AND released_at IS NULL ORDER BY slip_id DESC", (int(statement_id),)).fetchall():
+            return False, "There is no check waiting to be handed over, so there is no slip to make.", None
+        for slip_id, slip_no in conn.execute(f"SELECT slip_id, slip_no FROM release_slips WHERE {column} = ? AND released_at IS NULL ORDER BY slip_id DESC", (int(owner_id),)).fetchall():
             if sorted(r[0] for r in conn.execute("SELECT check_id FROM release_slip_checks WHERE slip_id = ?", (slip_id,)).fetchall()) == ids:
                 return True, f"Slip {slip_no}.", _summary(conn, slip_id)
         year = manila_today().year
         number = next_doc_number(conn, SERIES, year)
         total = conn.execute(f"SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE check_id IN ({','.join('?' * len(ids))})", ids).fetchone()[0]
         slip_no = slip_label(year, number)
-        slip_id = conn.execute("INSERT INTO release_slips (slip_no, statement_id, creditor_id, check_count, total, printed_by, printed_at) VALUES (?, ?, ?, ?, ?, acting_user(), CURRENT_TIMESTAMP) RETURNING slip_id",
-                               (slip_no, int(statement_id), batch[0], len(ids), round(float(total), 2))).fetchone()[0]
+        slip_id = conn.execute("INSERT INTO release_slips (slip_no, statement_id, loan_note_id, creditor_id, check_count, total, printed_by, printed_at) VALUES (?, ?, ?, ?, ?, ?, acting_user(), CURRENT_TIMESTAMP) RETURNING slip_id",
+                               (slip_no, statement_id, loan_note_id, batch[0], len(ids), round(float(total), 2))).fetchone()[0]
         conn.executemany("INSERT INTO release_slip_checks (slip_id, check_id) VALUES (?, ?)", [(slip_id, c) for c in ids])
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'RELEASE_SLIP_PRINTED', 'release_slips', ?, ?)",
                      (slip_id, f"{slip_no}: {len(ids)} check(s), {float(total):,.2f}"))
@@ -68,8 +73,9 @@ def open_slips() -> pd.DataFrame:
     """Slips printed and not yet collected: slip_id, slip_no, supplier, statement, checks, total, printed_on, printed_by, days_waiting. Oldest first."""
     with get_conn() as conn:
         df = pd.read_sql_query(
-            """SELECT s.slip_id, s.slip_no, c.creditor_name AS supplier, o.statement_ref AS statement, s.check_count AS checks, s.total, DATE(s.printed_at) AS printed_on, s.printed_by
-               FROM release_slips s JOIN creditors c ON c.creditor_id = s.creditor_id JOIN order_statements o ON o.statement_id = s.statement_id
+            """SELECT s.slip_id, s.slip_no, c.creditor_name AS supplier, COALESCE(o.statement_ref, ln.note_ref) AS statement, s.check_count AS checks, s.total, DATE(s.printed_at) AS printed_on, s.printed_by
+               FROM release_slips s JOIN creditors c ON c.creditor_id = s.creditor_id LEFT JOIN order_statements o ON o.statement_id = s.statement_id
+               LEFT JOIN loan_notes ln ON ln.loan_note_id = s.loan_note_id
                WHERE s.released_at IS NULL ORDER BY s.slip_id""", conn)
     today = manila_today()
     df["days_waiting"] = [max((today - date.fromisoformat(str(d)[:10])).days, 0) for d in df["printed_on"]]

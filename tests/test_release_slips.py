@@ -135,3 +135,55 @@ def test_home_warns_when_a_slip_has_waited_over_a_week(db):
     con.close()
     with acting_as("owner@example.com", "owner"):
         assert any("1 release slip(s)" in n for n in _notices("owner"))
+
+
+def _loan_note_with_printed_checks(db, n=2):
+    from engines.loan_note_rules import create_loan_note, promote_draft_loan_note
+    from engines.loan_schedule_service import generate_schedule, issue_all_pdcs
+    cid = make_creditor(db, name="Slip Lender", creditor_type="LENDER", terms="0")
+    ok, msg, lnid = create_loan_note(cid, date(2026, 10, 1), 20000.0, 0.0)
+    promote_draft_loan_note(lnid)
+    generate_schedule(lnid, date(2026, 11, 1), n)
+    with acting_as("clerk@example.com", "payables"):
+        assert issue_all_pdcs(lnid)[0]
+    con = sqlite3.connect(db)
+    con.execute("UPDATE checks_issued SET printed_at = '2026-10-10 10:00:00', check_number = printf('70%02d', check_id) WHERE loan_note_id = ?", (lnid,))
+    con.commit()
+    con.close()
+    return cid, lnid
+
+
+def test_a_loan_note_gets_a_slip_that_lists_its_checks_and_is_released_the_same_way(db):
+    cid, lnid = _loan_note_with_printed_checks(db)
+    with acting_as("mother@example.com", "releaser"):
+        ok, msg, slip = rs.create_slip(loan_note_id=lnid)
+        assert ok and slip["checks"] == 2 and slip["total"] == 20000.0, msg
+        assert rs.create_slip(loan_note_id=lnid)[2]["slip_no"] == slip["slip_no"]                         # printing again keeps the number
+        assert not rs.create_slip()[0] and not rs.create_slip(1, loan_note_id=lnid)[0]                      # one batch or one loan note, not neither or both
+        assert rs.open_slips().iloc[0]["statement"].startswith("20")                                         # shown with the loan note's own reference
+        ok, msg = rs.release_slip(slip["slip_id"], "Richie", date(2026, 10, 12))
+        assert ok, msg
+    assert fetchone(db, "SELECT COUNT(*) FROM checks_issued WHERE loan_note_id = ? AND released_to = 'Richie'", (lnid,))[0] == 2
+
+
+def test_the_loan_note_slip_prints_three_copies_with_the_checks_the_total_and_the_signature(db):
+    from engines.thermal_print_service import print_loan_release_slip
+    from engines.thermal_statement import COLUMNS, build_loan_release_slip, get_printer_config, render_text
+    cid, lnid = _loan_note_with_printed_checks(db)
+    text = render_text(build_loan_release_slip(lnid, "FINANCE", "RS-2026-0042"))
+    assert "FINANCE COPY" in text and "Release slip: RS-2026-0042" in text and "TOTAL (2 checks)" in text and "Please issue a collection receipt." in text
+    assert "Signature:" in text and max(len(line) for line in text.splitlines()) <= COLUMNS
+    res = print_loan_release_slip(lnid, ["SUPPLIER", "FILE", "FINANCE"], "dummy", get_printer_config(), slip_no="RS-2026-0042")
+    assert res["done"] == ["SUPPLIER", "FILE", "FINANCE"] and all(res["jobs"].values())
+    assert build_loan_release_slip(99999, "FILE") is None
+
+
+def test_payment_run_shows_the_release_stage_after_statements(db):
+    from test_workflows_pages import _open
+    cid, sid, ids = _batch_with_checks(db)
+    with acting_as("owner@example.com", "owner"):
+        rs.create_slip(sid)
+    for role in ("owner", "payables"):
+        at = _open("payment-run", role)
+        assert not at.exception, (role, at.exception)
+        assert any(b.key == "pr_release_btn" for b in at.button), role                         # the last stage of the cycle: slips printed, not yet collected

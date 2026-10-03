@@ -71,6 +71,34 @@ def open_printer(backend: str, cfg: dict):
     return prn
 
 
+def print_loan_release_slip(loan_note_id: int, copies: list[str], backend: str, cfg: dict, *, slip_no: str | None, opener=open_printer) -> dict:
+    """Prints the release slip of a loan note, one job per copy. Returns {'done', 'jobs'}; raises PrintAborted (nothing is recorded: the slip number is the record)."""
+    from engines.thermal_statement import build_loan_release_slip
+    try:
+        prn = opener(backend, cfg)
+    except PrintAborted:
+        raise
+    done, jobs = [], {}
+    try:
+        for c in copies:
+            slip = build_loan_release_slip(int(loan_note_id), c, slip_no)
+            if slip is None:
+                raise PrintAborted("setup", "Loan note not found.", done=done)
+            job = build_job([slip], int(cfg["thermal_qr_size"]))
+            try:
+                send_job(job, prn, int(cfg["thermal_chunk_bytes"]))
+            except Exception as e:
+                raise PrintAborted("midjob", f"Printing stopped partway through the {c} copy ({e}). Tear off the partial slip and print again.", done=done)
+            jobs[c] = job
+            done.append(c)
+    finally:
+        try:
+            prn.close()
+        except Exception:
+            pass
+    return {"done": done, "jobs": jobs}
+
+
 def print_statement(statement_id: int, copies: list[str], backend: str, drive, cfg: dict, *, sandbox: bool, record: bool = True,
                     include_full_history: bool = True, opener=open_printer, today=None, slip_no: str | None = None) -> dict:
     """Print the given copies ('SUPPLIER' / 'FILE' / 'FINANCE') of a batch's statement. record=False (the test printer on the live system) prints

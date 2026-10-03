@@ -299,6 +299,54 @@ def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: b
     return Slip(lines=L, totals=t, copy=copy, statement_ref=str(stmt["statement_ref"]), qr_link=qr_link)
 
 
+def build_loan_release_slip(loan_note_id: int, copy: str = "SUPPLIER", slip_no: str | None = None) -> Slip | None:
+    """The release slip of a private lender's loan note (there is no batch statement for a loan note): the checks that go to the lender, the total, the receipt request and the
+    lender's signature. Three copies, as for a batch: SUPPLIER (the lender's), FILE (kept with the loan note) and FINANCE."""
+    copy = copy.upper()
+    if copy not in COPY_LABELS:
+        raise ValueError(f"copy must be SUPPLIER, FILE or FINANCE, not {copy!r}")
+    from engines.common import get_conn
+    with get_conn(DB_PATH) as conn:
+        note = conn.execute("SELECT ln.note_ref, c.creditor_name FROM loan_notes ln JOIN creditors c ON c.creditor_id = ln.creditor_id WHERE ln.loan_note_id = ?", (int(loan_note_id),)).fetchone()
+        checks = conn.execute("SELECT check_number, check_date, amount FROM checks_issued WHERE loan_note_id = ? AND status = 'Active' AND released_date IS NULL AND is_handwritten = 0 ORDER BY check_date, check_id",
+                              (int(loan_note_id),)).fetchall()
+    if not note:
+        return None
+    L: list[Line] = []
+    add = L.append
+    rule = lambda ch="-": add(Line(ch * COLUMNS))  # noqa: E731
+    add(Line(COMPANY, "center", bold=True, big=True))
+    add(Line("CHECK RELEASE SLIP", "center", bold=True))
+    add(Line(COPY_LABELS[copy], "center", bold=True, big=True))
+    rule("=")
+    for label, value in (("Loan note", note[0]), ("Lender", note[1]), ("Printed", manila_now().strftime("%b %d, %Y %I:%M %p"))):
+        for i, ln in enumerate(wrap(fmt_text(value), COLUMNS - 10)):
+            add(Line((f"{label + ':':<10}" if i == 0 else " " * 10) + ln))
+    add(Line(""))
+    add(Line(f"CHECKS ({len(checks)})", bold=True))
+    add(Line(row3("Check #", "Check date", "Amount"), bold=True))
+    rule()
+    for number, check_date, amount in checks:
+        add(Line(row3(fmt_text(number) if fmt_text(number) != DASH else "Not numbered", fmt_date_long(check_date), fmt_money(amount))))
+    rule("=")
+    total = round(sum(float(a) for _n, _d, a in checks), 2)
+    for ln in two_col(f"TOTAL ({len(checks)} checks)", fmt_money(total)):
+        add(Line(ln, bold=True))
+    add(Line(""))
+    add(Line(f"Release slip: {slip_no}" if slip_no else "Release slip: no. given when printed", bold=True))
+    for ln in wrap(RECEIPT_TEXT, COLUMNS):
+        add(Line(ln))
+    add(Line(""))
+    add(Line("Received by: " + "_" * (COLUMNS - 13)))
+    add(Line(""))
+    add(Line("Date: " + "_" * 20))
+    add(Line(""))
+    add(Line("Signature: " + "_" * (COLUMNS - 11)))
+    add(Line(""))
+    add(Line("*** Nothing follows ***", "center"))
+    return Slip(lines=L, totals={"checks": total, "active_checks": len(checks)}, copy=copy, statement_ref=str(note[0]), qr_link=None)
+
+
 def render_text(slip: Slip) -> str:
     """The 48-column plain-text preview (what the paper will show, without bold / size)."""
     out = []

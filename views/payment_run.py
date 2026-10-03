@@ -329,3 +329,15 @@ def render() -> None:
                        "Print their statements in one combined PDF (nothing is locked or marked; reprint any time).")
     if not tp.empty and right.button("Print statements", icon=":material/picture_as_pdf:", key="pr_print_btn", width="stretch"):
         go_to("order-statements", os_mode=OS_BROWSE, bulk_print_scope="Since last check print", bulk_print_exp=True)
+
+    from engines.release_slip_service import open_slips
+    from engines.permissions import level
+    from views.login import current_role
+    slips = open_slips()
+    late = int((slips["days_waiting"] > 7).sum()) if not slips.empty else 0
+    right = _stage_row("6 · Release", "orange" if late else "gray", slips.empty,
+                       "Every printed slip has been collected by its supplier." if slips.empty else f"**{len(slips)} release slip(s)** printed, not collected yet — {php(float(slips['total'].sum()))}"
+                       + (f", {late} over a week" if late else ""),
+                       None if slips.empty else "The supplier signs the slip when they collect their checks; record it by the slip number.")
+    if not slips.empty and level(current_role(), "check.release") is not None and right.button("Release checks", icon=":material/outbox:", type="primary", key="pr_release_btn", width="stretch"):
+        go_to("release")

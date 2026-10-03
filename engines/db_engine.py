@@ -92,10 +92,13 @@ def next_doc_number(conn: sqlite3.Connection, series: str, year: int, in_use: in
 
 
 def df_query(sql_query: str, params: tuple = ()) -> pd.DataFrame:
-    """Executes SQL query and returns a Pandas DataFrame with NULLs coerced to empty strings."""
+    """Executes SQL query and returns a Pandas DataFrame. A missing TEXT value becomes an empty string, as the screens expect; a missing NUMBER stays missing (NaN), so it is never
+    mixed with text in one column: that mix broke int() on a supplier without delivery days and the Arrow conversion of a loan note without a principal (2026-10-03)."""
     with open_db(DB_PATH) as conn:
         df = pd.read_sql_query(sql_query, conn, params=params)
-        return df.fillna('')
+        text_cols = df.select_dtypes(exclude="number").columns
+        df[text_cols] = df[text_cols].fillna('')
+        return df
 
 def promote_draft_statement(statement_id: int, target_status: str) -> str:
     """Atomically transitions an Order Statement and assigns a permanent YYYY - OS XXXX sequence ID."""

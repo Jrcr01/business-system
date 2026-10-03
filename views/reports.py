@@ -90,7 +90,6 @@ REPORT_OPTIONS = [
     "Overview — highlights & insights",
     "Analytics — trends and mix",
     "Possible duplicates — check everything on file",
-    "Schedule of payments — all tracks",
     "Cleared checks — from the bank",
     "Statement of account — supplier, lender, bank loan or card",
     "Master rollups — aging and exposure",
@@ -98,6 +97,7 @@ REPORT_OPTIONS = [
     "Decision reports — answers for choices",
 ]
 # the old menu names (a browser tab left open on one of them) -> (new report, sub-view state to set)
+MOVED_TO_PAYABLES_DUE = ("Schedule of payments — all tracks", "Parked checks (not yet printed)")
 SOA_REPORT = "Statement of account — supplier, lender, bank loan or card"
 SOA_VIEWS = ["Supplier history", "Supplier rundown", "Private lender", "Bank loan", "Credit card"]
 OLD_REPORTS = {
@@ -813,7 +813,7 @@ def _statement_of_account() -> None:
     {"Supplier history": _supplier_history, "Supplier rundown": _rundown, "Private lender": _lender_history, "Bank loan": _bank_loan_history, "Credit card": _card_history}[which]()
 
 
-REPORTS = dict(zip(REPORT_OPTIONS, [_overview, _analytics, _duplicates, _schedule, _cleared_checks, _statement_of_account, _rollups, _lists, _decisions]))
+REPORTS = dict(zip(REPORT_OPTIONS, [_overview, _analytics, _duplicates, _cleared_checks, _statement_of_account, _rollups, _lists, _decisions]))
 
 
 def render() -> None:
@@ -827,6 +827,10 @@ def render() -> None:
         return
     st.caption("Pick a report — its filters, tables, and exports appear below, one report at a time.")
     old = st.session_state.get("report_type_picker")
+    if old in MOVED_TO_PAYABLES_DUE:                  # the Schedule of payments is a tab of Payables due now (one list of what is owed, with its downloads)
+        st.session_state.pop("report_type_picker", None)
+        from views.shared import go_to
+        go_to("payables-due", pd_tab="Everything owed")
     if old in OLD_REPORTS:                            # a report that is now part of another one
         new, sub = OLD_REPORTS[old]
         st.session_state["report_type_picker"] = new

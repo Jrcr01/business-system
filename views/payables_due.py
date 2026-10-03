@@ -92,7 +92,7 @@ def _past() -> None:
 def render() -> None:
     page_header("Payables due", "What is already committed to go out, and when. The suppliers deposit the checks they hold when they like, so this shows how much can hit the bank, not a plan.")
     _top()
-    tab_weeks, tab_suppliers, tab_past, tab_cal = st.tabs(["Week by week", "By supplier", "Past their date", "Calendar"], key="pd_tab", default="Week by week", on_change="rerun")
+    tab_weeks, tab_suppliers, tab_past, tab_cal, tab_all = st.tabs(["Week by week", "By supplier", "Past their date", "Calendar", "Everything owed"], key="pd_tab", default="Week by week", on_change="rerun")
     with tab_weeks:
         _weeks()
     with tab_suppliers:
@@ -102,3 +102,7 @@ def render() -> None:
     with tab_cal:
         from views.payment_calendar import render as render_calendar
         render_calendar("pcal")
+    with tab_all:
+        if tab_all.open:
+            from views.reports import _schedule             # the list of everything still owed, all tracks, with the CSV, Excel and PDF downloads (it was the Schedule of payments report)
+            _schedule()

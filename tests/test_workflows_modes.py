@@ -78,7 +78,7 @@ def test_credit_cards_every_tab(world, tab):
     _ok("credit-cards", cc_tab=tab)
 
 
-@pytest.mark.parametrize("tab", ["Week by week", "By supplier", "Past their date", "Calendar"])
+@pytest.mark.parametrize("tab", ["Week by week", "By supplier", "Past their date", "Calendar", "Everything owed"])
 def test_payables_due_every_tab(world, tab):
     _ok("payables-due", pd_tab=tab)
 

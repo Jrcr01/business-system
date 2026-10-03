@@ -132,6 +132,35 @@ def render_add_installment_form(loan_note_id: int) -> None:
             st.warning("Duplicate submission ignored — identical to the click just before it.")
 
 
+def _release_slip_section(loan_note_id: int) -> None:
+    """The release slip of this loan note: printed in three copies for the lender to sign when they collect their checks; the release is then recorded by its number on Release checks."""
+    from engines.release_slip_service import create_slip
+    from engines.thermal_print_service import BACKEND_LABELS, PrintAborted, print_loan_release_slip
+    from engines.thermal_statement import build_loan_release_slip, get_printer_config, render_text
+    from views.login import can_now
+    if not can_now("check.release"):
+        return
+    waiting = q("SELECT COUNT(*) AS n FROM checks_issued WHERE loan_note_id = ? AND status = 'Active' AND released_date IS NULL AND is_handwritten = 0 AND printed_at IS NOT NULL", (loan_note_id,))["n"][0]
+    if not waiting:
+        return
+    with st.expander(f"Release slip for the lender ({int(waiting)} printed check(s) to hand over)", icon=":material/outbox:"):
+        st.caption("Print the slip in three copies (lender, filing, finance). The lender signs it when they collect their checks; you then record it on Release checks by the slip number.")
+        slip = build_loan_release_slip(loan_note_id, "SUPPLIER")
+        if slip is not None:
+            st.code(render_text(slip), language=None, width="content")
+        cfg = get_printer_config()
+        if st.button(f"Print the slip, three copies — {BACKEND_LABELS.get(cfg['thermal_backend'], cfg['thermal_backend'])}", icon=":material/print:", type="primary", key=f"ln_slip_print_{loan_note_id}"):
+            ok, msg, made = create_slip(loan_note_id=loan_note_id)
+            if not ok:
+                st.error(msg)
+            else:
+                try:
+                    res = print_loan_release_slip(loan_note_id, ["SUPPLIER", "FILE", "FINANCE"], cfg["thermal_backend"], cfg, slip_no=made["slip_no"])
+                    st.success(f"Slip {made['slip_no']} printed ({len(res['done'])} copies).")
+                except PrintAborted as e:
+                    st.error(str(e))
+
+
 def render() -> None:
     page_header("Lenders")
     st.caption("Add or edit lender records on the Creditors page.")
@@ -588,6 +617,7 @@ def render() -> None:
                                 st.toast(msg)
                             return ok, msg
                         confirm_create_dialog(f"Create a schedule row for each of these {len(ln_unlinked)} checks (interest 0)?", "ln_sched_from_checks", _do_sched)
+            _release_slip_section(int(selected_lnid))
             st.caption("Checks issued against this loan note")
             ln_checks_df = q(
                 """SELECT chk.check_id, chk.check_number, chk.check_date, chk.amount, chk.status, datetime(chk.printed_at, '+8 hours') AS printed_at,

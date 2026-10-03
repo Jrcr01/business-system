@@ -1051,7 +1051,8 @@ CREATE TABLE IF NOT EXISTS calendar_notes (
 CREATE TABLE IF NOT EXISTS release_slips (
     slip_id INTEGER PRIMARY KEY AUTOINCREMENT,
     slip_no TEXT NOT NULL UNIQUE,
-    statement_id INTEGER NOT NULL REFERENCES order_statements(statement_id),
+    statement_id INTEGER REFERENCES order_statements(statement_id),         -- a supplier batch ...
+    loan_note_id INTEGER REFERENCES loan_notes(loan_note_id),               -- ... or a private lender's loan note (exactly one of the two)
     creditor_id INTEGER NOT NULL REFERENCES creditors(creditor_id),
     check_count INTEGER NOT NULL,
     total REAL NOT NULL,

@@ -283,6 +283,7 @@ for _t in (
     Tile("checks", "pay", "Checks and checkbook", _checks),
     Tile("release", "pay", "Release checks", _release),
     Tile("payables-due", "pay", "Payables due", _payables_due, actions=[
+        A("Everything owed, with downloads", "All tracks, by date; CSV, Excel and PDF", ":material/event:", pd_tab="Everything owed"),
         A("Week by week", "What can hit the bank, by week", ":material/calendar_view_week:", pd_tab="Week by week"),
         A("By supplier", "Who holds checks, which orders are coming", ":material/groups:", pd_tab="By supplier"),
         A("Past their date", "Checks the suppliers have not deposited yet", ":material/hourglass_top:", pd_tab="Past their date")]),
@@ -312,7 +313,7 @@ for _t in (
         A("Missing statement check", "", ":material/fact_check:", cc_tab=":material/fact_check: Missing statement check")]),
     Tile("reports", "records", "Reports", hint="Lists and decisions", actions=[
         A("Overview", "Highlights and insights", ":material/insights:", rpt_mode="Standard reports", report_type_picker="Overview — highlights & insights"),
-        A("Schedule of payments", "Everything still owed, by date", ":material/event:", rpt_mode="Standard reports", report_type_picker="Schedule of payments — all tracks"),
+
         A("Cleared checks", "From the bank", ":material/done_all:", rpt_mode="Standard reports", report_type_picker="Cleared checks — from the bank"),
         A("Statement of account", "A supplier's, lender's, bank loan's or card's invoices, checks and dues", ":material/history:", rpt_mode="Standard reports",
           report_type_picker="Statement of account — supplier, lender, bank loan or card", rpt_soa_view="Supplier history"),

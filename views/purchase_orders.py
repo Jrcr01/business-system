@@ -528,7 +528,7 @@ def _next_panel() -> None:
     new_order = ("New order", ":material/add_shopping_cart:", "purchase-orders", {"po_mode": "New order"}, "po.create", False)
     if nxt["kind"] == "ordered":
         next_steps(f"**{nxt['po_no']}** is ordered. Open it below to download the PO (PDF) for the supplier; when the goods come, record them under Receive.",
-                   [("Receive goods", ":material/inventory_2:", "purchase-orders", {"po_mode": "Receive"}, "po.receive_goods", False), new_order])
+                   [("Receive goods", ":material/inventory_2:", "purchase-orders", {"po_mode": "Receive"}, "po.receive_goods", True), new_order])
     elif nxt["kind"] == "received":
         next_steps("Goods recorded. The supplier's invoice is matched to them next.",
                    [("Match the invoice now", ":material/receipt_long:", "purchase-orders", {"po_mode": "Match invoice", "rcv_supplier": nxt["cid"]}, "po.receive", True),
