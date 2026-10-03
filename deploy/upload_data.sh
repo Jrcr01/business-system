@@ -14,9 +14,9 @@ SRC="${2:?usage: deploy/upload_data.sh slicks@<server> <database file>}"
 [ -f "$SRC" ] || { echo "No file $SRC"; exit 1; }
 cd "$(git rev-parse --show-toplevel)"
 
-DEST="$("$SSH" "$TARGET" 'set -a; . /etc/slicks-erp/env; echo "$WEB_DB_PATH"')"
+DEST="$("$SSH" -n "$TARGET" 'set -a; . /etc/slicks-erp/env; echo "$WEB_DB_PATH"')"
 NAME="$(basename "$DEST")"
-if "$SSH" "$TARGET" "test -f '$DEST'"; then
+if "$SSH" -n "$TARGET" "test -f '$DEST'"; then
   echo "The server already has a database at $DEST."
   read -r -p "Replace it with $SRC? (the old one is kept as a copy) Type yes: " ANSWER
   [ "$ANSWER" = "yes" ] || { echo "Nothing changed."; exit 1; }
