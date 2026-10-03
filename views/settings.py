@@ -90,7 +90,7 @@ def _users_tab() -> None:
     from views.login import ROLE_LABEL, current_user
 
     me = current_user() or {}
-    st.caption("Only you (the owner) see this. A new person gets a temporary password that you give them; they must choose their own at first sign-in. People are switched off, never deleted. "
+    st.caption("Only the System admin sees this. A new person gets a temporary password that you give them; they must choose their own at first sign-in. People are switched off, never deleted. "
                "Every change is in the audit log.")
     users = au.list_users()
     st.dataframe(users.assign(role=users["role"].map(lambda r: ROLE_LABEL.get(r, r)), is_active=users["is_active"].astype(bool), must_change_password=users["must_change_password"].astype(bool)),
@@ -160,7 +160,7 @@ def _matrix_tab() -> None:
 
 
 def render() -> None:
-    page_header("Settings", "Adjustable numbers and keyboard shortcuts, and (for the owner) who can sign in and what each role may do.")
+    page_header("Settings", "Adjustable numbers and keyboard shortcuts, and (for the System admin) who can sign in and what each role may do.")
     from views.login import current_role
 
     labels = ["Numbers", "Keyboard shortcuts"] + (["Users", "Who can do what"] if current_role() == "admin" else [])

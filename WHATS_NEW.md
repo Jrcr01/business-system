@@ -7,6 +7,15 @@ each fresh browser session (app.py, near the top of the Dashboard tab). Format:
 - Plain-English bullet, no jargon -- written for someone who doesn't read code.
 -->
 
+## 2026-10-03
+- **Buying is in the system, from price list to the bank.** Price lists (Excel template, supplier discounts like "less 5%, less 5%"), purchase orders with a warning when a day's payables would be high, receiving goods, matching the supplier's invoice, and the batch, checks, release and bank clearing that follow. The Prices screen also shows where the last invoice was priced differently from the list, with a button to update the list.
+- **A new top bar replaces the sidebar.** Hover a section (Buy, Pay suppliers, Bank, Other payables, Records, Set-up) to see its pages. Search, the payment calendar, reminders and your account are on the right.
+- **Release checks by slip.** The statement prints three times (supplier, filing, finance), each ending with a release slip number and a signature. When the supplier collects their checks, Release checks records it by that number.
+- **The payment calendar** is a pop-up and a tab on Payables due. Mark a holiday, a no-check day or a note. A payment due on a holiday or no-check day is paid the next bank day.
+- **Roles:** System admin, Owner (family), Sales, Payables, Purchasing, Releaser, Viewer. The system flags things for review instead of blocking; only four things are always refused (a check above the batch balance, the same invoice number twice, a reused check number, releasing a check that was never printed). The Review list and My to-do are on Home.
+- **Loans:** a loan note's whole schedule in one go, every post-dated check in one press, and its own release slip. A bank loan can be filled with the same amount every month. A card statement is marked paid by the bank's debit.
+- **Dashboard and Analytics are gone:** their content is on Home, Payables due and Reports. Five statement reports are now one.
+
 ## 2026-10-02
 - **Sign-in and roles:** the system now asks who you are. The first time, the owner creates their account and chooses a password. After that the owner adds people under Settings → Users and gives each a temporary password they must change at first sign-in; five wrong tries lock an account for 15 minutes, and a person can be switched off (never deleted). Two roles: **Payables (owner)** sees everything; **Purchasing** (your brother) sees only Home, Purchase orders and Price lists, with no search, no payments calendar and no check numbers. Every change is recorded under the signed-in person's email. Reloading the page asks for the password again.
 - **Follow an order to the bank (Purchase orders):** open an order and expand "Follow this order to the bank": Ordered → Delivered → Invoiced → In a batch → Checks issued → Released to the supplier → Cleared by the bank, each with what happened and what is next, the planned dates beside the actual ones (delivery expected / delivered, payment expected / invoice due / check dated / released / cleared), and its invoices and checks. "Where every order stands" lists all orders with the stage each has reached and a Late flag.

@@ -73,13 +73,13 @@ def _centered():
 def _setup() -> None:
     with _centered():
         st.header("Welcome")
-        st.write("This is the first time the system is opened with sign-in. Create the owner account: it can add other people and sees everything.")
+        st.write("This is the first time the system is opened with sign-in. Create the System admin account: it can add other people and sees everything.")
         with st.form("setup_owner"):
             email = st.text_input("Your email", value=OWNER_EMAIL)
             name = st.text_input("Your name")
             pw = st.text_input("Choose a password", type="password", help="At least 8 characters, with letters and digits.")
             pw2 = st.text_input("Type it again", type="password")
-            go = st.form_submit_button("Create the owner account", type="primary")
+            go = st.form_submit_button("Create the System admin account", type="primary")
         if go:
             if pw != pw2:
                 st.error("The two passwords are not the same.")

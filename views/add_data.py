@@ -151,7 +151,7 @@ def _records() -> None:
 
 
 def render() -> None:
-    page_header("Add data", "One place to type in new records. Each form is the same one used on its own page, with the same checks and confirmations.")
+    page_header("Add data", "One place to start adding records. Invoices, checks and records are typed here; a loan, a bank loan or a card statement opens the page that keeps it.")
     kind = st.segmented_control("What do you want to add?", list(KINDS), format_func=KINDS.get, default="Invoices / credit memos", required=True, key="ad_kind")
     with st.container(border=True):
         if kind == "Invoices / credit memos":
