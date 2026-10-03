@@ -23,11 +23,11 @@ def test_the_owner_sees_every_tab_and_none_fail(db):
     make_creditor(db, name="New Century")
     at = _run("owner")
     assert not at.exception, at.exception
-    assert [t.label for t in at.tabs] == ["Current prices", "Add a price", "Import Excel", "Discounts", "Products"]
+    assert [t.label for t in at.tabs] == ["Current prices", "Add a price", "Import Excel", "Discounts", "Compare suppliers"]
 
 
 def test_a_viewer_sees_only_the_prices_and_the_catalog(db):
     make_creditor(db, name="New Century")
     at = _run("viewer")
     assert not at.exception, at.exception
-    assert [t.label for t in at.tabs] == ["Current prices", "Products"]
+    assert [t.label for t in at.tabs] == ["Current prices", "Compare suppliers"]

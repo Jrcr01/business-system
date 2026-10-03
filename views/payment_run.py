@@ -178,9 +178,9 @@ def render() -> None:
         if n7.empty:
             st.caption("Nothing due in the next 7 days.")
         else:
-            show = n7.drop(columns=["items"]).assign(day=pd.to_datetime(n7["day"]))
-            st.dataframe(show, hide_index=True, column_config={"day": date_col("Paid on"), **{c: money_col(c) for c in ["Supplier", "Lender", "Bank Loan", "Credit Card", "Total"]}})
-            st.caption("A Saturday/Sunday due date is paid the next banking day (Monday). Full list: Reports → Schedule of payments — all tracks.")
+            st.caption(f"{int(n7['items'].sum())} item(s), {peso(rep['next7_total'])} in the next 7 days. The day-by-day list is in one place: Payables due.")
+        if st.button("Open Payables due", icon=":material/event_upcoming:", key="pr_n7_link"):
+            go_to("payables-due", pd_tab="Week by week")
     with t_od:
         if od.empty:
             st.caption("Nothing overdue.")

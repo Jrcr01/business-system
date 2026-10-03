@@ -269,7 +269,7 @@ for _t in (
         A("Current prices", "What each supplier charges", ":material/sell:", pl_tab="Current prices"),
         A("Add a price", "Type one in", ":material/edit:", needs="price.write", pl_tab="Add a price"),
         A("Import the Excel price list", "The template with Tires, Battery, Mags, Rims", ":material/upload_file:", needs="price.write", pl_tab="Import Excel"),
-        A("Products and prices side by side", "Our item codes; which supplier is cheapest", ":material/compare_arrows:", pl_tab="Products")]),
+        A("Products and prices side by side", "Our item codes; which supplier is cheapest", ":material/compare_arrows:", pl_tab="Compare suppliers")]),
     Tile("purchase-orders", "buy", "Purchase orders", _purchase_orders, actions=[
         A("New order", "From a supplier's price list", ":material/add_shopping_cart:", needs="po.create", po_mode="New order"),
         A("Orders", "Open, late and over-plan orders; PO PDF", ":material/list_alt:", po_mode="Orders")]),

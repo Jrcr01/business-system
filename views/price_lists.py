@@ -214,11 +214,11 @@ def render() -> None:
     from views.shared import selectbox_creditor_label
 
     writer = can(current_role(), "price.write")                  # a role that may only look sees the prices and the catalog, not the tabs that change them
-    names = ["Current prices", "Add a price", "Import Excel", "Discounts", "Products"] if writer else ["Current prices", "Products"]
+    names = ["Current prices", "Add a price", "Import Excel", "Discounts", "Compare suppliers"] if writer else ["Current prices", "Compare suppliers"]
     tabs = dict(zip(names, st.tabs(names, key="pl_tab", default="Current prices", on_change="rerun")))
     draw = {"Current prices": lambda: _current_tab(int(cid), writer), "Add a price": lambda: _add_tab(int(cid)),
             "Import Excel": lambda: _import_tab(int(cid), selectbox_creditor_label("SUPPLIER", int(cid))), "Discounts": lambda: _discounts_tab(int(cid)),
-            "Products": lambda: _products_tab(int(cid), writer)}
+            "Compare suppliers": lambda: _products_tab(int(cid), writer)}
     for name, tab in tabs.items():
         if tab.open:                                      # only the tab you are looking at runs
             with tab:

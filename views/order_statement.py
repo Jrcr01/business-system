@@ -748,7 +748,7 @@ def render() -> None:
             selected_sid = st.session_state.get("selected_statement_id")
 
             # stateful (key + on_change) so the Payment run page's "Print statements" button can open it
-            with st.expander("Print statements in bulk", icon=":material/picture_as_pdf:", key="bulk_print_exp", on_change="rerun"):
+            with st.expander("Print statements: many batches, one PDF", icon=":material/picture_as_pdf:", key="bulk_print_exp", on_change="rerun"):
                 st.caption("Print the statements of several order statements in one go, as one combined PDF. Printing here does not lock batches and nothing is marked as printed, "
                            "so you can always reprint after an adjustment or revision.")
                 bp1, bp2 = st.columns([2, 3])
@@ -894,7 +894,8 @@ def render() -> None:
                     st.session_state["selected_statement_id"] = None
                     refresh()
 
-            with st.expander("Export Batch Statement"):
+            with st.expander("Print statements: this batch (A4 PDF, thermal roll, three copies)", icon=":material/print:"):
+                st.caption("All printing of statements is on this page: this batch here, many batches at once in **Print statements: many batches** above the list.")
                 export_net, export_active_sum, export_remaining = get_batch_balance(int(selected_sid))
                 export_is_overpaid = export_remaining < -0.005
                 if export_is_overpaid:
