@@ -6,6 +6,7 @@
     <div><label for="pk_brand">Brand</label><select id="pk_brand"><option value="">All brands</option></select></div>
     <div><label for="pk_rim">Rim</label><select id="pk_rim"><option value="">All</option></select></div>
     <div><label for="pk_terrain">Terrain</label><select id="pk_terrain"><option value="">All</option></select></div>
+    <div><label for="pk_show">Show</label><select id="pk_show"><option selected>10</option><option>25</option><option>50</option><option>100</option></select></div>
   </div>
   <p class="hint" id="pk_count">Loading the price list…</p>
   <div class="scroll-x"><table class="list picktable"><thead><tr><th></th><th>Item</th><th>Size</th><th>Pattern</th><th style="text-align:right">List</th><th style="text-align:right">Net</th><th>Qty</th></tr></thead>
@@ -20,7 +21,10 @@
 <script>
 (function () {
   var box = document.getElementById("picker"); if (!box) return;
-  var cid = box.dataset.cid, items = [], picks = {}, shown = [], hi = 0, MAX = 50;
+  var cid = box.dataset.cid, items = [], picks = {}, shown = [], hi = 0, MAX = 10;
+  var fs = document.getElementById("pk_show");                 /* how many rows to show: each person's own choice, remembered on this browser */
+  try { var kept = localStorage.getItem("slicks_picker_show"); if (kept) { fs.value = kept; MAX = parseInt(kept, 10) || 10; } } catch (e) {}
+  fs.addEventListener("change", function () { MAX = parseInt(fs.value, 10) || 10; try { localStorage.setItem("slicks_picker_show", fs.value); } catch (e) {} draw(); });
   var q = document.getElementById("pk_q"), fb = document.getElementById("pk_brand"), fr = document.getElementById("pk_rim"), ft = document.getElementById("pk_terrain");
   var rows = document.getElementById("pk_rows"), count = document.getElementById("pk_count"), total = document.getElementById("pk_total");
   var peso = function (n) { return n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
@@ -61,7 +65,9 @@
       qi.addEventListener("change", function () { var n = parseFloat(qi.value.replace(/,/g, "")); if (n > 0) picks[it.name] = {qty: n, it: it}; else delete picks[it.name]; draw(); });
       tq.appendChild(qi); tr.appendChild(tq); rows.appendChild(tr);
     });
-    count.textContent = items.length ? (found.length > MAX ? "First " + MAX + " of " : "") + found.length + " of " + items.length + " items" + (found.length > MAX ? ": type more to narrow it down." : ".") : "This supplier has no prices on the order date.";
+    count.textContent = !items.length ? "This supplier has no prices on the order date."
+      : found.length > MAX ? "Showing " + MAX + " of " + found.length + " matching (" + items.length + " items in all): search or filter to narrow it down."
+      : found.length + " of " + items.length + " items.";
     var names = Object.keys(picks), pcs = 0, sum = 0;
     names.forEach(function (n) { pcs += picks[n].qty; sum += picks[n].qty * picks[n].it.net; });
     total.textContent = names.length ? names.length + " ticked · " + pcs + " pcs · ₱" + peso(sum) + " (net)" : "Nothing ticked yet.";
