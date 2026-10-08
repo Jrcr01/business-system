@@ -8,6 +8,7 @@ urlpatterns = [
     path("purchase-orders/", orders.orders, name="purchase_orders"),
     path("purchase-orders/new/", orders.order_new, name="po_new"),
     path("purchase-orders/price/", orders.price_hint, name="po_price"),
+    path("purchase-orders/items/", orders.picker_items, name="po_items"),
     path("purchase-orders/receive/", orders.receive, name="po_receive"),
     path("purchase-orders/match/", orders.match, name="po_match"),
     path("purchase-orders/<int:po_id>/", orders.order, name="po"),

@@ -94,11 +94,18 @@ def set_discount(creditor_id: int, brand: str, chain, effective_date: date) -> t
 def standing_chain(creditor_id: int, item_name: str, on: date | None = None) -> str:
     """The chain in force for this supplier's item on a date: a brand row (the item name starts with the brand) beats the supplier-wide row; the newest start
     date wins; a chain set to blank means no discount. '' when nothing is set."""
-    on = on or manila_today()
-    name = " ".join(str(item_name or "").split()).lower()
+    return chain_from(discount_rows(creditor_id, on), item_name)
+
+
+def discount_rows(creditor_id: int, on: date | None = None) -> list:
+    """This supplier's discount rows in force on a date (read once, then chain_from per item: the item picker prices hundreds of items at once)."""
     with get_conn() as conn:
-        rows = conn.execute("SELECT brand, chain, effective_date, discount_id FROM supplier_discounts WHERE creditor_id = ? AND is_active = 1 AND effective_date <= ?",
-                            (creditor_id, str(on))).fetchall()
+        return conn.execute("SELECT brand, chain, effective_date, discount_id FROM supplier_discounts WHERE creditor_id = ? AND is_active = 1 AND effective_date <= ?",
+                            (creditor_id, str(on or manila_today()))).fetchall()
+
+
+def chain_from(rows: list, item_name: str) -> str:
+    name = " ".join(str(item_name or "").split()).lower()
     best = None
     for brand, chain, eff, did in rows:
         b = (brand or "").lower()

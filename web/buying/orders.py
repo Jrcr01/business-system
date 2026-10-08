@@ -216,13 +216,36 @@ def order_new(request):
     delivery = _date(p.get("delivery")) or (default_delivery(cid, order_day) if cid else order_day + timedelta(days=7))
     if request.method == "POST" and p.get("action") == "start":
         line = _line_from_form(p)
-        ok, msg, po_id = save_po(None, cid, order_day, delivery, [line] if line["item_name"] else [], p.get("notes", ""))
+        lines = _picked(p) + ([line] if line["item_name"] else [])           # the ticked items, and/or one typed by hand
+        ok, msg, po_id = save_po(None, cid, order_day, delivery, lines, p.get("notes", ""))
         if ok:
             _say(request, True, "Draft saved. Add the other items below.")
             return redirect(f"/purchase-orders/{po_id}/edit/")
         _say(request, False, msg)
     return render(request, "buying/order_new.html", {"page_id": "purchase-orders", **_head(request), "suppliers": suppliers, "cid": cid, "order_day": order_day, "delivery": delivery,
                                                      "names": _names(cid), "v": p})
+
+
+def _picked(p) -> list[dict]:
+    """The lines ticked in the item picker (pick_name_<n> / pick_qty_<n>): list price and discount from the price list."""
+    out = []
+    for key in p:
+        if key.startswith("pick_name_"):
+            n = key.removeprefix("pick_name_")
+            name, qty = p.get(key, "").strip(), _num(p.get(f"pick_qty_{n}"), 0)
+            if name and qty > 0:
+                out.append(_line_from_form({"item": name, "qty": qty, "unit": p.get(f"pick_unit_{n}", ""), "list_price": "", "chain": ""}))
+    return out
+
+
+@page_needed("purchase-orders")
+def picker_items(request):
+    """For the item picker: this supplier's items with their price on the order date (engines/price_list_service.picker_items)."""
+    from engines.price_list_service import picker_items as items
+    cid = int(request.GET.get("s") or 0)
+    if not cid:
+        return JsonResponse({"items": []})
+    return JsonResponse({"items": items(cid, _date(request.GET.get("on")))})
 
 
 def _names(cid: int) -> list[str]:
@@ -251,6 +274,12 @@ def order_edit(request, po_id: int):
                 _say(request, False, "Type or choose the item.")
                 return redirect(f"/purchase-orders/{po_id}/edit/")
             lines.append(new)
+        elif what == "add_many":                                 # the item picker: several ticked items in one save
+            picked = _picked(p)
+            if not picked:
+                _say(request, False, "Tick the items to add and give each a quantity.")
+                return redirect(f"/purchase-orders/{po_id}/edit/")
+            lines += picked
         elif what == "update":
             for i, ln in enumerate(lines):
                 if f"qty_{i}" in p:

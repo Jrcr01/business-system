@@ -6,7 +6,7 @@
 <div class="later-box"><p>No supplier has a price list yet. Orders are made only from a supplier's price list: upload its prices on <a href="/price-lists/">Price lists</a> first
   (a new supplier is added under <a href="/creditors/new/">Set-up → Creditors</a>).</p></div>
 {% else %}
-<p class="note">Choose the supplier and the dates, and the first item. That saves the draft; you add the other items on the next screen.</p>
+<p class="note">Choose the supplier and the dates, and tick the items with their quantities. That saves the draft; you can add more on the next screen.</p>
 <form method="get" action="/purchase-orders/new/" class="bar">
   <div class="grow"><label for="s">Supplier</label><select id="s" name="s" onchange="this.form.submit()">{% for id, name in suppliers %}<option value="{{ id }}"{% if id == cid %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
 </form>
@@ -16,9 +16,11 @@
     <div><label for="delivery">Expected delivery</label><input id="delivery" type="date" name="delivery" value="{{ delivery|date:'Y-m-d' }}">
       <div class="hint">Order date + the supplier's usual delivery days. The payment falls due after this, by the supplier's terms.</div></div>
   </div>
-  <div class="grp">First item</div>
+  <div class="grp">Items</div>
+  {% include "buying/_item_picker.html" %}
+  <details class="manual"><summary>Not on the price list? Type an item by hand</summary>
   <div class="formgrid">
-    <div style="grid-column:span 2"><label for="item">Item</label><input id="item" type="text" name="item" list="item_names" required placeholder="Choose from the price list or type an item" value="{{ v.item|default:'' }}"></div>
+    <div style="grid-column:span 2"><label for="item">Item</label><input id="item" type="text" name="item" list="item_names" placeholder="Type the item" value="{{ v.item|default:'' }}"></div>
     <div><label for="qty">Qty</label><input id="qty" type="text" inputmode="decimal" name="qty" value="{{ v.qty|default:'1' }}"></div>
     <div><label for="unit">Unit</label><input id="unit" type="text" name="unit" value="{{ v.unit|default:'' }}"></div>
     <div><label for="list_price">List price</label><input id="list_price" type="text" inputmode="decimal" name="list_price" value="{{ v.list_price|default:'' }}" placeholder="blank = the price list"></div>
@@ -26,6 +28,7 @@
   </div>
   <p class="hint" id="hint"></p>
   <datalist id="item_names">{% for n in names %}<option value="{{ n }}">{% endfor %}</datalist>
+  </details>
   <label for="notes">Notes for the supplier (optional)</label><textarea id="notes" name="notes" rows="2" style="width:100%;max-width:900px">{{ v.notes|default:'' }}</textarea>
   <div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save the draft and add items</button></div>
 </form>

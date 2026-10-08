@@ -156,6 +156,8 @@ input[type=date], input[type=file] { padding: 7px 9px; border: 1px solid #cbd5e1
 .dialog .tip { background: #f1f5fa; border-radius: 6px; padding: 8px 10px; font-size: .9rem; }
 .dialog .actions { display: flex; flex-wrap: wrap; gap: 8px; } .dialog .actions form { margin: 0; }
 table.list tr.subhead td { background: #f1f5fa; }
+.picktable tr.on td { background: #eef3fa; } .picktable tr.hi td { outline: 1px solid var(--blue); outline-offset: -1px; }
+details.manual summary { cursor: pointer; color: var(--blue); margin: 10px 0 4px; }
 .btn.warn { background: #C26A00; border-color: #C26A00; } .btn.warn:hover { background: #9a5400; }
 .barlabels { display: flex; gap: 4px; padding: 0 2px; } .barlabels span { flex: 1; text-align: center; font-size: .62rem; color: #4b5563; overflow: hidden; min-width: 6px; }
 .weekbtns { display: flex; gap: 6px; flex-wrap: wrap; } .weekbtns form { margin: 0; } .weekbtns .btn { line-height: 1.2; }

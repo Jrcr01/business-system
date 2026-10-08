@@ -27,25 +27,30 @@ from engines.permissions import require as require_permission
 MAX_ROWS = 2000
 # the one standard sheet for every product (owner, 2026-10-08); the older workbook with a sheet per category is still read
 SHEET = "Price list"
-STANDARD = [("supplier", "Supplier", False), ("category", "Category", True), ("brand", "Brand", True), ("model", "Model/Pattern", False), ("size", "Size", False), ("other", "Other specs", False),
+STANDARD = [("supplier", "Supplier", False), ("category", "Category", True), ("brand", "Brand", True), ("model", "Model/Pattern", False), ("size", "Size", False), ("terrain", "Terrain", False), ("other", "Other specs", False),
             ("unit", "Unit", False), ("supplier_code", "Supplier item code", False), ("list_price", "List price", True), ("effective_date", "Effective date", False)]
 STANDARD_HOW_TO = [
     "How to fill this price list",
     "",
-    "1. One sheet, 'Price list', one row per product, for every kind of product. Columns marked * must be filled.",
-    "   Supplier: the supplier's name exactly as on its price list (e.g. New Century City Marketing Corp.), on every row. One file = one supplier.",
-    "   The system refuses the file if it is uploaded for a different supplier.",
+    "INSTRUCTIONS FOR THE AI THAT FILLS THIS FILE (copy everything below this line together with the supplier's price list):",
+    "Fill the sheet 'Price list' from the attached supplier price list(s). One row per product. Follow every rule:",
+    "1. Supplier: the supplier's name exactly as printed on its price list, on EVERY row. One file = one supplier.",
     "2. Category: Tires, Battery, Mags or Rims.",
-    "3. Model/Pattern: the tire pattern (SL369), the battery model (NS60), the mag model (RPF1).  Size: 285/50R20, 17x7.5, 8.25x22.5 (batteries: leave empty).",
-    "4. Other specs: everything else, separated by spaces, e.g.  tires: 10PR A/T LT TL   batteries: 12V 45Ah L MF   mags: 5x114.3 ET40 Silver   rims: 10H TL.",
-    "   Tires need Size and Pattern; batteries need the Ah; mags need Size, PCD and offset; rims need Size and holes.",
-    "5. List price is the supplier's price BEFORE any discount. The supplier's discount (like less 5%, less 5%) is set in the system, not here.",
-    "6. Effective date is the day the price starts, like 2026-09-15. If you leave it empty, the date you pick when uploading is used.",
-    "7. Supplier item code is the supplier's own code for the product. It is kept next to our own item code, which the system makes.",
-    "8. The same product on a later date is a new price: the old price stays in the history. Two rows are the same product when the category, brand,",
-    "   model, size and other specs match, ignoring spaces, dashes and capitals.",
+    "3. Brand: on EVERY row, even when the brand is only on the logo or in the file name.",
+    "4. Size: only the size, e.g. 285/50R20, LT255/55R19, 225/55ZR17, 11R22.5, 7.00R16, 31X10.50R15. (Batteries: leave empty.)",
+    "5. Model/Pattern: only the pattern or model code, e.g. NU025, SL369, EZ525. If a line shows two patterns ('NU006 / NU033', 'RF02/RA85'), make ONE ROW PER PATTERN",
+    "   with the same size and price.",
+    "6. Terrain (tires): A/T, H/T, M/T or R/T only, or leave it empty. Never inside Model/Pattern.",
+    "7. Other specs: everything else printed for that line, separated by spaces, written as on the price list: ply (14PR), load/speed (114V, 121/118R), XL, C8,",
+    "   tread (Rib, Mix, Lug, M.Lug), TL or TT, Heavy Duty, Mining, Indian Specs ... Include section headings that apply to the line (e.g. 'Heavy Duty').",
+    "   Batteries: 12V 45Ah L MF.  Mags: 5x114.3 ET40 Silver.  Rims: 10H TL.",
+    "8. List price: exactly as printed, BEFORE any discount (the discount is set in the system).",
+    "9. Effective date: the date printed on the price list (e.g. 'Effective Sept 15' -> 2026-09-15), as YYYY-MM-DD.",
+    "10. Never repeat a row. Never add a product that is not on the price list. Never skip one.",
     "",
-    "Before anything is saved, the system shows what is new, what changed and every row it could not read.",
+    "How the system reads it: two rows are the same product only when category, brand, size, model/pattern, terrain and other specs all match (capitals, spaces,",
+    "dashes and the order of the other specs ignored). So '14PR Rib TT' and '14PR Rib TL' are two different tires with their own prices.",
+    "Before anything is saved, the system checks the supplier, shows the rows per brand, and lists every row it could not read.",
 ]
 HOW_TO = [
     "How to fill this price list",
@@ -136,7 +141,8 @@ def _build_standard(creditor_id: int | None, on: date | None) -> bytes:
     for category in pc.CATEGORIES:
         for row in current.get(category, []):
             model, size, other = pc.other_specs_text(category, row, row.get("item_remark", ""))
-            vals = {"supplier": supplier, "category": category, "brand": row["brand"], "model": model, "size": size, "other": other, "unit": row["unit"],
+            vals = {"supplier": supplier, "category": category, "brand": row["brand"], "model": model, "size": size,
+                    "terrain": row.get("terrain", "") if category == "Tires" else "", "other": other, "unit": row["unit"],
                     "supplier_code": row["supplier_code"], "list_price": row["list_price"], "effective_date": row["effective_date"]}
             for j, (key, _, _) in enumerate(STANDARD, start=1):
                 v = vals.get(key, "")
@@ -224,7 +230,7 @@ def _current_rows(creditor_id: int, on: date, with_remark: bool = False) -> dict
 def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
     """Reads the template. Returns {'rows': [valid rows], 'problems': ['Tires row 14: ...'], 'counts': {sheet: rows read}, 'sheets_missing': [...]}.
     A row with any problem is not in 'rows'; a blank row is skipped silently. Never raises."""
-    out = {"rows": [], "problems": [], "counts": {}, "sheets_missing": [], "notes": [], "suppliers": [], "brands": {}}
+    out = {"rows": [], "problems": [], "counts": {}, "sheets_missing": [], "notes": [], "suppliers": [], "brands": {}, "tidied": []}
     try:
         wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
     except Exception as e:
@@ -335,9 +341,17 @@ def _parse_standard(rows: list, default_date: date | None, out: dict, seen: dict
         if not brand:
             bad.append("Brand is empty")
         values, remark = {}, ""
-        if category:
+        if category == "Tires":                                 # brand, size, pattern, terrain kept clean; everything else = the others (owner, 2026-10-08)
             out["counts"][category] = out["counts"].get(category, 0) + 1
-            values, remark = pc.split_other_specs(category, str(cell("model")), str(cell("size")), str(cell("other")))
+            values, remark, tire_bad = pc.tidy_tire(str(cell("model")), str(cell("size")), str(cell("terrain")), str(cell("other")))
+            values = pc.normalise_specs(category, values)
+            bad += tire_bad
+            if values["size"] != pc._clean(cell("size")).replace(" ", "").upper() and not tire_bad:
+                out["tidied"].append(f"{where}: {pc._clean(cell('size'))} → size {values['size']}, {remark}")
+        elif category:
+            out["counts"][category] = out["counts"].get(category, 0) + 1
+            other = " ".join(x for x in (str(cell("terrain")), str(cell("other"))) if x.strip())
+            values, remark = pc.split_other_specs(category, str(cell("model")), str(cell("size")), other)
             values = pc.normalise_specs(category, values)
             for fld in pc.CATEGORY_FIELDS[category]:
                 if fld["required"] and not values[fld["key"]]:

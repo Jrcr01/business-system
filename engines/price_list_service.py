@@ -166,6 +166,37 @@ def current_prices(creditor_id: int, on: date | None = None) -> pd.DataFrame:
     return out[cols]
 
 
+def picker_items(creditor_id: int, on: date | None = None) -> list[dict]:
+    """The purchase-order item picker (owner, 2026-10-08): every item this supplier has a price for on `on`, with what the picker searches and filters by.
+    {'name', 'brand', 'size', 'rim', 'pattern', 'terrain', 'others', 'unit', 'list_price', 'chain', 'net', 'find'}. 'find' is the search text: the name and
+    the size's digits run together, so '2055516' finds 205/55R16. Discontinued items are left out; a free-text price (no item) shows by its name only."""
+    import json
+    import re
+
+    from engines.discount_rules import chain_from, discount_rows, net_price
+    on = _to_date(on) or manila_today()
+    prices = current_prices(creditor_id, on)
+    if prices.empty:
+        return []
+    with get_conn() as conn:
+        items = {r[0].lower(): r for r in conn.execute(
+            """SELECT s.item_name, i.brand, i.size_model, i.specs, i.remark, i.is_active FROM supplier_price_list s JOIN items i ON i.id = s.item_id
+               WHERE s.creditor_id = ? AND s.is_active = 1 GROUP BY lower(s.item_name)""", (creditor_id,))}
+    rules = discount_rows(creditor_id, on)
+    out = []
+    for p in prices.itertuples():
+        it = items.get(str(p.item_name).lower())
+        if it is not None and not it[5]:
+            continue
+        brand, size, specs, others = (it[1], it[2] or "", json.loads(it[3] or "{}"), it[4] or "") if it else ("", "", {}, "")
+        rim = m.group(1) if (m := re.search(r"R(\d{2})(?:\.\d)?$|-(\d{1,2})(?:\.\d)?$", size.upper())) and m.group(1) else (m.group(2) if m else "")
+        chain = chain_from(rules, p.item_name)
+        out.append({"name": p.item_name, "brand": brand, "size": size, "rim": rim, "pattern": specs.get("pattern") or specs.get("model", ""),
+                    "terrain": specs.get("terrain", ""), "others": others, "unit": p.unit or "pc", "list_price": float(p.unit_price), "chain": chain,
+                    "net": net_price(float(p.unit_price), chain), "find": f"{p.item_name} {re.sub(r'[^0-9]', '', size)}".lower()})
+    return out
+
+
 def price_history(creditor_id: int, item_name: str) -> pd.DataFrame:
     with get_conn() as conn:
         return pd.read_sql_query(

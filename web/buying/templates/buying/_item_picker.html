@@ -1,0 +1,87 @@
+{% comment %}The item picker (owner, 2026-10-08): search in any order, filter by brand / rim / terrain, tick several items with quantities. Sits inside a form; on submit
+   the ticked items go as pick_name_<n> / pick_qty_<n> / pick_unit_<n>. Needs: cid, and an input #order_date (the prices in force that day).{% endcomment %}
+<div class="picker" id="picker" data-cid="{{ cid }}">
+  <div class="bar" style="margin-bottom:6px">
+    <div class="grow"><label for="pk_q">Search (any words, any order)</label><input id="pk_q" type="text" autocomplete="off" placeholder="e.g. 2055516 westlake, or ns60"></div>
+    <div><label for="pk_brand">Brand</label><select id="pk_brand"><option value="">All brands</option></select></div>
+    <div><label for="pk_rim">Rim</label><select id="pk_rim"><option value="">All</option></select></div>
+    <div><label for="pk_terrain">Terrain</label><select id="pk_terrain"><option value="">All</option></select></div>
+  </div>
+  <p class="hint" id="pk_count">Loading the price list…</p>
+  <div class="scroll-x"><table class="list picktable"><thead><tr><th></th><th>Item</th><th>Size</th><th>Pattern</th><th style="text-align:right">List</th><th style="text-align:right">Net</th><th>Qty</th></tr></thead>
+    <tbody id="pk_rows"></tbody></table></div>
+  <div id="pk_hidden"></div>
+  <div class="actions" style="justify-content:space-between;align-items:center">
+    <span class="hint" id="pk_total">Nothing ticked yet.</span>
+    {% if submit_label %}<button class="btn" type="submit" id="pk_submit"><span class="ms">playlist_add</span><span id="pk_submit_text">{{ submit_label }}</span></button>{% endif %}
+  </div>
+  <p class="hint">Net = the list price less this supplier's usual discount. Typing a quantity ticks the row. ↑ ↓ and Enter work from the search box.</p>
+</div>
+<script>
+(function () {
+  var box = document.getElementById("picker"); if (!box) return;
+  var cid = box.dataset.cid, items = [], picks = {}, shown = [], hi = 0, MAX = 50;
+  var q = document.getElementById("pk_q"), fb = document.getElementById("pk_brand"), fr = document.getElementById("pk_rim"), ft = document.getElementById("pk_terrain");
+  var rows = document.getElementById("pk_rows"), count = document.getElementById("pk_count"), total = document.getElementById("pk_total");
+  var peso = function (n) { return n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  function options(sel, values, fmt) {
+    values.filter(function (v, i, a) { return v && a.indexOf(v) === i; }).sort(function (a, b) { return a.localeCompare(b, undefined, {numeric: true}); })
+      .forEach(function (v) { var o = document.createElement("option"); o.value = v; o.textContent = fmt ? fmt(v) : v; sel.appendChild(o); });
+  }
+  function load() {
+    var on = (document.getElementById("order_date") || {}).value || "";
+    fetch("/purchase-orders/items/?s=" + encodeURIComponent(cid) + "&on=" + encodeURIComponent(on)).then(function (r) { return r.json(); }).then(function (d) {
+      items = d.items || [];
+      options(fb, items.map(function (i) { return i.brand; }));
+      options(fr, items.map(function (i) { return i.rim; }), function (v) { return v + '"'; });
+      options(ft, items.map(function (i) { return i.terrain; }));
+      draw();
+    });
+  }
+  function match(it) {
+    if (fb.value && it.brand !== fb.value) return false;
+    if (fr.value && it.rim !== fr.value) return false;
+    if (ft.value && it.terrain !== ft.value) return false;
+    var words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+    return words.every(function (w) { return it.find.indexOf(w) >= 0; });
+  }
+  function cell(tr, text, right) { var td = document.createElement("td"); td.textContent = text; if (right) td.className = "num"; tr.appendChild(td); return td; }
+  function draw() {
+    var found = items.filter(match);
+    shown = found.slice(0, MAX); hi = Math.min(hi, Math.max(shown.length - 1, 0));
+    rows.innerHTML = "";
+    shown.forEach(function (it, k) {
+      var tr = document.createElement("tr"); if (picks[it.name]) tr.className = "on"; if (k === hi && q === document.activeElement) tr.className += " hi";
+      var td = document.createElement("td"), cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!picks[it.name]; cb.setAttribute("aria-label", "Pick " + it.name);
+      cb.addEventListener("change", function () { if (cb.checked) picks[it.name] = {qty: picks[it.name] ? picks[it.name].qty : 1, it: it}; else delete picks[it.name]; draw(); });
+      td.appendChild(cb); tr.appendChild(td);
+      cell(tr, it.name); cell(tr, it.size); cell(tr, it.pattern); cell(tr, peso(it.list_price), true); cell(tr, peso(it.net), true);
+      var tq = document.createElement("td"), qi = document.createElement("input"); qi.type = "text"; qi.inputMode = "decimal"; qi.className = "inline-input"; qi.style.width = "64px";
+      qi.value = picks[it.name] ? picks[it.name].qty : ""; qi.placeholder = "1"; qi.setAttribute("aria-label", "Qty of " + it.name);
+      qi.addEventListener("change", function () { var n = parseFloat(qi.value.replace(/,/g, "")); if (n > 0) picks[it.name] = {qty: n, it: it}; else delete picks[it.name]; draw(); });
+      tq.appendChild(qi); tr.appendChild(tq); rows.appendChild(tr);
+    });
+    count.textContent = items.length ? (found.length > MAX ? "First " + MAX + " of " : "") + found.length + " of " + items.length + " items" + (found.length > MAX ? ": type more to narrow it down." : ".") : "This supplier has no prices on the order date.";
+    var names = Object.keys(picks), pcs = 0, sum = 0;
+    names.forEach(function (n) { pcs += picks[n].qty; sum += picks[n].qty * picks[n].it.net; });
+    total.textContent = names.length ? names.length + " ticked · " + pcs + " pcs · ₱" + peso(sum) + " (net)" : "Nothing ticked yet.";
+    var st = document.getElementById("pk_submit_text"); if (st) st.textContent = names.length ? "Add " + names.length + " item" + (names.length > 1 ? "s" : "") + " to the order" : "{{ submit_label|escapejs }}";
+  }
+  [q, fb, fr, ft].forEach(function (el) { el.addEventListener(el === q ? "input" : "change", function () { hi = 0; draw(); }); });
+  q.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowDown") { hi = Math.min(hi + 1, shown.length - 1); draw(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { hi = Math.max(hi - 1, 0); draw(); e.preventDefault(); }
+    else if (e.key === "Enter") { e.preventDefault(); var it = shown[hi]; if (it) { if (picks[it.name]) delete picks[it.name]; else picks[it.name] = {qty: 1, it: it}; draw(); } }
+  });
+  var od = document.getElementById("order_date"); if (od) od.addEventListener("change", function () { items = []; load(); });
+  box.closest("form").addEventListener("submit", function () {
+    var h = document.getElementById("pk_hidden"); h.innerHTML = "";
+    Object.keys(picks).forEach(function (n, k) {
+      [["pick_name_" + k, n], ["pick_qty_" + k, picks[n].qty], ["pick_unit_" + k, picks[n].it.unit]].forEach(function (pair) {
+        var i = document.createElement("input"); i.type = "hidden"; i.name = pair[0]; i.value = pair[1]; h.appendChild(i);
+      });
+    });
+  });
+  load();
+})();
+</script>

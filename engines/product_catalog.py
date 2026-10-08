@@ -166,11 +166,66 @@ def split_other_specs(category: str, model: str, size: str, other: str) -> tuple
     return vals, leftover
 
 
+# --- tires on the standard sheet (owner, 2026-10-08): Brand, Size, Model/Pattern, Terrain and the price are the crucial fields, kept clean; everything else is
+# "Others", free text kept as it is written. A tire is the same tire only when brand, size, pattern, terrain AND the others all match (capitals, spaces, dashes
+# and the order of the other words ignored), so "14PR Rib TT" and "14PR Rib TL" are two tires with their own prices.
+TIRE_SIZE = re.compile(r"(LT|P)?(\d{3}/\d{2}Z?R\d{2}(\.\d)?|\d{1,3}(\.\d{1,2})?Z?R\d{2}(\.\d)?|\d{2}X\d{1,2}(\.\d{1,2})?Z?R\d{2}|\d{1,2}(\.\d{1,2})?(/\d{1,2}(\.\d{1,2})?)?-\d{1,2}(\.\d)?)")     # the last: bias-ply, e.g. 4.00-8, 6.40/6.50-13, 23.5-25
+_TERRAIN_WORDS = {t.replace("/", ""): t for t in TERRAIN} | {t: t for t in TERRAIN}
+
+
+def terrain_of(text) -> str | None:
+    """'a/t' / 'AT' / '(A/T)' -> 'A/T'; '' -> ''; anything else -> None."""
+    t = _clean(text).strip("()").upper()
+    return "" if not t else _TERRAIN_WORDS.get(t)
+
+
+def tidy_tire(model: str, size: str, terrain: str, other: str) -> tuple[dict, str, list[str]]:
+    """A tire row of the standard sheet -> ({'size', 'pattern', 'terrain'}, others, problems). Specs written inside the size ('LT255/55R19-10PR',
+    '225/55ZR17C8') move to the others; a terrain written in the pattern or the others ('NU025 H/T') moves to Terrain. Two patterns in one row are a problem."""
+    problems, extra = [], []
+    sz = re.sub(r"\s+", "", _clean(size)).upper()
+    if m := re.search(r"-(\d{1,2}PR)$", sz):
+        extra.append(m.group(1))
+        sz = sz[:m.start()]
+    if m := re.search(r"(?<=\d)(C\d{1,2})$", sz):
+        extra.append(m.group(1))
+        sz = sz[:m.start()]
+    if not sz:
+        problems.append("Size is empty")
+    elif not TIRE_SIZE.fullmatch(sz):
+        problems.append(f"Size '{_clean(size)}' does not look like a tire size (e.g. 285/50R20, LT255/55R19, 11R22.5, 7.00R16, 31X10.50R15)")
+    terr = terrain_of(terrain)
+    if terr is None:
+        problems.append(f"Terrain '{_clean(terrain)}' is not A/T, H/T, M/T or R/T (or leave it empty)")
+        terr = ""
+    words = _clean(model).split()
+    pattern_words = []
+    for w in words:
+        t = terrain_of(w)
+        if t:
+            terr = terr or t
+        else:
+            pattern_words.append(w)
+    pattern = " ".join(pattern_words)
+    if "/" in pattern:
+        problems.append(f"Model/Pattern '{_clean(model)}' has two patterns: put each on its own row")
+    if not pattern:
+        problems.append("Model/Pattern is empty")
+    rest = []
+    for w in _clean(other).split():
+        t = terrain_of(w)
+        if t and (not terr or t == terr):
+            terr = t
+        else:
+            rest.append(w)
+    return {"size": sz, "pattern": pattern, "terrain": terr}, _clean(" ".join(extra + rest)), problems
+
+
 def other_specs_text(category: str, values: dict, remark: str = "") -> tuple[str, str, str]:
     """The reverse, for a pre-filled sheet: (model/pattern, size, other specs) of an item's field values."""
     sp = normalise_specs(category, values)
-    if category == "Tires":
-        model, size, keys = sp["pattern"], sp["size"], ["ply", "terrain", "type", "tube"]
+    if category == "Tires":                                      # the terrain has its own column on the standard sheet
+        model, size, keys = sp["pattern"], sp["size"], ["ply", "type", "tube"]
     elif category == "Battery":
         model, size, keys = sp["model"], "", ["volts", "ah", "cca", "battery_type", "terminal"]
     elif category == "Mags":
@@ -192,10 +247,15 @@ def standard_name(category: str, brand: str, **values) -> str:
     return _clean(" ".join(parts))
 
 
+def _norm_words(text) -> str:
+    """The others, for telling items apart: capitals, dots, dashes and the order of the words ignored ('Mining Lug' = 'lug mining')."""
+    return "+".join(sorted(re.findall(r"[a-z0-9/]+", _clean(text).lower().replace(".", ""))))
+
+
 def product_key(category: str, brand: str, remark: str = "", **values) -> str:
     category = label_of(category)
     sp = normalise_specs(category, values)
-    return "|".join([CODE[category], _norm(brand)] + [_norm(sp[f["key"]]) for f in CATEGORY_FIELDS[category] if f["ident"]] + ([_norm(remark)] if _clean(remark) else []))
+    return "|".join([CODE[category], _norm(brand)] + [_norm(sp[f["key"]]) for f in CATEGORY_FIELDS[category] if f["ident"]] + ([_norm_words(remark)] if _clean(remark) else []))
 
 
 def rekey_items(apply: bool = False) -> dict:
@@ -267,10 +327,13 @@ def get_or_create_product(category: str, brand: str, conn=None, unit: str = "", 
             return None, "", False
         other = {k: v for k, v in sp.items() if v and k != HEADLINE[category]}
         code = _next_code(c, category)
+        shown = name
+        if c.execute("SELECT 1 FROM items WHERE lower(name) = ?", (name.lower(),)).fetchone():     # another item has this name: never two items with one name (prices go by name)
+            shown = f"{name} [{code}]"
         new_id = c.execute("INSERT INTO items (code, category, brand, size_model, remark, key, specs, name, unit, reorder_level, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, acting_user()) RETURNING id",
-                           (code, CODE[category], brand, headline, remark, key, json.dumps(other, sort_keys=True), name, _clean(unit) or None, reorder_level)).fetchone()[0]
-        c.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'INV_ITEM_ADDED', 'items', ?, ?)", (new_id, f"{code} {name}"))
-        return int(new_id), name, True
+                           (code, CODE[category], brand, headline, remark, key, json.dumps(other, sort_keys=True), shown, _clean(unit) or None, reorder_level)).fetchone()[0]
+        c.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'INV_ITEM_ADDED', 'items', ?, ?)", (new_id, f"{code} {shown}"))
+        return int(new_id), shown, True
 
     if conn is not None:
         return work(conn)

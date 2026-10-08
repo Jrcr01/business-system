@@ -65,7 +65,7 @@
   </form>
 
 {% elif tab == "import" %}
-  <p class="note">Download the template, fill its one sheet (one row per product: Supplier, Category, Brand, Model/Pattern, Size, Other specs, Unit, Supplier item code, List price, Effective date), and upload it. Older files with a sheet per category still work. You see every line first; nothing is saved until you press Import.
+  <p class="note">Download the template, fill its one sheet (one row per product: Supplier, Category, Brand, Model/Pattern, Size, Terrain, Other specs, Unit, Supplier item code, List price, Effective date), and upload it. Older files with a sheet per category still work. You see every line first; nothing is saved until you press Import.
     List prices only: the supplier's discount is set on the Discounts tab.</p>
   <div class="actions"><a class="btn small ghost" href="/price-lists/template/"><span class="ms">download</span>Blank template</a>
     <a class="btn small ghost" href="/price-lists/template/?s={{ cid }}"><span class="ms">edit_note</span>Template with this supplier's prices</a></div>
@@ -83,6 +83,7 @@
     <p>Rows read: {% for k, v in parsed.counts.items %}{{ k }} {{ v }}{% if not forloop.last %}, {% endif %}{% empty %}no sheets read{% endfor %}.
       {% for label, n in summary %}<b>{{ n }}</b> {{ label }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
     {% if brands %}<p>By brand: {% for b, n in brands %}{{ b }} <b>{{ n }}</b>{% if not forloop.last %} · {% endif %}{% endfor %} <span class="hint">— compare with the supplier's price lists.</span></p>{% endif %}
+    {% if parsed.tidied %}<div class="msg"><b>{{ parsed.tidied|length }} size(s) tidied</b> (specs written inside the size moved to Other specs):<ul>{% for n in parsed.tidied|slice:":10" %}<li>{{ n }}</li>{% endfor %}{% if parsed.tidied|length > 10 %}<li>… and {{ parsed.tidied|length|add:"-10" }} more</li>{% endif %}</ul></div>{% endif %}
     {% if parsed.notes %}<div class="msg"><b>{{ parsed.notes|length }} repeated row(s) skipped</b> (each is exactly like an earlier row):<ul>{% for n in parsed.notes %}<li>{{ n }}</li>{% endfor %}</ul></div>{% endif %}
     {% if parsed.problems %}<div class="msg warning"><b>{{ parsed.problems|length }} problem(s): these rows are not saved until fixed.</b><ul>{% for pr in parsed.problems %}<li>{{ pr }}</li>{% endfor %}</ul></div>{% endif %}
     {% for cat, lines in by_cat.items %}
