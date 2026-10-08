@@ -32,7 +32,8 @@ TIRE_TYPES = ["PCR", "LT", "TBR", "TBB", "OTR"]
 TUBE = ["TL", "TT"]
 
 
-def _f(key, label, required=False, choices=None, name=False, ident=False, note=""):
+def _f(key, label, required=False, choices=None, name=False, ident=True, note=""):
+    """ident: the field tells two products apart. Since 2026-10-08 every field does (owner: same category + brand + model + size + other specs = the same product)."""
     return {"key": key, "label": label, "required": required, "choices": choices, "name": name, "ident": ident, "note": note}
 
 
@@ -85,6 +86,103 @@ def normalise_specs(category: str, values: dict) -> dict[str, str]:
     return out
 
 
+# --- the one standard price-list sheet (owner, 2026-10-08): Category, Brand, Model/Pattern, Size, Other specs. "Other specs" is free text, read into the category's
+# fields by what each piece looks like; whatever is not recognised stays with the item (as its remark), so it still tells two products apart.
+CATEGORY_WORDS = {"tire": "Tires", "tires": "Tires", "tyre": "Tires", "tyres": "Tires", "battery": "Battery", "batteries": "Battery",
+                  "mag": "Mags", "mags": "Mags", "mag wheels": "Mags", "wheels": "Mags", "rim": "Rims", "rims": "Rims"}
+_TUBE_WORDS = {"tl": "TL", "tubeless": "TL", "tt": "TT", "tubetype": "TT", "tube type": "TT"}
+
+
+def category_of(text) -> str | None:
+    """'Tire' / 'TYRES' / 'Battery' / 'Mag wheels' -> the category label, or None."""
+    t = _clean(text).lower()
+    return CATEGORY_WORDS.get(t) or next((c for c in CATEGORIES if c.lower() == t), None)
+
+
+def split_other_specs(category: str, model: str, size: str, other: str) -> tuple[dict, str]:
+    """The standard sheet's Model/Pattern, Size and Other specs as the category's field values, plus what was left over (the remark)."""
+    vals: dict[str, str] = {}
+    model, size = _clean(model), _clean(size)
+    rest: list[str] = []
+    multi = []
+    for tok in re.findall(r"\([^)]*\)|\S+", _clean(other)):
+        t = tok.strip("(),;")
+        u = t.upper()
+        low = t.lower()
+        if category == "Tires":
+            if u in TERRAIN:
+                vals["terrain"] = u
+            elif u in TIRE_TYPES:
+                vals["type"] = u
+            elif low in _TUBE_WORDS:
+                vals["tube"] = _TUBE_WORDS[low]
+            elif re.fullmatch(r"\d+PR|\d{2,3}(/\d{2,3})?[A-Z]", u):
+                multi.append(u)
+            else:
+                rest.append(t)
+        elif category == "Battery":
+            if m := re.fullmatch(r"(\d+(?:\.\d+)?)V", u):
+                vals["volts"] = m.group(1)
+            elif m := re.fullmatch(r"(\d+(?:\.\d+)?)AH", u):
+                vals["ah"] = m.group(1)
+            elif m := re.fullmatch(r"(\d+)CCA", u):
+                vals["cca"] = m.group(1)
+            elif u in ("MF", "CONVENTIONAL"):
+                vals["battery_type"] = "MF" if u == "MF" else "Conventional"
+            elif u in ("L", "R"):
+                vals["terminal"] = u
+            else:
+                rest.append(t)
+        else:                                                    # Mags and Rims
+            if re.fullmatch(r"\d+X\d+(\.\d+)?", u):
+                vals["pcd"] = t.lower()
+            elif re.fullmatch(r"ET[+-]?\d+", u):
+                vals["offset"] = u
+            elif category == "Mags" and re.fullmatch(r"CB\d+(\.\d+)?", u):
+                vals["bore"] = u[2:]
+            elif category == "Rims" and (m := re.fullmatch(r"(\d+)H(OLES?)?", u)):
+                vals["holes"] = m.group(1)
+            elif category == "Rims" and low in _TUBE_WORDS:
+                vals["tube"] = _TUBE_WORDS[low]
+            elif category == "Rims" and re.fullmatch(r"\d+(\.\d+)?MM", u):
+                vals["thickness"] = t
+            else:
+                rest.append(t)
+    if multi:
+        vals["ply"] = " ".join(multi)
+    leftover = _clean(" ".join(rest))
+    if category == "Tires":
+        vals.update({"size": size, "pattern": model})
+    elif category == "Battery":
+        vals["model"] = model or size
+    elif category == "Mags":
+        vals.update({"model": model, "size": size, **({"finish": leftover} if leftover else {})})
+        leftover = ""
+    else:                                                        # Rims: no model field; a model goes with the leftovers, the rest is the color
+        vals["size"] = size
+        if leftover:
+            vals["color"] = leftover
+        leftover = model
+    return vals, leftover
+
+
+def other_specs_text(category: str, values: dict, remark: str = "") -> tuple[str, str, str]:
+    """The reverse, for a pre-filled sheet: (model/pattern, size, other specs) of an item's field values."""
+    sp = normalise_specs(category, values)
+    if category == "Tires":
+        model, size, keys = sp["pattern"], sp["size"], ["ply", "terrain", "type", "tube"]
+    elif category == "Battery":
+        model, size, keys = sp["model"], "", ["volts", "ah", "cca", "battery_type", "terminal"]
+    elif category == "Mags":
+        model, size, keys = sp["model"], sp["size"], ["pcd", "offset", "bore", "finish"]
+    else:
+        model, size, keys = remark, sp["size"], ["holes", "pcd", "offset", "tube", "thickness", "color"]
+        remark = ""
+    fmt = {"volts": "{}V", "ah": "{}Ah", "cca": "{}CCA", "holes": "{}H", "bore": "CB{}"}
+    parts = [fmt.get(k, "{}").format(sp[k]) for k in keys if sp.get(k)]
+    return model, size, _clean(" ".join(parts + ([remark] if remark else [])))
+
+
 def standard_name(category: str, brand: str, **values) -> str:
     sp = normalise_specs(category, values)
     parts = [_clean(brand)]
@@ -98,6 +196,35 @@ def product_key(category: str, brand: str, remark: str = "", **values) -> str:
     category = label_of(category)
     sp = normalise_specs(category, values)
     return "|".join([CODE[category], _norm(brand)] + [_norm(sp[f["key"]]) for f in CATEGORY_FIELDS[category] if f["ident"]] + ([_norm(remark)] if _clean(remark) else []))
+
+
+def rekey_items(apply: bool = False) -> dict:
+    """The one-time re-key (owner, 2026-10-08) after every spec became part of what tells products apart: each item's key recomputed from its stored fields.
+    Returns {'changed': n, 'duplicates': [[(id, code, name), ...], ...]}: items that would share one key are listed and NEVER merged or changed here (the owner
+    decides). With apply=True the other changed keys are saved. Safe to run again: an item already re-keyed is not changed."""
+    with get_conn() as conn:
+        conn.row_factory = __import__("sqlite3").Row
+        rows = conn.execute("SELECT id, code, name, category, brand, size_model, specs, remark, key FROM items").fetchall()
+    new = {}
+    for r in rows:
+        try:
+            new[r["id"]] = product_key(r["category"], r["brand"], r["remark"] or "", **values_of(r))
+        except (KeyError, ValueError):
+            continue                                            # an item of another category (not in the price-list catalog): left as it is
+    groups: dict[str, list] = {}
+    for r in rows:
+        if r["id"] in new:
+            groups.setdefault(new[r["id"]], []).append((r["id"], r["code"], r["name"]))
+    dupes = [g for g in groups.values() if len(g) > 1]
+    blocked = {i for g in dupes for i, _, _ in g}
+    todo = [(new[r["id"]], r["id"]) for r in rows if r["id"] in new and r["id"] not in blocked and new[r["id"]] != r["key"]]
+    if apply and todo:
+        with write_tx() as conn:
+            for key, item_id in todo:
+                conn.execute("UPDATE items SET key = ? WHERE id = ?", (key, item_id))
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'ITEMS_REKEYED', 'items', NULL, ?)",
+                         (f"{len(todo)} item key(s) recomputed with every spec; {len(dupes)} duplicate group(s) left for the owner",))
+    return {"changed": len(todo), "duplicates": dupes}
 
 
 def _prefix_number(code: str, prefix: str) -> int | None:
@@ -129,7 +256,7 @@ def get_or_create_product(category: str, brand: str, conn=None, unit: str = "", 
     if size_model and not values.get(HEADLINE[category]):
         values[HEADLINE[category]] = size_model
     sp = normalise_specs(category, values)
-    key, name = product_key(category, brand, remark, **sp), standard_name(category, brand, **sp)
+    key, name = product_key(category, brand, remark, **sp), standard_name(category, brand, **sp) + (f" {remark}" if remark else "")     # the remark tells it apart, in the name too
 
     def work(c):
         row = c.execute("SELECT id, name FROM items WHERE key = ?", (key,)).fetchone()

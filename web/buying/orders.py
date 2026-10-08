@@ -123,6 +123,8 @@ def order(request, po_id: int):
     if request.method == "POST":
         what = request.POST.get("action")
         if what == "order":
+            if _can(request, "po.create", owner_of) and _over_limit(po_id):
+                return redirect(f"/purchase-orders/{po_id}/edit/?confirm=1")      # the "Confirm order anyway" dialog first
             ok, msg = order_po(po_id)
         elif what == "cancel":
             ok, msg = cancel_po(po_id, request.POST.get("reason", ""))
@@ -264,6 +266,13 @@ def order_edit(request, po_id: int):
             delivery = d
         elif what == "use_delivery":
             delivery = _date(p.get("use")) or delivery
+        elif what == "pay_day":                                  # a day clicked on the month calendar
+            from engines.po_rules import delivery_for_day
+            d = delivery_for_day(cid, _date(p.get("day")), order_day)
+            if d is None:
+                _say(request, False, "No delivery date makes the order fall due that day (it is before the order could be paid, or not a bank day).")
+                return redirect(f"/purchase-orders/{po_id}/edit/?view=month&m={p.get('m', '')}#payables")
+            delivery = d
         elif what not in ("dates", "order"):
             _say(request, False, "Unknown action.")
             return redirect(f"/purchase-orders/{po_id}/edit/")
@@ -275,12 +284,24 @@ def order_edit(request, po_id: int):
             _say(request, False, msg)
             return redirect(f"/purchase-orders/{po_id}/edit/")
         if what == "order":
+            if not p.get("confirm_over") and _over_limit(po_id):
+                return redirect(f"/purchase-orders/{po_id}/edit/?confirm=1")      # the "Confirm order anyway" dialog first
             from engines.po_rules import order_po
             ok, msg = order_po(po_id)
             _say(request, ok, msg)
             return redirect(f"/purchase-orders/{po_id}/" if ok else f"/purchase-orders/{po_id}/edit/")
+        if what == "pay_day":
+            return redirect(f"/purchase-orders/{po_id}/edit/?view=month#payables")
         return redirect(f"/purchase-orders/{po_id}/edit/" + ("#payables" if what in ("week", "use_delivery", "dates") else ""))
     return render(request, "buying/order_edit.html", {"page_id": "purchase-orders", **_edit_ctx(request, po, po_stamp(po_id))})
+
+
+def _over_limit(po_id: int) -> bool:
+    """Would ordering this put its pay day over the daily limit? (owner, 2026-10-08: then a dialog asks first; no approval step.)"""
+    from engines.po_rules import day_guard, get_po
+    po = get_po(po_id)
+    h = po["header"]
+    return bool(h["expected_delivery_date"]) and day_guard(int(h["creditor_id"]), h["expected_delivery_date"], float(po["total"]), po_id)["over"]
 
 
 def _edit_ctx(request, po: dict, stamp: str) -> dict:
@@ -302,7 +323,11 @@ def _edit_ctx(request, po: dict, stamp: str) -> dict:
     if pay is None:
         return ctx
     guard = day_guard(cid, delivery, total, po_id)
-    view = request.GET.get("view", "daily")
+    view = request.GET.get("view", "month")
+    cal = None
+    if view == "month":
+        from engines.po_rules import month_calendar
+        cal = month_calendar(_date(request.GET.get("m")) or pay, pay, po_id)
     if view == "weekly":
         strip = weeks_strip(pay, exclude_po_id=po_id)
         bars = [{"label": f"{r.week_start:%b %d}", "total": float(r.total), "mine": total if r.selected else 0.0, "selected": bool(r.selected), "lightest": bool(r.lightest),
@@ -323,7 +348,8 @@ def _edit_ctx(request, po: dict, stamp: str) -> dict:
         from engines.po_rules import cash_check
         cash = cash_check(cid, total, delivery, exclude_po_id=po_id)
     ctx.update({"guard": guard, "view": view, "bars": bars, "weeks": weeks, "sched": sched, "sched_rows": sched["rows"].to_dict("records") if sched else [],
-                "show_ref": show_ref, "cash": cash})
+                "show_ref": show_ref, "cash": cash, "cal": cal,
+                "confirm": request.GET.get("confirm") == "1" and guard["over"] and ctx["may_order"]})
     return ctx
 
 

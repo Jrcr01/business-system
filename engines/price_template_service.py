@@ -25,6 +25,26 @@ from engines.common import get_conn, write_tx
 from engines.permissions import require as require_permission
 
 MAX_ROWS = 2000
+# the one standard sheet for every product (owner, 2026-10-08); the older workbook with a sheet per category is still read
+SHEET = "Price list"
+STANDARD = [("category", "Category", True), ("brand", "Brand", True), ("model", "Model/Pattern", False), ("size", "Size", False), ("other", "Other specs", False),
+            ("unit", "Unit", False), ("supplier_code", "Supplier item code", False), ("list_price", "List price", True), ("effective_date", "Effective date", False)]
+STANDARD_HOW_TO = [
+    "How to fill this price list",
+    "",
+    "1. One sheet, 'Price list', one row per product, for every kind of product. Columns marked * must be filled.",
+    "2. Category: Tires, Battery, Mags or Rims.",
+    "3. Model/Pattern: the tire pattern (SL369), the battery model (NS60), the mag model (RPF1).  Size: 285/50R20, 17x7.5, 8.25x22.5 (batteries: leave empty).",
+    "4. Other specs: everything else, separated by spaces, e.g.  tires: 10PR A/T LT TL   batteries: 12V 45Ah L MF   mags: 5x114.3 ET40 Silver   rims: 10H TL.",
+    "   Tires need Size and Pattern; batteries need the Ah; mags need Size, PCD and offset; rims need Size and holes.",
+    "5. List price is the supplier's price BEFORE any discount. The supplier's discount (like less 5%, less 5%) is set in the system, not here.",
+    "6. Effective date is the day the price starts, like 2026-09-15. If you leave it empty, the date you pick when uploading is used.",
+    "7. Supplier item code is the supplier's own code for the product. It is kept next to our own item code, which the system makes.",
+    "8. The same product on a later date is a new price: the old price stays in the history. Two rows are the same product when the category, brand,",
+    "   model, size and other specs match, ignoring spaces, dashes and capitals.",
+    "",
+    "Before anything is saved, the system shows what is new, what changed and every row it could not read.",
+]
 HOW_TO = [
     "How to fill this price list",
     "",
@@ -50,8 +70,11 @@ def _title(text: str, required: bool) -> str:
     return text + (" *" if required else "")
 
 
-def build_template(creditor_id: int | None = None, on: date | None = None) -> bytes:
-    """The workbook. With a supplier, each sheet is pre-filled with that supplier's current prices (list prices in force on `on`) so a price update is: change, upload."""
+def build_template(creditor_id: int | None = None, on: date | None = None, layout: str = "standard") -> bytes:
+    """The workbook: the one standard sheet (layout="standard", what is downloaded) or the older sheet per category ("by_category", still read on upload).
+    With a supplier, it is pre-filled with that supplier's current prices (list prices in force on `on`) so a price update is: change, upload."""
+    if layout == "standard":
+        return _build_standard(creditor_id, on)
     wb = Workbook()
     guide = wb.active
     guide.title = "How to fill"
@@ -90,11 +113,46 @@ def build_template(creditor_id: int | None = None, on: date | None = None) -> by
     return buf.getvalue()
 
 
-def _current_rows(creditor_id: int, on: date) -> dict[str, list[dict]]:
+def _build_standard(creditor_id: int | None, on: date | None) -> bytes:
+    wb = Workbook()
+    guide = wb.active
+    guide.title = "How to fill"
+    for i, line in enumerate(STANDARD_HOW_TO, start=1):
+        guide.cell(row=i, column=1, value=line).font = Font(bold=(i == 1), size=14 if i == 1 else 11)
+    guide.column_dimensions["A"].width = 150
+    ws = wb.create_sheet(SHEET)
+    head_fill, req_fill = PatternFill("solid", fgColor="1F3A5F"), PatternFill("solid", fgColor="B45309")
+    for j, (key, text, required) in enumerate(STANDARD, start=1):
+        c = ws.cell(row=1, column=j, value=_title(text, required))
+        c.font, c.fill, c.alignment = Font(bold=True, color="FFFFFF"), (req_fill if required else head_fill), Alignment(wrap_text=True, vertical="center")
+        ws.column_dimensions[get_column_letter(j)].width = {"other": 34, "model": 22, "size": 16}.get(key, max(14, len(text) + 6))
+    ws.row_dimensions[1].height = 32
+    ws.freeze_panes = "A2"
+    current = _current_rows(creditor_id, on or manila_today(), with_remark=True) if creditor_id else {}
+    r = 2
+    for category in pc.CATEGORIES:
+        for row in current.get(category, []):
+            model, size, other = pc.other_specs_text(category, row, row.get("item_remark", ""))
+            vals = {"category": category, "brand": row["brand"], "model": model, "size": size, "other": other, "unit": row["unit"],
+                    "supplier_code": row["supplier_code"], "list_price": row["list_price"], "effective_date": row["effective_date"]}
+            for j, (key, _, _) in enumerate(STANDARD, start=1):
+                v = vals.get(key, "")
+                cell = ws.cell(row=r, column=j, value=v if v != "" else None)
+                if key == "effective_date" and v:
+                    cell.number_format = "yyyy-mm-dd"
+                if key == "list_price":
+                    cell.number_format = "#,##0.00"
+            r += 1
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _current_rows(creditor_id: int, on: date, with_remark: bool = False) -> dict[str, list[dict]]:
     """This supplier's prices in force on a date, per category, as template rows (only products that are in the catalog)."""
     with get_conn() as conn:
         df = pd.read_sql_query(
-            """SELECT p.id, p.category, p.brand, p.size_model, p.specs, p.unit AS product_unit, s.unit, s.unit_price, s.effective_date, s.price_id,
+            """SELECT p.id, p.category, p.brand, p.size_model, p.specs, p.remark, p.unit AS product_unit, s.unit, s.unit_price, s.effective_date, s.price_id,
                       (SELECT supplier_code FROM supplier_items si WHERE si.creditor_id = s.creditor_id AND si.item_id = p.id) AS supplier_code
                FROM supplier_price_list s JOIN items p ON p.id = s.item_id
                WHERE s.creditor_id = ? AND s.is_active = 1 AND p.is_active = 1 AND s.effective_date <= ?
@@ -109,6 +167,8 @@ def _current_rows(creditor_id: int, on: date) -> dict[str, list[dict]]:
         spec = json.loads(r.specs or "{}")
         row = {"brand": r.brand, "supplier_code": r.supplier_code or "", "unit": r.unit or r.product_unit or "", "list_price": float(r.unit_price),
                "effective_date": date.fromisoformat(str(r.effective_date)[:10]), "remarks": ""}
+        if with_remark:
+            row["item_remark"] = r.remark or ""
         for fld in pc.CATEGORY_FIELDS[r.category]:
             k = fld["key"]
             row[k] = r.size_model if k == pc.HEADLINE[r.category] else spec.get(k, "")
@@ -128,6 +188,11 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
         out["problems"].append(f"Could not open the file as an Excel workbook: {e}")
         return out
     seen: set[tuple] = set()
+    if SHEET in wb.sheetnames:
+        _parse_standard(list(wb[SHEET].iter_rows(values_only=True)), default_date, out, seen)
+        if not out["rows"] and not out["problems"]:
+            out["problems"].append("The file has no product rows.")
+        return out
     for category in pc.CATEGORIES:
         if category not in wb.sheetnames:
             out["sheets_missing"].append(category)
@@ -193,6 +258,62 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
     return out
 
 
+def _parse_standard(rows: list, default_date: date | None, out: dict, seen: set) -> None:
+    """The one standard sheet: rows named 'Price list row 14: ...'. Each row is read into its category's fields (product_catalog.split_other_specs)."""
+    if not rows:
+        return
+    by_title = {" ".join(str(h or "").replace("*", "").split()).lower(): i for i, h in enumerate(rows[0])}
+    idx = {key: by_title[text.lower()] for key, text, _ in STANDARD if text.lower() in by_title}
+    missing = [text for key, text, required in STANDARD if required and key not in idx]
+    if missing:
+        out["problems"].append(f"{SHEET}: the column(s) {', '.join(repr(m) for m in missing)} are missing. Download a fresh template.")
+        return
+    for rno, row in enumerate(rows[1:], start=2):
+        def cell(k):
+            i = idx.get(k)
+            v = row[i] if i is not None and i < len(row) else None
+            if isinstance(v, float) and v == int(v) and k not in ("list_price",):
+                v = "%g" % v
+            return "" if v is None else (v if isinstance(v, (int, float, date)) and not isinstance(v, bool) else str(v).strip())
+        if not any(str(v).strip() for v in row if v is not None):
+            continue
+        where, bad = f"{SHEET} row {rno}", []
+        raw_cat = cell("category")
+        category = pc.category_of(raw_cat)
+        if category is None:
+            bad.append(f"Category '{raw_cat}' is not Tires, Battery, Mags or Rims" if raw_cat != "" else "Category is empty")
+        brand = pc._clean(cell("brand"))
+        if not brand:
+            bad.append("Brand is empty")
+        values, remark = {}, ""
+        if category:
+            out["counts"][category] = out["counts"].get(category, 0) + 1
+            values, remark = pc.split_other_specs(category, str(cell("model")), str(cell("size")), str(cell("other")))
+            values = pc.normalise_specs(category, values)
+            for fld in pc.CATEGORY_FIELDS[category]:
+                if fld["required"] and not values[fld["key"]]:
+                    bad.append(f"{fld['label']} is empty" + ("" if fld["key"] in ("size", "pattern", "model") else " (put it in Other specs)"))
+        raw_price = cell("list_price")
+        price = pls._to_price(raw_price)
+        if price is None:
+            bad.append(f"List price '{raw_price}' is not a number" if raw_price != "" else "List price is empty")
+        raw_date = cell("effective_date")
+        when = pls._to_date(raw_date) if raw_date != "" else default_date
+        if when is None:
+            bad.append(f"Effective date '{raw_date}' could not be read" if raw_date != "" else "Effective date is empty (or pick a start date when uploading)")
+        if not bad:
+            key = (category, pc.product_key(category, brand, remark, **values), str(when))
+            if key in seen:
+                bad.append("the same product and date appears twice in the file")
+            seen.add(key)
+        if bad:
+            out["problems"].append(f"{where}: " + "; ".join(bad) + ".")
+            continue
+        out["rows"].append({"category": category, "row": rno, "brand": brand, "values": values, "item_remark": remark, "supplier_code": pc._clean(cell("supplier_code")),
+                            "unit": pc._clean(cell("unit")), "list_price": price, "effective_date": when, "remarks": "",
+                            "name": pc.standard_name(category, brand, **values) + (f" {remark}" if remark else "")})
+
+
 def compare(creditor_id: int, parsed: dict, on: date | None = None) -> pd.DataFrame:
     """One line per valid row: status 'new' (no price yet for this product), 'changed' or 'same' against the price in force on the row's date, with the old price and
     the % change; plus a 'missing' line for each product this supplier had a price for in a category the file covers but the file no longer lists. Information only."""
@@ -203,7 +324,7 @@ def compare(creditor_id: int, parsed: dict, on: date | None = None) -> pd.DataFr
                WHERE s.creditor_id = ? AND s.is_active = 1 ORDER BY s.effective_date DESC, s.price_id DESC""", conn, params=(creditor_id,))
     prices["category"] = prices["category"].map(pc.label_of)
     for r in parsed["rows"]:
-        key = pc.product_key(r["category"], r["brand"], **r["values"])
+        key = pc.product_key(r["category"], r["brand"], r.get("item_remark", ""), **r["values"])
         listed.add(key)
         hist = prices[(prices["product_key"] == key) & (prices["effective_date"] <= str(r["effective_date"]))]
         old = float(hist.iloc[0]["unit_price"]) if not hist.empty else None
@@ -233,7 +354,7 @@ def import_workbook(creditor_id: int, parsed: dict, on_duplicate: str = "skip") 
     price_rows, links = [], []
     with write_tx() as conn:
         for r in parsed["rows"]:
-            pid, name, created = pc.get_or_create_product(r["category"], r["brand"], conn=conn, unit=r["unit"], **r["values"])
+            pid, name, created = pc.get_or_create_product(r["category"], r["brand"], conn=conn, unit=r["unit"], remark=r.get("item_remark", ""), **r["values"])
             counts["products"] += int(created)
             pc.set_supplier_code(creditor_id, pid, r["supplier_code"], conn=conn)
             links.append((name, pid))

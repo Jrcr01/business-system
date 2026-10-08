@@ -65,12 +65,31 @@
   </div>
   {% endif %}
   {% if cash %}{% if cash.known %}{% if cash.ok %}<div class="msg success">Fits the cash plan.</div>{% else %}<div class="warnbox">Over the cash plan: when this falls due the balance would drop ₱{{ cash.shortfall|floatformat:2|intcomma }} under the buffer. You can still order it; the owner is told.</div>{% endif %}{% else %}<p class="note">{{ cash.message }}</p>{% endif %}{% endif %}
-  <div class="seg"><a href="?view=daily#payables"{% if view != "weekly" %} class="on"{% endif %}>Daily</a><a href="?view=weekly#payables"{% if view == "weekly" %} class="on"{% endif %}>Weekly</a></div>
+  <div class="seg"><a href="?view=month#payables"{% if view == "month" %} class="on"{% endif %}>Month</a><a href="?view=daily#payables"{% if view == "daily" %} class="on"{% endif %}>Daily</a><a href="?view=weekly#payables"{% if view == "weekly" %} class="on"{% endif %}>Weekly</a></div>
+  {% if cal %}
+  <div class="calhead"><b>Payables by pay day</b>{% if cal.limit %} <span class="note">· limit ₱{{ cal.limit|floatformat:0|intcomma }}/day</span>{% endif %}
+    <span class="calnav"><a class="btn small ghost" href="?view=month&m={{ cal.prev|date:'Y-m-d' }}#payables" aria-label="Previous month"><span class="ms">chevron_left</span></a>
+    <b>{{ cal.month|date:"F Y" }}</b>
+    <a class="btn small ghost" href="?view=month&m={{ cal.next|date:'Y-m-d' }}#payables" aria-label="Next month"><span class="ms">chevron_right</span></a></span></div>
+  <form method="post" class="cal">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="pay_day">
+    <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="m" value="{{ cal.month|date:'Y-m-d' }}">
+    <span class="h">Mon</span><span class="h">Tue</span><span class="h">Wed</span><span class="h">Thu</span><span class="h">Fri</span><span class="h">Sat</span><span class="h">Sun</span>
+    {% for week in cal.weeks %}{% for c in week %}{% if c.closed or c.past or not c.in_month %}<span class="d{% if c.closed %} closed{% endif %}{% if not c.in_month %} out{% endif %}{% if c.selected %} pick{% endif %}"
+        title="{{ c.day|date:'D, M d' }}{% if c.label %}: {{ c.label }}{% endif %}{% if c.total %} · ₱{{ c.total|floatformat:2|intcomma }}: {{ c.payees }}{% endif %}"><span class="n">{{ c.day|date:"j" }}</span>
+        {% if c.label %}<span class="lbl">{{ c.label }}</span>{% elif c.total %}<span class="amt">₱{{ c.total|floatformat:0|intcomma }}</span>{% endif %}</span>
+      {% else %}<button type="submit" name="day" value="{{ c.day|date:'Y-m-d' }}" class="d {{ c.level }}{% if c.selected %} pick{% endif %}"
+        title="{{ c.day|date:'D, M d' }}{% if c.total %} · ₱{{ c.total|floatformat:2|intcomma }}: {{ c.payees }}{% else %}: nothing due yet{% endif %} — click to make the order fall due this day"><span class="n">{{ c.day|date:"j" }}</span>
+        {% if c.label %}<span class="lbl">{{ c.label }}</span>{% endif %}<span class="amt">{% if c.total %}₱{{ c.total|floatformat:0|intcomma }}{% else %}—{% endif %}</span></button>{% endif %}{% endfor %}{% endfor %}
+  </form>
+  <p class="callegend"><span><i class="sw over"></i>Over limit</span><span><i class="sw near"></i>Above 80%</span><span><i class="sw closed"></i>Weekend, holiday or marked day</span><span><i class="sw pick"></i>This order's pay day</span></p>
+  <p class="hint">Click a day: the delivery date is set so the order falls due that day (by {{ po.supplier }}'s terms). Hold the mouse on a day for who is paid.</p>
+  {% else %}
   <div class="bars">{% for b in bars %}<div class="b" title="{{ b.label }}: ₱{{ b.total|floatformat:2|intcomma }} already due{% if b.mine %}, + ₱{{ b.mine|floatformat:2|intcomma }} this order{% endif %}">
     {% if b.mine %}<div class="add" style="height:{{ b.h_mine }}%"></div>{% endif %}<div class="fill{% if b.selected %} mine{% elif b.lightest %} light{% endif %}" style="height:{{ b.h }}%"></div></div>{% endfor %}</div>
   <div class="barlabels">{% for b in bars %}<span{% if b.selected %} style="font-weight:700"{% endif %}>{{ b.label }}{% if b.lightest %} ★{% endif %}</span>{% endfor %}</div>
   <p class="hint">Each bar is what is already due that day (checks, loan and card dues, other orders); light orange on top is this order. ★ = the lightest {% if view == "weekly" %}week{% else %}weekday{% endif %}.
     Hold the mouse on a bar for its amount.</p>
+  {% endif %}
   <div class="grp" style="margin-top:8px">Move the order to another week</div>
   <div class="weekbtns">{% for w in weeks %}<form method="post">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="week">
     <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="week" value="{{ w.week|date:'Y-m-d' }}">
@@ -92,4 +111,26 @@
     <button class="btn ghost" type="submit" name="action" value="dates"><span class="ms">save</span>{% if h.status == "DRAFT" %}Keep as draft{% else %}Save{% endif %}</button>
   </div>
 </form>
+
+{% if confirm %}{# "Confirm order anyway" (owner, 2026-10-08): no approval step, a warning to weigh #}
+<div class="overlay" role="dialog" aria-modal="true" aria-labelledby="over_title"><div class="dialog">
+  <h3 id="over_title"><span class="ms" style="color:#b26a00">warning</span> Over your daily limit</h3>
+  <p>This order ({{ po.supplier }}, est. ₱{{ total|floatformat:2|intcomma }}) falls due on <b>{{ guard.pay_date|date:"D, M d" }}</b>.</p>
+  <table class="kv"><tr><td>Already due that day</td><td class="num">₱{{ guard.already|floatformat:2|intcomma }}</td></tr>
+    <tr><td>With this order</td><td class="num" style="color:#b3261e;font-weight:700">₱{{ guard.with_order|floatformat:2|intcomma }}</td></tr>
+    <tr><td>Your daily limit</td><td class="num">₱{{ guard.limit|floatformat:2|intcomma }}</td></tr></table>
+  {% if guard.suggestion %}<p class="tip">Nearest day that fits: deliver <b>{{ guard.suggestion.delivery_date|date:"D, M d" }}</b> → due <b>{{ guard.suggestion.pay_date|date:"D, M d" }}</b> (₱{{ guard.suggestion.with_order|floatformat:2|intcomma }} with this order)</p>
+  {% else %}<p class="tip">No delivery day in the next three weeks keeps that day within the limit; the order alone may be above it.</p>{% endif %}
+  <div class="actions" style="justify-content:flex-end">
+    <a class="btn ghost" href="/purchase-orders/{{ h.po_id }}/edit/#payables">Change the date</a>
+    {% if guard.suggestion %}<form method="post">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="use_delivery">
+      <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="use" value="{{ guard.suggestion.delivery_date|date:'Y-m-d' }}">
+      <button class="btn ghost" type="submit">Use {{ guard.suggestion.delivery_date|date:"M d" }} delivery</button></form>{% endif %}
+    <form method="post">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="order"><input type="hidden" name="confirm_over" value="1">
+      <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="delivery" value="{{ h.expected_delivery_date|default:''|slice:':10' }}">
+      <button class="btn warn" type="submit" autofocus>Confirm order anyway</button></form>
+  </div>
+  <p class="hint" style="margin-top:8px">Confirming orders it and adds a line to the Review list (no approval needed).</p>
+</div></div>
+{% endif %}
 {% endblock %}

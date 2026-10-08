@@ -16,7 +16,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from engines.check_date_planner import _blocked_days, next_bank_day
+from engines.check_date_planner import _blocked_days, is_bank_day, next_bank_day
 from engines import settings_registry
 from engines.clock import manila_now, manila_today
 from engines.common import get_conn, write_tx
@@ -602,6 +602,65 @@ def delivery_for_week(creditor_id: int, week_start, order_date) -> date | None:
         if pay > end:
             return None
     return None
+
+
+def delivery_for_day(creditor_id: int, pay_day, order_date) -> date | None:
+    """The earliest delivery date (on or after the order date) whose expected pay date, by the supplier's terms and on a bank day, is exactly `pay_day`.
+    None when no delivery date gives that pay day (a weekend or holiday, or before the order could be paid)."""
+    day, order = _as_date(pay_day), _as_date(order_date)
+    if day is None or order is None:
+        return None
+    with get_conn() as conn:
+        terms = (conn.execute("SELECT terms FROM creditors WHERE creditor_id = ?", (creditor_id,)).fetchone() or [None])[0]
+    blocked = _blocked_days()
+    for k in range(0, 900):
+        d = order + timedelta(days=k)
+        pay = next_bank_day(resolve_due_date(d, terms), blocked)
+        if pay == day:
+            return d
+        if pay > day:
+            return None
+    return None
+
+
+NEAR_LIMIT = 0.8                    # the calendar shows a day above 80% of the daily limit in amber (owner, 2026-10-08)
+
+
+def month_calendar(month, pay_date=None, exclude_po_id: int | None = None) -> dict:
+    """The month calendar of committed payables (owner, 2026-10-08), Monday first: {'month', 'prev', 'next', 'limit', 'weeks': [[cell x 7]]}.
+    A cell: day, in_month, total, payees (the biggest few, for the hover text), closed (weekend, holiday or marked no-check day: no payment falls on it),
+    label (the holiday or mark's name), level ('over' / 'near' / ''), past, selected (the order's pay day)."""
+    from engines.calendar_marks import marks_for_month
+    from engines.settings_registry import value
+    first = (_as_date(month) or manila_today()).replace(day=1)
+    nxt = (first + timedelta(days=32)).replace(day=1)
+    start = first - timedelta(days=first.weekday())
+    end = nxt - timedelta(days=1)
+    end = end + timedelta(days=6 - end.weekday())
+    rows = _committed_rows(end, exclude_po_id)
+    rows = rows[(rows["day"] >= start) & (rows["day"] <= end)] if not rows.empty else rows
+    limit = float(value("po_daily_payables_limit"))
+    blocked = _blocked_days()
+    marks = {}
+    for m in {start.replace(day=1), first, end.replace(day=1)}:
+        marks.update({_as_date(k): v for k, v in marks_for_month(m.year, m.month).items()})
+    pay, today = _as_date(pay_date), manila_today()
+    weeks, d = [], start
+    while d <= end:
+        week = []
+        for _ in range(7):
+            mine = rows[rows["day"] == d] if not rows.empty else rows
+            total = float(mine["amount"].sum()) if not mine.empty else 0.0
+            payees = mine.groupby("payee")["amount"].sum().sort_values(ascending=False) if not mine.empty else pd.Series(dtype=float)
+            mark = marks.get(d) or {}
+            closed = not is_bank_day(d, blocked)
+            level = "over" if limit > 0 and total > limit else ("near" if limit > 0 and total > limit * NEAR_LIMIT else "")
+            week.append({"day": d, "in_month": d.month == first.month, "total": total, "closed": closed, "past": d < today,
+                         "label": mark.get("label") or ("Holiday" if mark.get("kind") == "holiday" else ""), "level": level, "selected": d == pay,
+                         "payees": "; ".join(f"{p} ₱{a:,.0f}" for p, a in payees.head(6).items()) + (f"; +{len(payees) - 6} more" if len(payees) > 6 else "")})
+            d += timedelta(days=1)
+        weeks.append(week)
+    return {"month": first, "prev": (first - timedelta(days=1)).replace(day=1), "next": nxt, "limit": limit, "weeks": weeks}
 
 
 def committed_load(pay_date, new_amount: float = 0.0, exclude_po_id: int | None = None) -> dict | None:

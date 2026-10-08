@@ -17,6 +17,7 @@ cd "$NEW"
 if [ -f "$WEB_DB_PATH" ]; then
   "$PY" -c "from db_location import safe_copy; import sys; safe_copy(sys.argv[1], sys.argv[2])" "$WEB_DB_PATH" "/srv/slicks/backups/before_release_$ID.db"
   "$PY" apply_pending_migrations.py --db "$WEB_DB_PATH"
+  "$PY" web/manage.py rekey_items --apply                 # item keys with every spec (2026-10-08); lists possible duplicates, never merges; a no-op once done
 else
   echo "No database yet at $WEB_DB_PATH -- upload it first (deploy/upload_data.sh), then deploy again."
 fi

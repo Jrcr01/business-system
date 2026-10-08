@@ -14,7 +14,7 @@ DAY = date(2026, 9, 15)
 
 def _fill(rows: dict[str, list[list]], creditor_id=None) -> bytes:
     """Starts from the real template (so headers and sheets are as downloaded) and writes rows under the headers of each sheet."""
-    wb = load_workbook(io.BytesIO(pt.build_template(creditor_id)))
+    wb = load_workbook(io.BytesIO(pt.build_template(creditor_id, layout="by_category")))       # the older workbook, still read (the standard sheet: test_price_template_standard.py)
     for cat, data in rows.items():
         ws = wb[cat]
         header = [str(c.value).replace(" *", "") for c in ws[1]]
@@ -34,7 +34,7 @@ GOOD = {"Tires": [{"Brand": "Westlake", "Size": "285/50R20", "Terrain": "A/T", "
 
 
 def test_the_template_has_a_sheet_per_category_with_the_standard_columns_and_dropdowns():
-    wb = load_workbook(io.BytesIO(pt.build_template()))
+    wb = load_workbook(io.BytesIO(pt.build_template(layout="by_category")))
     assert wb.sheetnames == ["How to fill", "Tires", "Battery", "Mags", "Rims"]
     tires = [c.value for c in wb["Tires"][1]]
     assert tires == ["Brand *", "Size *", "Ply / load-speed", "Terrain", "Pattern *", "Type", "Tube", "Supplier item code", "Unit", "List price *", "Effective date", "Remarks"]
@@ -91,7 +91,7 @@ def test_the_import_creates_products_with_skus_and_dated_prices_and_a_second_imp
 def test_the_download_with_current_prices_comes_back_as_all_same_and_one_change_is_one_new_dated_price(db):
     cid = make_creditor(db, name="New Century")
     pt.import_workbook(cid, pt.parse_workbook(_fill(GOOD)))
-    prefilled = pt.build_template(cid, on=date(2026, 10, 1))
+    prefilled = pt.build_template(cid, on=date(2026, 10, 1), layout="by_category")
     parsed = pt.parse_workbook(prefilled)
     assert parsed["problems"] == [] and len(parsed["rows"]) == 5
     assert set(pt.compare(cid, parsed)["status"]) == {"same"}

@@ -132,6 +132,30 @@ input[type=date], input[type=file] { padding: 7px 9px; border: 1px solid #cbd5e1
 .bars .b { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; min-width: 6px; }
 .bars .fill { background: #9FB3D1; border-radius: 3px 3px 0 0; } .bars .fill.mine { background: #C26A00; } .bars .fill.light { background: #2E7D32; }
 .bars .add { background: #F2B880; border-radius: 3px 3px 0 0; }
+/* the month calendar of committed payables and the "Confirm order anyway" dialog (owner, 2026-10-08) */
+.calhead { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; max-width: 760px; margin: 6px 0; }
+.calnav { display: inline-flex; align-items: center; gap: 8px; } .calnav .btn .ms { margin: 0; }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; max-width: 760px; }
+.cal .h { text-align: center; color: var(--muted); font-size: .8rem; }
+.cal .d { display: flex; flex-direction: column; align-items: flex-start; min-height: 54px; padding: 4px 6px; border: 1px solid #d6dde6; border-radius: 6px; background: #fff;
+  font: inherit; font-size: .78rem; color: var(--ink); text-align: left; overflow: hidden; }
+.cal button.d { cursor: pointer; } .cal button.d:hover { border-color: var(--blue); background: #eef3fa; }
+.cal .d .n { color: var(--muted); } .cal .d .amt { font-weight: 700; font-size: .85rem; margin-top: 2px; } .cal .d .lbl { font-size: .7rem; color: var(--muted); }
+.cal .d.near { background: #fff4e5; border-color: #f0b46a; } .cal .d.near .amt { color: #8a4b00; }
+.cal .d.over { background: #fdecea; border-color: #e8a19b; } .cal .d.over .amt { color: #b3261e; }
+.cal .d.closed { background: #f1f3f6; color: #8a94a3; } .cal .d.out { opacity: .45; }
+.cal .d.pick { outline: 2px solid var(--blue); outline-offset: 1px; }
+.callegend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .78rem; color: var(--muted); margin: 8px 0 0; }
+.callegend .sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; border: 1px solid #d6dde6; }
+.callegend .sw.over { background: #fdecea; border-color: #e8a19b; } .callegend .sw.near { background: #fff4e5; border-color: #f0b46a; }
+.callegend .sw.closed { background: #f1f3f6; } .callegend .sw.pick { outline: 2px solid var(--blue); }
+.overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+.dialog { background: #fff; border-radius: 10px; padding: 18px 20px; max-width: 480px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+.dialog h3 { margin: 0 0 8px; display: flex; align-items: center; gap: 6px; }
+.dialog table.kv { width: 100%; margin: 6px 0 10px; } .dialog table.kv td { padding: 3px 0; } .dialog table.kv td:first-child { color: var(--muted); }
+.dialog .tip { background: #f1f5fa; border-radius: 6px; padding: 8px 10px; font-size: .9rem; }
+.dialog .actions { display: flex; flex-wrap: wrap; gap: 8px; } .dialog .actions form { margin: 0; }
+.btn.warn { background: #C26A00; border-color: #C26A00; } .btn.warn:hover { background: #9a5400; }
 .barlabels { display: flex; gap: 4px; padding: 0 2px; } .barlabels span { flex: 1; text-align: center; font-size: .62rem; color: #4b5563; overflow: hidden; min-width: 6px; }
 .weekbtns { display: flex; gap: 6px; flex-wrap: wrap; } .weekbtns form { margin: 0; } .weekbtns .btn { line-height: 1.2; }
 .btn[disabled] { opacity: .75; cursor: default; }
