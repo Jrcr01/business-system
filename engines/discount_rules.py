@@ -91,6 +91,29 @@ def set_discount(creditor_id: int, brand: str, chain, effective_date: date) -> t
     return True, f"{brand or 'All brands'}: {chain_label(text) or 'no discount'} from {effective_date:%b %d, %Y} saved."
 
 
+def supplier_brands(creditor_id: int) -> list[str]:
+    """The brands on this supplier's price list (its items), for the discount's Brand list."""
+    with get_conn() as conn:
+        return [r[0] for r in conn.execute(
+            """SELECT DISTINCT i.brand FROM supplier_price_list s JOIN items i ON i.id = s.item_id WHERE s.creditor_id = ? AND s.is_active = 1 AND i.brand <> ''
+               ORDER BY lower(i.brand)""", (creditor_id,))]
+
+
+def remove_discount(creditor_id: int, discount_id: int) -> tuple[bool, str]:
+    """Removes a discount row entered by mistake (switched off, kept for the audit). Order lines already saved keep the discount they were given."""
+    _ok, _msg = require_permission("price.write")
+    if not _ok:
+        return False, _msg
+    with write_tx() as conn:
+        row = conn.execute("SELECT brand, chain, effective_date FROM supplier_discounts WHERE discount_id = ? AND creditor_id = ? AND is_active = 1",
+                           (discount_id, creditor_id)).fetchone()
+        if not row:
+            return False, "That discount is already gone."
+        conn.execute("UPDATE supplier_discounts SET is_active = 0 WHERE discount_id = ?", (discount_id,))
+        _audit(conn, "DISCOUNT_REMOVED", creditor_id, f"{row[0] or 'all brands'}: {chain_label(row[1]) or 'no discount'} from {str(row[2])[:10]} removed")
+    return True, f"Removed: {row[0] or 'All brands'}, {chain_label(row[1]) or 'no discount'} from {str(row[2])[:10]}."
+
+
 def standing_chain(creditor_id: int, item_name: str, on: date | None = None) -> str:
     """The chain in force for this supplier's item on a date: a brand row (the item name starts with the brand) beats the supplier-wide row; the newest start
     date wins; a chain set to blank means no discount. '' when nothing is set."""
@@ -124,11 +147,11 @@ def list_discounts(creditor_id: int, on: date | None = None) -> pd.DataFrame:
         df = pd.read_sql_query("SELECT discount_id, brand, chain, effective_date FROM supplier_discounts WHERE creditor_id = ? AND is_active = 1 AND effective_date <= ? "
                                "ORDER BY lower(brand), effective_date DESC, discount_id DESC", conn, params=(creditor_id, str(on)))
     if df.empty:
-        return pd.DataFrame(columns=["brand", "chain", "label", "effective_date"])
+        return pd.DataFrame(columns=["discount_id", "brand", "chain", "label", "effective_date"])
     df["_k"] = df["brand"].str.lower()
     out = df.groupby("_k", sort=False).head(1).drop(columns="_k").reset_index(drop=True)
     out["label"] = out["chain"].map(chain_label).replace("", "no discount")
-    return out[["brand", "chain", "label", "effective_date"]]
+    return out[["discount_id", "brand", "chain", "label", "effective_date"]]
 
 
 def net_price_on(creditor_id: int, item_name: str, on: date | None = None) -> dict | None:

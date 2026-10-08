@@ -122,11 +122,12 @@ def _import_ctx(request, cid: int) -> dict:
 
 def _discounts_ctx(request, cid: int) -> dict:
     from engines import discount_rules as dr
-    from engines import product_catalog as pc
     rows = dr.list_discounts(cid).to_dict("records")
     for r in rows:
+        r["brand_value"] = r["brand"]
         r["brand"] = r["brand"] or "All brands"
-    return {"discounts": rows, "brands": pc.brands()}
+        r["chain_shown"] = ", ".join((r["chain"] or "").split(","))
+    return {"discounts": rows, "brands": dr.supplier_brands(cid)}
 
 
 def _catalog_ctx(request, cid: int) -> dict:
@@ -213,7 +214,16 @@ def _post(request, cid: int, tab: str):
         say(ok, msg)
         return redirect(_back(cid, "prices" if ok else "import"))
     if action == "set_discount":
-        ok, msg = dr.set_discount(cid, p.get("brand", "").strip(), p.get("chain", ""), _date(p.get("start"), manila_today()))
+        brand = " ".join(p.get("brand", "").split())
+        known = {b.lower(): b for b in dr.supplier_brands(cid)}
+        if brand and brand.lower() not in known:                 # only "All brands" or a brand on this supplier's price list (owner, 2026-10-08)
+            say(False, f"Pick the brand from the list: {brand} is not a brand on this supplier's price list.")
+            return redirect(_back(cid, "discounts"))
+        ok, msg = dr.set_discount(cid, known.get(brand.lower(), ""), p.get("chain", ""), _date(p.get("start"), manila_today()))
+        say(ok, msg)
+        return redirect(_back(cid, "discounts"))
+    if action == "remove_discount":
+        ok, msg = dr.remove_discount(cid, int(p.get("discount_id") or 0))
         say(ok, msg)
         return redirect(_back(cid, "discounts"))
     if action == "product_on_off":

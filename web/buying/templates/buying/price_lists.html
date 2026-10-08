@@ -107,17 +107,23 @@
   <p class="note">Suppliers give a chain of discounts on their list prices, like less 5%, less 5%. Each discount is taken off what is left by the one before, so 5, 5 on 7,600 gives 6,859.00 (not 10% off).
     A purchase order line starts with the discount set here and can be changed on that line.</p>
   {% if discounts %}
-  <table class="list" style="max-width:640px"><tr><th>Brand</th><th>Discount</th><th>Since</th></tr>
-    {% for d in discounts %}<tr><td>{{ d.brand }}</td><td>{{ d.label }}</td><td>{{ d.effective_date|slice:":10" }}</td></tr>{% endfor %}</table>
+  <table class="list" style="max-width:760px"><tr><th>Brand</th><th>Discount</th><th>Since</th><th></th></tr>
+    {% for d in discounts %}<tr><td>{{ d.brand }}</td><td>{{ d.label }}</td><td>{{ d.effective_date|slice:":10" }}</td>
+      <td style="white-space:nowrap"><button class="btn small ghost" type="button" onclick="editDiscount('{{ d.brand_value|escapejs }}', '{{ d.chain_shown|escapejs }}', '{{ d.effective_date|slice:':10' }}')"><span class="ms">edit</span>Change</button>
+        <form method="post" style="display:inline" onsubmit="return confirm('Remove the discount {{ d.label|escapejs }} for {{ d.brand|escapejs }} from {{ d.effective_date|slice:':10' }}? Orders already saved keep their discount.');">{% csrf_token %}
+          <input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="remove_discount"><input type="hidden" name="discount_id" value="{{ d.discount_id }}">
+          <button class="btn small danger" type="submit"><span class="ms">delete</span>Remove</button></form></td></tr>{% endfor %}</table>
   {% else %}<p class="note">No discount set for this supplier. List prices are used as they are.</p>{% endif %}
-  <div class="grp">Set a discount</div>
+  <div class="grp" id="setdiscount">Set a discount</div>
   <form class="bar" method="post">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="set_discount">
-    <div class="grow"><label for="brand">Brand</label><input id="brand" type="text" name="brand" list="brands" placeholder="All brands of this supplier"></div>
+    <div class="grow"><label for="brand">Brand</label><select id="brand" name="brand"><option value="">All brands</option>{% for b in brands %}<option value="{{ b }}">{{ b }}</option>{% endfor %}</select></div>
     <div class="grow"><label for="chain">Discounts in %, in order</label><input id="chain" type="text" name="chain" placeholder="5, 5"></div>
     <div><label for="dstart">Starts on</label><input id="dstart" type="date" name="start" value="{{ today|date:'Y-m-d' }}"></div>
     <button class="btn small" type="submit"><span class="ms">save</span>Save discount</button>
   </form>
-  <datalist id="brands">{% for b in brands %}<option value="{{ b }}">{% endfor %}</datalist>
+  <script>function editDiscount(brand, chain, start) { document.getElementById("brand").value = brand; document.getElementById("chain").value = chain;
+    document.getElementById("dstart").value = start; document.getElementById("setdiscount").scrollIntoView({behavior: "smooth"}); document.getElementById("chain").focus(); }</script>
+  {% if not brands %}<p class="hint">The brand list fills from this supplier's price list; until it has prices, a discount can only be for all brands.</p>{% endif %}
   <p class="hint" id="chain_example">Type 5, 5 for "less 5%, less 5%". Leave blank for no discount from the date.</p>
   <script>
   (function () {

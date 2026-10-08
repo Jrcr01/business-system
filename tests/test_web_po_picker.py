@@ -83,3 +83,22 @@ def test_new_order_starts_a_draft_with_the_picked_items(web, db):
     assert r.status_code == 302 and r["Location"].endswith("/edit/")
     po_id = int(r["Location"].split("/")[2])
     assert fetchone(_db(), "SELECT COUNT(*), SUM(qty) FROM purchase_order_lines WHERE po_id = ?", (po_id,)) == (2, 3.0)
+
+
+def test_the_discount_brand_is_picked_from_the_list_and_a_mistake_can_be_removed(web, db):
+    from engines import discount_rules as dr
+    _admin(web)
+    cid = _supplier(db)                                                        # its price list has Westlake; an all-brands 5, 5 from Jan 1
+    assert dr.supplier_brands(cid) == ["Westlake"]
+    page = web.get(f"/price-lists/?s={cid}&tab=discounts").content.decode()
+    assert '<option value="Westlake">Westlake</option>' in page and "Remove" in page and "Change" in page
+    r = web.post("/price-lists/", {"s": cid, "action": "set_discount", "brand": "All brands for this supplier", "chain": "5, 5", "start": "2026-10-08"}, follow=True)
+    assert b"Pick the brand from the list" in r.content
+    assert fetchone(_db(), "SELECT COUNT(*) FROM supplier_discounts WHERE brand <> ''")[0] == 0
+    web.post("/price-lists/", {"s": cid, "action": "set_discount", "brand": "westlake", "chain": "3", "start": "2026-10-08"})
+    assert fetchone(_db(), "SELECT brand, chain FROM supplier_discounts WHERE brand <> ''") == ("Westlake", "3")       # saved with the list's spelling
+    did = fetchone(_db(), "SELECT discount_id FROM supplier_discounts WHERE brand = 'Westlake'")[0]
+    web.post("/price-lists/", {"s": cid, "action": "remove_discount", "discount_id": did})
+    assert fetchone(_db(), "SELECT is_active FROM supplier_discounts WHERE discount_id = ?", (did,))[0] == 0
+    assert dr.standing_chain(cid, "Westlake 205/55R16 RP18") == "5,5"                                                    # back to the all-brands row
+    assert fetchone(_db(), "SELECT COUNT(*) FROM audit_logs WHERE user_action = 'DISCOUNT_REMOVED'")[0] == 1
