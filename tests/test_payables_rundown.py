@@ -12,9 +12,10 @@ def _batch(db, cid, ref, total, checks):
     conn = sqlite3.connect(db)
     sid = conn.execute("INSERT INTO order_statements (creditor_id, statement_ref, total_amount, status) VALUES (?, ?, ?, 'Issued')", (cid, ref, total)).lastrowid
     for n, (amount, days) in enumerate(checks):
-        conn.execute(
-            "INSERT INTO checks_issued (bank_account_id, statement_id, creditor_id, check_number, amount, check_date, status) VALUES (?, ?, ?, ?, ?, ?, 'Active')",
-            (BANK, sid, cid, f"{ref}-{n}", amount, str(date.today() + timedelta(days=days))),
+        day = str(date.today() + timedelta(days=days))
+        conn.execute(                                       # a past-dated check here is one the bank cleared (paid = cleared, 2026-10-08)
+            "INSERT INTO checks_issued (bank_account_id, statement_id, creditor_id, check_number, amount, check_date, status, bank_cleared_date) VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)",
+            (BANK, sid, cid, f"{ref}-{n}", amount, day, day if days < 0 else None),
         )
     conn.commit(); conn.close()
 

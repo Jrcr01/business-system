@@ -315,6 +315,10 @@ CREATE TABLE IF NOT EXISTS checks_issued (
     -- migration 065 (2026-10-02, PDC release): the day the supplier COLLECTED this printed check, and who took it. NULL = still in the office.
     released_date DATE,
     released_to TEXT,
+    -- migration 079 (2026-10-08, the clearing rule): a check is paid only when cleared -- by the bank, settled outside it, or ticked cleared here
+    manual_cleared_at DATE,
+    manual_cleared_by TEXT,
+    manual_cleared_note TEXT,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id),
     FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
     FOREIGN KEY (statement_id) REFERENCES order_statements(statement_id),
@@ -515,9 +519,9 @@ SELECT
     c.check_date,
     c.amount,
     c.status AS recorded_status,
-    CASE 
+    CASE  -- 2026-10-08: paid only when cleared (bank, settled outside, or ticked), never by the date alone
+        WHEN c.status = 'Active' AND (c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL OR c.settled_outside_at IS NOT NULL) THEN 'Cleared'
         WHEN c.status = 'Active' AND c.check_date < DATE(manila_today(), '-180 days') THEN 'Stale'
-        WHEN c.status = 'Active' AND c.check_date < manila_today() THEN 'Cleared'
         ELSE c.status
     END AS effective_status,
     c.replacement_check_id,

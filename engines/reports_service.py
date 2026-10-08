@@ -9,7 +9,8 @@ import pandas as pd
 import os
 from engines.common import get_conn
 from engines.clock import manila_today
-DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
+from engines.clearing import cleared_sql, owed_sql
+DB_PATH =os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
 def next_banking_day(d) -> date:
@@ -38,7 +39,7 @@ def get_uncleared_checks_report() -> pd.DataFrame:
     "a real check instrument" is having a number, not whether its PDF has been generated. A
     check with no number yet (printed or not) belongs to get_parked_checks_report() instead
     (parked there means "not yet printed", a different, independent axis)."""
-    query = """
+    query = f"""
     SELECT
         c.check_date AS due_date,
         cr.creditor_name AS payee_name,
@@ -47,7 +48,7 @@ def get_uncleared_checks_report() -> pd.DataFrame:
         c.amount
     FROM checks_issued c
     JOIN creditors cr ON c.creditor_id = cr.creditor_id
-    WHERE c.status = 'Active' AND c.check_date >= manila_today() AND c.check_number IS NOT NULL AND c.settled_outside_at IS NULL
+    WHERE c.status = 'Active' AND {owed_sql('c')} AND c.check_number IS NOT NULL
     ORDER BY c.check_date ASC, cr.creditor_name ASC
     """
     with get_conn(DB_PATH) as conn:
@@ -115,14 +116,14 @@ _PAYMENT_SCHEDULE_TEMPLATE = """
     SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Supplier' AS track, COALESCE(c.check_number, 'Pending') AS reference, os.statement_ref AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
     LEFT JOIN order_statements os ON os.statement_id = c.statement_id
-    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND c.check_date __CMP__ manila_today() AND c.settled_outside_at IS NULL
+    WHERE c.status = 'Active' AND c.statement_id IS NOT NULL AND __CHECKS__
 
     UNION ALL
 
     -- Lender checks aren't batched (Loan Notes track, not Order Statements) -- batch is NULL.
     SELECT c.check_date AS due_date, cr.creditor_name AS payee_name, 'Lender' AS track, COALESCE(c.check_number, 'Pending') AS reference, NULL AS batch, c.amount AS amount
     FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND c.check_date __CMP__ manila_today() AND c.settled_outside_at IS NULL
+    WHERE c.status = 'Active' AND c.loan_note_id IS NOT NULL AND __CHECKS__
 
     UNION ALL
 
@@ -153,11 +154,15 @@ _PAYMENT_SCHEDULE_TEMPLATE = """
       AND NOT (cs.unpaid_balance_next > 0 AND """ + superseded_sql("cs") + """)
 """
 
-# Still owed (today or later) -- the Schedule of payments, forecasts and reports. Unchanged.
-_PAYMENT_SCHEDULE_UNION = _PAYMENT_SCHEDULE_TEMPLATE.replace("__CMP__", ">=").replace("__CARD_STATUS__", "cs.status IN ('Unpaid', 'Partially Paid')")
-# What fell due on a day that has already passed (owner, 2026-09-30: "the calendar shows 0 on past days"): same four tracks, same references, so the
-# calendar can show what was paid. A card statement counts whether or not it was marked paid (past dues are treated as paid, like everywhere else).
-_PAYMENT_PAST_UNION = _PAYMENT_SCHEDULE_TEMPLATE.replace("__CMP__", "<").replace("__CARD_STATUS__", "cs.status != 'Cancelled'")
+# Still owed -- the Schedule of payments, forecasts and reports. A check is owed until it CLEARS (2026-10-08, engines/clearing.py), whatever its date:
+# a past-dated check not cleared yet is paid "today" (get_payment_schedule_all_tracks moves it), since the supplier can deposit it any day.
+_PAYMENT_SCHEDULE_UNION = (_PAYMENT_SCHEDULE_TEMPLATE.replace("__CHECKS__", owed_sql("c")).replace("__CMP__", ">=")
+                           .replace("__CARD_STATUS__", "cs.status IN ('Unpaid', 'Partially Paid')"))
+# What was paid on a day that has already passed (owner, 2026-09-30: "the calendar shows 0 on past days"): same four tracks, same references.
+# A check: cleared, dated before today. A card statement counts whether or not it was marked paid.
+_PAYMENT_PAST_UNION = (_PAYMENT_SCHEDULE_TEMPLATE.replace("__CHECKS__", "c.check_date < manila_today() AND c.settled_outside_at IS NULL "    # paid by the check, not outside the bank
+                                                         "AND (c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL)").replace("__CMP__", "<")
+                       .replace("__CARD_STATUS__", "cs.status != 'Cancelled'"))
 
 
 PAYMENT_SCHEDULE_TRACK_ORDER = {"Lender": 0, "Bank Loan": 1, "Supplier": 2, "Credit Card": 3}
@@ -183,6 +188,8 @@ def get_payment_schedule_all_tracks() -> pd.DataFrame:
         df = pd.read_sql_query(f"SELECT * FROM ({_PAYMENT_SCHEDULE_UNION}) ORDER BY due_date ASC, track ASC", conn)
     if not df.empty:
         df["actual_payment_date"] = df["due_date"].apply(next_banking_day)
+        today = next_banking_day(manila_today())                     # a past-dated check not cleared yet can be deposited any day: it counts from today
+        df["actual_payment_date"] = df["actual_payment_date"].apply(lambda d: max(d, today))
         # Within each payment day: by track (Lender, Bank Loan, Supplier, Credit Card), then smallest amount first.
         df["_track_rank"] = df["track"].map(PAYMENT_SCHEDULE_TRACK_ORDER).fillna(len(PAYMENT_SCHEDULE_TRACK_ORDER))
         df = df.sort_values(["actual_payment_date", "_track_rank", "amount"], kind="stable").drop(columns="_track_rank").reset_index(drop=True)
@@ -278,7 +285,7 @@ def get_combined_ap_summary() -> pd.DataFrame:
             """SELECT COALESCE(SUM(
                    total_payable - COALESCE(
                        (SELECT SUM(amount) FROM checks_issued
-                        WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < manila_today()), 0
+                        WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)), 0
                    )
                ), 0)
                FROM loan_notes ln WHERE status IN ('Active', 'Defaulted')"""
@@ -336,7 +343,7 @@ def get_private_lender_master_report() -> pd.DataFrame:
         ln.note_ref, ln.issue_date, ln.principal_amount, ln.total_interest, ln.total_payable,
         ln.total_payable - COALESCE(
             (SELECT SUM(amount) FROM checks_issued
-             WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < manila_today()), 0
+             WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)), 0
         ) AS outstanding_uncleared,
         ln.status,
         CASE WHEN ln.is_beginning_balance = 1 THEN 'Beginning balance (from MS Access)' ELSE '' END AS source
@@ -379,8 +386,8 @@ def get_payables_rundown(creditor_id: int | None = None, date_from=None, date_to
     much of it is paid and what is still open. Batches are the unit here because that is what is
     actually paid: the migrated history has batches and checks but no invoice lines.
 
-    paid       = Active checks whose date has passed (cleared -- the same rule used everywhere; dated today = still owed)
-    scheduled  = Active checks still post-dated (issued, not yet due)
+    paid       = Active checks that have CLEARED (the bank, settled outside it, or ticked cleared -- engines/clearing.py, 2026-10-08)
+    scheduled  = Active checks not cleared yet, whatever their date
     open       = net total - paid - scheduled (not covered by any check yet)
     status     = Paid (paid covers the net total) / Partially Paid (some paid) / Pending (none paid yet)
     From/To narrow to batches with a check dated inside that window (a batch with no checks yet is
@@ -393,9 +400,9 @@ def get_payables_rundown(creditor_id: int | None = None, date_from=None, date_to
            (SELECT DATE(os.created_at, '+8 hours') FROM order_statements os WHERE os.statement_id = b.statement_id) AS created,
            b.net_total AS net_total,
            COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = b.statement_id
-                     AND k.status = 'Active' AND (k.check_date < manila_today() OR k.settled_outside_at IS NOT NULL)), 0) AS paid,
+                     AND k.status = 'Active' AND (k.bank_cleared_date IS NOT NULL OR k.manual_cleared_at IS NOT NULL OR k.settled_outside_at IS NOT NULL)), 0) AS paid,
            COALESCE((SELECT SUM(k.amount) FROM checks_issued k WHERE k.statement_id = b.statement_id
-                     AND k.status = 'Active' AND k.check_date >= manila_today() AND k.settled_outside_at IS NULL), 0) AS scheduled
+                     AND k.status = 'Active' AND NOT (k.bank_cleared_date IS NOT NULL OR k.manual_cleared_at IS NOT NULL OR k.settled_outside_at IS NOT NULL)), 0) AS scheduled
     FROM v_batch_net_totals b
     JOIN creditors c ON c.creditor_id = b.creditor_id
     WHERE b.status = 'Issued' AND c.creditor_type = 'SUPPLIER'
@@ -475,7 +482,7 @@ def get_lender_history(creditor_id: int):
             """SELECT loan_note_id, note_ref, issue_date, principal_amount, total_interest, total_payable, status,
                       total_payable - COALESCE(
                           (SELECT SUM(amount) FROM checks_issued
-                           WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND check_date < manila_today()), 0
+                           WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)), 0
                       ) AS outstanding_uncleared
                FROM loan_notes ln WHERE creditor_id = ? ORDER BY issue_date""",
             conn, params=(creditor_id,),

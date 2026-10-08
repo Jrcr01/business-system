@@ -117,9 +117,9 @@ def test_problems_are_named_by_row():
            ["Mags", "Enkei", "RPF1", "17x7.5", "", "Silver", "", "", 5, DAY],
            ["Tires", "", "SL369", "285/50R20", "", "", "", "", "call", DAY]]
     text = "\n".join(pt.parse_workbook(_file(bad))["problems"])
-    for needle in ("Price list row 2: Category 'Shoes'", "Price list row 3: Ah is empty (put it in Other specs)", "Price list row 4: PCD is empty",
-                   "Price list row 5: Brand is empty; List price 'call'"):
+    for needle in ("Price list row 2: Category 'Shoes'", "Price list row 4: PCD is empty", "Price list row 5: Brand is empty; List price 'call'"):
         assert needle in text, needle
+    assert "row 3" not in text                                              # a battery without its Ah is accepted (owner, 2026-10-08)
 
 
 def test_import_then_the_prefilled_download_comes_back_the_same(db):

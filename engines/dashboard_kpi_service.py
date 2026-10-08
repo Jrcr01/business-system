@@ -99,7 +99,7 @@ def get_top_suppliers(metric: str = "outstanding", limit: int = 10) -> pd.DataFr
                 """SELECT cr.creditor_name AS supplier_name, COALESCE(SUM(c.amount), 0) AS value
                    FROM checks_issued c
                    JOIN creditors cr ON c.creditor_id = cr.creditor_id
-                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date < manila_today()
+                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND (c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL OR c.settled_outside_at IS NOT NULL)
                    GROUP BY cr.creditor_name
                    ORDER BY value DESC
                    LIMIT ?""",
@@ -110,7 +110,7 @@ def get_top_suppliers(metric: str = "outstanding", limit: int = 10) -> pd.DataFr
                 """SELECT cr.creditor_name AS supplier_name, COALESCE(SUM(c.amount), 0) AS value
                    FROM checks_issued c
                    JOIN creditors cr ON c.creditor_id = cr.creditor_id
-                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= manila_today() AND c.settled_outside_at IS NULL
+                   WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND NOT (c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL OR c.settled_outside_at IS NOT NULL)
                    GROUP BY cr.creditor_name
                    ORDER BY value DESC
                    LIMIT ?""",
@@ -231,7 +231,7 @@ def get_supplier_concentration(limit: int = 5) -> dict:
     with get_conn(DB_PATH) as conn:
         total_row = pd.read_sql_query(
             """SELECT COALESCE(SUM(amount), 0) AS total FROM checks_issued
-               WHERE statement_id IS NOT NULL AND status = 'Active' AND check_date >= manila_today() AND settled_outside_at IS NULL""",
+               WHERE statement_id IS NOT NULL AND status = 'Active' AND NOT (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)""",
             conn,
         )
     total_outstanding = float(total_row["total"][0])
@@ -276,7 +276,8 @@ def get_total_ap_outstanding() -> float:
     from engines.cc_rules import cc_owed_case
 
     with get_conn(DB_PATH) as conn:
-        checks = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date >= manila_today() AND settled_outside_at IS NULL").fetchone()[0]
+        checks = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' "
+                              "AND NOT (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)").fetchone()[0]   # owed until cleared (2026-10-08)
         loans = conn.execute("""SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date >= manila_today()
                                 AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)""").fetchone()[0]
         cards = conn.execute(f"SELECT COALESCE(SUM({cc_owed_case('cs')}), 0) FROM cc_statements cs WHERE cs.status NOT IN ('Paid', 'Cancelled')").fetchone()[0]

@@ -13,9 +13,10 @@ from engines import analytics_service
 def _make_check(db_path, creditor_id, check_date, amount, status="Active", statement_id=None, loan_note_id=None):
     conn = sqlite3.connect(db_path)
     cur = conn.execute(
-        "INSERT INTO checks_issued (creditor_id, bank_account_id, statement_id, loan_note_id, check_number, check_date, amount, status) "
-        "VALUES (?, 1, ?, ?, ?, ?, ?, ?)",
-        (creditor_id, statement_id, loan_note_id, f"CHK-{check_date}-{amount}", str(check_date), amount, status),
+        "INSERT INTO checks_issued (creditor_id, bank_account_id, statement_id, loan_note_id, check_number, check_date, amount, status, bank_cleared_date) "
+        "VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?)",                           # a past-dated active check here is one the bank cleared (paid = cleared, 2026-10-08)
+        (creditor_id, statement_id, loan_note_id, f"CHK-{check_date}-{amount}", str(check_date), amount, status,
+         str(check_date) if status == "Active" and check_date < date.today() else None),
     )
     conn.commit()
     check_id = cur.lastrowid
@@ -226,7 +227,7 @@ def test_check_status_breakdown_uses_effective_not_recorded_status(db):
     statement_id = make_statement(db, supplier_id)
     # Still Active and genuinely in the future.
     _make_check(db, supplier_id, date.today() + timedelta(days=30), 1000.0, status="Active", statement_id=statement_id)
-    # Recorded as Active, but its date already passed -- effectively Cleared.
+    # Recorded as Active, but the bank cleared it -- effectively Cleared.
     _make_check(db, supplier_id, date.today() - timedelta(days=5), 2000.0, status="Active", statement_id=statement_id)
     # A genuine Cancelled row.
     _make_check(db, supplier_id, date.today() + timedelta(days=10), 500.0, status="Cancelled", statement_id=statement_id)

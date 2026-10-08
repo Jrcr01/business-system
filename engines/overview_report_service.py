@@ -70,11 +70,11 @@ def _cash_rows(conn, start: date, end: date) -> pd.DataFrame:
     parts.append(pd.read_sql_query(
         """SELECT CASE WHEN c.loan_note_id IS NOT NULL THEN 'Private Lender' ELSE 'Supplier' END AS track,
                   cr.creditor_name AS payee, c.check_date AS date,
-                  CASE WHEN c.check_date < ? THEN c.amount ELSE 0 END AS paid,
-                  CASE WHEN c.check_date >= ? THEN c.amount ELSE 0 END AS scheduled
+                  CASE WHEN c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL OR c.settled_outside_at IS NOT NULL THEN c.amount ELSE 0 END AS paid,
+                  CASE WHEN c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL OR c.settled_outside_at IS NOT NULL THEN 0 ELSE c.amount END AS scheduled
            FROM checks_issued c JOIN creditors cr ON cr.creditor_id = c.creditor_id
-           WHERE c.status IN ('Active', 'Cleared') AND c.check_date BETWEEN ? AND ?""",
-        conn, params=(today, today, s, e)))
+           WHERE c.status IN ('Active', 'Cleared') AND c.check_date BETWEEN ? AND ?""",               # paid = cleared, not dated past (2026-10-08)
+        conn, params=(s, e)))
     parts.append(pd.read_sql_query(
         """SELECT 'Bank Loan' AS track, cr.creditor_name AS payee, bli.due_date AS date,
                   CASE WHEN bli.due_date < ? THEN bli.amount ELSE 0 END AS paid,

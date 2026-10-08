@@ -448,6 +448,7 @@ def match_checks() -> dict:
     match_status: matched / amount_mismatch / cancelled_check_cleared / not_in_system (checks); matched_loan / matched_card /
     unmatched_debit (other debits); returned_check."""
     matched = exceptions = 0
+    cleared_now: list[int] = []                                          # the checks this run clears: their batches and loans follow (engines/clearing.py)
     with _conn() as conn:
         ours = {}
         for r in conn.execute("SELECT check_id, check_number, amount, status, bank_txn_id FROM checks_issued WHERE check_number IS NOT NULL AND check_number != ''"):
@@ -486,6 +487,7 @@ def match_checks() -> dict:
                 conn.execute("UPDATE bank_transactions SET matched_check_id = ?, match_status = ? WHERE txn_id = ?", (c["check_id"], status, t["txn_id"]))
                 conn.execute("UPDATE checks_issued SET bank_cleared_date = ?, bank_txn_id = ? WHERE check_id = ?", (t["posting_date"], t["txn_id"], c["check_id"]))
                 c["bank_txn_id"] = t["txn_id"]
+                cleared_now.append(int(c["check_id"]))
                 if status == "matched":
                     matched += 1
                 else:
@@ -499,6 +501,9 @@ def match_checks() -> dict:
         matched += _match_other_debits(conn)
         _set_aside_before_system(conn)
     update_reconciled()
+    from engines.clearing import check_ticks_against_bank, resync
+    resync(cleared_now)                                                  # paid = cleared (2026-10-08): the invoices and loans of these checks follow
+    check_ticks_against_bank()                                           # a tick the statement does not confirm goes on the Review list
     return {"matched": matched, "exceptions": exceptions}
 
 
@@ -669,6 +674,8 @@ def link_to_check(txn_id: int, check_id: int, how: str = "Linked by hand") -> tu
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BANK_LINE_LINKED', 'bank_transactions', ?, ?)",
                      (t["txn_id"], f"{how}: check {c['check_number'] or c['check_id']} (PHP {c['amount']:,.2f}) cleared {t['posting_date']} for PHP {t['debit']:,.2f}"))
     update_reconciled()
+    from engines.clearing import resync
+    resync([int(check_id)])
     return True, f"Linked: check {c['check_number'] or c['check_id']} is cleared by the bank on {t['posting_date']}."
 
 
@@ -768,6 +775,8 @@ def reopen(txn_id: int) -> None:
         t = conn.execute("SELECT txn_id, resolution FROM bank_transactions WHERE txn_id = ?", (int(txn_id),)).fetchone()
         if not t:
             return
+        undone = [r[0] for r in conn.execute("SELECT matched_check_id FROM bank_transactions WHERE txn_id = ? AND match_status = 'matched_manual' AND matched_check_id IS NOT NULL",
+                                             (t["txn_id"],))]
         conn.execute("UPDATE checks_issued SET bank_cleared_date = NULL, bank_txn_id = NULL WHERE bank_txn_id = ? AND check_id IN "
                      "(SELECT matched_check_id FROM bank_transactions WHERE txn_id = ? AND match_status = 'matched_manual')", (t["txn_id"], t["txn_id"]))
         try:
@@ -783,6 +792,8 @@ def reopen(txn_id: int) -> None:
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'BANK_LINE_REOPENED', 'bank_transactions', ?, ?)",
                      (t["txn_id"], t["resolution"]))
     match_checks()
+    from engines.clearing import resync
+    resync([int(i) for i in undone])                                     # a check no longer cleared is owed again
 
 
 def link_candidates(txn_id: int, limit: int = 60) -> list[dict]:

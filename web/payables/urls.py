@@ -16,4 +16,5 @@ urlpatterns = [
     path("add-data/", views.add_data, name="add_data"),
     path("payables-due/", views.payables_due, name="payables_due"),
     path("reports/", views.reports, name="reports"),
+    path("checks/", views.checks, name="checks"),
 ]

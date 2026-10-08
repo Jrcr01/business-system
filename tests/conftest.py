@@ -146,6 +146,18 @@ def make_statement(db_path: str, creditor_id: int) -> int:
     return statement_id
 
 
+def bank_clear(db_path: str, *check_ids: int, on=None) -> None:
+    """The bank cleared these checks (on their own date unless `on` is given), and their batches and loans follow -- the clearing rule
+    (engines/clearing.py, owner 2026-10-08): a check is paid only when cleared, never by its date alone."""
+    conn = sqlite3.connect(db_path)
+    for cid in check_ids:
+        conn.execute("UPDATE checks_issued SET bank_cleared_date = COALESCE(?, check_date) WHERE check_id = ?", (str(on) if on else None, cid))
+    conn.commit()
+    conn.close()
+    from engines.clearing import resync
+    resync(list(check_ids))
+
+
 def fetchone(db_path: str, sql: str, params: tuple = ()):
     conn = sqlite3.connect(db_path)
     row = conn.execute(sql, params).fetchone()

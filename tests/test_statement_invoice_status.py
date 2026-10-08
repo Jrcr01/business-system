@@ -3,7 +3,7 @@ import sqlite3
 from datetime import date, timedelta
 
 import app
-from conftest import make_creditor, make_statement, fetchone
+from conftest import bank_clear, make_creditor, make_statement, fetchone
 from engines.batch_statement_service import _fetch_batch_data, generate_batch_statement_pdf
 
 
@@ -47,7 +47,9 @@ def test_check_issued_with_the_last_check_date_when_fully_covered_but_not_cleare
 
 def test_paid_once_every_covering_check_has_cleared(db):
     creditor_id, statement_id, invoice_id = _batch(db)
-    _park(db, creditor_id, statement_id, invoice_id, 10000.0, date.today() - timedelta(days=1))
+    check_id = _park(db, creditor_id, statement_id, invoice_id, 10000.0, date.today() - timedelta(days=1))
+    assert _label(statement_id) != "Paid"                                    # dated yesterday, not cleared: still owed (2026-10-08)
+    bank_clear(db, check_id)
     assert _label(statement_id) == "Paid"
 
 

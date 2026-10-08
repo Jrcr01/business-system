@@ -70,8 +70,8 @@ def _recompute_schedule(cur: sqlite3.Cursor, loan_note_id: int) -> None:
     (uncleared) actually hits zero — not merely once every installment has a check issued
     against it. A postdated check hasn't actually left the bank yet, so "every installment has
     an Active check" alone doesn't mean the loan is truly settled; only once every issued check
-    has also passed its date (same 'cleared' convention as v_checks_ledger.effective_status,
-    schema.sql: check_date before today -- due today = still owed) does the real cash position reach zero. Called from within
+    has also CLEARED (engines/clearing.py, 2026-10-08: the bank, settled outside it, or ticked cleared -- never its date alone) does the real cash
+    position reach zero. Called from within
     an already-open connection/cursor so it composes with the caller's own transaction
     (installment add/edit/delete, and check issue/cancel/replace touching a linked installment)."""
     cur.execute("SELECT principal_amount FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
@@ -100,7 +100,8 @@ def _recompute_schedule(cur: sqlite3.Cursor, loan_note_id: int) -> None:
 
     total_payable = round(principal_amount + total_interest, 2)
     cur.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE loan_note_id = ? AND status = 'Active' AND check_date < manila_today()",
+        "SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE loan_note_id = ? AND status = 'Active' "
+        "AND (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)",          # paid = cleared (2026-10-08)
         (loan_note_id,),
     )
     (cleared_sum,) = cur.fetchone()

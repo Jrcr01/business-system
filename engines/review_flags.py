@@ -20,7 +20,8 @@ SOD_RULES = {                           # kind: what it means in words
     "SOD_PARKED_PRINTED": "Parked the check and made the Chrysanth file",
     "SOD_PRINTED_RELEASED": "Printed the check and released it",
 }
-KINDS = {**SOD_RULES, "PRICE_OVER_PO": "Invoice price well above the order", "NEW_PAYEE": "New supplier or lender", "PO_HIGH_DAY": "Order placed on a high-payables day"}
+KINDS = {**SOD_RULES, "PRICE_OVER_PO": "Invoice price well above the order", "NEW_PAYEE": "New supplier or lender", "PO_HIGH_DAY": "Order placed on a high-payables day",
+         "CLEARED_NOT_ON_BANK": "Ticked cleared, but not on the bank statement", "CHECK_NUMBER_SKIPPED": "Check numbers skipped in a booklet"}
 PRICE_OVER_PCT = 10.0                   # an invoice price this far above the order's net price is flagged
 
 

@@ -16,6 +16,7 @@ from engines.validators import calculate_trade_discount
 from engines.validators import detect_invoice_anomalies
 from engines.common import _as_date, cell_text, get_conn, php, q_live, write_tx
 from engines.clock import manila_now
+from engines.clearing import cleared_sql
 
 
 DEFAULT_SUPPLIER_TERMS = "120"
@@ -508,7 +509,7 @@ def sync_invoice_payment_status(statement_id: int) -> None:
         net_row = q_live("SELECT net_total FROM v_batch_net_totals WHERE statement_id = ?", (statement_id,))
         net_total = float(net_row["net_total"][0]) if not net_row.empty else 0.0
         cleared_row = q_live(
-            "SELECT COALESCE(SUM(amount), 0) AS s FROM checks_issued WHERE statement_id = ? AND status = 'Active' AND check_date < manila_today()",
+            f"SELECT COALESCE(SUM(amount), 0) AS s FROM checks_issued WHERE statement_id = ? AND status = 'Active' AND {cleared_sql('')}",     # paid = cleared (2026-10-08)
             (statement_id,),
         )
         cleared_sum = float(cleared_row["s"][0])
@@ -529,9 +530,9 @@ def sync_invoice_payment_status(statement_id: int) -> None:
 
     invoices_df = q_live("SELECT invoice_id, amount FROM invoices WHERE statement_id = ? AND status != 'Cancelled'", (statement_id,))
     cleared_df = q_live(
-        """SELECT a.invoice_id, COALESCE(SUM(a.amount), 0) AS cleared
+        f"""SELECT a.invoice_id, COALESCE(SUM(a.amount), 0) AS cleared
            FROM invoice_check_allocations a JOIN checks_issued c ON c.check_id = a.check_id
-           WHERE c.statement_id = ? AND c.status = 'Active' AND c.check_date < manila_today()
+           WHERE c.statement_id = ? AND c.status = 'Active' AND {cleared_sql('c')}
            GROUP BY a.invoice_id""",
         (statement_id,),
     )

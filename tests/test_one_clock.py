@@ -47,8 +47,8 @@ def test_due_today_is_still_owed_at_0730_manila(db):
                 conn.execute("INSERT INTO bank_loan_installments (bank_loan_id, installment_no, due_date, amount) VALUES (?, ?, ?, 1)",
                              (loan, n, d.isoformat()))
             cleared = [r[0] for r in conn.execute(f"SELECT installment_no FROM bank_loan_installments WHERE {CLEARED_SQL}")]
-        assert status[today_check] == "Active" and status[past_check] == "Cleared"
-        assert cleared == [1]
+        assert status[today_check] == "Active" and status[past_check] == "Active"     # a check is owed until it clears (2026-10-08), whatever its date
+        assert cleared == [1]                                                            # a bank-loan installment still follows its due date
     finally:
         set_fake_now(None)
 

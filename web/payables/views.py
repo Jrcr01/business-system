@@ -19,7 +19,8 @@ from masters.views import page_needed
 CREATED = [("all", "All time"), ("today", "Today"), ("7", "Last 7 days"), ("30", "Last 30 days")]
 STAGES = ["Draft", "Parked", "Issued", "Cancelled"]
 BATCHES_SQL = """SELECT os.statement_id, os.statement_ref, os.creditor_id, c.creditor_name, c.terms, os.total_amount, v.credit_memo_total, v.net_total,
-       v.net_total - COALESCE((SELECT SUM(amount) FROM checks_issued WHERE statement_id = os.statement_id AND status = 'Active' AND check_date < manila_today()), 0) AS outstanding,
+       v.net_total - COALESCE((SELECT SUM(amount) FROM checks_issued WHERE statement_id = os.statement_id AND status = 'Active'
+                                AND (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)), 0) AS outstanding,
        os.status, os.is_locked, os.needs_reprint, datetime(os.created_at, '+8 hours') AS created_at, {modified} AS last_modified,
        CASE WHEN os.status = 'Cancelled' THEN 'Cancelled'
             WHEN EXISTS (SELECT 1 FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' AND k.printed_at IS NOT NULL) THEN 'Issued'
@@ -335,6 +336,58 @@ def add_data(request):
 # --- Payables due -------------------------------------------------------------------------------------------------------------------------------------
 
 KIND_COLORS = {"Supplier checks": "#16305B", "Lender checks": "#4C78A8", "Bank loans": "#C26A00", "Credit cards": "#9FB3D1", "Purchase orders": "#2E7D32"}
+
+
+@page_needed("checks")
+def checks(request):
+    """Pay suppliers -> Checks (Phase 2, step 1, owner 2026-10-08): the written checks waiting for the bank, the "cleared" tick (confirmed later by the
+    bank statement), and, once, the cut-off for the checks from before the first bank statement. Booklets and the rest still live in the old screens."""
+    from engines import clearing
+    from engines.permissions import can
+    role = request.slicks_user["role"]
+    may_tick = can(role, "bank.use")
+    is_admin = role == "admin"
+    if request.method == "POST":
+        what, cid = request.POST.get("action"), int(request.POST.get("check_id") or 0)
+        if what == "clear" and may_tick:
+            ok, msg = clearing.mark_cleared(cid, _date(request.POST.get("on")), request.POST.get("note", ""))
+        elif what == "unclear" and may_tick:
+            ok, msg = clearing.unmark_cleared(cid)
+        elif what == "cutoff" and is_admin:
+            from pathlib import Path
+
+            from db_location import safe_copy
+            from engines.clock import manila_now
+            import engines.db_engine as dbe
+            backups = Path(dbe.DB_PATH).resolve().parent.parent / "backups"
+            backups.mkdir(exist_ok=True)
+            safe_copy(dbe.DB_PATH, str(backups / f"before_clearing_cutoff_{manila_now():%Y%m%d_%H%M%S}.db"))
+            ok, msg = clearing.apply_cutoff()
+        else:
+            ok, msg = False, "You can't do that here."
+        _say(request, ok, msg)
+        return redirect("/checks/" + ("?tab=cutoff" if what == "cutoff" else ""))
+    tab = request.GET.get("tab", "waiting")
+    waiting = clearing.waiting_for_bank()
+    ctx = {"page_id": "checks", "tab": tab, "may_tick": may_tick, "is_admin": is_admin, "today": __import__("engines.clock", fromlist=["manila_today"]).manila_today(),
+           "rows": waiting.to_dict("records"), "total": float(waiting["amount"].sum()) if not waiting.empty else 0.0,
+           "n_past": int(waiting["past"].sum()) if not waiting.empty else 0, "n_ticked": int(waiting["ticked"].sum()) if not waiting.empty else 0,
+           "more": _more_page("checks") if can(role, "more.use") else ""}
+    if is_admin:
+        from engines.common import get_conn
+        with get_conn() as conn:
+            ctx["cutoff_done"] = conn.execute("SELECT MAX(datetime(timestamp, '+8 hours')) FROM audit_logs WHERE user_action = 'CLEARING_CUTOFF'").fetchone()[0]
+        if tab == "cutoff":
+            prev = clearing.cutoff_preview()
+            ctx.update({"first_day": prev["first_day"], "before_n": len(prev["before"]), "before_total": float(prev["before"]["amount"].sum()) if len(prev["before"]) else 0.0,
+                        "inside": prev["inside"].to_dict("records")})
+    return render(request, "payables/checks.html", ctx)
+
+
+def _more_page(page_id: str) -> str:
+    from django.conf import settings
+    base = getattr(settings, "STREAMLIT_URL", "")
+    return f"{base.rstrip('/')}/{page_id}" if base else ""
 
 
 SCHEDULE_KINDS = [("Supplier", "Suppliers"), ("Lender", "Lenders"), ("Bank Loan", "Bank loans"), ("Credit Card", "Credit cards")]

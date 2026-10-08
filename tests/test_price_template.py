@@ -38,7 +38,7 @@ def test_the_template_has_a_sheet_per_category_with_the_standard_columns_and_dro
     assert wb.sheetnames == ["How to fill", "Tires", "Battery", "Mags", "Rims"]
     tires = [c.value for c in wb["Tires"][1]]
     assert tires == ["Brand *", "Size *", "Ply / load-speed", "Terrain", "Pattern *", "Type", "Tube", "Supplier item code", "Unit", "List price *", "Effective date", "Remarks"]
-    assert [c.value for c in wb["Battery"][1]][:7] == ["Brand *", "Model / group *", "Volts", "Ah *", "CCA", "Type", "Terminal"]
+    assert [c.value for c in wb["Battery"][1]][:7] == ["Brand *", "Model / group *", "Volts", "Ah", "CCA", "Type", "Terminal"]
     assert not wb["Tires"].data_validations.dataValidation          # no drop-down lists (owner, 2026-10-04: another AI fills it; any value is accepted)
     assert wb["Tires"].freeze_panes == "A2"
 

@@ -17,8 +17,9 @@ def test_period_bounds():
 
 def _check(db, creditor, amount, on, statement=True):
     conn = sqlite3.connect(db)
-    conn.execute("INSERT INTO checks_issued (bank_account_id, statement_id, creditor_id, check_number, amount, check_date, status) VALUES (1, 1, ?, ?, ?, ?, 'Active')",
-                 (creditor, f"39900{abs(hash((amount, str(on)))) % 100000:05d}", amount, str(on)))
+    conn.execute("INSERT INTO checks_issued (bank_account_id, statement_id, creditor_id, check_number, amount, check_date, status, bank_cleared_date) "
+                 "VALUES (1, 1, ?, ?, ?, ?, 'Active', ?)",                  # a past-dated check here is one the bank cleared (paid = cleared, 2026-10-08)
+                 (creditor, f"39900{abs(hash((amount, str(on)))) % 100000:05d}", amount, str(on), str(on) if on < date.today() else None))
     conn.commit(); conn.close()
 
 

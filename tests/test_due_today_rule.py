@@ -4,7 +4,7 @@ scheduled, bank-loan installments, and the AP aging (an invoice due today is "Cu
 from datetime import date, timedelta
 
 import app
-from conftest import make_creditor, make_statement
+from conftest import bank_clear, make_creditor, make_statement
 from engines.bank_loan_service import CLEARED_SQL
 from engines.clock import manila_today
 from engines.common import get_conn
@@ -26,24 +26,24 @@ def _batch(db, ref, check_day, amount=1000.0):
     return sid, cid
 
 
-def test_a_check_dated_today_is_not_cleared_yet(db):
-    sid_today, today_check = _batch(db, "OS-TODAY", TODAY)
+def test_a_check_is_paid_only_when_cleared_never_by_its_date(db):
+    """The clearing rule (owner, 2026-10-08) replaced "paid once its date has passed": a past-dated check the bank has not cleared is still owed."""
+    sid_waiting, waiting_check = _batch(db, "OS-WAIT", YESTERDAY)
     sid_past, past_check = _batch(db, "OS-PAST", YESTERDAY)
+    bank_clear(db, past_check)
     with get_conn(db) as conn:
         status = dict(conn.execute("SELECT check_id, effective_status FROM v_effective_checks").fetchall())
-    assert status[today_check] == "Active" and status[past_check] == "Cleared"
-    sync_invoice_payment_status(sid_today)
-    sync_invoice_payment_status(sid_past)
+    assert status[waiting_check] == "Active" and status[past_check] == "Cleared"
+    sync_invoice_payment_status(sid_waiting)
     with get_conn(db) as conn:
         inv = dict(conn.execute("SELECT statement_id, status FROM invoices").fetchall())
-    assert inv[sid_today] == "Unpaid" and inv[sid_past] == "Paid"
+    assert inv[sid_waiting] == "Unpaid" and inv[sid_past] == "Paid"
     rd = get_payables_rundown().set_index("batch")
-    assert (rd.loc["OS-TODAY", "paid"], rd.loc["OS-TODAY", "scheduled"], rd.loc["OS-TODAY", "status"]) == (0.0, 1000.0, "Pending")
+    assert (rd.loc["OS-WAIT", "paid"], rd.loc["OS-WAIT", "scheduled"], rd.loc["OS-WAIT", "status"]) == (0.0, 1000.0, "Pending")
     assert (rd.loc["OS-PAST", "paid"], rd.loc["OS-PAST", "status"]) == (1000.0, "Paid")
     with get_conn(db) as conn:
         cash = _cash_rows(conn, YESTERDAY, TODAY)
-    by_day = {r.date: (r.paid, r.scheduled) for r in cash.itertuples()}
-    assert by_day[TODAY.isoformat()] == (0.0, 1000.0) and by_day[YESTERDAY.isoformat()] == (1000.0, 0.0)
+    assert sorted((r.paid, r.scheduled) for r in cash.itertuples()) == [(0.0, 1000.0), (1000.0, 0.0)]
 
 
 def test_bank_loan_installment_due_today_is_still_owed(db):

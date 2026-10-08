@@ -124,13 +124,13 @@ def get_lender_pareto(limit: int = 10) -> pd.DataFrame:
         df = pd.read_sql_query(
             """SELECT cr.creditor_name AS name, COALESCE(SUM(c.amount), 0) AS value
                FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-               WHERE c.loan_note_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= manila_today()
+               WHERE c.loan_note_id IS NOT NULL AND c.status = 'Active' AND NOT (c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL OR c.settled_outside_at IS NOT NULL)
                GROUP BY cr.creditor_id ORDER BY value DESC LIMIT ?""",
             conn, params=(limit,),
         )
         total_row = pd.read_sql_query(
             """SELECT COALESCE(SUM(amount), 0) AS total FROM checks_issued
-               WHERE loan_note_id IS NOT NULL AND status = 'Active' AND check_date >= manila_today()""",
+               WHERE loan_note_id IS NOT NULL AND status = 'Active' AND NOT (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)""",
             conn,
         )
     if df.empty:
@@ -212,14 +212,14 @@ def get_all_tracks_pareto(limit: int = 15) -> pd.DataFrame:
         supplier_df = pd.read_sql_query(
             """SELECT cr.creditor_name AS name, 'Supplier' AS track, COALESCE(SUM(c.amount), 0) AS value
                FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-               WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= manila_today()
+               WHERE c.statement_id IS NOT NULL AND c.status = 'Active' AND NOT (c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL OR c.settled_outside_at IS NOT NULL)
                GROUP BY cr.creditor_id""",
             conn,
         )
         lender_df = pd.read_sql_query(
             """SELECT cr.creditor_name AS name, 'Lender' AS track, COALESCE(SUM(c.amount), 0) AS value
                FROM checks_issued c JOIN creditors cr ON c.creditor_id = cr.creditor_id
-               WHERE c.loan_note_id IS NOT NULL AND c.status = 'Active' AND c.check_date >= manila_today()
+               WHERE c.loan_note_id IS NOT NULL AND c.status = 'Active' AND NOT (c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL OR c.settled_outside_at IS NOT NULL)
                GROUP BY cr.creditor_id""",
             conn,
         )
@@ -372,7 +372,7 @@ def get_missing_debt_terms(limit: int = 10) -> pd.DataFrame:
                FROM creditors cr
                JOIN loan_notes ln ON ln.creditor_id = cr.creditor_id
                LEFT JOIN checks_issued c
-                 ON c.loan_note_id = ln.loan_note_id AND c.status = 'Active' AND c.check_date >= manila_today()
+                 ON c.loan_note_id = ln.loan_note_id AND c.status = 'Active' AND NOT (c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL OR c.settled_outside_at IS NOT NULL)
                WHERE ln.monthly_interest_rate IS NULL
                GROUP BY ln.loan_note_id
                HAVING outstanding > 0""",

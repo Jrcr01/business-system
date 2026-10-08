@@ -106,7 +106,7 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
         cover = {
             r["invoice_id"]: r for r in cur.execute(
                 """SELECT a.invoice_id, SUM(a.amount) AS covered,
-                          SUM(CASE WHEN c.check_date < manila_today() THEN a.amount ELSE 0 END) AS cleared,
+                          SUM(CASE WHEN c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL OR c.settled_outside_at IS NOT NULL THEN a.amount ELSE 0 END) AS cleared,
                           MAX(c.check_date) AS last_check_date
                    FROM invoice_check_allocations a JOIN checks_issued c ON c.check_id = a.check_id
                    WHERE c.status = 'Active' AND a.invoice_id IN (SELECT invoice_id FROM invoices WHERE statement_id = ?)

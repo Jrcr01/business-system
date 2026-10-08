@@ -6,7 +6,7 @@ has never had an allocated check (still the old blanket batch-level status)."""
 from datetime import date
 
 import app
-from conftest import make_creditor, make_statement, fetchone
+from conftest import bank_clear, make_creditor, make_statement, fetchone
 
 
 def test_waterfall_preview_splits_one_check_across_two_invoices():
@@ -60,6 +60,7 @@ def test_full_flow_issue_allocate_sync_gives_per_invoice_status(db):
     )
     assert alloc_ok
 
+    bank_clear(db, check_ids[0])                     # paid = cleared by the bank (2026-10-08), not by the date alone
     app.sync_invoice_payment_status(statement_id)
 
     inv1_status = fetchone(db, "SELECT status FROM invoices WHERE doc_ref = 'INV-1'")[0]
@@ -83,6 +84,8 @@ def test_legacy_batch_with_no_allocations_keeps_blanket_status(db):
     ok, _msg, _check_ids = app.issue_checks_grid(creditor_id, statement_id, [{"check_date": date(2026, 1, 10), "amount": 5000.0}])
     assert ok
 
+    assert fetchone(db, "SELECT status FROM invoices WHERE doc_ref = 'LEG-1'")[0] == "Unpaid"       # not cleared yet: owed, whatever its date
+    bank_clear(db, _check_ids[0])
     app.sync_invoice_payment_status(statement_id)
 
     # Old blanket behavior: every invoice in the batch gets the SAME status, based on the

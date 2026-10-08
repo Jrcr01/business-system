@@ -35,7 +35,7 @@ def test_money_flow_splits_paid_and_scheduled_by_month_and_track(db):
     sup = make_creditor(db, name="Sup")
     sid = create_order_statement(sup)
     past, future = _weekday(date.today() - timedelta(days=40)), _weekday(date.today() + timedelta(days=40), back=False)
-    _check(db, sup, sid, "3992000001", past, 1000.0)
+    _check(db, sup, sid, "3992000001", past, 1000.0, bank_cleared_date=str(past))          # paid = the bank cleared it (2026-10-08)
     _check(db, sup, sid, "3992000002", future, 2500.0)
 
     flow = money_flow(date.today() - timedelta(days=90), date.today() + timedelta(days=90))

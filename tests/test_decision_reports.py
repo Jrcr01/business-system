@@ -2,7 +2,7 @@
 import sqlite3
 from datetime import date, timedelta
 
-from conftest import make_creditor
+from conftest import bank_clear, make_creditor
 from engines.decision_reports_service import (
     QUESTION_GUIDE, business_vs_family, card_usage, cost_of_borrowing, memos_by_supplier, monthly_outflow, payables_after_month_end, supplier_payment_performance,
 )
@@ -16,6 +16,9 @@ def _paid_invoice(db, name, invoice_date, due, check_date, amount, number):
     add_invoice(sup, f"INV-{number}", invoice_date, due, amount, [], sid)
     ok, msg, _ = record_handwritten_checks(sup, [{"number": number, "date": check_date, "amount": amount}], statement_id=sid)
     assert ok, msg
+    with sqlite3.connect(db) as conn:                       # paid = the bank cleared it (2026-10-08), on its own date
+        ids = [r[0] for r in conn.execute("SELECT check_id FROM checks_issued WHERE statement_id = ?", (sid,))]
+    bank_clear(db, *ids)
     return sup, sid
 
 

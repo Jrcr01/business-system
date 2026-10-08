@@ -18,10 +18,13 @@ def _weekday(d: date, back: bool = True) -> date:
     return d
 
 
-def _check(db, creditor, number, d, amount, statement_id=None, loan_note_id=None, status="Active", settled=False):
+def _check(db, creditor, number, d, amount, statement_id=None, loan_note_id=None, status="Active", settled=False, cleared=None):
+    """cleared: the bank cleared it on its date (default: when it is dated before today) -- paid = cleared (2026-10-08)."""
+    cleared = (d < date.today() and not settled) if cleared is None else cleared
     with sqlite3.connect(db) as conn:
-        conn.execute("""INSERT INTO checks_issued (bank_account_id, creditor_id, statement_id, loan_note_id, check_number, check_date, amount, status, settled_outside_at)
-                        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)""", (creditor, statement_id, loan_note_id, number, str(d), amount, status, "2026-09-30" if settled else None))
+        conn.execute("""INSERT INTO checks_issued (bank_account_id, creditor_id, statement_id, loan_note_id, check_number, check_date, amount, status, settled_outside_at,
+                                                   bank_cleared_date) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     (creditor, statement_id, loan_note_id, number, str(d), amount, status, "2026-09-30" if settled else None, str(d) if cleared else None))
 
 
 def _row(df, d):
@@ -82,11 +85,22 @@ def test_the_still_owed_schedule_does_not_reach_back(db):
     stmt = make_statement(db, sup)
     past = _weekday(date.today() - timedelta(days=10))
     future = _weekday(date.today() + timedelta(days=10), back=False)
-    _check(db, sup, "3992000031", past, 1000.0, statement_id=stmt)
+    _check(db, sup, "3992000031", past, 1000.0, statement_id=stmt)                       # cleared by the bank: paid
     _check(db, sup, "3992000032", future, 700.0, statement_id=stmt)
 
     assert list(get_payment_schedule_all_tracks()["amount"]) == [700.0]
     assert list(get_payment_schedule_daily_totals()["total_amount"]) == [700.0]
+
+
+def test_a_past_dated_check_not_cleared_yet_is_still_owed_today(db):
+    """The clearing rule (owner, 2026-10-08): the supplier can deposit it any day, so it is owed from today until the bank clears it."""
+    sup = make_creditor(db, name="Sup")
+    stmt = make_statement(db, sup)
+    past = _weekday(date.today() - timedelta(days=10))
+    _check(db, sup, "3992000051", past, 1000.0, statement_id=stmt, cleared=False)
+    sched = get_payment_schedule_all_tracks()
+    assert list(sched["amount"]) == [1000.0] and sched["actual_payment_date"].iloc[0] == next_banking_day(date.today())
+    assert _row(get_payment_calendar_daily_totals(), past) is None                            # not shown as paid on its own date
 
 
 def test_a_check_dated_today_is_still_due_and_an_empty_database_gives_empty_frames(db):

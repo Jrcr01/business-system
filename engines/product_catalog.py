@@ -43,7 +43,7 @@ CATEGORY_FIELDS: dict[str, list[dict]] = {
               _f("terrain", "Terrain", choices=TERRAIN, name=True, ident=True), _f("pattern", "Pattern", True, name=True, ident=True, note="e.g. SL369"),
               _f("type", "Type", choices=TIRE_TYPES), _f("tube", "Tube", choices=TUBE)],
     "Battery": [_f("model", "Model / group", True, name=True, ident=True, note="e.g. NS60"), _f("volts", "Volts", name=True, note="e.g. 12"),
-                _f("ah", "Ah", True, name=True, note="e.g. 45"), _f("cca", "CCA"), _f("battery_type", "Type", choices=["MF", "Conventional"]),
+                _f("ah", "Ah", name=True, note="e.g. 45"), _f("cca", "CCA"), _f("battery_type", "Type", choices=["MF", "Conventional"]),   # Ah not required (owner, 2026-10-08)
                 _f("terminal", "Terminal", choices=["L", "R"], name=True, ident=True)],
     "Mags": [_f("model", "Model", True, name=True, ident=True), _f("size", "Size", True, name=True, ident=True, note="e.g. 17x7.5"),
              _f("pcd", "PCD", True, name=True, ident=True, note="e.g. 5x114.3"), _f("offset", "Offset", True, name=True, ident=True, note="e.g. ET40"),
