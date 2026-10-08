@@ -15,4 +15,5 @@ urlpatterns = [
     path("order-statements/<int:sid>/<str:kind>.pdf", views.statement_pdf, name="statement_pdf"),
     path("add-data/", views.add_data, name="add_data"),
     path("payables-due/", views.payables_due, name="payables_due"),
+    path("reports/", views.reports, name="reports"),
 ]

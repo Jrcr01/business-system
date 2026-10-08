@@ -337,6 +337,76 @@ def add_data(request):
 KIND_COLORS = {"Supplier checks": "#16305B", "Lender checks": "#4C78A8", "Bank loans": "#C26A00", "Credit cards": "#9FB3D1", "Purchase orders": "#2E7D32"}
 
 
+SCHEDULE_KINDS = [("Supplier", "Suppliers"), ("Lender", "Lenders"), ("Bank Loan", "Bank loans"), ("Credit Card", "Credit cards")]
+
+
+def _schedule(request):
+    """The schedule of payments narrowed by the page's filters (reports_service.filter_schedule: the page, the Excel and the PDF show the same rows)."""
+    from calendar import monthrange
+
+    from engines.clock import manila_today
+    from engines.reports_service import filter_schedule, get_payment_schedule_all_tracks
+    today = manila_today()
+    nxt = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+    g = request.GET
+    d_from = _date(g.get("from")) or (None if "from" in g else today)
+    d_to = _date(g.get("to")) or (None if "to" in g else nxt.replace(day=monthrange(nxt.year, nxt.month)[1]))
+    kind = g.get("kind", "") if g.get("kind", "") in dict(SCHEDULE_KINDS) else ""
+    payee = g.get("payee", "")
+    every = get_payment_schedule_all_tracks()
+    payees = sorted(every["payee_name"].dropna().unique().tolist()) if not every.empty else []
+    df = filter_schedule(every, [kind] if kind else None, d_from, d_to, [payee] if payee else None)
+    return df, {"from": d_from, "to": d_to, "kind": kind, "payee": payee}, payees
+
+
+@page_needed("reports")
+def reports(request):
+    """Reports -> Schedule of payments (owner, 2026-10-08, stage D8 begun for the co-owner): everything still owed across the four kinds, by pay day, with
+    Excel and PDF of exactly what is shown. The other reports are still in the old screens (/more/), for the people allowed there."""
+    from engines.permissions import can, hide_check_details
+    df, f, payees = _schedule(request)
+    what = request.GET.get("download")
+    show_ref = not hide_check_details(request.slicks_user["role"])
+    if what == "pdf":
+        from engines.payment_schedule_report_service import generate_payment_schedule_pdf
+        data = generate_payment_schedule_pdf([f["kind"]] if f["kind"] else None, None, f["from"], f["to"], [f["payee"]] if f["payee"] else None)
+        resp = HttpResponse(data, content_type="application/pdf")
+        resp["Content-Disposition"] = 'attachment; filename="schedule_of_payments.pdf"'
+        return resp
+    if what == "xlsx":
+        import io
+
+        import pandas as pd
+        out = pd.DataFrame({"Pay day": pd.to_datetime(df["actual_payment_date"]).dt.date if not df.empty else [], "Due date": df["due_date"].astype(str).str[:10] if not df.empty else [],
+                            "Pay to": df.get("payee_name", []), "Kind": df.get("track", []), **({"Reference": df.get("reference", [])} if show_ref else {}),
+                            "Batch": df.get("batch", []), "Amount": df.get("amount", [])})
+        buf = io.BytesIO()
+        out.to_excel(buf, index=False, sheet_name="Schedule of payments")
+        resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        resp["Content-Disposition"] = 'attachment; filename="schedule_of_payments.xlsx"'
+        return resp
+    days = []
+    if not df.empty:
+        import pandas as pd
+        df = df.assign(_day=pd.to_datetime(df["actual_payment_date"]).dt.date, _due=pd.to_datetime(df["due_date"]).dt.date)
+        for day, rows in df.groupby("_day", sort=True):
+            days.append({"day": day, "total": float(rows["amount"].sum()), "n": len(rows), "shifted": bool((rows["_due"] != day).any()),
+                         "rows": [{"payee": r.payee_name, "kind": {"Bank Loan": "Bank loan", "Credit Card": "Credit card"}.get(r.track, r.track), "reference": r.reference if isinstance(r.reference, str) else "",
+                                   "batch": r.batch if isinstance(r.batch, str) else "", "amount": float(r.amount)} for r in rows.itertuples()]})
+    heaviest = max(days, key=lambda d: d["total"]) if days else None
+    from urllib.parse import urlencode
+    query = urlencode({k: ("" if v is None else str(v)) for k, v in f.items()})
+    return render(request, "payables/reports.html", {"page_id": "reports", "f": f, "kinds": SCHEDULE_KINDS, "payees": payees, "days": days, "show_ref": show_ref,
+                                                     "total": sum(d["total"] for d in days), "count": sum(d["n"] for d in days), "heaviest": heaviest, "query": query,
+                                                     "more": _more_reports() if can(request.slicks_user["role"], "more.use") else ""})
+
+
+def _more_reports() -> str:
+    from django.conf import settings
+    base = getattr(settings, "STREAMLIT_URL", "")
+    return f"{base.rstrip('/')}/reports" if base else ""
+
+
 @page_needed("payables-due")
 def payables_due(request):
     from engines.payables_due_service import COLUMNS, by_supplier, by_week, next_days

@@ -37,7 +37,8 @@ PAGES: dict[str, Page] = {
     "data-health": Page("Data health", "health_and_safety", "D8"),
 }
 
-BUILT = {"home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "add-data", "payables-due"}     # drawn by Django (D0-D3)
+BUILT = {"home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "add-data", "payables-due",
+         "reports"}     # drawn by Django (D0-D3; Reports: the schedule of payments first, 2026-10-08)
 
 STAGE_NAME = {"D1": "Masters", "D2": "Buying", "D3": "Payables", "D4": "Paying", "D5": "Release", "D6": "Loans", "D7": "Cards and bank", "D8": "Oversight"}
 

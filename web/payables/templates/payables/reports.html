@@ -1,0 +1,39 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Schedule of payments{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">summarize</span> Schedule of payments</h2>
+<p class="note">Everything still owed, all four kinds: supplier checks, lender checks, bank loan installments and credit card statements, by the day they are paid.
+  {% if more %}The other reports are still in the <a href="{{ more }}">old screens</a>.{% endif %}</p>
+
+<form method="get" class="bar" style="flex-wrap:wrap;align-items:flex-end">
+  <div><label for="from">From</label><input id="from" type="date" name="from" value="{{ f.from|date:'Y-m-d' }}"></div>
+  <div><label for="to">To</label><input id="to" type="date" name="to" value="{{ f.to|date:'Y-m-d' }}"></div>
+  <div><label for="kind">Kind</label><select id="kind" name="kind"><option value="">All kinds</option>{% for k, label in kinds %}<option value="{{ k }}"{% if k == f.kind %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div><label for="payee">Pay to</label><select id="payee" name="payee"><option value="">Everyone</option>{% for p in payees %}<option value="{{ p }}"{% if p == f.payee %} selected{% endif %}>{{ p }}</option>{% endfor %}</select></div>
+  <button class="btn small" type="submit"><span class="ms">filter_alt</span>Show</button>
+  <span style="flex:1"></span>
+  <a class="btn small ghost" href="?{{ query }}&download=xlsx"><span class="ms">download</span>Excel</a>
+  <a class="btn small ghost" href="?{{ query }}&download=pdf"><span class="ms">picture_as_pdf</span>PDF</a>
+</form>
+
+<div class="facts">
+  <div><span>Total owed in range</span><b>₱{{ total|floatformat:2|intcomma }}</b></div>
+  <div><span>Payments</span><b>{{ count }}</b></div>
+  <div><span>Heaviest day</span><b>{% if heaviest %}{{ heaviest.day|date:"M d" }}{% else %}—{% endif %}</b>{% if heaviest %}<span>₱{{ heaviest.total|floatformat:2|intcomma }}</span>{% endif %}</div>
+</div>
+
+{% if days %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Pay to</th><th>Kind</th>{% if show_ref %}<th>Reference</th>{% endif %}<th>Batch</th><th style="text-align:right">Amount</th></tr>
+  {% for d in days %}
+  <tr class="subhead"><td colspan="{% if show_ref %}4{% else %}3{% endif %}"><b>{{ d.day|date:"D, M d" }}</b> · {{ d.n }} payment{{ d.n|pluralize }}{% if d.shifted %} <span class="hint">(includes a weekend or holiday due date)</span>{% endif %}</td>
+    <td class="num"><b>₱{{ d.total|floatformat:2|intcomma }}</b></td></tr>
+  {% for r in d.rows %}<tr><td>{{ r.payee }}</td><td>{{ r.kind }}</td>{% if show_ref %}<td>{{ r.reference }}</td>{% endif %}<td>{{ r.batch|default:"—" }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}
+  {% endfor %}
+  <tr class="subhead"><td colspan="{% if show_ref %}4{% else %}3{% endif %}"><b>Total</b></td><td class="num"><b>₱{{ total|floatformat:2|intcomma }}</b></td></tr>
+</table></div>
+<p class="hint">A due date on a weekend or holiday is paid the next bank day.</p>
+{% else %}
+<p class="note">Nothing is owed in this range.</p>
+{% endif %}
+{% endblock %}
