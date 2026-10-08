@@ -13,7 +13,7 @@
 | Ubuntu 24.04, user `slicks` (SSH key only; root and passwords switched off) | Only the laptop's key can sign in |
 | Firewall: SSH, 80, 443 only; fail2ban; automatic security updates | Nothing else is reachable from the internet |
 | Caddy (`/etc/caddy/Caddyfile`) | HTTPS with a self-renewing certificate. `/more/...` goes to Streamlit, everything else to Django |
-| `slicks-erp` service: Django, gunicorn, 2 workers, `127.0.0.1:8000` | The main system; restarts by itself |
+| `slicks-erp` service: Django, gunicorn, 3 workers, `127.0.0.1:8000` | The main system; restarts by itself |
 | `slicks-streamlit` service: Streamlit, `127.0.0.1:8501`, at `/more/` | The screens not moved yet; same database, its own sign-in with the same accounts |
 | `slicks-erp-nightly.timer` (18:00 Manila) runs `deploy/nightly.py` | Audit log check and seal, then a database backup (newest 30 kept) |
 | `/etc/slicks-erp/env` | The settings and the secret key; only on the server, never in git |
@@ -29,7 +29,7 @@
 2. **DigitalOcean account:** with two-step sign-in and a payment method.
 3. **SSH key on the laptop.** In Git Bash, run `ssh-keygen -t ed25519 -f ~/.ssh/slicks_erp -C "slicks-erp"` with a passphrase only you know. Then run `ssh-add ~/.ssh/slicks_erp` once, so Windows remembers it.
 4. **Create the Droplet:**
-   - Ubuntu 24.04, Singapore, Basic, **1 GB** memory (owner, 2026-10-03; the setup adds a 2 GB swap file and runs 2 Django workers; resize to 2 GB if it feels slow: Power off, Resize, CPU and RAM only). Turn weekly backups on.
+   - Ubuntu 24.04, Singapore, Basic, **2 GB** memory (owner resized from 1 GB on 2026-10-08; the setup adds a 2 GB swap file and runs 3 Django workers). Turn weekly backups on.
    - **SSH key** = paste the contents of `~/.ssh/slicks_erp.pub` (the public half only).
 5. **Point the name at the server.** In Cloudflare DNS, add an `A` record: name `erp`, value = the Droplet's IP address, proxy **DNS only** (grey cloud) for now.
 

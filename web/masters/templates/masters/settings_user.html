@@ -24,6 +24,16 @@
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="on"><button class="btn small ghost" type="submit"><span class="ms">person</span>Switch on</button></form>
 {% endif %}
 
+{% if switches %}
+<div class="grp">What {{ u.name }} may do</div>
+<p class="note">Everyone in the family is an Owner. Untick what this person must <b>not</b> do; it applies at their next click. Their own password, the System admin's settings, users and the audit log stay yours alone.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="switches">
+  {% for g in switches %}<div style="margin:8px 0 2px"><b>{{ g.group }}</b></div>
+  <div class="formgrid" style="max-width:none">{% for a in g.actions %}<label class="inline" style="display:flex;gap:6px;color:#1c2733;margin:2px 0"><input type="checkbox" name="on" value="{{ a.id }}"{% if a.on %} checked{% endif %}> {{ a.label }}</label>{% endfor %}</div>{% endfor %}
+  <div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save what {{ u.name }} may do</button></div>
+</form>
+{% endif %}
+
 <div class="grp">Role</div>
 {% if is_me %}<p class="hint">Your own role can't be changed here (another System admin can).</p>
 {% else %}

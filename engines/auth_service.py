@@ -169,6 +169,49 @@ def authenticate(email: str, password: str) -> tuple[bool, dict | None, str]:
         return True, _public(row), ""
 
 
+KEEP_PASSWORDS = 5          # a new password cannot be one of the person's last 5 (owner, 2026-10-08)
+
+
+def _remember(conn, user_id: int, password_hash: str) -> None:
+    """Keeps the stored (scrambled) password in the person's history, newest 5 only."""
+    conn.execute("INSERT INTO password_history (user_id, password_hash) VALUES (?, ?)", (user_id, password_hash))
+    conn.execute("DELETE FROM password_history WHERE user_id = ? AND history_id NOT IN (SELECT history_id FROM password_history WHERE user_id = ? ORDER BY history_id DESC LIMIT ?)",
+                 (user_id, user_id, KEEP_PASSWORDS))
+
+
+def _was_used(conn, user_id: int, password: str) -> bool:
+    return any(verify_password(password, r[0]) for r in conn.execute("SELECT password_hash FROM password_history WHERE user_id = ? ORDER BY history_id DESC LIMIT ?", (user_id, KEEP_PASSWORDS)))
+
+
+def get_restrictions(user_id: int) -> set[str]:
+    """The actions the System admin switched off for this person."""
+    with get_conn() as conn:
+        return {r[0] for r in conn.execute("SELECT action FROM user_restrictions WHERE user_id = ?", (user_id,))}
+
+
+def set_restrictions(user_id: int, denied: set[str]) -> tuple[bool, str]:
+    """The System admin saves what this person may NOT do (everything else they may). Never for a System admin. Audited with what changed."""
+    from engines.permissions import SWITCHES
+    _ok, _msg = require_permission('users.manage')
+    if not _ok:
+        return False, _msg
+    denied = {a for a in denied if a in SWITCHES}
+    with write_tx() as conn:
+        row = conn.execute("SELECT email, role FROM app_users WHERE user_id = ?", (user_id,)).fetchone()
+        if not row:
+            return False, "Account not found."
+        if row[1] == "admin":
+            return False, "The System admin can't be limited."
+        before = {r[0] for r in conn.execute("SELECT action FROM user_restrictions WHERE user_id = ?", (user_id,))}
+        if before == denied:
+            return True, "No change."
+        conn.execute("DELETE FROM user_restrictions WHERE user_id = ?", (user_id,))
+        for a in sorted(denied):
+            conn.execute("INSERT INTO user_restrictions (user_id, action, created_by) VALUES (?, ?, acting_user())", (user_id, a))
+        _audit(conn, "USER_LIMITS_CHANGED", user_id, f"{row[0]}: switched off now {sorted(denied) or 'nothing'}; newly off {sorted(denied - before) or 'none'}; back on {sorted(before - denied) or 'none'}")
+    return True, f"{row[0]}: saved. It applies at their next click."
+
+
 def change_password(user_id: int, old_password: str, new_password: str) -> tuple[bool, str]:
     with write_tx() as conn:
         conn.row_factory = __import__("sqlite3").Row
@@ -180,9 +223,11 @@ def change_password(user_id: int, old_password: str, new_password: str) -> tuple
         problem = password_problem(new_password, row["email"])
         if problem:
             return False, problem
-        if new_password == old_password:
-            return False, "Choose a different password from the current one."
-        conn.execute("UPDATE app_users SET password_hash = ?, must_change_password = 0 WHERE user_id = ?", (hash_password(new_password), user_id))
+        if new_password == old_password or _was_used(conn, user_id, new_password):
+            return False, f"Choose a password you have not used before (not any of your last {KEEP_PASSWORDS})."
+        new_hash = hash_password(new_password)
+        _remember(conn, user_id, row["password_hash"])                         # the one being replaced goes into the history
+        conn.execute("UPDATE app_users SET password_hash = ?, must_change_password = 0 WHERE user_id = ?", (new_hash, user_id))
         _audit(conn, "PASSWORD_CHANGED", user_id, row["email"], who=row["email"])
     return True, "Password changed."
 

@@ -14,7 +14,12 @@ Roles:  admin      the System admin (JRCR only): everything, including users and
 Levels in the table:  "Y" = may do it   "view" = may see, not change   "own" = only what this person created   None = no.
 Nothing is ever hard-deleted for any role: 'delete' means cancel, void or switch off, with a reason, and it stays in the audit log.
 
-  * can(role, action, created_by=None, me=None)  -- may this role do it (for "own": is it theirs)
+Per-person switches (owner, 2026-10-08): "all users are family members hence all owners. System admin is the supreme account. The system admin can limit
+privileges of the users." Everyone is an Owner; the System admin switches off, per person, the actions they may NOT do (table user_restrictions, shown grouped
+by workflow: WORKFLOW). can(), require() and allowed_pages() apply the switches of the person acting right now (engines/acting_user.py), so the Django menus and
+buttons, the /more/ screens and every engine guard obey them without any change where they are called. The System admin is never switched off.
+
+  * can(role, action, created_by=None, me=None)  -- may this role do it (for "own": is it theirs); False when it is switched off for the person acting
   * require(action, created_by=None)             -- the engines' guard: (ok, message), for whoever is acting right now (no one signed in = the owner, as in scripts and tests)
   * allowed_pages / filter_menu / may_search / hide_check_details -- what the menu and sidebar use"""
 from __future__ import annotations
@@ -84,12 +89,60 @@ PAGE_ACTION = {
 VIEW_PAGES = {"home", "price-lists", "purchase-orders", "payables-due"}
 
 
+# the per-person switches, in the order of the work (owner, 2026-10-08); every business action is in exactly one group. Home, own password and the System admin's
+# own actions (SYSTEM_ONLY) are never switches.
+WORKFLOW: list[tuple[str, list[str]]] = [
+    ("Buy", ["price.view", "price.write", "po.view", "po.create", "po.order", "po.cancel", "po.receive_goods", "committed.view"]),
+    ("Pay suppliers", ["po.receive", "invoice.enter", "payables_due.view", "check.park", "check.issue", "check.void", "creditors.edit", "calendar.mark"]),
+    ("Release", ["check.release"]),
+    ("Bank", ["bank.use"]),
+    ("Loans and cards", ["loans.use"]),
+    ("Records", ["search.use", "reports.use", "health.view"]),
+    ("Review", ["review.use", "po.ack_over_plan", "controls.view"]),
+    ("Sales", ["sales.use", "inventory.use"]),
+]
+SWITCHES = {a for _, acts in WORKFLOW for a in acts}
+_DENIED: dict = {}
+
+
+def denied_for(email: str | None) -> frozenset:
+    """The actions switched off for this person (none for the System admin, nobody signed in, or a database without the table). Read again whenever the
+    database changes (the same stamp the settings use), so a change by the System admin applies at the person's next click."""
+    if not email:
+        return frozenset()
+    from engines import common
+    from engines.settings_store import _stamp
+    key = (common.DB_PATH, email.strip().lower())
+    stamp = _stamp(common.DB_PATH)
+    hit = _DENIED.get(key)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    try:
+        with common.get_conn() as conn:
+            rows = conn.execute("""SELECT r.action FROM user_restrictions r JOIN app_users u ON u.user_id = r.user_id
+                                   WHERE lower(u.email) = ? AND u.role != 'admin'""", (key[1],)).fetchall()
+        out = frozenset(r[0] for r in rows if r[0] in SWITCHES)
+    except Exception:                                   # an older database without the table: nothing switched off
+        out = frozenset()
+    if len(_DENIED) > 200:
+        _DENIED.clear()
+    _DENIED[key] = (stamp, out)
+    return out
+
+
+def _switched_off(action: str) -> bool:
+    return action in SWITCHES and action in denied_for(acting_email())
+
+
 def level(role: str | None, action: str) -> str | None:
     return ACTIONS.get(action, {}).get("levels", {}).get(role or "")
 
 
 def can(role: str | None, action: str, created_by: str | None = None, me: str | None = None) -> bool:
-    """May this role do this? For 'own' the record must have been created by the same person (compare emails, ignoring case)."""
+    """May this role do this? For 'own' the record must have been created by the same person (compare emails, ignoring case).
+    False when the System admin switched the action off for the person acting now."""
+    if _switched_off(action):
+        return False
     lv = level(role, action)
     if lv == Y:
         return True
@@ -104,6 +157,8 @@ def require(action: str, created_by: str | None = None) -> tuple[bool, str]:
     if can(role, action, created_by, acting_email()):
         return True, ""
     what = ACTIONS.get(action, {}).get("label", action)
+    if _switched_off(action):
+        return False, f"The System admin has switched this off for you: {what}."
     if level(role, action) == OWN:
         return False, f"You can only change what you created yourself ({what})."
     if level(role, action) == VIEW:
@@ -122,6 +177,8 @@ def allowed_pages(role: str | None, all_pages: set[str]) -> set[str]:
             if role in ("admin", "owner"):
                 out.add(page)
             continue
+        if _switched_off(action):
+            continue
         lv = level(role, action)
         if lv in (Y, OWN) or (lv == VIEW and page in VIEW_PAGES):
             out.add(page)
@@ -138,12 +195,17 @@ def filter_menu(menu: dict[str, list[str]], role: str | None) -> dict[str, list[
 
 def may_search(role: str | None) -> bool:
     """'Search everything' reaches checks, invoices, batches and loans."""
-    return level(role, "search.use") == Y
+    return level(role, "search.use") == Y and not _switched_off("search.use")
 
 
 def hide_check_details(role: str | None) -> bool:
     """Check numbers, who collected a check and the like are for roles that handle checks."""
-    return level(role, "check.park") != Y
+    return level(role, "check.park") != Y or _switched_off("check.park")
+
+
+def switch_table(denied: set) -> list[dict]:
+    """The switches for one person's page: [{'group', 'actions': [{'id', 'label', 'on'}]}] in WORKFLOW order (on = may do it)."""
+    return [{"group": g, "actions": [{"id": a, "label": ACTIONS[a]["label"], "on": a not in denied} for a in acts if a in ACTIONS]} for g, acts in WORKFLOW]
 
 
 def matrix_table() -> list[dict]:

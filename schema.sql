@@ -1022,6 +1022,23 @@ CREATE TABLE IF NOT EXISTS app_users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- SECURITY AND ROLES (owner, 2026-10-08, migration 076): everyone is an Owner; the System admin switches off, per person, what they may NOT do.
+-- A new password cannot be one of the person's last 5.
+CREATE TABLE IF NOT EXISTS user_restrictions (
+    user_id INTEGER NOT NULL REFERENCES app_users(user_id),
+    action TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT,
+    PRIMARY KEY (user_id, action)
+);
+CREATE TABLE IF NOT EXISTS password_history (
+    history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES app_users(user_id),
+    password_hash TEXT NOT NULL,
+    changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_password_history_user ON password_history (user_id, history_id);
+
 -- REVIEW LIST (2026-10-03). Applied by update_database.bat (schema.sql carries the table; this file is the record).
 -- Controls guide and record; they rarely block. A step that breaks a duty rule (the same person ordered and received, received and matched), a new payee, or a price far above
 -- its order goes through at once and lands here for the System admin or an owner to tick off. Nothing is deleted: a ticked flag keeps who ticked it and when.
