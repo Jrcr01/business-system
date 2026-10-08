@@ -24,10 +24,12 @@ def _uploads() -> Path:
     return Path(d.DB_PATH).resolve().parent / "web_uploads"
 
 
-def _suppliers() -> list[tuple[int, str]]:
+def _suppliers(with_prices: bool = False) -> list[tuple[int, str]]:
+    """Active suppliers. with_prices: only those with a price list (an active price row), for a new purchase order (owner, 2026-10-08)."""
     from engines.common import get_conn
+    has = " AND EXISTS (SELECT 1 FROM supplier_price_list p WHERE p.creditor_id = c.creditor_id AND p.is_active = 1)" if with_prices else ""
     with get_conn() as conn:
-        return [(int(r[0]), r[1]) for r in conn.execute("SELECT creditor_id, creditor_name FROM creditors WHERE creditor_type = 'SUPPLIER' AND is_active = 1 ORDER BY creditor_name")]
+        return [(int(r[0]), r[1]) for r in conn.execute(f"SELECT creditor_id, creditor_name FROM creditors c WHERE creditor_type = 'SUPPLIER' AND is_active = 1{has} ORDER BY creditor_name")]
 
 
 def _date(text, default: date | None = None) -> date | None:
@@ -112,8 +114,10 @@ def _import_ctx(request, cid: int) -> dict:
             r["status_text"] = STATUS_TEXT.get(r["status"], r["status"])
             by_cat.setdefault(r["category"], []).append(r)
     summary = cmp["status"].value_counts().to_dict() if cmp is not None else {}
+    sc = pt.supplier_check(cid, parsed)
     return {"file": token, "start": start, "parsed": parsed, "by_cat": by_cat, "summary": [(STATUS_TEXT[k], summary.get(k, 0)) for k in ("new", "changed", "same", "missing")],
-            "n_rows": len(parsed["rows"])}
+            "n_rows": len(parsed["rows"]) if sc["level"] != "mismatch" else 0, "sc": sc, "mismatch": pt.mismatch_message(sc) if sc["level"] == "mismatch" else "",
+            "brands": sorted(parsed.get("brands", {}).items(), key=lambda kv: -kv[1])}
 
 
 def _discounts_ctx(request, cid: int) -> dict:

@@ -11,7 +11,7 @@ from engines import product_catalog as pc
 from engines.price_list_service import price_on
 
 DAY = date(2026, 9, 15)
-H = ["Category", "Brand", "Model/Pattern", "Size", "Other specs", "Unit", "Supplier item code", "List price", "Effective date"]
+H = ["Supplier", "Category", "Brand", "Model/Pattern", "Size", "Other specs", "Unit", "Supplier item code", "List price", "Effective date"]
 GOOD = [["Tires", "Westlake", "SL369", "285/50R20", "A/T", "pc", "WL-1", 7600, DAY],
         ["tire", "Westlake", "SA57", "305/35R24", "", "pc", "", "8,400", "2026-09-15"],
         ["Battery", "Motolite", "NS60", "", "12V 45Ah L", "pc", "", 4200, DAY],
@@ -19,11 +19,15 @@ GOOD = [["Tires", "Westlake", "SL369", "285/50R20", "A/T", "pc", "WL-1", 7600, D
         ["Rims", "Westlake", "", "8.25x22.5", "10H TL", "pc", "", 4150, DAY]]
 
 
-def _file(rows, creditor_id=None) -> bytes:
+def _file(rows, creditor_id=None, supplier=None) -> bytes:
+    """GOOD-style rows (no Supplier) written from the Category column on; `supplier` in the Supplier column of every row."""
     wb = load_workbook(io.BytesIO(pt.build_template(creditor_id)))
     ws = wb[pt.SHEET]
-    for r, vals in enumerate(rows, start=ws.max_row + 1):
-        for j, v in enumerate(vals, start=1):
+    start = 2 if ws.cell(row=2, column=2).value is None else ws.max_row + 1     # a supplier template may carry only the supplier's name on row 2
+    for r, vals in enumerate(rows, start=start):
+        if supplier:
+            ws.cell(row=r, column=1, value=supplier)
+        for j, v in enumerate(vals, start=2):
             ws.cell(row=r, column=j, value=v)
     buf = io.BytesIO()
     wb.save(buf)
@@ -48,7 +52,13 @@ def test_rows_are_read_into_the_same_products_as_the_older_sheets():
 
 def test_the_same_product_is_found_ignoring_spaces_dashes_and_capitals():
     parsed = pt.parse_workbook(_file([GOOD[0], ["TIRES", "west-lake", "sl 369", "285/50 R20", "a/t", "pc", "", 7700, DAY]]))
-    assert any("the same product and date appears twice" in p for p in parsed["problems"])
+    assert parsed["problems"] == ["Price list row 3: the same product and date as row 2, but a different price (7,600.00 there): keep the right one."]
+
+
+def test_an_exact_repeated_row_is_skipped_with_a_note_not_a_problem():
+    parsed = pt.parse_workbook(_file([GOOD[0], GOOD[2], GOOD[0]]))                 # an AI-filled file wrote the same line twice
+    assert parsed["problems"] == [] and len(parsed["rows"]) == 2
+    assert parsed["notes"] == ["Price list row 4: the same as row 2 (same product, date and price), so it is skipped."]
 
 
 def test_specs_not_recognised_stay_with_the_item_and_tell_it_apart():
@@ -106,3 +116,26 @@ def test_rekey_recomputes_keys_with_every_spec_and_never_merges(db):
     assert fetchone(db, "SELECT key FROM items WHERE brand = 'Motolite'")[0] == "battery|motolite|ns60|l"   # only a report without --apply
     assert pc.rekey_items(apply=True)["changed"] == 1 and pc.rekey_items()["changed"] == 0
     assert "45" in fetchone(db, "SELECT key FROM items WHERE brand = 'Motolite'")[0]
+
+
+def test_the_supplier_in_the_file_must_be_the_one_chosen(db):
+    nc = make_creditor(db, name="New Century City Marketing Corp.")
+    amk = make_creditor(db, name="AMK Auto Parts and Accessories Trading")
+    assert pt.same_supplier("NEW CENTURY", "New Century City Marketing Corp.") and pt.same_supplier("new-century city marketing corp", "New Century City Marketing Corp.")
+    assert not pt.same_supplier("New Century", "AMK Auto Parts and Accessories Trading")
+    parsed = pt.parse_workbook(_file(GOOD, supplier="New Century"))
+    assert parsed["suppliers"] == ["New Century"] and parsed["brands"] == {"Westlake": 3, "Motolite": 1, "Enkei": 1}
+    assert pt.supplier_check(nc, parsed)["level"] == "ok"
+    assert pt.supplier_check(amk, parsed)["level"] == "mismatch"
+    ok, msg, _ = pt.import_workbook(amk, parsed)
+    assert not ok and "you chose AMK Auto Parts and Accessories Trading" in msg and "Nothing was saved" in msg
+    assert fetchone(db, "SELECT COUNT(*) FROM supplier_price_list")[0] == 0
+    assert pt.import_workbook(nc, parsed)[0]
+    assert pt.supplier_check(nc, pt.parse_workbook(_file(GOOD)))["level"] == "none"          # an older file: a warning only
+
+
+def test_a_supplier_template_names_the_supplier_even_with_no_prices_yet(db):
+    nc = make_creditor(db, name="New Century City Marketing Corp.")
+    wb = load_workbook(io.BytesIO(pt.build_template(nc)))
+    assert wb[pt.SHEET].cell(row=2, column=1).value == "New Century City Marketing Corp."
+    assert pt.parse_workbook(pt.build_template(nc))["problems"] == ["The file has no product rows."]          # the name alone is not a product row

@@ -27,12 +27,14 @@ from engines.permissions import require as require_permission
 MAX_ROWS = 2000
 # the one standard sheet for every product (owner, 2026-10-08); the older workbook with a sheet per category is still read
 SHEET = "Price list"
-STANDARD = [("category", "Category", True), ("brand", "Brand", True), ("model", "Model/Pattern", False), ("size", "Size", False), ("other", "Other specs", False),
+STANDARD = [("supplier", "Supplier", False), ("category", "Category", True), ("brand", "Brand", True), ("model", "Model/Pattern", False), ("size", "Size", False), ("other", "Other specs", False),
             ("unit", "Unit", False), ("supplier_code", "Supplier item code", False), ("list_price", "List price", True), ("effective_date", "Effective date", False)]
 STANDARD_HOW_TO = [
     "How to fill this price list",
     "",
     "1. One sheet, 'Price list', one row per product, for every kind of product. Columns marked * must be filled.",
+    "   Supplier: the supplier's name exactly as on its price list (e.g. New Century City Marketing Corp.), on every row. One file = one supplier.",
+    "   The system refuses the file if it is uploaded for a different supplier.",
     "2. Category: Tires, Battery, Mags or Rims.",
     "3. Model/Pattern: the tire pattern (SL369), the battery model (NS60), the mag model (RPF1).  Size: 285/50R20, 17x7.5, 8.25x22.5 (batteries: leave empty).",
     "4. Other specs: everything else, separated by spaces, e.g.  tires: 10PR A/T LT TL   batteries: 12V 45Ah L MF   mags: 5x114.3 ET40 Silver   rims: 10H TL.",
@@ -129,11 +131,12 @@ def _build_standard(creditor_id: int | None, on: date | None) -> bytes:
     ws.row_dimensions[1].height = 32
     ws.freeze_panes = "A2"
     current = _current_rows(creditor_id, on or manila_today(), with_remark=True) if creditor_id else {}
+    supplier = _supplier_name(creditor_id) if creditor_id else ""
     r = 2
     for category in pc.CATEGORIES:
         for row in current.get(category, []):
             model, size, other = pc.other_specs_text(category, row, row.get("item_remark", ""))
-            vals = {"category": category, "brand": row["brand"], "model": model, "size": size, "other": other, "unit": row["unit"],
+            vals = {"supplier": supplier, "category": category, "brand": row["brand"], "model": model, "size": size, "other": other, "unit": row["unit"],
                     "supplier_code": row["supplier_code"], "list_price": row["list_price"], "effective_date": row["effective_date"]}
             for j, (key, _, _) in enumerate(STANDARD, start=1):
                 v = vals.get(key, "")
@@ -143,9 +146,49 @@ def _build_standard(creditor_id: int | None, on: date | None) -> bytes:
                 if key == "list_price":
                     cell.number_format = "#,##0.00"
             r += 1
+    if supplier and r == 2:                                     # no prices yet: the supplier's name on the first row shows who the file is for
+        ws.cell(row=2, column=1, value=supplier)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def _supplier_name(creditor_id: int) -> str:
+    with get_conn() as conn:
+        row = conn.execute("SELECT creditor_name FROM creditors WHERE creditor_id = ?", (creditor_id,)).fetchone()
+    return row[0] if row else ""
+
+
+_COMPANY_WORDS = {"corp", "corporation", "inc", "incorporated", "co", "company", "trading", "enterprises", "enterprise", "ltd", "the", "and"}
+
+
+def _name_words(name: str) -> list[str]:
+    import re
+    return [w for w in re.findall(r"[a-z0-9]+", (name or "").lower()) if w not in _COMPANY_WORDS]
+
+
+def same_supplier(file_name: str, creditor_name: str) -> bool:
+    """Is the supplier named in the file the one chosen? Ignoring capitals, spaces and punctuation, and words like Corp., Inc., Trading; a shortened name
+    counts ('New Century' = 'New Century City Marketing Corp.')."""
+    a, b = _name_words(file_name), _name_words(creditor_name)
+    if not a or not b:
+        return False
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    return long_[:len(short)] == short
+
+
+def supplier_check(creditor_id: int, parsed: dict) -> dict:
+    """Who the file says it is for, against the supplier chosen (owner, 2026-10-08: a file uploaded for the wrong supplier is refused).
+    {'level': 'ok' | 'none' (the file does not say: a warning) | 'mismatch' (refused), 'names': [names in the file], 'chosen': name}."""
+    chosen = _supplier_name(creditor_id)
+    names = parsed.get("suppliers", [])
+    if not names:
+        return {"level": "none", "names": [], "chosen": chosen}
+    return {"level": "ok" if all(same_supplier(n, chosen) for n in names) else "mismatch", "names": names, "chosen": chosen}
+
+
+def mismatch_message(sc: dict) -> str:
+    return f"This file is for {', '.join(sc['names'])}, but you chose {sc['chosen']}. Pick the right supplier and check the file again. Nothing was saved."
 
 
 def _current_rows(creditor_id: int, on: date, with_remark: bool = False) -> dict[str, list[dict]]:
@@ -181,7 +224,7 @@ def _current_rows(creditor_id: int, on: date, with_remark: bool = False) -> dict
 def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
     """Reads the template. Returns {'rows': [valid rows], 'problems': ['Tires row 14: ...'], 'counts': {sheet: rows read}, 'sheets_missing': [...]}.
     A row with any problem is not in 'rows'; a blank row is skipped silently. Never raises."""
-    out = {"rows": [], "problems": [], "counts": {}, "sheets_missing": []}
+    out = {"rows": [], "problems": [], "counts": {}, "sheets_missing": [], "notes": [], "suppliers": [], "brands": {}}
     try:
         wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
     except Exception as e:
@@ -189,7 +232,7 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
         return out
     seen: set[tuple] = set()
     if SHEET in wb.sheetnames:
-        _parse_standard(list(wb[SHEET].iter_rows(values_only=True)), default_date, out, seen)
+        _parse_standard(list(wb[SHEET].iter_rows(values_only=True)), default_date, out, {})
         if not out["rows"] and not out["problems"]:
             out["problems"].append("The file has no product rows.")
         return out
@@ -249,6 +292,7 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
             if bad:
                 out["problems"].append(f"{where}: " + "; ".join(bad) + ".")
                 continue
+            out["brands"][brand] = out["brands"].get(brand, 0) + 1
             out["rows"].append({"category": category, "row": rno, "brand": brand, "values": values, "supplier_code": pc._clean(cell("supplier_code")), "unit": pc._clean(cell("unit")),
                                 "list_price": price, "effective_date": when, "remarks": pc._clean(cell("remarks")),
                                 "name": pc.standard_name(category, brand, **values)})
@@ -258,8 +302,10 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
     return out
 
 
-def _parse_standard(rows: list, default_date: date | None, out: dict, seen: set) -> None:
-    """The one standard sheet: rows named 'Price list row 14: ...'. Each row is read into its category's fields (product_catalog.split_other_specs)."""
+def _parse_standard(rows: list, default_date: date | None, out: dict, seen: dict) -> None:
+    """The one standard sheet: rows named 'Price list row 14: ...'. Each row is read into its category's fields (product_catalog.split_other_specs).
+    seen: (category, product key, date) -> (row, price) of the first row. A later row exactly like it is skipped with a note (out['notes']); the same product
+    and date at another price is a problem, since only the owner knows which price is right."""
     if not rows:
         return
     by_title = {" ".join(str(h or "").replace("*", "").split()).lower(): i for i, h in enumerate(rows[0])}
@@ -275,8 +321,11 @@ def _parse_standard(rows: list, default_date: date | None, out: dict, seen: set)
             if isinstance(v, float) and v == int(v) and k not in ("list_price",):
                 v = "%g" % v
             return "" if v is None else (v if isinstance(v, (int, float, date)) and not isinstance(v, bool) else str(v).strip())
-        if not any(str(v).strip() for v in row if v is not None):
-            continue
+        sup = pc._clean(cell("supplier"))
+        if sup and sup.lower() not in (s.lower() for s in out["suppliers"]):
+            out["suppliers"].append(sup)
+        if not any(str(v).strip() for i, v in enumerate(row) if v is not None and i != idx.get("supplier")):
+            continue                                            # a blank row (or only the supplier's name, as on a fresh supplier template)
         where, bad = f"{SHEET} row {rno}", []
         raw_cat = cell("category")
         category = pc.category_of(raw_cat)
@@ -303,12 +352,18 @@ def _parse_standard(rows: list, default_date: date | None, out: dict, seen: set)
             bad.append(f"Effective date '{raw_date}' could not be read" if raw_date != "" else "Effective date is empty (or pick a start date when uploading)")
         if not bad:
             key = (category, pc.product_key(category, brand, remark, **values), str(when))
-            if key in seen:
-                bad.append("the same product and date appears twice in the file")
-            seen.add(key)
+            first = seen.get(key)
+            if first is not None and abs(first[1] - price) < 0.005:          # an exact repeat (an AI-filled file may write a line twice): skipped, not a problem
+                out["notes"].append(f"{where}: the same as row {first[0]} (same product, date and price), so it is skipped.")
+                continue
+            if first is not None:
+                bad.append(f"the same product and date as row {first[0]}, but a different price ({first[1]:,.2f} there): keep the right one")
+            else:
+                seen[key] = (rno, price)
         if bad:
             out["problems"].append(f"{where}: " + "; ".join(bad) + ".")
             continue
+        out["brands"][brand] = out["brands"].get(brand, 0) + 1
         out["rows"].append({"category": category, "row": rno, "brand": brand, "values": values, "item_remark": remark, "supplier_code": pc._clean(cell("supplier_code")),
                             "unit": pc._clean(cell("unit")), "list_price": price, "effective_date": when, "remarks": "",
                             "name": pc.standard_name(category, brand, **values) + (f" {remark}" if remark else "")})
@@ -348,6 +403,9 @@ def import_workbook(creditor_id: int, parsed: dict, on_duplicate: str = "skip") 
         return False, _msg, {}
     if not parsed["rows"]:
         return False, "No rows to save.", {}
+    sc = supplier_check(creditor_id, parsed)
+    if sc["level"] == "mismatch":                               # never saved under the wrong supplier (owner, 2026-10-08)
+        return False, mismatch_message(sc), {}
     cmp = compare(creditor_id, parsed)
     same = {(r.category, r.row) for r in cmp.itertuples() if r.status == "same"}
     counts = {"added": 0, "replaced": 0, "skipped": 0, "products": 0, "kept_old": 0}

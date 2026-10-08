@@ -3,7 +3,8 @@
 {% block content %}
 {% with page_kind="new" %}{% include "buying/_po_head.html" %}{% endwith %}
 {% if not suppliers %}
-<div class="later-box"><p>No supplier yet. Add one under <a href="/creditors/new/">Set-up → Creditors</a>.</p></div>
+<div class="later-box"><p>No supplier has a price list yet. Orders are made only from a supplier's price list: upload its prices on <a href="/price-lists/">Price lists</a> first
+  (a new supplier is added under <a href="/creditors/new/">Set-up → Creditors</a>).</p></div>
 {% else %}
 <p class="note">Choose the supplier and the dates, and the first item. That saves the draft; you add the other items on the next screen.</p>
 <form method="get" action="/purchase-orders/new/" class="bar">

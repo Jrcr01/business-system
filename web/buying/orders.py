@@ -204,9 +204,14 @@ def order_new(request):
     if not _can(request, "po.create", request.slicks_user["email"]):
         from core.menu import PAGES
         return render(request, "core/not_allowed.html", {"page": PAGES["purchase-orders"]}, status=403)
-    suppliers = _suppliers()
+    suppliers = _suppliers(with_prices=True)                    # only suppliers with a price list can be ordered from (owner, 2026-10-08)
     p = request.POST if request.method == "POST" else request.GET
     cid = int(p.get("s") or (suppliers[0][0] if suppliers else 0) or 0)
+    if cid and cid not in dict(suppliers):
+        _say(request, False, "That supplier has no price list yet. Add its prices on Price lists first.")
+        cid = suppliers[0][0] if suppliers else 0
+        if request.method == "POST":
+            return redirect("/purchase-orders/new/")
     order_day = _date(p.get("order_date"), manila_today())
     delivery = _date(p.get("delivery")) or (default_delivery(cid, order_day) if cid else order_day + timedelta(days=7))
     if request.method == "POST" and p.get("action") == "start":

@@ -100,3 +100,14 @@ def test_the_month_calendar_adds_up_what_is_committed(db):
     assert cell["total"] == 9000.0 and cell["level"] == "near" and cell["selected"] and "Acme Tires" in cell["payees"]
     assert all(c["closed"] for w in cal["weeks"] for c in w if c["day"].weekday() >= 5)
     assert cal["weeks"][0][0]["day"].weekday() == 0 and len({len(w) for w in cal["weeks"]}) == 1
+
+
+def test_new_order_lists_only_suppliers_with_a_price_list(web, db):
+    _admin(web)
+    priced = _supplier_with_price(web, db)
+    bare = make_creditor(db, "No Prices Yet Trading")
+    page = web.get("/purchase-orders/new/").content.decode()
+    assert "Goodyear Philippines" in page and "No Prices Yet Trading" not in page
+    r = web.post("/purchase-orders/new/", {"s": bare, "action": "start", "order_date": "2026-10-01", "delivery": "2026-10-08", "item": "Eagle F1", "qty": "1"}, follow=True)
+    assert b"has no price list yet" in r.content and fetchone(_db(), "SELECT COUNT(*) FROM purchase_orders")[0] == 0
+    assert _start(web, priced)

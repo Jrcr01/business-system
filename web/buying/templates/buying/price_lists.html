@@ -65,7 +65,7 @@
   </form>
 
 {% elif tab == "import" %}
-  <p class="note">Download the template, fill its one sheet (one row per product: Category, Brand, Model/Pattern, Size, Other specs, Unit, Supplier item code, List price, Effective date), and upload it. Older files with a sheet per category still work. You see every line first; nothing is saved until you press Import.
+  <p class="note">Download the template, fill its one sheet (one row per product: Supplier, Category, Brand, Model/Pattern, Size, Other specs, Unit, Supplier item code, List price, Effective date), and upload it. Older files with a sheet per category still work. You see every line first; nothing is saved until you press Import.
     List prices only: the supplier's discount is set on the Discounts tab.</p>
   <div class="actions"><a class="btn small ghost" href="/price-lists/template/"><span class="ms">download</span>Blank template</a>
     <a class="btn small ghost" href="/price-lists/template/?s={{ cid }}"><span class="ms">edit_note</span>Template with this supplier's prices</a></div>
@@ -77,9 +77,13 @@
   <p class="hint">"Prices start on" is used for every row that has no Effective date of its own.</p>
   {% if file %}
     <div class="grp">The file, before anything is saved</div>
-    <div class="msg warning"><b>These prices are for {{ supplier }}.</b> If that is the wrong supplier, pick the right one above and check the file again.</div>
+    {% if sc.level == "mismatch" %}<div class="msg error"><b>Wrong supplier.</b> {{ mismatch }}</div>
+    {% elif sc.level == "ok" %}<div class="msg success"><b>The file is for {{ sc.names|join:", " }}</b>: it matches {{ supplier }}.</div>
+    {% else %}<div class="msg warning"><b>The file does not say which supplier it is for.</b> These prices would be saved for <b>{{ supplier }}</b>: make sure that is right. (Newer templates have a Supplier column.)</div>{% endif %}
     <p>Rows read: {% for k, v in parsed.counts.items %}{{ k }} {{ v }}{% if not forloop.last %}, {% endif %}{% empty %}no sheets read{% endfor %}.
       {% for label, n in summary %}<b>{{ n }}</b> {{ label }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+    {% if brands %}<p>By brand: {% for b, n in brands %}{{ b }} <b>{{ n }}</b>{% if not forloop.last %} · {% endif %}{% endfor %} <span class="hint">— compare with the supplier's price lists.</span></p>{% endif %}
+    {% if parsed.notes %}<div class="msg"><b>{{ parsed.notes|length }} repeated row(s) skipped</b> (each is exactly like an earlier row):<ul>{% for n in parsed.notes %}<li>{{ n }}</li>{% endfor %}</ul></div>{% endif %}
     {% if parsed.problems %}<div class="msg warning"><b>{{ parsed.problems|length }} problem(s): these rows are not saved until fixed.</b><ul>{% for pr in parsed.problems %}<li>{{ pr }}</li>{% endfor %}</ul></div>{% endif %}
     {% for cat, lines in by_cat.items %}
       <div class="grp">{{ cat }}</div>
