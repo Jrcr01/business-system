@@ -27,11 +27,13 @@ def test_one_product_however_it_is_spelled_and_each_gets_its_own_sku(db):
     assert fetchone(db, "SELECT COUNT(*) FROM audit_logs WHERE user_action = 'INV_ITEM_ADDED'")[0] == 3
 
 
-def test_the_identity_is_the_identity_fields_only(db):
+def test_every_spec_is_part_of_the_identity(db):
+    """Owner, 2026-10-08: same category + brand + model + size + other specs = the same product (before, type, tube and a battery's Ah did not count)."""
     a = pc.get_or_create_product("Tires", "Westlake", size="285/50R20", pattern="SL369", type="PCR")[0]
-    assert pc.get_or_create_product("Tires", "Westlake", size="285/50R20", pattern="SL369", type="LT", tube="TL")[0] == a        # type and tube do not split a product
-    assert pc.get_or_create_product("Tires", "Westlake", size="285/50R20", pattern="SL369", ply="10PR")[0] != a                 # ply does
-    assert pc.get_or_create_product("Battery", "Motolite", model="NS60", ah="45", terminal="L")[0] == pc.get_or_create_product("Battery", "Motolite", model="NS60", ah="60", terminal="L")[0]
+    assert pc.get_or_create_product("Tires", "WESTLAKE", size="285/50 r20", pattern="sl-369", type="pcr")[0] == a                  # spaces, dashes, capitals don't
+    assert pc.get_or_create_product("Tires", "Westlake", size="285/50R20", pattern="SL369", type="LT", tube="TL")[0] != a
+    assert pc.get_or_create_product("Tires", "Westlake", size="285/50R20", pattern="SL369", ply="10PR")[0] != a
+    assert pc.get_or_create_product("Battery", "Motolite", model="NS60", ah="45", terminal="L")[0] != pc.get_or_create_product("Battery", "Motolite", model="NS60", ah="60", terminal="L")[0]
 
 
 def test_the_suppliers_own_code_is_remembered_and_a_blank_never_erases_it(db):
