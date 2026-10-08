@@ -97,6 +97,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "core.cfaccess.AccessMiddleware",                      # zero trust: a valid Cloudflare Access pass on every request, when WEB_CF_TEAM / WEB_CF_AUD are set
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -111,6 +112,14 @@ STATIC_URL = "static/"
 STATIC_ROOT = Path(os.environ.get("WEB_STATIC_ROOT") or WEB_DIR / "staticfiles")
 # where the Streamlit screens are on the server (go-live side by side, 2026-10-03): a page not moved to Django yet links there; empty on the laptop
 STREAMLIT_URL = os.environ.get("WEB_STREAMLIT_URL", "")
+# Cloudflare Access (owner, 2026-10-08): the team name (yourteam.cloudflareaccess.com) and this application's audience tag; empty = not checked (laptop, tests)
+CF_ACCESS_TEAM = os.environ.get("WEB_CF_TEAM", "").strip()
+CF_ACCESS_AUD = os.environ.get("WEB_CF_AUD", "").strip()
+_CF_FILE = Path(DB_PATH).parent / "cf_access.txt"             # or two lines, team then audience, in this file beside the database (writable by the deploy user; the env file is root's)
+if not (CF_ACCESS_TEAM and CF_ACCESS_AUD) and _CF_FILE.exists():
+    _lines = [ln.strip() for ln in _CF_FILE.read_text(encoding="utf-8").splitlines() if ln.strip() and not ln.startswith("#")]
+    if len(_lines) >= 2:
+        CF_ACCESS_TEAM, CF_ACCESS_AUD = _lines[0], _lines[1]
 STATICFILES_DIRS = [("assets", REPO_ROOT / "assets")]      # the Slick's logo, shared with Streamlit
 WHITENOISE_USE_FINDERS = DEBUG or not _SERVER_HOSTS          # on the laptop the CSS and logo are served straight from the project (the server runs collectstatic)
 STORAGES = {

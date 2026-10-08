@@ -12,6 +12,7 @@ import hashlib
 import time
 from urllib.parse import quote
 
+from django.http import HttpResponse
 from django.shortcuts import redirect
 
 OPEN = ("/static/", "/health/")
@@ -57,6 +58,11 @@ class SignInMiddleware:
                 return self.get_response(request)
             return redirect("/login/" + (f"?next={quote(path)}" if path not in ("/", "/logout/") else ""))
         request.slicks_user = user
+        cf = getattr(request, "cf_email", None)
+        if cf and cf != user["email"].strip().lower():          # Cloudflare knows this person as someone else: sign this account out, never mix two people
+            request.session.flush()
+            from django.utils.html import escape
+            return HttpResponse(f"Cloudflare has you as {escape(cf)}, but this account is {escape(user['email'])}. Sign in with your own email. <a href='/login/'>Sign in</a>", status=403)
         if user["must_change_password"] and path not in ("/password/", "/logout/"):
             return redirect("/password/")
         started = time.perf_counter()

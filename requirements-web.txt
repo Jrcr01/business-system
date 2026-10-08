@@ -9,3 +9,5 @@ tzdata==2026.3
 whitenoise==6.12.0      # serves the CSS and the logo on the server
 gunicorn==26.2.0        # the web server on the Linux server (several workers = many people at once)
 packaging==26.3         # needed by gunicorn
+PyJWT==2.15.1          # checks the Cloudflare Access pass (zero trust)
+cryptography==50.0.1
