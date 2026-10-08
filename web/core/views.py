@@ -66,13 +66,13 @@ def setup(request):
     from engines.auth_service import create_owner, get_user, needs_setup
     if not needs_setup():
         return redirect("/login/")
-    form = {"email": "", "name": ""}
+    form = {"email": "", "name": "", "username": ""}
     if request.method == "POST":
-        form = {"email": request.POST.get("email", ""), "name": request.POST.get("name", "")}
+        form = {"email": request.POST.get("email", ""), "name": request.POST.get("name", ""), "username": request.POST.get("username", "")}
         if request.POST.get("password", "") != request.POST.get("password2", ""):
             messages.error(request, "The two passwords are not the same.")
         else:
-            ok, msg, uid = create_owner(form["email"], form["name"], request.POST.get("password", ""))
+            ok, msg, uid = create_owner(form["email"], form["name"], request.POST.get("password", ""), form["username"])
             if ok:
                 return _half_signed_in(request, get_user(uid))
             messages.error(request, msg)
@@ -84,14 +84,14 @@ def login(request):
     nxt = request.GET.get("next") or request.POST.get("next") or "/"
     if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
         nxt = "/"
-    email = ""
+    username = ""
     if request.method == "POST":
-        email = request.POST.get("email", "")
-        ok, user, msg = authenticate(email, request.POST.get("password", ""), where="web")
+        username = request.POST.get("username", "")
+        ok, user, msg = authenticate(username, request.POST.get("password", ""), where="web")     # the username, never the email (owner, 2026-10-08)
         if ok:
             return _half_signed_in(request, user, nxt)
         messages.error(request, msg)
-    return render(request, "core/login.html", {"email": email, "next": nxt})
+    return render(request, "core/login.html", {"username": username, "next": nxt})
 
 
 def code(request):

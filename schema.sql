@@ -1022,8 +1022,10 @@ CREATE TABLE IF NOT EXISTS app_users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     totp_secret TEXT,               -- the 6-digit sign-in code's key (migration 077); NULL = not set up
     totp_enabled_at DATETIME,       -- confirmed with a first correct code
-    totp_last_step INTEGER          -- the last code used, so the same code never works twice
+    totp_last_step INTEGER,         -- the last code used, so the same code never works twice
+    username TEXT                   -- what the person signs in with (owner, 2026-10-08: a username, not the email); lowercase, unique
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_username ON app_users (username);
 
 -- SECURITY AND ROLES (owner, 2026-10-08, migration 076): everyone is an Owner; the System admin switches off, per person, what they may NOT do.
 -- A new password cannot be one of the person's last 5.

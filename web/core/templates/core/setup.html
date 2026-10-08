@@ -6,7 +6,8 @@
   <h2>Create the System admin account</h2>
   <p class="note">Nobody has an account yet. This first account is the System admin; it adds everyone else later.</p>
   <label for="name">Your name</label><input id="name" type="text" name="name" value="{{ form.name }}" required>
-  <label for="email">Email</label><input id="email" type="email" name="email" value="{{ form.email }}" autocomplete="username" required>
+  <label for="username">Username (what you sign in with)</label><input id="username" type="text" name="username" value="{{ form.username }}" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+  <label for="email">Email (for records; not used to sign in)</label><input id="email" type="email" name="email" value="{{ form.email }}" autocomplete="email" required>
   <label for="password">Password</label><input id="password" type="password" name="password" autocomplete="new-password" required>
   <label for="password2">Password again</label><input id="password2" type="password" name="password2" autocomplete="new-password" required>
   <p class="note">At least 8 characters, with a letter and a digit.</p>

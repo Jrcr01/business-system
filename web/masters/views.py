@@ -171,9 +171,9 @@ def settings_users(request):
     from engines.permissions import ROLE_LABEL, ROLES
     shown = None
     if request.method == "POST":
-        ok, msg, uid, temp = au.create_user(request.POST.get("email", ""), request.POST.get("name", ""), request.POST.get("role", ""))
+        ok, msg, uid, temp = au.create_user(request.POST.get("email", ""), request.POST.get("name", ""), request.POST.get("role", ""), request.POST.get("username", ""))
         if ok:
-            shown = (request.POST.get("email", "").strip().lower(), temp)
+            shown = (au.get_user(uid)["username"], temp)
             messages.success(request, msg)
         else:
             messages.error(request, msg)
@@ -209,6 +209,8 @@ def settings_user(request, user_id: int):
             from engines.permissions import SWITCHES
             allowed = set(request.POST.getlist("on"))
             ok, msg = au.set_restrictions(user_id, set(SWITCHES) - allowed)
+        elif what == "username":
+            ok, msg = au.set_username(user_id, request.POST.get("username", ""))
         elif what == "reset_code":
             ok, msg = au.reset_totp(user_id)
         else:

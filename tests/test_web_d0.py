@@ -26,9 +26,15 @@ def _code_step(c, r, email):
     return c.post(r["Location"], {"code": code_for(email)})
 
 
+def username_of(email):
+    from engines.common import get_conn
+    with get_conn() as conn:
+        return conn.execute("SELECT username FROM app_users WHERE email = ?", (email,)).fetchone()[0]
+
+
 def login(c, email, password=PW, nxt=None):
-    """Sign in the whole way: password, then the 6-digit code."""
-    r = c.post("/login/", {"email": email, "password": password, **({"next": nxt} if nxt else {})})
+    """Sign in the whole way: the person's username (owner, 2026-10-08: never the email), password, then the 6-digit code."""
+    r = c.post("/login/", {"username": username_of(email), "password": password, **({"next": nxt} if nxt else {})})
     return _code_step(c, r, email)
 
 
@@ -96,8 +102,8 @@ def test_wrong_password_and_the_way_back_to_the_page_asked_for(web):
     web.post("/logout/")
     r = web.get("/lenders/")
     assert r["Location"] == "/login/?next=/lenders/"
-    r = web.post("/login/", {"email": "admin@slicks.test", "password": "nope12345", "next": "/lenders/"})
-    assert r.status_code == 200 and b"Wrong email or password." in r.content
+    r = web.post("/login/", {"username": "admin", "password": "nope12345", "next": "/lenders/"})
+    assert r.status_code == 200 and b"Wrong username or password." in r.content
     r = login(web, "admin@slicks.test", nxt="/lenders/")
     assert r["Location"] == "/lenders/"
     web.post("/logout/")

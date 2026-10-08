@@ -26,7 +26,7 @@ MAX_TRIES = 5
 LOCK_MINUTES = 15
 _N, _R, _P = 2 ** 14, 8, 1
 _TEMP_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"       # no 0/O/1/l/I: it is read out or typed from paper
-WRONG = "Wrong email or password."
+WRONG = "Wrong username or password."
 
 
 # --- passwords ----------------------------------------------------------------------------------------------------------------------------------
@@ -76,6 +76,80 @@ def _valid_email(email: str) -> bool:
     return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email))
 
 
+# --- usernames (owner, 2026-10-08): people sign in with a username, not their email; the email stays on the account for records -------------------
+USERNAME_RULE = "3 to 30 characters: lowercase letters, digits, dot, dash or underscore, starting with a letter or digit."
+
+
+def clean_username(text) -> str:
+    return (text or "").strip().lower()
+
+
+def username_problem(username: str) -> str | None:
+    return None if re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,29}", username or "") else f"The username must be {USERNAME_RULE}"
+
+
+def _username_taken(conn, username: str, user_id: int | None = None) -> bool:
+    return bool(conn.execute("SELECT 1 FROM app_users WHERE lower(username) = ? AND user_id IS NOT ?", (username, user_id)).fetchone())
+
+
+def _username_from_email(conn, email: str) -> str:
+    """For an account made without one: the part of the email before @, cleaned, made unique with a number when needed."""
+    base = re.sub(r"[^a-z0-9._-]", "", email.split("@")[0].lower())[:26] or "user"
+    if not base[0].isalnum():
+        base = "u" + base
+    base = base.ljust(3, "0")                                   # at least 3 characters
+    name, n = base, 1
+    while _username_taken(conn, name):
+        n += 1
+        name = f"{base}{n}"
+    return name
+
+
+def _pick_username(conn, username: str, email: str) -> tuple[str | None, str | None]:
+    """(username, None) or (None, problem). Blank = made from the email."""
+    username = clean_username(username)
+    if not username:
+        return _username_from_email(conn, email), None
+    problem = username_problem(username)
+    if problem:
+        return None, problem
+    if _username_taken(conn, username):
+        return None, f"The username {username} is already used."
+    return username, None
+
+
+def fill_missing_usernames() -> list[tuple[str, str]]:
+    """Every account without a username gets one from its email (run once by deploy/release.sh; a no-op after). Returns [(email, username)]."""
+    done = []
+    with write_tx() as conn:
+        for uid, email in conn.execute("SELECT user_id, email FROM app_users WHERE username IS NULL OR username = '' ORDER BY user_id").fetchall():
+            name = _username_from_email(conn, email)
+            conn.execute("UPDATE app_users SET username = ? WHERE user_id = ?", (name, uid))
+            _audit(conn, "USERNAME_SET", uid, f"{email} -> {name} (made from the email)", who="system")
+            done.append((email, name))
+    return done
+
+
+def set_username(user_id: int, username: str) -> tuple[bool, str]:
+    """The System admin changes a person's username (their next sign-in uses the new one)."""
+    _ok, _msg = require_permission("users.manage")
+    if not _ok:
+        return False, _msg
+    username = clean_username(username)
+    problem = username_problem(username)
+    if problem:
+        return False, problem
+    with write_tx() as conn:
+        row = conn.execute("SELECT email, username FROM app_users WHERE user_id = ?", (user_id,)).fetchone()
+        if not row:
+            return False, "Account not found."
+        if _username_taken(conn, username, int(user_id)):
+            return False, f"The username {username} is already used."
+        conn.execute("UPDATE app_users SET username = ? WHERE user_id = ?", (username, user_id))
+        _audit(conn, "USERNAME_CHANGED", user_id, f"{row[0]}: {row[1]} -> {username}")
+    return True, f"The username is now {username}."
+
+
 def _audit(conn, action: str, user_id, text: str, who: str | None = None) -> None:
     if who is None:
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), ?, 'app_users', ?, ?)", (action, user_id, text))
@@ -84,7 +158,7 @@ def _audit(conn, action: str, user_id, text: str, who: str | None = None) -> Non
 
 
 def _public(row) -> dict:
-    return {"user_id": row["user_id"], "email": row["email"], "name": row["name"], "role": row["role"], "is_active": row["is_active"],
+    return {"user_id": row["user_id"], "email": row["email"], "username": row["username"], "name": row["name"], "role": row["role"], "is_active": row["is_active"],
             "must_change_password": row["must_change_password"]}
 
 
@@ -101,8 +175,9 @@ def needs_setup() -> bool:
         return conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0] == 0
 
 
-def create_owner(email: str, name: str, password: str) -> tuple[bool, str, int | None]:
-    """The very first account, made by the owner themselves with a password they choose (no temporary one). Refused once any account exists."""
+def create_owner(email: str, name: str, password: str, username: str = "") -> tuple[bool, str, int | None]:
+    """The very first account, made by the owner themselves with a password they choose (no temporary one). Refused once any account exists.
+    username blank = made from the email."""
     email = _clean_email(email)
     if not _valid_email(email):
         return False, "Enter a valid email.", None
@@ -114,14 +189,18 @@ def create_owner(email: str, name: str, password: str) -> tuple[bool, str, int |
     with write_tx() as conn:
         if conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0]:
             return False, "An account already exists. Sign in with it.", None
-        uid = conn.execute("INSERT INTO app_users (email, name, role, password_hash, must_change_password) VALUES (?, ?, 'admin', ?, 0) RETURNING user_id",
-                           (email, name.strip(), hash_password(password))).fetchone()[0]
+        username, problem = _pick_username(conn, username, email)
+        if problem:
+            return False, problem, None
+        uid = conn.execute("INSERT INTO app_users (email, username, name, role, password_hash, must_change_password) VALUES (?, ?, ?, 'admin', ?, 0) RETURNING user_id",
+                           (email, username, name.strip(), hash_password(password))).fetchone()[0]
         _audit(conn, "USER_CREATED", uid, f"{email} as System admin (first account)", who=email)
     return True, "Owner account created.", int(uid)
 
 
-def create_user(email: str, name: str, role: str) -> tuple[bool, str, int | None, str | None]:
-    """The owner adds a person. Returns (ok, message, user_id, temporary_password): the temporary password is shown once and must be changed at first sign-in."""
+def create_user(email: str, name: str, role: str, username: str = "") -> tuple[bool, str, int | None, str | None]:
+    """The owner adds a person. Returns (ok, message, user_id, temporary_password): the temporary password is shown once and must be changed at first sign-in.
+    username: what they sign in with (blank = made from the email)."""
     _ok, _msg = require_permission('users.manage')
     if not _ok:
         raise PermissionError(_msg)
@@ -136,23 +215,30 @@ def create_user(email: str, name: str, role: str) -> tuple[bool, str, int | None
     with write_tx() as conn:
         if conn.execute("SELECT 1 FROM app_users WHERE email = ?", (email,)).fetchone():
             return False, f"{email} already has an account.", None, None
-        uid = conn.execute("INSERT INTO app_users (email, name, role, password_hash, must_change_password) VALUES (?, ?, ?, ?, 1) RETURNING user_id",
-                           (email, name.strip(), role, hash_password(temp))).fetchone()[0]
-        _audit(conn, "USER_CREATED", uid, f"{email} as {role}")
-    return True, f"{name.strip()} can sign in with the temporary password and must choose their own.", int(uid), temp
+        username, problem = _pick_username(conn, username, email)
+        if problem:
+            return False, problem, None, None
+        uid = conn.execute("INSERT INTO app_users (email, username, name, role, password_hash, must_change_password) VALUES (?, ?, ?, ?, ?, 1) RETURNING user_id",
+                           (email, username, name.strip(), role, hash_password(temp))).fetchone()[0]
+        _audit(conn, "USER_CREATED", uid, f"{email} (username {username}) as {role}")
+    return True, f"{name.strip()} signs in as {username} with the temporary password and must choose their own.", int(uid), temp
 
 
 MORE_BLOCKED = "Your account uses the main system only."
 
 
 def authenticate(email: str, password: str, where: str = "more") -> tuple[bool, dict | None, str]:
-    """Checks a sign-in. Returns (ok, user, message). Wrong email and wrong password give the same words. Five wrong tries lock the account for 15 minutes.
+    """Checks a sign-in. Returns (ok, user, message). `email` is what was typed: the username (Django: only the username; the old screens: the username
+    or the email). A wrong name and a wrong password give the same words. Five wrong tries lock the account for 15 minutes.
     where = "more" (the old Streamlit screens, the default they call with) refuses a person whose "Old screens (/more/)" switch is off (owner, 2026-10-08).
     where = "web" (Django) is only the first step: the wrong-tries count is cleared by the 6-digit code (verify_totp), not by the password alone."""
-    email, now = _clean_email(email), manila_now()
+    login, now = (email or "").strip().lower(), manila_now()
     with write_tx() as conn:
         conn.row_factory = __import__("sqlite3").Row
-        row = conn.execute("SELECT * FROM app_users WHERE email = ?", (email,)).fetchone()
+        row = conn.execute("SELECT * FROM app_users WHERE lower(username) = ?", (login,)).fetchone()     # the username (owner, 2026-10-08)
+        if row is None and where != "web":                                                              # the old screens' sign-in still says Email
+            row = conn.execute("SELECT * FROM app_users WHERE email = ?", (login,)).fetchone()
+        email = row["email"] if row is not None else login
         if row is None:
             return False, None, WRONG
         if not row["is_active"]:
@@ -391,4 +477,4 @@ def set_role(user_id: int, role: str) -> tuple[bool, str]:
 def list_users() -> pd.DataFrame:
     """Everyone, without the password hashes: user_id, email, name, role, is_active, must_change_password, last_login_at, locked_until."""
     with get_conn() as conn:
-        return pd.read_sql_query("SELECT user_id, email, name, role, is_active, must_change_password, last_login_at, locked_until FROM app_users ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'owner' THEN 1 ELSE 2 END, name", conn)
+        return pd.read_sql_query("SELECT user_id, username, email, name, role, is_active, must_change_password, last_login_at, locked_until FROM app_users ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'owner' THEN 1 ELSE 2 END, name", conn)

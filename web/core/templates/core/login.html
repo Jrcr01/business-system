@@ -5,7 +5,7 @@
   <img src="{% static 'assets/slicks_logo.jpg' %}" alt="Slick's">
   <h2>Sign in</h2>
   <input type="hidden" name="next" value="{{ next }}">
-  <label for="email">Email</label><input id="email" type="email" name="email" value="{{ email }}" autocomplete="username" required autofocus>
+  <label for="username">Username</label><input id="username" type="text" name="username" value="{{ username }}" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
   <label for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" required>
   <button class="btn wide" type="submit">Sign in</button>
   <p class="note">Forgot your password? Ask the System admin to reset it.</p>

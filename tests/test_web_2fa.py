@@ -1,5 +1,5 @@
-"""The 6-digit sign-in code (owner, 2026-10-08): email, password, then the code from an authenticator app. And the per-person switch that keeps someone out of
-the old screens (/more/)."""
+"""The 6-digit sign-in code (owner, 2026-10-08): username, password, then the code from an authenticator app. And the per-person switch that keeps someone out
+of the old screens (/more/)."""
 from django.test import Client
 
 from tests.conftest import fetchone
@@ -22,7 +22,7 @@ def test_the_password_alone_does_not_sign_anyone_in(web):
     _admin(web)
     _new()
     c = Client()
-    r = c.post("/login/", {"email": "family@slicks.test", "password": PW})
+    r = c.post("/login/", {"username": "family", "password": PW})
     assert r["Location"] == "/2fa/setup/"                                    # first time: set the code up
     for page in ("/", "/payables-due/", "/settings/users/"):
         assert c.get(page)["Location"].startswith("/login/")                # nothing else is open
@@ -31,7 +31,7 @@ def test_the_password_alone_does_not_sign_anyone_in(web):
     r = c.post("/2fa/setup/", {"code": code_for("family@slicks.test")})
     assert r["Location"] == "/" and c.get("/").status_code == 200
     c.post("/logout/")
-    r = c.post("/login/", {"email": "family@slicks.test", "password": PW})
+    r = c.post("/login/", {"username": "family", "password": PW})
     assert r["Location"] == "/2fa/"                                          # from now on: the code
     assert c.get("/").status_code == 302
 
@@ -44,7 +44,7 @@ def test_a_wrong_code_counts_toward_the_lock_and_a_code_works_once(web):
     assert login(c, "family@slicks.test").status_code == 302
     used = fetchone(_db(), "SELECT totp_last_step FROM app_users WHERE email = 'family@slicks.test'")[0]
     c.post("/logout/")
-    c.post("/login/", {"email": "family@slicks.test", "password": PW})
+    c.post("/login/", {"username": "family", "password": PW})
     from engines.auth_service import _totp_at
     secret = fetchone(_db(), "SELECT totp_secret FROM app_users WHERE email = 'family@slicks.test'")[0]
     r = c.post("/2fa/", {"code": _totp_at(secret, used)})                    # the code already used
@@ -65,7 +65,7 @@ def test_signing_in_again_with_the_password_does_not_clear_wrong_codes(web):
     login(Client(), "family@slicks.test")
     for _ in range(MAX_TRIES):
         c = Client()
-        c.post("/login/", {"email": "family@slicks.test", "password": PW})
+        c.post("/login/", {"username": "family", "password": PW})
         c.post("/2fa/", {"code": "000000"})
     assert fetchone(_db(), "SELECT locked_until FROM app_users WHERE email = 'family@slicks.test'")[0]
 
@@ -81,7 +81,7 @@ def test_only_the_system_admin_resets_a_code(web):
     assert fetchone(_db(), "SELECT totp_secret, totp_enabled_at FROM app_users WHERE user_id = ?", (uid,)) == (None, None)
     assert fetchone(_db(), "SELECT COUNT(*) FROM audit_logs WHERE user_action = 'USER_2FA_RESET'")[0] == 1
     family.post("/logout/")
-    r = family.post("/login/", {"email": "family@slicks.test", "password": PW})
+    r = family.post("/login/", {"username": "family", "password": PW})
     assert r["Location"] == "/2fa/setup/"                                    # a new phone: set it up again
 
 
@@ -116,3 +116,31 @@ def test_the_old_screens_switch_keeps_a_person_out_of_more_but_not_the_main_syst
     assert not ok and msg == MORE_BLOCKED
     assert login(Client(), "family@slicks.test")["Location"] == "/"          # the main system still lets them in
     assert authenticate("admin@slicks.test", PW)[0]                           # the System admin is never switched off
+
+
+def test_sign_in_is_by_username_never_the_email(web):
+    from engines.auth_service import authenticate
+    _admin(web)
+    uid = _new()
+    c = Client()
+    r = c.post("/login/", {"username": "family@slicks.test", "password": PW})
+    assert r.status_code == 200 and b"Wrong username or password." in r.content          # the email does not sign in to the main system
+    assert c.post("/login/", {"username": "FAMILY", "password": PW})["Location"] == "/2fa/setup/"    # capitals don't matter
+    assert authenticate("family@slicks.test", PW)[0] and authenticate("family", PW)[0]               # the old screens' sign-in takes either
+    web.post(f"/settings/users/{uid}/", {"action": "username", "username": "ate.joy"})
+    assert fetchone(_db(), "SELECT username FROM app_users WHERE user_id = ?", (uid,))[0] == "ate.joy"
+    assert Client().post("/login/", {"username": "ate.joy", "password": PW})["Location"] == "/2fa/setup/"
+    r = web.post(f"/settings/users/{uid}/", {"action": "username", "username": "admin"}, follow=True)
+    assert b"already used" in r.content
+
+
+def test_a_new_person_gets_the_username_typed_and_old_accounts_get_one_from_the_email(web):
+    from engines.auth_service import create_user, fill_missing_usernames
+    from engines.common import write_tx
+    _admin(web)
+    web.post("/settings/users/", {"name": "Co Owner", "username": "coowner", "email": "co@slicks.test", "role": "owner"})
+    assert fetchone(_db(), "SELECT username FROM app_users WHERE email = 'co@slicks.test'")[0] == "coowner"
+    assert not create_user("x@slicks.test", "X", "owner", "no spaces")[0]
+    with write_tx() as conn:                                                   # an account from before usernames
+        conn.execute("UPDATE app_users SET username = NULL WHERE email = 'co@slicks.test'")
+    assert fill_missing_usernames() == [("co@slicks.test", "co0")] and fill_missing_usernames() == []

@@ -156,9 +156,9 @@ def test_settings_closed_to_owners(web):
 
 def test_users_add_shows_the_temporary_password_once(web):
     _admin(web)
-    r = web.post("/settings/users/", {"email": "mother@slicks.test", "name": "Mother", "role": "releaser"})
+    r = web.post("/settings/users/", {"email": "mother@slicks.test", "username": "mama", "name": "Mother", "role": "releaser"})
     page = r.content.decode()
-    assert r.status_code == 200 and "Temporary password for <b>mother@slicks.test</b>" in page
+    assert r.status_code == 200 and "Temporary password for <b>mama</b>" in page                  # the username they sign in with
     assert "Temporary password for" not in web.get("/settings/users/").content.decode()     # shown only once
     uid = fetchone(_db(), "SELECT user_id, role, must_change_password FROM app_users WHERE email = 'mother@slicks.test'")
     assert uid[1:] == ("releaser", 1)

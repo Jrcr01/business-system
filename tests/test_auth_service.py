@@ -52,15 +52,15 @@ def test_signing_in_with_the_right_and_wrong_password(db):
     ok, user, msg = au.authenticate(" Owner@Example.com ", "Owner123x")
     assert ok and user["email"] == OWNER and user["role"] == "admin"          # the email is matched ignoring case and spaces
     ok, user, msg = au.authenticate(OWNER, "wrong")
-    assert not ok and user is None and msg == "Wrong email or password."
-    assert au.authenticate("nobody@example.com", "whatever")[2] == "Wrong email or password."       # the same words: it never says which part was wrong
+    assert not ok and user is None and msg == "Wrong username or password."
+    assert au.authenticate("nobody@example.com", "whatever")[2] == "Wrong username or password."       # the same words: it never says which part was wrong
     assert _audit(db, "USER_SIGNED_IN") == 1
 
 
 def test_five_wrong_tries_lock_the_account_for_fifteen_minutes(db):
     _owner(db)
     for _ in range(4):
-        assert au.authenticate(OWNER, "nope")[2] == "Wrong email or password."
+        assert au.authenticate(OWNER, "nope")[2] == "Wrong username or password."
     ok, _, msg = au.authenticate(OWNER, "nope")
     assert not ok and "15 minutes" in msg and _audit(db, "USER_LOCKED") == 1
     ok, _, msg = au.authenticate(OWNER, "Owner123x")                          # even the right password is refused while locked
