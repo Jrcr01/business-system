@@ -42,7 +42,7 @@ def test_switches_hide_pages_and_refuse_the_action(web, db):
     assert "What Family may do" in page and "Pay suppliers" in page
     on = {"action": "switches", "on": ["price.view", "price.write", "po.view", "po.create", "po.order", "po.cancel", "po.receive_goods", "committed.view", "po.receive",
                                        "payables_due.view", "check.park", "check.issue", "check.void", "creditors.edit", "calendar.mark", "check.release", "bank.use",
-                                       "loans.use", "search.use", "reports.use", "health.view", "review.use", "po.ack_over_plan", "controls.view", "sales.use", "inventory.use"]}
+                                       "loans.use", "search.use", "reports.use", "health.view", "review.use", "po.ack_over_plan", "controls.view", "sales.use", "inventory.use", "more.use"]}
     web.post(f"/settings/users/{uid}/", on)                                         # invoice.enter is left out: switched off
     assert fetchone(_db(), "SELECT COUNT(*) FROM user_restrictions WHERE user_id = ?", (uid,))[0] == 1
     assert family.get("/order-statements/").status_code == 403                      # the page, at the very next click

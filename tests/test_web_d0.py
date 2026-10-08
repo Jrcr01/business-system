@@ -7,8 +7,34 @@ from tests.conftest import fetchone
 PW = "Sandbox123"
 
 
+def code_for(email):
+    """The 6-digit code the person's authenticator app would show, never one already used (the system accepts one step either side of now)."""
+    from engines.auth_service import _now_step, _totp_at
+    from engines.common import get_conn
+    with get_conn() as conn:
+        secret, last = conn.execute("SELECT totp_secret, totp_last_step FROM app_users WHERE email = ?", (email,)).fetchone()
+    step = max(_now_step() - 1, (last or 0) + 1)
+    assert step <= _now_step() + 1, "no unused code left in this half-minute"
+    return _totp_at(secret, step)
+
+
+def _code_step(c, r, email):
+    """After a right password: set up the code (first time) or enter it. Returns the response of the code step."""
+    assert r.status_code == 302 and r["Location"] in ("/2fa/", "/2fa/setup/"), getattr(r, "content", b"")[:300]
+    if r["Location"] == "/2fa/setup/":
+        assert c.get("/2fa/setup/").status_code == 200                      # makes the key
+    return c.post(r["Location"], {"code": code_for(email)})
+
+
+def login(c, email, password=PW, nxt=None):
+    """Sign in the whole way: password, then the 6-digit code."""
+    r = c.post("/login/", {"email": email, "password": password, **({"next": nxt} if nxt else {})})
+    return _code_step(c, r, email)
+
+
 def _admin(web):
     r = web.post("/setup/", {"name": "Admin", "email": "admin@slicks.test", "password": PW, "password2": PW})
+    r = _code_step(web, r, "admin@slicks.test")
     assert r.status_code == 302 and r["Location"] == "/"
     return web
 
@@ -30,7 +56,7 @@ def _sign_in_new(email, role):
     ok, msg = change_password(uid, temp, PW)
     assert ok, msg
     c = Client()
-    r = c.post("/login/", {"email": email, "password": PW})
+    r = login(c, email)
     assert r.status_code == 302, r.content
     assert get_user(uid)["role"] == role
     return c
@@ -72,9 +98,10 @@ def test_wrong_password_and_the_way_back_to_the_page_asked_for(web):
     assert r["Location"] == "/login/?next=/lenders/"
     r = web.post("/login/", {"email": "admin@slicks.test", "password": "nope12345", "next": "/lenders/"})
     assert r.status_code == 200 and b"Wrong email or password." in r.content
-    r = web.post("/login/", {"email": "admin@slicks.test", "password": PW, "next": "/lenders/"})
+    r = login(web, "admin@slicks.test", nxt="/lenders/")
     assert r["Location"] == "/lenders/"
-    r = web.post("/login/", {"email": "admin@slicks.test", "password": PW, "next": "https://evil.example/"})
+    web.post("/logout/")
+    r = login(web, "admin@slicks.test", nxt="https://evil.example/")
     assert r["Location"] == "/"                                              # never sent to another site
 
 
@@ -83,7 +110,7 @@ def test_temporary_password_must_be_changed_first(web):
     _admin(web)
     temp = _person("mother@slicks.test", "releaser")
     c = Client()
-    c.post("/login/", {"email": "mother@slicks.test", "password": temp})
+    login(c, "mother@slicks.test", temp)
     assert c.get("/")["Location"] == "/password/"
     r = c.post("/password/", {"old": temp, "new": PW, "new2": PW})
     assert r["Location"] == "/"
@@ -96,7 +123,7 @@ def test_switching_someone_off_or_changing_the_password_signs_them_out_everywher
     _admin(web)
     laptop = _sign_in_new("staff@slicks.test", "payables")
     phone = Client()
-    phone.post("/login/", {"email": "staff@slicks.test", "password": PW})
+    login(phone, "staff@slicks.test")
     assert phone.get("/").status_code == 200
     r = laptop.post("/password/", {"old": PW, "new": PW + "9", "new2": PW + "9"})
     assert r["Location"] == "/"

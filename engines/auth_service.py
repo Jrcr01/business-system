@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import re
 import secrets
+import time
 from datetime import timedelta
 
 import pandas as pd
@@ -141,8 +142,13 @@ def create_user(email: str, name: str, role: str) -> tuple[bool, str, int | None
     return True, f"{name.strip()} can sign in with the temporary password and must choose their own.", int(uid), temp
 
 
-def authenticate(email: str, password: str) -> tuple[bool, dict | None, str]:
-    """Checks a sign-in. Returns (ok, user, message). Wrong email and wrong password give the same words. Five wrong tries lock the account for 15 minutes."""
+MORE_BLOCKED = "Your account uses the main system only."
+
+
+def authenticate(email: str, password: str, where: str = "more") -> tuple[bool, dict | None, str]:
+    """Checks a sign-in. Returns (ok, user, message). Wrong email and wrong password give the same words. Five wrong tries lock the account for 15 minutes.
+    where = "more" (the old Streamlit screens, the default they call with) refuses a person whose "Old screens (/more/)" switch is off (owner, 2026-10-08).
+    where = "web" (Django) is only the first step: the wrong-tries count is cleared by the 6-digit code (verify_totp), not by the password alone."""
     email, now = _clean_email(email), manila_now()
     with write_tx() as conn:
         conn.row_factory = __import__("sqlite3").Row
@@ -164,9 +170,108 @@ def authenticate(email: str, password: str) -> tuple[bool, dict | None, str]:
                 return False, None, f"Too many wrong tries. This account is locked for {LOCK_MINUTES} minutes."
             conn.execute("UPDATE app_users SET failed_attempts = ? WHERE user_id = ?", (tries, row["user_id"]))
             return False, None, WRONG
+        if where == "web":
+            return True, _public(row), ""
+        from engines.permissions import denied_for
+        if "more.use" in denied_for(email):
+            return False, None, MORE_BLOCKED
         conn.execute("UPDATE app_users SET failed_attempts = 0, locked_until = NULL, last_login_at = ? WHERE user_id = ?", (now.strftime("%Y-%m-%d %H:%M:%S"), row["user_id"]))
         _audit(conn, "USER_SIGNED_IN", row["user_id"], email, who=email)
         return True, _public(row), ""
+
+
+# --- the 6-digit sign-in code (owner, 2026-10-08): the standard authenticator code (RFC 6238: 30 seconds, 6 digits), as Google and Microsoft Authenticator
+# show it. Asked at every sign-in to the main system, after the password. A code is accepted once only, and wrong codes count toward the same 5-tries lock.
+TOTP_STEP = 30
+TOTP_ISSUER = "Slick's"
+
+
+def _totp_at(secret: str, step: int) -> str:
+    key = base64.b32decode(secret.upper() + "=" * (-len(secret) % 8))
+    mac = hmac.new(key, step.to_bytes(8, "big"), hashlib.sha1).digest()
+    o = mac[-1] & 0x0F
+    return f"{(int.from_bytes(mac[o:o + 4], 'big') & 0x7FFFFFFF) % 1_000_000:06d}"
+
+
+def _now_step() -> int:
+    return int(time.time()) // TOTP_STEP
+
+
+def totp_setup_secret(user_id: int) -> str | None:
+    """The key for the set-up screen: made once and kept until the person confirms it with a code. None once the code is set up."""
+    with write_tx() as conn:
+        row = conn.execute("SELECT totp_secret, totp_enabled_at FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
+        if row is None or row[1]:
+            return None
+        if row[0]:
+            return row[0]
+        secret = base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+        conn.execute("UPDATE app_users SET totp_secret = ?, totp_last_step = NULL WHERE user_id = ?", (secret, int(user_id)))
+        return secret
+
+
+def totp_uri(email: str, secret: str) -> str:
+    """What the QR code holds: the authenticator app reads the name, the account and the key from it."""
+    from urllib.parse import quote
+    return f"otpauth://totp/{quote(TOTP_ISSUER)}:{quote(email)}?secret={secret}&issuer={quote(TOTP_ISSUER)}&digits=6&period={TOTP_STEP}"
+
+
+def verify_totp(user_id: int, code: str) -> tuple[bool, str]:
+    """Checks the 6-digit code (this step, or one step either side for a slow phone clock). The first correct code also confirms the set-up.
+    A code already used is refused. Wrong codes count toward the 5-tries / 15-minute lock."""
+    code = "".join(ch for ch in (code or "") if ch.isdigit())
+    now = manila_now()
+    with write_tx() as conn:
+        conn.row_factory = __import__("sqlite3").Row
+        row = conn.execute("SELECT * FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
+        if row is None or not row["is_active"]:
+            return False, "This account is switched off. Ask the owner."
+        locked = row["locked_until"]
+        if locked and now < pd.to_datetime(locked).to_pydatetime():
+            mins = int((pd.to_datetime(locked).to_pydatetime() - now).total_seconds() // 60) + 1
+            return False, f"This account is locked for now. Try again in {mins} minute(s)."
+        if not row["totp_secret"]:
+            return False, "Set up your sign-in code first."
+        last, here = row["totp_last_step"] or 0, _now_step()
+        hit = next((s for s in (here - 1, here, here + 1) if s > last and len(code) == 6 and hmac.compare_digest(_totp_at(row["totp_secret"], s), code)), None)
+        if hit is None:
+            tries = int(row["failed_attempts"]) + 1
+            if tries >= MAX_TRIES:
+                until = (now + timedelta(minutes=LOCK_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+                conn.execute("UPDATE app_users SET failed_attempts = 0, locked_until = ? WHERE user_id = ?", (until, row["user_id"]))
+                _audit(conn, "USER_LOCKED", row["user_id"], f"{row['email']}: {MAX_TRIES} wrong tries, locked until {until}", who=row["email"])
+                return False, f"Too many wrong tries. This account is locked for {LOCK_MINUTES} minutes."
+            conn.execute("UPDATE app_users SET failed_attempts = ? WHERE user_id = ?", (tries, row["user_id"]))
+            return False, "That code didn't match. Try the newest one."
+        stamp = now.strftime("%Y-%m-%d %H:%M:%S")
+        if not row["totp_enabled_at"]:
+            conn.execute("UPDATE app_users SET totp_enabled_at = ? WHERE user_id = ?", (stamp, row["user_id"]))
+            _audit(conn, "USER_2FA_SET_UP", row["user_id"], row["email"], who=row["email"])
+        conn.execute("UPDATE app_users SET totp_last_step = ?, failed_attempts = 0, locked_until = NULL, last_login_at = ? WHERE user_id = ?", (hit, stamp, row["user_id"]))
+        _audit(conn, "USER_SIGNED_IN", row["user_id"], f"{row['email']} (password and code)", who=row["email"])
+        return True, ""
+
+
+def reset_totp(user_id: int, by_command: bool = False) -> tuple[bool, str]:
+    """For a lost phone: the person sets up a new code at their next sign-in. The System admin only (or the server command, for the admin's own phone)."""
+    if not by_command:
+        _ok, _msg = require_permission("users.manage")
+        if not _ok:
+            raise PermissionError(_msg)
+    with write_tx() as conn:
+        row = conn.execute("SELECT email FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
+        if row is None:
+            return False, "No such person."
+        conn.execute("UPDATE app_users SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL WHERE user_id = ?", (int(user_id),))
+        _audit(conn, "USER_2FA_RESET", int(user_id), row[0] + (" (server command)" if by_command else ""))
+    return True, f"The sign-in code of {row[0]} is reset. They set up a new one at their next sign-in."
+
+
+def totp_enabled_at(user_id: int) -> str | None:
+    """When the person set up their sign-in code; None = not set up (they are asked to at their next sign-in)."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT totp_enabled_at FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
+    return row[0] if row else None
 
 
 KEEP_PASSWORDS = 5          # a new password cannot be one of the person's last 5 (owner, 2026-10-08)

@@ -25,9 +25,32 @@ def page_frame(request) -> dict:
 
 
 def _sign_in(request, user: dict) -> None:
+    """Signed in: only after the password AND the 6-digit code (owner, 2026-10-08)."""
     request.session.cycle_key()
+    request.session.pop("pending", None)
     request.session["uid"] = int(user["user_id"])
     request.session["pw"] = password_stamp(int(user["user_id"]))
+    request.session["mfa"] = 1
+
+
+def _half_signed_in(request, user: dict, nxt: str = "/"):
+    """The password was right: next comes the code (or setting it up, the first time). Nothing else is open until then."""
+    from engines.auth_service import totp_enabled_at
+    request.session.cycle_key()
+    request.session.pop("uid", None)
+    request.session["pending"] = {"uid": int(user["user_id"]), "pw": password_stamp(int(user["user_id"])), "next": nxt}
+    return redirect("/2fa/" if totp_enabled_at(int(user["user_id"])) else "/2fa/setup/")
+
+
+def _pending_user(request) -> dict | None:
+    """Whoever passed the password step on this browser, if their password and account are unchanged since."""
+    from engines.auth_service import get_user
+    p = request.session.get("pending") or {}
+    user = get_user(int(p["uid"])) if p.get("uid") else None
+    if not user or not user["is_active"] or p.get("pw") != password_stamp(int(user["user_id"])):
+        request.session.pop("pending", None)
+        return None
+    return user
 
 
 def health(request):
@@ -51,8 +74,7 @@ def setup(request):
         else:
             ok, msg, uid = create_owner(form["email"], form["name"], request.POST.get("password", ""))
             if ok:
-                _sign_in(request, get_user(uid))
-                return redirect("/")
+                return _half_signed_in(request, get_user(uid))
             messages.error(request, msg)
     return render(request, "core/setup.html", {"form": form})
 
@@ -65,12 +87,62 @@ def login(request):
     email = ""
     if request.method == "POST":
         email = request.POST.get("email", "")
-        ok, user, msg = authenticate(email, request.POST.get("password", ""))
+        ok, user, msg = authenticate(email, request.POST.get("password", ""), where="web")
         if ok:
+            return _half_signed_in(request, user, nxt)
+        messages.error(request, msg)
+    return render(request, "core/login.html", {"email": email, "next": nxt})
+
+
+def code(request):
+    """Step 2 of every sign-in: the 6-digit code from the person's authenticator app."""
+    from engines.auth_service import totp_enabled_at, verify_totp
+    user = _pending_user(request)
+    if user is None:
+        return redirect("/login/")
+    if not totp_enabled_at(int(user["user_id"])):
+        return redirect("/2fa/setup/")
+    if request.method == "POST":
+        if request.POST.get("cancel"):
+            request.session.flush()
+            return redirect("/login/")
+        ok, msg = verify_totp(int(user["user_id"]), request.POST.get("code", ""))
+        if ok:
+            nxt = request.session["pending"].get("next") or "/"
             _sign_in(request, user)
             return redirect(nxt)
         messages.error(request, msg)
-    return render(request, "core/login.html", {"email": email, "next": nxt})
+    return render(request, "core/code.html", {})
+
+
+def code_setup(request):
+    """The first sign-in (or after the System admin reset the code): scan the QR code into an authenticator app, then confirm with its first code."""
+    from engines.auth_service import totp_setup_secret, totp_uri, verify_totp
+    user = _pending_user(request)
+    if user is None:
+        return redirect("/login/")
+    secret = totp_setup_secret(int(user["user_id"]))
+    if secret is None:                                       # already set up: the ordinary code screen
+        return redirect("/2fa/")
+    if request.method == "POST":
+        if request.POST.get("cancel"):
+            request.session.flush()
+            return redirect("/login/")
+        ok, msg = verify_totp(int(user["user_id"]), request.POST.get("code", ""))
+        if ok:
+            nxt = request.session["pending"].get("next") or "/"
+            _sign_in(request, user)
+            messages.success(request, "Your sign-in code is set up. From now on, sign-in asks for it after your password.")
+            return redirect(nxt)
+        messages.error(request, msg)
+    import qrcode
+    import qrcode.image.svg
+    qr = qrcode.make(totp_uri(user["email"], secret), image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=2)
+    svg = qr.to_string(encoding="unicode")
+    svg = svg[svg.find("<svg"):]                             # inline in the page: no XML header
+    key = " ".join(secret[i:i + 4] for i in range(0, len(secret), 4))
+    from django.utils.safestring import mark_safe
+    return render(request, "core/code_setup.html", {"qr": mark_safe(svg), "key": key})
 
 
 @require_POST

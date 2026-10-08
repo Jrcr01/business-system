@@ -1019,7 +1019,10 @@ CREATE TABLE IF NOT EXISTS app_users (
     failed_attempts INTEGER NOT NULL DEFAULT 0,
     locked_until DATETIME,
     last_login_at DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    totp_secret TEXT,               -- the 6-digit sign-in code's key (migration 077); NULL = not set up
+    totp_enabled_at DATETIME,       -- confirmed with a first correct code
+    totp_last_step INTEGER          -- the last code used, so the same code never works twice
 );
 
 -- SECURITY AND ROLES (owner, 2026-10-08, migration 076): everyone is an Owner; the System admin switches off, per person, what they may NOT do.

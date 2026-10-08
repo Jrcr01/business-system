@@ -35,6 +35,7 @@ SYSTEM_ONLY = {"carveout.use", "users.manage", "audit.view", "settings.edit", "h
 RELEASER = {"home.open": "Y", "account.own": "Y", "po.receive_goods": "Y", "check.release": "Y"}
 _ROWS: list[tuple[str, str, str, tuple]] = [
     ("home.open", "Purchasing", "Home", (Y, Y, Y, Y, Y)),
+    ("more.use", "System", "Sign in to the old screens (/more/) not yet in the main system", (Y, Y, Y, Y, Y)),
     ("price.view", "Purchasing", "See price lists, the product catalog and prices side by side", (Y, None, VIEW, Y, VIEW)),
     ("price.write", "Purchasing", "Add or import prices (Excel template), add items, set supplier discounts", (Y, None, None, Y, None)),
     ("po.view", "Purchasing", "See purchase orders and their trail", (Y, None, Y, Y, VIEW)),
@@ -100,6 +101,7 @@ WORKFLOW: list[tuple[str, list[str]]] = [
     ("Records", ["search.use", "reports.use", "health.view"]),
     ("Review", ["review.use", "po.ack_over_plan", "controls.view"]),
     ("Sales", ["sales.use", "inventory.use"]),
+    ("Old screens", ["more.use"]),
 ]
 SWITCHES = {a for _, acts in WORKFLOW for a in acts}
 _DENIED: dict = {}

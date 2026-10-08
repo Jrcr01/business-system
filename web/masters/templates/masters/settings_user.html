@@ -15,6 +15,12 @@
   <input type="hidden" name="action" value="reset">
   <button class="btn small ghost" type="submit"><span class="ms">lock_reset</span>Give a new temporary password</button></form>
 
+<div class="grp">Sign-in code</div>
+{% if code_since %}<form class="bar" method="post" onsubmit="return confirm('Reset the sign-in code of {{ u.name|escapejs }}? Their authenticator app stops working for Slick\'s; they set up a new code at their next sign-in.');">{% csrf_token %}
+  <input type="hidden" name="action" value="reset_code"><span>Set up {{ code_since }}</span>
+  <button class="btn small ghost" type="submit"><span class="ms">phonelink_erase</span>Reset code</button></form>
+{% else %}<p class="hint">Not set up yet: they set it up at their next sign-in.</p>{% endif %}
+
 <div class="grp">Sign-in</div>
 {% if is_me %}<p class="hint">You can't switch yourself off.</p>
 {% elif u.is_active %}

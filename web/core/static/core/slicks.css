@@ -72,6 +72,7 @@ input:focus { outline: 2px solid var(--blue); border-color: var(--blue); }
 .btn:hover { background: var(--blue-dark); }
 .btn.wide { width: 100%; }
 .note { color: var(--muted); font-size: .88rem; }
+button.link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
 .later-box { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 22px; max-width: 720px; }
 
 /* ---- lists, forms and tabs (stage D1) ---- */

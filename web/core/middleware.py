@@ -3,6 +3,7 @@
   * Nobody has an account yet: every page leads to the first-run set-up (the System admin makes their own account).
   * Not signed in: every page leads to Sign in, and back to the page asked for afterwards.
   * Signed in: the person is read from app_users on EVERY request, so switching someone off, or changing their password, signs them out everywhere at once.
+  * Signing in takes the password AND the 6-digit code from the person's authenticator app (owner, 2026-10-08): after the password, only /2fa/ is open.
   * A temporary password must be changed before anything else.
   * Everything saved while the request runs is recorded as done by this person, with their role for the permission guards (engines/acting_user.py).
     The value is per request, so two people saving at the same moment never get each other's name."""
@@ -31,6 +32,9 @@ def current_user(request) -> dict | None:
     uid = request.session.get("uid")
     if not uid:
         return None
+    if not request.session.get("mfa"):                          # a sign-in from before the 6-digit code (2026-10-08): sign in again, with the code
+        request.session.flush()
+        return None
     user = get_user(int(uid))
     if not user or not user["is_active"] or request.session.get("pw") != password_stamp(int(uid)):
         request.session.flush()
@@ -54,7 +58,7 @@ class SignInMiddleware:
             return self.get_response(request) if path == "/setup/" else redirect("/setup/")
         user = current_user(request)
         if user is None:
-            if path == "/login/":
+            if path == "/login/" or (path in ("/2fa/", "/2fa/setup/") and request.session.get("pending")):     # the code step, after a right password
                 return self.get_response(request)
             return redirect("/login/" + (f"?next={quote(path)}" if path not in ("/", "/logout/") else ""))
         request.slicks_user = user

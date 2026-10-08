@@ -5,7 +5,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from tests.test_web_d0 import PW
+from tests.test_web_d0 import PW, code_for
 
 TEAM, AUD = "slicks", "aud-123"
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -53,6 +53,9 @@ def test_the_servers_own_health_check_is_exempt_but_the_internet_is_not(web, acc
 def test_the_pass_email_must_be_the_account(web, access):
     r = web.post("/setup/", {"name": "Admin", "email": "admin@slicks.test", "password": PW, "password2": PW}, **_h(_pass()))      # the very first account also needs a pass
     assert r.status_code == 302
+    web.get("/2fa/setup/", **_h(_pass()))
+    r = web.post("/2fa/setup/", {"code": code_for("admin@slicks.test")}, **_h(_pass()))
+    assert r.status_code == 302 and r["Location"] == "/"
     ok = web.get("/", **_h(_pass("admin@slicks.test")))
     assert ok.status_code == 200
     other = web.get("/", **_h(_pass("someone.else@gmail.com")))

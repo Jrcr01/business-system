@@ -209,6 +209,8 @@ def settings_user(request, user_id: int):
             from engines.permissions import SWITCHES
             allowed = set(request.POST.getlist("on"))
             ok, msg = au.set_restrictions(user_id, set(SWITCHES) - allowed)
+        elif what == "reset_code":
+            ok, msg = au.reset_totp(user_id)
         else:
             ok, msg = False, "You can't do that to your own account."
         (messages.success if ok else messages.error)(request, msg)
@@ -217,7 +219,7 @@ def settings_user(request, user_id: int):
         u = au.get_user(user_id)
     return render(request, "masters/settings_user.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/users/",
                                                           "u": u, "role_label": ROLE_LABEL.get(u["role"], u["role"]), "roles": [(r, ROLE_LABEL[r]) for r in ROLES],
-                                                          "is_me": is_me, "shown": shown,
+                                                          "is_me": is_me, "shown": shown, "code_since": (au.totp_enabled_at(user_id) or "")[:10],
                                                           "switches": None if u["role"] == "admin" else __import__("engines.permissions", fromlist=["switch_table"]).switch_table(au.get_restrictions(user_id))})
 
 
