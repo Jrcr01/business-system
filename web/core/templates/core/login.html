@@ -1,9 +1,11 @@
 {% extends "core/base.html" %}{% load static %}
 {% block title %}Sign in{% endblock %}
 {% block content %}
+<div class="login-bg" style="background-image:url('{% static 'assets/storefront.webp' %}')" aria-hidden="true"></div>
+<div class="login-wrap">
 {% if sandbox_people %}
-<form class="card" method="post" action="/login/">{% csrf_token %}
-  <img src="{% static 'assets/slicks_logo.jpg' %}" alt="Slick's">
+<form class="login-card" method="post" action="/login/">{% csrf_token %}
+  <div class="login-brand"><img src="{% static 'assets/slicks_logo.jpg' %}" alt=""><div><b>Slick's Tire Supply</b><span>Business system</span></div></div>
   <h2>Sandbox: sign in as</h2>
   <input type="hidden" name="next" value="{{ next }}">
   <p class="note">The laptop sandbox has no password and no code. Pick who to be; sign out to switch. The live site always asks for both.</p>
@@ -11,12 +13,12 @@
     {{ p.name }} <span class="hint">({{ p.username|default:p.email }})</span></button>{% endfor %}
 </form>
 {% else %}
-<form class="card" method="post" action="/login/">{% csrf_token %}
-  <img src="{% static 'assets/slicks_logo.jpg' %}" alt="Slick's">
+<form class="login-card" method="post" action="/login/">{% csrf_token %}
+  <div class="login-brand"><img src="{% static 'assets/slicks_logo.jpg' %}" alt=""><div><b>Slick's Tire Supply</b><span>Business system</span></div></div>
   <h2>Sign in</h2>
   <input type="hidden" name="next" value="{{ next }}">
   {% if cf_email %}
-  <p class="note">Verified by Cloudflare as <b>{{ cf_email }}</b></p>
+  <p class="login-who"><span class="ms">verified_user</span>Verified by Cloudflare as <b>{{ cf_email }}</b></p>
   <input type="hidden" name="email" value="{{ cf_email }}" autocomplete="username">
   <label for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" required autofocus>
   {% else %}
@@ -24,7 +26,9 @@
   <label for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" required>
   {% endif %}
   <button class="btn wide" type="submit">Sign in</button>
-  <p class="note">Forgot your password? Ask the System admin to reset it.</p>
+  <p class="login-help">Forgot your password? Ask the System admin to reset it.</p>
+  <p class="login-foot"><span class="ms">lock</span>For authorized users only. Every action is recorded.</p>
 </form>
 {% endif %}
+</div>
 {% endblock %}
