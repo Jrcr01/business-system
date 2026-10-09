@@ -2,12 +2,14 @@
 {% block title %}Settings{% endblock %}
 {% block content %}
 {% include "masters/_settings_tabs.html" %}
-<div class="grp">Notice on Home</div>
+<div class="grp">Notice for everyone</div>
 <form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="notice">
   <div class="grow"><input type="text" name="notice" value="{{ notice }}" maxlength="300" placeholder="Type a notice for everyone, or leave empty" aria-label="Notice"></div>
+  <div><label for="until">On every page until (optional)</label><input id="until" type="datetime-local" name="until" value="{{ notice_until }}"></div>
   <button class="btn small" type="submit"><span class="ms">campaign</span>Save notice</button>
 </form>
-<p class="hint">Everyone sees it in the yellow strip on Home (e.g. "No check release on Friday"). Save it empty to remove it.</p>
+<p class="hint">Without a time it shows in the yellow strip on Home (e.g. "No check release on Friday"). With a time it shows on <b>every page</b> until then and
+  goes by itself (e.g. "System update tonight at 12 AM, about 1 minute"). Save it empty to remove it.</p>
 
 <p class="note" style="margin-top:18px">Change a number and press <b>Save</b>. "Back to default" undoes a change. Every change is written to the audit log.</p>
 {% for g in groups %}

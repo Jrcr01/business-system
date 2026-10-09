@@ -7,7 +7,7 @@
 <link rel="icon" href="{% static 'assets/slicks_logo.jpg' %}">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
-<link rel="stylesheet" href="{% static 'core/slicks.css' %}?v=2026-10-09q">
+<link rel="stylesheet" href="{% static 'core/slicks.css' %}?v=2026-10-09r">
 </head>
 <body>
 {% if me %}
@@ -37,6 +37,7 @@
 </nav>
 {% endif %}
 <main{% if request.view_only %} class="view-only"{% endif %}>
+{% if page_notice %}<div class="notice page-notice"><span class="ms">campaign</span> {{ page_notice }}</div>{% endif %}
 {% if request.view_only %}<div class="msg view-note"><span class="ms">visibility</span> View only: you can look at this page, but the System admin has not switched on changes here for you.</div>{% endif %}
 {% for m in messages %}<div class="msg {{ m.tags }}">{{ m|usdates }}</div>{% endfor %}
 {% block content %}{% endblock %}

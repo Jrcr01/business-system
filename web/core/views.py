@@ -23,7 +23,16 @@ def page_frame(request) -> dict:
         "is_sandbox": settings.IS_SANDBOX,
         "may_search": bool(user) and __import__("engines.permissions", fromlist=["sees_search"]).sees_search(user["role"]),
         "search_q": request.GET.get("q", "") if request.path == "/search/" else "",
+        "page_notice": _page_notice() if user else "",
     }
+
+
+def _page_notice() -> str:
+    try:
+        from engines.settings_registry import page_notice
+        return page_notice()
+    except Exception:                                   # noqa: BLE001 -- a notice must never break a page
+        return ""
 
 
 def _sign_in(request, user: dict) -> None:
@@ -239,7 +248,21 @@ def home(request):
         rows.insert(0, {"key": "mine", "title": "My home", "hint": "", "tiles": top})
     from engines.settings_registry import NOTICE_KEY
     from engines.settings_store import get_setting
-    return render(request, "core/home.html", {"rows": rows, "page_id": "home", "notice": get_setting(NOTICE_KEY, "") or ""})
+    from engines.whats_new import unseen
+    from engines.common import get_conn
+    with get_conn() as conn:
+        seen = (conn.execute("SELECT whats_new_seen FROM app_users WHERE user_id = ?", (int(user["user_id"]),)).fetchone() or [None])[0]
+    return render(request, "core/home.html", {"rows": rows, "page_id": "home", "notice": get_setting(NOTICE_KEY, "") or "", "whats_new": unseen(seen)})
+
+
+@require_POST
+def whats_new_seen(request):
+    """'Got it' on Home's What's new card: it does not show again until the next note."""
+    from engines.whats_new import latest_id
+    from engines.common import get_conn
+    with get_conn() as conn:
+        conn.execute("UPDATE app_users SET whats_new_seen = ? WHERE user_id = ?", (latest_id(), int(request.slicks_user["user_id"])))
+    return redirect("/")
 
 
 RELATED_PAGE = {"po": "purchase-orders", "statement": "order-statements", "loan": "lenders"}

@@ -1027,6 +1027,9 @@ CREATE TABLE IF NOT EXISTS app_users (
     failed_attempts INTEGER NOT NULL DEFAULT 0,
     locked_until DATETIME,
     last_login_at DATETIME,
+    last_seen_at DATETIME,          -- migration 083: the last page opened (at most once a minute) -- the deploy's who-is-active check
+    last_seen_path TEXT,
+    whats_new_seen TEXT,            -- migration 083: the newest "What's new" note the person has seen
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     totp_secret TEXT,               -- the 6-digit sign-in code's key (migration 077); NULL = not set up
     totp_enabled_at DATETIME,       -- confirmed with a first correct code

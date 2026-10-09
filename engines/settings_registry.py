@@ -100,20 +100,40 @@ def _write(conn, key: str, new_value: str, category: str, description: str) -> N
 
 
 NOTICE_KEY = "home_notice"
+NOTICE_UNTIL_KEY = "home_notice_until"          # 2026-10-09: with a time, the notice shows on EVERY page until then (e.g. "Update tonight at 12 AM")
 
 
-def save_notice(text: str) -> tuple[bool, str]:
-    """The owner's notice for everyone, shown in the yellow strip on Home (blank = no notice). Audited."""
+def save_notice(text: str, until: str = "") -> tuple[bool, str]:
+    """The owner's notice for everyone (blank = no notice): on Home, or -- with `until` (YYYY-MM-DDTHH:MM, Manila) -- on every page until that time,
+    then gone by itself. Audited."""
+    from datetime import datetime
     from engines.permissions import require
     ok, why = require("settings.edit")
     if not ok:
         return False, why
     text = " ".join(str(text or "").split())[:300]
+    until = (until or "").strip()
+    if until:
+        try:
+            until = datetime.fromisoformat(until).strftime("%Y-%m-%dT%H:%M")
+        except ValueError:
+            return False, "The 'show on every page until' time is not a date and time."
     settings_store._CACHE.clear()
     with get_conn(DB_PATH) as conn:
         _write(conn, NOTICE_KEY, text, "general", "Notice shown to everyone on Home")
-        _audit(conn, "SETTING_CHANGED", NOTICE_KEY, f"Home notice: {text or '(removed)'}")
-    return True, "Notice saved: everyone sees it on Home." if text else "Notice removed."
+        _write(conn, NOTICE_UNTIL_KEY, until if text else "", "general", "The notice shows on every page until this time (Manila)")
+        _audit(conn, "SETTING_CHANGED", NOTICE_KEY, f"Notice: {text or '(removed)'}" + (f"; on every page until {until}" if text and until else ""))
+    if not text:
+        return True, "Notice removed."
+    return True, f"Notice saved: everyone sees it on every page until {until.replace('T', ' ')}." if until else "Notice saved: everyone sees it on Home."
+
+
+def page_notice() -> str:
+    """The notice to show on every page right now ('' when there is none, it has no time, or its time has passed)."""
+    from engines.clock import manila_now
+    from engines.settings_store import get_setting
+    text, until = get_setting(NOTICE_KEY, "") or "", get_setting(NOTICE_UNTIL_KEY, "") or ""
+    return text if text and until and manila_now().strftime("%Y-%m-%dT%H:%M") < until else ""
 
 
 def _fmt(v: float, decimals: int) -> str:

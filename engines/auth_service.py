@@ -244,6 +244,8 @@ def create_user(email: str, name: str, role: str, username: str = "") -> tuple[b
             return False, problem, None, None
         uid = conn.execute("INSERT INTO app_users (email, username, name, role, password_hash, must_change_password) VALUES (?, ?, ?, ?, ?, 1) RETURNING user_id",
                            (email, username, name.strip(), role, hash_password(temp))).fetchone()[0]
+        from engines.whats_new import latest_id
+        conn.execute("UPDATE app_users SET whats_new_seen = ? WHERE user_id = ?", (latest_id(), uid))      # a new person starts with nothing "new"
         _audit(conn, "USER_CREATED", uid, f"{email} (username {username}) as {role}")
     return True, f"{name.strip()} signs in as {username} with the temporary password and must choose their own.", int(uid), temp
 

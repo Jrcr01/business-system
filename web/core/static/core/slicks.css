@@ -358,3 +358,11 @@ main.view-only form[method=post], main.view-only form[method=POST] { display: no
 .acc-extras input:disabled + * , .acc-extras label:has(input:disabled) { color: #a0aab8; }
 .acc-page.is-hidden .acc-label { color: #a0aab8; text-decoration: line-through; }
 @media (max-width: 600px) { .acc-row { grid-template-columns: 1fr 52px 52px 64px; font-size: .9rem; } }
+
+/* What's new on Home, once per person (2026-10-09) */
+.whats-new { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 10px 16px; margin: 10px 0 14px; max-width: 900px; }
+.wn-head { display: flex; align-items: center; gap: 8px; }
+.wn-head form { margin: 0 0 0 auto; }
+.wn-item ul { margin: 4px 0 6px 18px; padding: 0; }
+.wn-item li { margin: 2px 0; }
+.page-notice { margin: 0 0 10px; }

@@ -137,7 +137,7 @@ def settings_numbers(request):
     if request.method == "POST":
         what = request.POST.get("action")
         if what == "notice":
-            ok, msg = sr.save_notice(request.POST.get("notice", ""))
+            ok, msg = sr.save_notice(request.POST.get("notice", ""), request.POST.get("until", ""))
         elif what in ("save", "reset"):
             key = request.POST.get("key", "")
             raw = request.POST.get("value", "").replace(",", "").replace("₱", "").strip()
@@ -155,7 +155,8 @@ def settings_numbers(request):
             items.append({**m, "shown": fmt(cur), "default_shown": fmt(float(m["default"])), "is_default": abs(cur - m["default"]) < 1e-9})
         groups.append({"title": g, "items": items})
     return render(request, "masters/settings_numbers.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/",
-                                                             "groups": groups, "notice": get_setting(sr.NOTICE_KEY, "") or ""})
+                                                             "groups": groups, "notice": get_setting(sr.NOTICE_KEY, "") or "",
+                                                             "notice_until": get_setting(sr.NOTICE_UNTIL_KEY, "") or ""})
 
 
 def _admin_only(view):

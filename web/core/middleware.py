@@ -17,6 +17,22 @@ from django.http import HttpResponse
 from django.shortcuts import redirect
 
 OPEN = ("/static/", "/health/")
+_SEEN: dict[int, float] = {}                 # user id -> when this worker last wrote last_seen_at (at most once a minute: no extra save on every click)
+
+
+def note_seen(user_id: int, path: str, now: float | None = None) -> bool:
+    """Writes when this person was last active (for the deploy's who-is-active check, 2026-10-09). Returns True when it wrote."""
+    now = time.time() if now is None else now
+    if now - _SEEN.get(int(user_id), 0.0) < 60:
+        return False
+    _SEEN[int(user_id)] = now
+    try:
+        from engines.common import get_conn
+        with get_conn() as conn:
+            conn.execute("UPDATE app_users SET last_seen_at = CURRENT_TIMESTAMP, last_seen_path = ? WHERE user_id = ?", (path[:120], int(user_id)))
+    except Exception:                                   # never let this stop a page (an older database without the column)
+        return False
+    return True
 
 
 def password_stamp(user_id: int) -> str | None:
@@ -69,6 +85,7 @@ class SignInMiddleware:
             return HttpResponse(f"Cloudflare has you as {escape(cf)}, but this account is {escape(user['email'])}. Sign in with your own email. <a href='/login/'>Sign in</a>", status=403)
         if user["must_change_password"] and path not in ("/password/", "/logout/"):
             return redirect("/password/")
+        note_seen(int(user["user_id"]), path)
         started = time.perf_counter()
         with acting_as(user["email"], user["role"]):
             response = self.get_response(request)

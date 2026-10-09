@@ -79,6 +79,25 @@ deploy/deploy_to_server.sh slicks@erp.slickstiresupply.com
 
 Only committed code is sent; the server never needs GitHub access.
 
+### The release routine, now that the family works in the system (owner, 2026-10-09)
+
+1. **Build and test on the sandbox.** The sandbox is at port 8505. The owner approves it there.
+2. **Run the full test suite.** It must pass.
+3. **Rehearse big changes.** A change is "big" when it brings a new migration or touches the money, clearing or permission rules.
+   - Run `deploy/rehearse.sh slicks@165.245.188.246`. It copies last night's live backup to `data/rehearsal/` and applies the update to it.
+   - Click through the changed pages on the 8508 copy, as the owner and as a co-owner.
+   - Delete `data/rehearsal/` afterwards.
+4. **Write the What's new note.** Add 1–3 plain lines at the top of `engines/whats_new.py`, in the same commit. Each person sees them once on Home and presses **Got it**.
+5. **Optional banner.** For a change that alters how people work, post a notice in Settings with "On every page until". For example: "System update tonight at 12 AM, about 1 minute".
+6. **Deploy.** Run `deploy/deploy_to_server.sh slicks@165.245.188.246`.
+   - **Big changes go live only between 12 AM and 6 AM Manila.** At any other hour the script stops.
+   - **Small changes can go any time,** but every deploy first lists who was active in the last 10 minutes. If anyone was, the script stops.
+   - `--anyway` skips both checks. Use it only for an urgent fix the owner approved.
+   - After the release, the commit is tagged `live-<release>`. The script then waits about 20 seconds and prints any errors from the server log since the restart.
+7. **If it goes wrong:** run `deploy/rollback.sh slicks@165.245.188.246`.
+   - It puts the previous release back in seconds. Only the code changes; nothing typed since the update is lost, because migrations only add.
+   - Restoring the database from a `before_release_*` backup is a last resort, done only with the owner's OK, because it undoes the entries made since.
+
 ## Rules
 
 - **One database for both programs.** The Django settings refuse a file named `ap_disbursement.db` without `WEB_LIVE=1`, and only the live setup sets it.
