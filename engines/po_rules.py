@@ -310,9 +310,10 @@ def open_commitments(start: date, end: date) -> pd.DataFrame:
     return df[cols].reset_index(drop=True)
 
 
-def po_outflow_rows(start: date, end: date) -> list[dict]:
-    """The commitments as forecast rows (track 'Purchase order'), or nothing when the setting leaves orders out of the forecast."""
-    if not settings_registry.int_value("po_in_forecast"):
+def po_outflow_rows(start: date, end: date, force: bool | None = None) -> list[dict]:
+    """The commitments as forecast rows (track 'Purchase order'). force=None follows the setting that leaves orders out of the bank forecast;
+    True always counts them -- the day check and the order calendar (owner, 2026-10-09: an open PO must never leave its day looking free)."""
+    if not (force if force is not None else settings_registry.int_value("po_in_forecast")):
         return []
     return [{"day": r.day, "track": "Purchase order", "payee": r.supplier, "reference": r.po_no, "amount": float(r.amount)}
             for r in open_commitments(start, end).itertuples()]
@@ -474,7 +475,7 @@ def _committed_rows(end: date, exclude_po_id: int | None = None) -> pd.DataFrame
         out = hit[2]
     else:
         far = max(end, today + timedelta(days=400))
-        out = cis.scheduled_outflows(today, far)
+        out = cis.scheduled_outflows(today, far, include_pos=True)          # the day check counts every open PO, whatever the forecast setting
         _COMMITTED["rows"] = (stamp, far, out)
     out = out[pd.to_datetime(out["day"]).dt.date <= max(end, today)] if not out.empty else out
     cols = ["day", "payee", "kind", "reference", "amount"]

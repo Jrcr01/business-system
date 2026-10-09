@@ -144,11 +144,12 @@ def _baseline(today: date, end: date, start_cash: float | None, inflow_per_day: 
         if not src["fresh"]:
             raise ValueError("No recent bank balance to plan from — type the cash in the bank today, or import a recent statement.")
         start, source = float(src["balance"]), f"bank balance of {src['as_of']:%m/%d/%Y}"
-        out = scheduled_outflows(today, end)[["day", "track", "amount"]]
+        out = scheduled_outflows(today, end, include_invoices=False)[["day", "track", "amount"]]
     else:
         start, source = float(start_cash), "the cash you typed in"
         sched = get_payment_schedule_all_tracks()
         if not sched.empty:
+            sched = sched[~sched["stage"].isin(["invoice", "received"])]     # the planner plans these itself (open_items); POs are added below
             sched, _ = split_card_rows(sched)            # cards paid outside the Metrobank account take nothing from this cash
         if sched.empty:
             out = pd.DataFrame(columns=["day", "track", "amount"])

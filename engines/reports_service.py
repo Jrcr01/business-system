@@ -189,9 +189,16 @@ def get_payment_schedule_all_tracks() -> pd.DataFrame:
     convention -- see next_banking_day())."""
     with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(f"SELECT * FROM ({_PAYMENT_SCHEDULE_UNION}) ORDER BY due_date ASC, track ASC", conn)
+    # owner, 2026-10-09 (the AP waterfall): an SI is owed the moment it is recorded -- on its due date until checks cover it -- and goods delivered
+    # against a PO are owed (at the PO price) until their SI is recorded. `stage` says which step a row is at: check / invoice / received / loan / card.
+    df["stage"] = df["track"].map({"Supplier": "check", "Lender": "check", "Bank Loan": "loan", "Credit Card": "card"})
+    from engines.payables_waterfall import owed_extra
+    extra = owed_extra()
+    if not extra.empty:
+        df = pd.concat([df, extra], ignore_index=True) if not df.empty else extra
     if not df.empty:
         df["actual_payment_date"] = df["due_date"].apply(next_banking_day)
-        today = next_banking_day(manila_today())                     # a past-dated check not cleared yet can be deposited any day: it counts from today
+        today = next_banking_day(manila_today())                     # a past-dated check (or SI) not paid yet can go out any day: it counts from today
         df["actual_payment_date"] = df["actual_payment_date"].apply(lambda d: max(d, today))
         # Within each payment day: by track (Lender, Bank Loan, Supplier, Credit Card), then smallest amount first.
         df["_track_rank"] = df["track"].map(PAYMENT_SCHEDULE_TRACK_ORDER).fillna(len(PAYMENT_SCHEDULE_TRACK_ORDER))

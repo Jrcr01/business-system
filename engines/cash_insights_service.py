@@ -97,7 +97,7 @@ def expected_daily_inflow(weeks: int | None = None) -> dict[int, float]:
     return {wd: float(total.get(wd, 0.0)) / int(count.get(wd, 1)) for wd in range(7)}
 
 
-def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
+def scheduled_outflows(start: date, end: date, include_invoices: bool = True, include_pos: bool | None = None) -> pd.DataFrame:
     """Money going out per day between start and end (inclusive): our active checks the bank has not cleared yet -- on their check date,
     or on `start` if that date is already past (the bank can take them any day) -- moved to the next banking day on weekends; plus
     bank-loan installments and credit-card dues from the payment schedule (only statements that are entered: no estimates, owner 2026-10-02
@@ -120,8 +120,14 @@ def scheduled_outflows(start: date, end: date) -> pd.DataFrame:
             d = next_banking_day(str(r["due_date"])[:10])
             if start <= d <= end:
                 rows.append({"day": d, "track": r["track"], "payee": r["payee_name"], "reference": r["reference"], "amount": float(r["amount"])})
+    if include_invoices:                                       # SIs no check covers yet, on their due date (owner, 2026-10-09: the AP waterfall)
+        from engines.payables_waterfall import uncovered_invoices
+        for r in uncovered_invoices().itertuples():
+            d = max(next_banking_day(str(r.due_date)[:10]), next_banking_day(start))
+            if d <= end:
+                rows.append({"day": d, "track": "Supplier", "payee": r.payee_name, "reference": r.reference, "amount": float(r.amount)})
     from engines.po_rules import po_outflow_rows               # ordered purchase orders: money we will owe, before any invoice exists (stage B3)
-    rows += po_outflow_rows(start, end)
+    rows += po_outflow_rows(start, end, force=include_pos)
     return pd.DataFrame(rows, columns=["day", "track", "payee", "reference", "amount"])
 
 

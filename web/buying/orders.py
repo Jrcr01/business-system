@@ -91,7 +91,7 @@ def _going_out(request) -> dict:
     from engines.cash_insights_service import scheduled_outflows
     from engines.clock import manila_today
     today = manila_today()
-    out = scheduled_outflows(today, today + timedelta(days=120))
+    out = scheduled_outflows(today, today + timedelta(days=120), include_pos=True)
     weekly = request.GET.get("by") == "week"
     if out.empty:
         return {"weekly": weekly, "out": []}
