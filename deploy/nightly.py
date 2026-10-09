@@ -1,5 +1,6 @@
 """Server nightly job (server step F3.1): the audit log check + seal (engines/audit_seal.py, as the laptop's daily backup does), then a
-backup of the database with SQLite's own backup API (safe while the ERP runs) into /srv/slicks/backups, newest 30 kept.
+backup of the database with SQLite's own backup API (safe while the ERP runs) into /srv/slicks/backups, newest 30 kept; then the original bank
+statement files: older than 5 years removed (audited), the rest copied to /srv/slicks/backups/bank (owner, 2026-10-09).
 Run by the slicks-erp-nightly timer at 18:00 Manila time. Prints one line per step (kept by systemd: journalctl -u slicks-erp-nightly)."""
 import glob
 import os
@@ -32,7 +33,34 @@ def main() -> int:
     for old in sorted(glob.glob(os.path.join(DEST, PREFIX + "*.db")))[:-KEEP]:
         os.remove(old)
         print("Removed old backup", os.path.basename(old))
+    try:
+        statement_files()
+    except Exception as e:
+        print(f"Statement files step could not run: {e}")
     return 0
+
+
+def statement_files() -> None:
+    import shutil
+    from engines.bank_statement_service import bank_dir, prune_statement_files
+    folder, copy_to = bank_dir(), os.path.join(DEST, "bank")
+    gone = prune_statement_files()
+    for name in gone:
+        print("Statement file past 5 years, removed:", name)
+        try:
+            os.remove(os.path.join(copy_to, name))
+        except FileNotFoundError:
+            pass
+    if not os.path.isdir(folder):
+        return
+    os.makedirs(copy_to, exist_ok=True)
+    new = 0
+    for name in os.listdir(folder):
+        src, dst = os.path.join(folder, name), os.path.join(copy_to, name)
+        if os.path.isfile(src) and not os.path.exists(dst):
+            shutil.copy2(src, dst)
+            new += 1
+    print(f"Statement files: {len(os.listdir(folder))} kept, {new} newly backed up, {len(gone)} removed")
 
 
 if __name__ == "__main__":

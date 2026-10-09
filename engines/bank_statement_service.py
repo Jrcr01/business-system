@@ -380,6 +380,39 @@ def bank_dir() -> str:
     return os.path.join(os.path.dirname(os.path.abspath(dbe.DB_PATH)), "bank")
 
 
+KEEP_STATEMENT_YEARS = 5          # owner, 2026-10-09: the original statement files are kept 5 years (every line stays in the database for good)
+
+
+def prune_statement_files(today: date | None = None, years: int = KEEP_STATEMENT_YEARS, folder: str | None = None) -> list[str]:
+    """Deletes kept statement files imported more than `years` ago (by the date the import put in front of the name, else the file's date), and writes
+    one audit line per file. Run by the server's nightly job. Returns the names removed."""
+    import calendar
+    today = today or manila_now().date()
+    y = today.year - years
+    cutoff = date(y, today.month, min(today.day, calendar.monthrange(y, today.month)[1]))
+    folder = folder or bank_dir()
+    if not os.path.isdir(folder):
+        return []
+    gone = []
+    for name in sorted(os.listdir(folder)):
+        path = os.path.join(folder, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            on = datetime.strptime(name[:8], "%Y%m%d").date()
+        except ValueError:
+            on = datetime.fromtimestamp(os.path.getmtime(path)).date()
+        if on < cutoff:
+            os.remove(path)
+            gone.append(name)
+    if gone:
+        with write_tx(DB_PATH) as conn:
+            for name in gone:
+                conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES ('system', 'BANK_FILE_EXPIRED', "
+                             "'bank_statement_files', NULL, ?)", (f"{name}: original statement file older than {years} years removed (its lines stay)",))
+    return gone
+
+
 def import_statement(data: bytes, filename: str, bank_account_id: int = 1, keep_copy: bool = True) -> dict:
     """Parse, store (new lines only) and match. Returns {'import_id', 'new_lines', 'duplicate_lines', 'matched', 'exceptions', 'messages',
     'already_imported'}. The same file (by content) is never imported twice."""
