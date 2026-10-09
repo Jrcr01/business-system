@@ -70,13 +70,13 @@ def bank_loans(request):
            "statuses": [("active", "Active"), ("closed", "Closed"), ("cancelled", "Cancelled"), ("", "All")],
            "still_to_pay": sum(float(r["still_to_pay"] or 0) for r in rows), "new": bool(request.GET.get("new")), "pick": request.GET.get("bank", ""),
            "beneficiaries": _rows("SELECT beneficiary_id, name, beneficiary_type FROM loan_beneficiaries ORDER BY name"),
-           "may_write": _can(request, "loans.use"), "today": date.today(), "typed": request.session.pop("bl_typed", None)}
+           "may_write": _can(request, "bankloans.use"), "today": date.today(), "typed": request.session.pop("bl_typed", None)}
     return render(request, "payables/bank_loans.html", ctx)
 
 
 def _create(request):
     p = request.POST
-    if not _can(request, "loans.use"):
+    if not _can(request, "bankloans.use"):
         _say(request, False, "Loan work is switched off for you.")
         return redirect("/bank-loans/")
     if p.get("action") == "beneficiary":
@@ -136,7 +136,7 @@ def bank_loan(request, blid: int):
            "interest": sum(float(r["interest_portion"] or 0) for r in inst),
            "banks": _rows("SELECT creditor_id, creditor_name FROM creditors WHERE creditor_type = 'BANK_LOAN' ORDER BY creditor_name"),
            "beneficiaries": _rows("SELECT beneficiary_id, name, beneficiary_type FROM loan_beneficiaries ORDER BY name"),
-           "may_write": _can(request, "loans.use") and not loan["is_cancelled"], "staged": request.session.get(f"bl_import_{blid}"), "today": date.today()}
+           "may_write": _can(request, "bankloans.use") and not loan["is_cancelled"], "staged": request.session.get(f"bl_import_{blid}"), "today": date.today()}
     return render(request, "payables/bank_loan.html", ctx)
 
 
@@ -144,7 +144,7 @@ def _loan_post(request, loan: dict):
     from engines import bank_loan_service as bls
     p, what, blid = request.POST, request.POST.get("action", ""), int(loan["bank_loan_id"])
     back = f"/bank-loans/{blid}/"
-    if not _can(request, "loans.use"):
+    if not _can(request, "bankloans.use"):
         _say(request, False, "Loan work is switched off for you.")
         return redirect(back)
     if what == "add":

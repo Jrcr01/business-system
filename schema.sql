@@ -1037,6 +1037,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_username ON app_users (username)
 
 -- SECURITY AND ROLES (owner, 2026-10-08, migration 076): everyone is an Owner; the System admin switches off, per person, what they may NOT do.
 -- A new password cannot be one of the person's last 5.
+CREATE TABLE IF NOT EXISTS user_hidden_pages (     -- migration 082: pages hidden from a person (what they see)
+    user_id INTEGER NOT NULL REFERENCES app_users(user_id),
+    page_id TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT,
+    PRIMARY KEY (user_id, page_id)
+);
 CREATE TABLE IF NOT EXISTS user_restrictions (
     user_id INTEGER NOT NULL REFERENCES app_users(user_id),
     action TEXT NOT NULL,

@@ -42,34 +42,56 @@
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="on"><button class="btn small ghost" type="submit"><span class="ms">person</span>Switch on</button></form>
 {% endif %}
 
-{% if switches %}
-<div class="grp">What {{ u.name }} may do</div>
-<p class="note">Everyone in the family is an Owner. Switch off what this person must <b>not</b> do; it applies at their next click. Their own password, the System
-  admin's settings, users and the audit log stay yours alone.</p>
-{% if copied_from %}<div class="msg info">Showing <b>{{ copied_from.name }}</b>'s switches. Press <b>Save</b> to give {{ u.name }} the same, or
+{% if access %}
+<div class="grp">What {{ u.name }} may see and do</div>
+<p class="note">For each page: <b>Hidden</b> (gone from the menu, Home and search), <b>See</b> (read only) or <b>See and do</b>. It applies at their next
+  click. Their own password, the System admin's settings, users and the audit log stay yours alone.</p>
+{% if copied_from %}<div class="msg info">Showing <b>{{ copied_from.name }}</b>'s settings. Press <b>Save</b> to give {{ u.name }} the same, or
   <a href="?">cancel</a>.</div>{% endif %}
-<form method="post" id="sw-form">{% csrf_token %}<input type="hidden" name="action" value="switches">
+<form method="post" id="acc-form">{% csrf_token %}<input type="hidden" name="action" value="access">
   <div class="sw-presets">Start from:
-    {% for k, label, keys in presets %}<button class="btn small ghost" type="button" data-preset="{{ keys|join:',' }}">{{ label }}</button>{% endfor %}
+    {% for k, label in presets %}<button class="btn small ghost" type="button" data-preset="{{ k }}">{{ label }}</button>{% endfor %}
     {% if others %}<select class="sw-copy" aria-label="Copy from another person" onchange="if(this.value)location='?copy='+this.value">
       <option value="">Copy from another person…</option>{% for o in others %}<option value="{{ o.user_id }}">{{ o.name }}</option>{% endfor %}</select>{% endif %}
   </div>
-  {% for g in switches %}<div class="sw-sec">
-    <div class="sw-head"><b>{{ g.section }}</b><span><a href="#" data-all="1">all on</a> · <a href="#" data-all="0">all off</a></span></div>
-    {% for l in g.lines %}<label class="sw-line"><input type="checkbox" class="sw" name="on" value="{{ l.key }}"{% if l.on %} checked{% endif %}>
-      <span class="sw-label">{{ l.label }}</span><span class="sw-pages">{{ l.pages }}</span></label>{% endfor %}
+  {% for g in access %}<div class="sw-sec">
+    <div class="acc-row acc-head"><b>{{ g.section }}</b><span>Hidden</span><span>See</span><span>See and do</span></div>
+    {% for r in g.rows %}<div class="acc-page" data-page="{{ r.page }}">
+      <div class="acc-row"><span class="acc-label">{{ r.label }}</span>
+        <label><input type="radio" name="lv_{{ r.page }}" value="hidden"{% if r.level == "hidden" %} checked{% endif %} aria-label="{{ r.label }}: hidden"></label>
+        <label><input type="radio" name="lv_{{ r.page }}" value="see"{% if r.level == "see" %} checked{% endif %} aria-label="{{ r.label }}: see"></label>
+        {% if r.can_do %}<label><input type="radio" name="lv_{{ r.page }}" value="do"{% if r.level == "do" %} checked{% endif %} aria-label="{{ r.label }}: see and do"></label>
+        {% else %}<span class="acc-na" title="This page only reads">—</span>{% endif %}
+      </div>
+      {% if r.extras %}<div class="acc-extras">{% for x in r.extras %}<label><input type="checkbox" name="x" value="{{ x.key }}"{% if x.on %} checked{% endif %}> {{ x.label }}</label>{% endfor %}</div>{% endif %}
+    </div>{% endfor %}
   </div>{% endfor %}
-  <div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save what {{ u.name }} may do</button></div>
+  <div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save what {{ u.name }} may see and do</button></div>
 </form>
 <script>
 (function () {
-  var f = document.getElementById("sw-form"); if (!f) return;
+  var f = document.getElementById("acc-form"); if (!f) return;
+  var presets = {{ presets_json|safe }};
+  function sync() {                                     /* the extra ticks count only under "See and do" */
+    f.querySelectorAll(".acc-page").forEach(function (p) {
+      var on = p.querySelector('input[type=radio][value="do"]:checked');
+      p.querySelectorAll(".acc-extras input").forEach(function (x) { x.disabled = !on; });
+      p.classList.toggle("is-hidden", !!p.querySelector('input[type=radio][value="hidden"]:checked'));
+    });
+  }
+  f.addEventListener("change", sync);
   f.querySelectorAll("[data-preset]").forEach(function (b) {
-    b.addEventListener("click", function () { var on = b.dataset.preset.split(","); f.querySelectorAll("input.sw").forEach(function (x) { x.checked = on.indexOf(x.value) >= 0; }); });
+    b.addEventListener("click", function () {
+      var p = presets[b.dataset.preset];
+      Object.keys(p.levels).forEach(function (page) {
+        var lv = p.levels[page], r = f.querySelector('input[name="lv_' + page + '"][value="' + lv + '"]') || f.querySelector('input[name="lv_' + page + '"][value="see"]');
+        if (r) r.checked = true;
+      });
+      f.querySelectorAll('input[name="x"]').forEach(function (x) { x.checked = p.extras.indexOf(x.value) >= 0; });
+      sync();
+    });
   });
-  f.querySelectorAll("[data-all]").forEach(function (a) {
-    a.addEventListener("click", function (e) { e.preventDefault(); a.closest(".sw-sec").querySelectorAll("input.sw").forEach(function (x) { x.checked = a.dataset.all === "1"; }); });
-  });
+  sync();
 })();
 </script>
 {% endif %}

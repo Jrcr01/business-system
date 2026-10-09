@@ -211,9 +211,11 @@ def settings_user(request, user_id: int):
             ok, msg = au.set_active(user_id, what == "on")
         elif what == "role" and not is_me:
             ok, msg = au.set_role(user_id, request.POST.get("role", ""))
-        elif what == "switches" and u["role"] != "admin":
-            from engines.permissions import denied_from_lines          # one line may stand for several actions (owner, 2026-10-09)
-            ok, msg = au.set_restrictions(user_id, denied_from_lines(set(request.POST.getlist("on")), au.get_restrictions(user_id)))
+        elif what == "access" and u["role"] != "admin":                # what they see and what they do, per page (owner, 2026-10-09)
+            from engines.permissions import ACCESS_PAGES, LEVELS, access_from_choices
+            levels = {p: request.POST.get(f"lv_{p}") for p in ACCESS_PAGES if request.POST.get(f"lv_{p}") in LEVELS}
+            hidden, denied = access_from_choices(levels, set(request.POST.getlist("x")), au.get_restrictions(user_id))
+            ok, msg = au.set_access(user_id, hidden, denied)
         elif what == "email":
             ok, msg = au.set_email(user_id, request.POST.get("email", ""))
         elif what == "username":
@@ -233,15 +235,19 @@ def settings_user(request, user_id: int):
 
 
 def _switch_ctx(request, u: dict, user_id: int) -> dict:
-    """The person's switches (owner, 2026-10-09): plain lines with the pages they open; starting points; another person's switches to copy (not saved until Save)."""
+    """What the person sees and does (owner, 2026-10-09): a row per page -- Hidden / See / See and do -- with its extra actions; starting points; another
+    person's settings to copy (not saved until Save)."""
     if u["role"] == "admin":
-        return {"switches": None}
+        return {"access": None}
+    import json
+
     from engines import auth_service as au
-    from engines.permissions import SWITCH_PRESETS, switch_lines
+    from engines.permissions import ACCESS_PRESETS, row_levels
     others = [x for x in au.list_users().to_dict("records") if x["role"] != "admin" and int(x["user_id"]) != int(user_id)]
     copy = int(request.GET.get("copy")) if (request.GET.get("copy") or "").isdigit() else None
     source = next((x for x in others if int(x["user_id"]) == copy), None)
-    lines = switch_lines(au.get_restrictions(source["user_id"] if source else user_id))
-    return {"switches": lines, "presets": [(k, label, sorted(keys)) for k, (label, keys) in SWITCH_PRESETS.items()], "others": others, "copied_from": source}
+    who = source["user_id"] if source else user_id
+    return {"access": row_levels(au.get_restrictions(who), au.get_hidden_pages(who)), "others": others, "copied_from": source,
+            "presets": [(k, label) for k, (label, _) in ACCESS_PRESETS.items()], "presets_json": json.dumps({k: v for k, (_, v) in ACCESS_PRESETS.items()})}
 
 

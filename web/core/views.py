@@ -254,7 +254,12 @@ def related(request, kind: str, doc_id: int):
     if RELATED_PAGE[kind] not in pages_for(role):
         return HttpResponse("You don't have access to this document.", status=403)
     from engines.doc_trail import trail_for
-    return render(request, "core/_related.html", {"related": trail_for(role, kind, int(doc_id))})
+    cols, mine = trail_for(role, kind, int(doc_id)), pages_for(role)
+    for col in cols:
+        for d in col.get("docs", []):
+            if d.get("url") and _page_of(d["url"]) not in mine:
+                d["url"] = None                                   # a document on a page hidden from the person: shown, not opened
+    return render(request, "core/_related.html", {"related": cols})
 
 
 def page(request, page_id: str):
@@ -268,6 +273,11 @@ def page(request, page_id: str):
     base = settings.STREAMLIT_URL
     return render(request, "core/later.html", {"page": p, "page_id": page_id, "stage_name": STAGE_NAME.get(p.stage, ""),
                                                "streamlit": f"{base.rstrip('/')}/{page_id}" if base else ""})
+
+
+def _page_of(url: str) -> str:
+    """The page id a link opens ('/order-statements/12/' -> 'order-statements')."""
+    return (url or "").strip("/").split("/")[0].split("?")[0]
 
 
 def _search_url(row: dict) -> str:
@@ -295,9 +305,14 @@ def search(request):
     from engines.global_search_service import search_everything
     q = (request.GET.get("q") or "").strip()
     groups = search_everything(q, limit=25) if q else []
+    mine = pages_for(request.slicks_user["role"])
     for g in groups:
         for r in g["rows"]:
             r["href"] = _search_url(r)
+        kept = [r for r in g["rows"] if _page_of(r["href"]) in mine or _page_of(r["href"]) in ("", "home")]     # a page hidden from the person: no result
+        g["total"] -= len(g["rows"]) - len(kept)
+        g["rows"] = kept
+    groups = [g for g in groups if g["rows"]]
     return render(request, "core/search.html", {"page_id": "home", "q": q, "groups": groups, "total": sum(g["total"] for g in groups)})
 
 

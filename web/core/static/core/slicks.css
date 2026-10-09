@@ -345,3 +345,16 @@ main:has(.login-wrap) > .msg { position: relative; z-index: 2; max-width: 380px;
 /* View-only pages (owners, 2026-10-09): every form that saves is hidden; the server refuses saves anyway */
 main.view-only form[method=post], main.view-only form[method=POST] { display: none !important; }
 .msg.view-note { background: #eef2ff; color: #1e3a8a; display: flex; align-items: center; gap: 8px; }
+
+/* What a person sees and does (owner, 2026-10-09): a row per page, Hidden / See / See and do */
+.acc-row { display: grid; grid-template-columns: 1fr 70px 70px 90px; align-items: center; gap: 6px; padding: 7px 0; border-top: 1px solid #eef1f5; }
+.acc-row > label, .acc-row > span:not(.acc-label) { text-align: center; margin: 0 !important; }
+.acc-head { border-top: 0; font-size: .8rem; color: var(--muted); }
+.acc-head b { color: var(--ink, #0f172a); font-size: .95rem; }
+.acc-row input[type=radio] { width: 18px; height: 18px; accent-color: var(--blue); cursor: pointer; }
+.acc-na { color: var(--muted); }
+.acc-extras { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 0 0 8px 18px; font-size: .88rem; }
+.acc-extras label { display: inline-flex !important; align-items: center; gap: 5px; margin: 0 !important; }
+.acc-extras input:disabled + * , .acc-extras label:has(input:disabled) { color: #a0aab8; }
+.acc-page.is-hidden .acc-label { color: #a0aab8; text-decoration: line-through; }
+@media (max-width: 600px) { .acc-row { grid-template-columns: 1fr 52px 52px 64px; font-size: .9rem; } }

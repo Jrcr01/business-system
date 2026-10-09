@@ -54,7 +54,8 @@ _ROWS: list[tuple[str, str, str, tuple]] = [
     ("check.release", "Payables", "Mark post-dated checks as released to the supplier, or undo it", (Y, None, Y, None, None)),
     ("check.void", "Payables", "Cancel or void a check, cancel a batch, change a locked batch", (Y, None, None, None, None)),
     ("bank.use", "Payables", "Bank and cash: import a bank statement, reconcile", (Y, None, Y, None, None)),
-    ("loans.use", "Payables", "Lenders and bank loans", (Y, None, Y, None, None)),
+    ("loans.use", "Payables", "Lenders: loan notes, their schedules and guarantee checks", (Y, None, Y, None, None)),
+    ("bankloans.use", "Payables", "Bank loans: new loans, schedules, imports, paid ticks (owner, 2026-10-09: apart from Lenders)", (Y, None, Y, None, None)),
     ("cards.use", "Payables", "Credit cards: statements (SOA), cards and cardholders", (Y, None, Y, None, None)),
     ("creditors.edit", "Payables", "Add and change suppliers (terms, delivery days)", (Y, None, Y, None, None)),
     ("calendar.mark", "Payables", "Mark holidays, no-check days and notes on the payment calendar", (Y, None, Y, None, None)),
@@ -84,7 +85,7 @@ ACTIONS: dict[str, dict] = {a: {"group": g, "label": text, "levels": _levels(a, 
 PAGE_ACTION = {
     "home": "home.open", "price-lists": "price.view", "purchase-orders": "po.view", "payables-due": "payables_due.view", "calendar": "payables_due.view",
     "payment-run": "invoice.enter", "add-data": "invoice.enter", "order-statements": "invoice.enter", "checks": "payables.mark_paid", "release": "check.release", "controls": "controls.view", "bank-cash": "bank.use", "planner": "bank.use",
-    "lenders": "loans.use", "bank-loans": "loans.use", "credit-cards": "cards.use", "creditors": "creditors.edit",
+    "lenders": "loans.use", "bank-loans": "bankloans.use", "credit-cards": "cards.use", "creditors": "creditors.edit",
     "reports": "reports.use", "analytics": "reports.use", "review": "review.use", "data-health": "health.view",
     "settings": "settings.edit", "admin": "audit.view",
 }
@@ -100,7 +101,7 @@ WORKFLOW: list[tuple[str, list[str]]] = [
                        "payables.mark_paid"]),
     ("Release", ["check.release"]),
     ("Bank", ["bank.use"]),
-    ("Loans and cards", ["loans.use", "cards.use"]),
+    ("Loans and cards", ["loans.use", "bankloans.use", "cards.use"]),
     ("Records", ["search.use", "reports.use", "health.view"]),
     ("Review", ["review.use", "po.ack_over_plan", "controls.view"]),
     ("Sales", ["sales.use", "inventory.use"]),
@@ -190,18 +191,132 @@ def allowed_pages(role: str | None, all_pages: set[str]) -> set[str]:
     return out
 
 
-def viewable_pages(role: str | None, all_pages: set[str]) -> set[str]:
-    """The pages this role may OPEN. Owners see every page except Set-up (owner, 2026-10-09: "since we are all owners ... view access to all modules");
-    what they may DO stays per their switches -- a page they may only see is read-only (masters.views.page_needed refuses its saves)."""
-    out = allowed_pages(role, all_pages)
-    if role == "owner":
-        out |= {p for p in all_pages if PAGE_ACTION.get(p) not in SYSTEM_ONLY and p != "more"}
+_HIDDEN: dict = {}
+
+
+def hidden_for(email: str | None) -> frozenset:
+    """The pages the System admin hid from this person (owner, 2026-10-09: "control what they can see"); none for the System admin or nobody signed in.
+    Read again whenever the database changes, like denied_for."""
+    if not email:
+        return frozenset()
+    from engines import common
+    from engines.settings_store import _stamp
+    key = (common.DB_PATH, email.strip().lower())
+    stamp = _stamp(common.DB_PATH)
+    hit = _HIDDEN.get(key)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    try:
+        with common.get_conn() as conn:
+            rows = conn.execute("""SELECT h.page_id FROM user_hidden_pages h JOIN app_users u ON u.user_id = h.user_id
+                                   WHERE lower(u.email) = ? AND u.role != 'admin'""", (key[1],)).fetchall()
+        out = frozenset(r[0] for r in rows)
+    except Exception:                                   # an older database without the table: nothing hidden
+        out = frozenset()
+    if len(_HIDDEN) > 200:
+        _HIDDEN.clear()
+    _HIDDEN[key] = (stamp, out)
     return out
 
 
+def viewable_pages(role: str | None, all_pages: set[str]) -> set[str]:
+    """The pages this person may OPEN. Owners see every page except Set-up (2026-10-09: "view access to all modules") less the pages the System admin
+    hid from them ("control what they can see and what they can do"); what they may DO stays per their switches -- a page they may only see is read-only
+    (masters.views.page_needed refuses its saves)."""
+    out = allowed_pages(role, all_pages)
+    if role == "owner":
+        out |= {p for p in all_pages if PAGE_ACTION.get(p) not in SYSTEM_ONLY and p != "more"}
+    return out - hidden_for(acting_email())
+
+
 def sees_search(role: str | None) -> bool:
-    """Search only reads, so every owner may use it (2026-10-09); other roles per their switch."""
+    """Search only reads, so every owner may use it (2026-10-09) unless it is hidden from them; other roles per their switch."""
+    if "search" in hidden_for(acting_email()):
+        return False
     return role == "owner" or can(role, "search.use")
+
+
+# The person's page (owner, 2026-10-09: "i want to control what they can see, what they can do"): one row per page, Hidden / See / See and do, and under
+# "See and do" the few extra actions on that page. (section, [(page id, label, do-actions, [(extra key, label, actions)])]). A row with no do-actions only
+# reads (Hidden / See). Seeing is never a switch any more: SEE_ACTIONS stay on; what is not on this page (sales, inventory, /more/) keeps its setting.
+ACCESS_ROWS: list[tuple[str, list[tuple[str, str, list[str], list[tuple[str, str, list[str]]]]]]] = [
+    ("Buy", [
+        ("price-lists", "Price lists", ["price.write"], []),
+        ("purchase-orders", "Purchase orders", ["po.create", "po.order"],
+         [("receive", "Receive goods", ["po.receive_goods"]), ("match", "Match invoices", ["po.receive"]), ("cancel_po", "Cancel an order", ["po.cancel"]),
+          ("over_plan", "Confirm an order over the cash plan", ["po.ack_over_plan"])])]),
+    ("Pay suppliers", [
+        ("order-statements", "Order statements (invoices, batches)", ["invoice.enter"],
+         [("checks", "Park, write and release checks (batches and lender loans)", ["check.park", "check.issue", "check.release"]),
+          ("void", "Void or replace checks; cancel or reopen a batch", ["check.void"])]),
+        ("checks", "Daily payables (mark paid)", ["payables.mark_paid"], []),
+        ("calendar", "Calendar (do = mark holidays and no-check days)", ["calendar.mark"], [])]),
+    ("Bank, loans and cards", [
+        ("bank-cash", "Bank and cash", ["bank.use"], []),
+        ("lenders", "Lenders", ["loans.use"], []),
+        ("bank-loans", "Bank loans", ["bankloans.use"], []),
+        ("credit-cards", "Credit cards", ["cards.use"], [])]),
+    ("Records", [
+        ("reports", "Reports", [], []),
+        ("analytics", "Analytics", [], []),
+        ("search", "Search everything", [], [])]),
+    ("Set-up", [
+        ("creditors", "Suppliers", ["creditors.edit"], []),
+        ("review", "Checks and review", ["review.use", "controls.view"], [("health", "Data health checks", ["health.view"])])]),
+]
+ACCESS_PAGES = [p for _, rows in ACCESS_ROWS for p, _, _, _ in rows]
+SEE_ACTIONS = {"price.view", "po.view", "committed.view", "payables_due.view", "reports.use", "search.use"}
+LEVELS = ("hidden", "see", "do")
+
+
+def row_levels(denied: set, hidden: set) -> list[dict]:
+    """The person's page: [{'section', 'rows': [{'page', 'label', 'can_do', 'level', 'extras': [{'key', 'label', 'on'}]}]}]."""
+    out = []
+    for section, rows in ACCESS_ROWS:
+        items = []
+        for page, label, acts, extras in rows:
+            if page in hidden:
+                level = "hidden"
+            elif acts and not (set(acts) & set(denied)):
+                level = "do"
+            else:
+                level = "see"
+            items.append({"page": page, "label": label, "can_do": bool(acts), "level": level,
+                          "extras": [{"key": k, "label": lb, "on": level == "do" and not (set(a) & set(denied))} for k, lb, a in extras]})
+        out.append({"section": section, "rows": items})
+    return out
+
+
+def access_from_choices(levels: dict, extras_on: set, denied_before: set) -> tuple[set, set]:
+    """(hidden pages, denied actions) from the page's choices: levels {page: 'hidden'|'see'|'do'} and the ticked extra keys. A row not on 'do' denies
+    its actions and its extras; seeing is never denied; the switches not on this page keep their setting."""
+    hidden, denied = set(), set()
+    shown = SEE_ACTIONS.copy()
+    for _, rows in ACCESS_ROWS:
+        for page, _, acts, extras in rows:
+            shown |= set(acts) | {a for _, _, ax in extras for a in ax}
+            level = levels.get(page, "see")
+            if level == "hidden":
+                hidden.add(page)
+            if level != "do" or not acts:
+                denied |= set(acts) | {a for _, _, ax in extras for a in ax}
+            else:
+                denied |= {a for k, _, ax in extras if k not in extras_on for a in ax}
+    return hidden, denied | (set(denied_before) & (SWITCHES - shown))
+
+
+def _preset(do: set, extras: set, hidden: set = frozenset()) -> dict:
+    return {"levels": {p: ("hidden" if p in hidden else "do" if p in do else "see") for p in ACCESS_PAGES}, "extras": sorted(extras)}
+
+
+ACCESS_PRESETS = {
+    "daily": ("Daily operations", _preset({"price-lists", "purchase-orders", "order-statements", "checks", "calendar", "lenders", "bank-loans"},
+                                          {"receive", "match", "cancel_po", "checks"})),
+    "purchasing": ("Purchasing only", _preset({"price-lists", "purchase-orders"}, {"receive", "cancel_po"},
+                                              hidden=set(ACCESS_PAGES) - {"price-lists", "purchase-orders", "search"})),
+    "view": ("View only", _preset(set(), set())),
+    "all": ("Everything", _preset(set(ACCESS_PAGES), {k for _, rows in ACCESS_ROWS for _, _, _, ex in rows for k, _, _ in ex})),
+}
 
 
 def filter_menu(menu: dict[str, list[str]], role: str | None) -> dict[str, list[str]]:
@@ -241,7 +356,7 @@ SWITCH_LINES: list[tuple[str, list[tuple[str, str, str, list[str]]]]] = [
         ("suppliers", "Add and change suppliers", "Creditors", ["creditors.edit"])]),
     ("Bank, loans and cards", [
         ("bank", "Import bank statements, reconcile, booklets", "Bank and cash", ["bank.use"]),
-        ("loans", "Lenders and bank loans", "Lenders, Bank loans", ["loans.use"]),
+        ("loans", "Lenders and bank loans", "Lenders, Bank loans", ["loans.use", "bankloans.use"]),
         ("cards", "Card statements (SOA) and cards", "Credit cards", ["cards.use"])]),
     ("Records", [
         ("reports", "Reports and analytics", "Reports, Analytics", ["reports.use"]),

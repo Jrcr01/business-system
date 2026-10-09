@@ -411,20 +411,69 @@ def get_restrictions(user_id: int) -> set[str]:
 
 
 def split_new_switches() -> int:
-    """Once (2026-10-09): the two new switches start as the switch they were split from -- "Mark payables paid" as Bank, "Card statements" as Loans --
-    so nobody gains or loses anything until the System admin changes it. Marked done in the settings; returns how many switches were set."""
+    """Once each (2026-10-09): a new switch starts as the switch it was split from -- "Mark payables paid" as Bank, "Card statements" as Loans, and
+    later "Bank loans" as Lenders -- so nobody gains or loses anything until the System admin changes it. Marked done in the settings; returns how many
+    switches were set."""
     from engines.settings_store import get_setting, set_setting
-    if str(get_setting("switches_split_2026_10_09", "0")) == "1":
-        return 0
+    n = 0
+    for flag, pairs in (("switches_split_2026_10_09", (("bank.use", "payables.mark_paid"), ("loans.use", "cards.use"))),
+                        ("switches_split_bankloans_2026_10_09", (("loans.use", "bankloans.use"),))):
+        if str(get_setting(flag, "0")) == "1":
+            continue
+        n += _split(pairs)
+        set_setting(flag, "1")
+    return n
+
+
+def _split(pairs) -> int:
     n = 0
     with get_conn() as conn:
-        for old, new in (("bank.use", "payables.mark_paid"), ("loans.use", "cards.use")):
+        for old, new in pairs:
             for (uid,) in conn.execute("SELECT user_id FROM user_restrictions WHERE action = ?", (old,)).fetchall():
                 if not conn.execute("SELECT 1 FROM user_restrictions WHERE user_id = ? AND action = ?", (uid, new)).fetchone():
                     conn.execute("INSERT INTO user_restrictions (user_id, action, created_by) VALUES (?, ?, 'split 2026-10-09')", (uid, new))
                     n += 1
-    set_setting("switches_split_2026_10_09", "1")
     return n
+
+
+def get_hidden_pages(user_id: int) -> set[str]:
+    """The pages the System admin hid from this person (what they see, 2026-10-09)."""
+    try:
+        with get_conn() as conn:
+            return {r[0] for r in conn.execute("SELECT page_id FROM user_hidden_pages WHERE user_id = ?", (user_id,))}
+    except Exception:                                   # an older database without the table
+        return set()
+
+
+def set_access(user_id: int, hidden: set[str], denied: set[str]) -> tuple[bool, str]:
+    """The System admin saves what this person SEES (hidden pages) and DOES (switched-off actions) in one locked step (owner, 2026-10-09). Never for a
+    System admin. Audited in plain words: what is hidden, view only and switched off, old and new."""
+    from engines.permissions import ACCESS_PAGES, SWITCHES
+    _ok, _msg = require_permission('users.manage')
+    if not _ok:
+        return False, _msg
+    hidden = {p for p in hidden if p in ACCESS_PAGES}
+    denied = {a for a in denied if a in SWITCHES}
+    with write_tx() as conn:
+        row = conn.execute("SELECT email, role FROM app_users WHERE user_id = ?", (user_id,)).fetchone()
+        if not row:
+            return False, "Account not found."
+        if row[1] == "admin":
+            return False, "The System admin can't be limited."
+        h_before = {r[0] for r in conn.execute("SELECT page_id FROM user_hidden_pages WHERE user_id = ?", (user_id,))}
+        d_before = {r[0] for r in conn.execute("SELECT action FROM user_restrictions WHERE user_id = ?", (user_id,))}
+        if h_before == hidden and d_before == denied:
+            return True, "No change."
+        conn.execute("DELETE FROM user_hidden_pages WHERE user_id = ?", (user_id,))
+        for p in sorted(hidden):
+            conn.execute("INSERT INTO user_hidden_pages (user_id, page_id, created_by) VALUES (?, ?, acting_user())", (user_id, p))
+        conn.execute("DELETE FROM user_restrictions WHERE user_id = ?", (user_id,))
+        for a in sorted(denied):
+            conn.execute("INSERT INTO user_restrictions (user_id, action, created_by) VALUES (?, ?, acting_user())", (user_id, a))
+        _audit(conn, "USER_ACCESS_CHANGED", user_id,
+               f"{row[0]}: hidden now {sorted(hidden) or 'nothing'} (was {sorted(h_before) or 'nothing'}); switched off now {sorted(denied) or 'nothing'}; "
+               f"newly off {sorted(denied - d_before) or 'none'}; back on {sorted(d_before - denied) or 'none'}")
+    return True, f"{row[0]}: saved. It applies at their next click."
 
 
 def set_restrictions(user_id: int, denied: set[str]) -> tuple[bool, str]:
