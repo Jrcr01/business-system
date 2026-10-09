@@ -60,11 +60,12 @@ Public Function NewBatchSheet(ByVal base As String) As Worksheet
     Loop
     Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
     ws.Name = nm
-    ws.Range("A1").Value = "Doc Ref"
+    ws.Range("A1").Value = "Sales Invoice No"
     ws.Range("B1").Value = "Date"
     ws.Range("C1").Value = "Amount"
     ws.Range("D1").Value = "Less %"
-    With ws.Range("A1:D1")
+    ws.Range("E1").Value = "DR No"
+    With ws.Range("A1:E1")
         .Font.Bold = True
         .Font.Color = RGB(255, 255, 255)
         .Interior.Color = RGB(31, 58, 95)
@@ -73,18 +74,20 @@ Public Function NewBatchSheet(ByVal base As String) As Worksheet
     ws.Columns("B").ColumnWidth = 14
     ws.Columns("C").ColumnWidth = 16
     ws.Columns("D").ColumnWidth = 10
+    ws.Columns("E").ColumnWidth = 14
+    ws.Columns("E").NumberFormat = "@"
     ws.Columns("B").NumberFormat = "yyyy-mm-dd"
     ws.Columns("C").NumberFormat = "#,##0.00"
-    ws.Range("F1").Value = "Invoices"
-    ws.Range("G1").Formula = "=COUNTA(A2:A5000)"
-    ws.Range("F2").Value = "Total"
-    ws.Range("G2").Formula = "=SUM(C2:C5000)"
-    ws.Range("G2").NumberFormat = "#,##0.00"
-    ws.Range("F1:F2").Font.Bold = True
+    ws.Range("G1").Value = "Invoices"
+    ws.Range("H1").Formula = "=COUNTA(A2:A5000)"
+    ws.Range("G2").Value = "Total"
+    ws.Range("H2").Formula = "=SUM(C2:C5000)"
+    ws.Range("H2").NumberFormat = "#,##0.00"
+    ws.Range("G1:G2").Font.Bold = True
     Set NewBatchSheet = ws
 End Function
 
-' Name of the first tab of this supplier that already holds this Doc Ref, or "" if none.
+' Name of the first tab of this supplier that already holds this sales invoice no., or "" if none.
 Public Function FindDuplicate(ByVal base As String, ByVal docRef As String) As String
     Dim ws As Worksheet, r As Long, last As Long
     For Each ws In ThisWorkbook.Worksheets
@@ -124,6 +127,7 @@ Private WithEvents cboBatch As MSForms.ComboBox
 Private WithEvents btnAdd As MSForms.CommandButton
 Private WithEvents btnClose As MSForms.CommandButton
 Private txtDoc As MSForms.TextBox
+Private txtDr As MSForms.TextBox
 Private WithEvents cboYear As MSForms.ComboBox
 Private WithEvents cboMonth As MSForms.ComboBox
 Private cboDay As MSForms.ComboBox
@@ -154,7 +158,7 @@ Private Sub UserForm_Initialize()
     Dim ws As Worksheet, r As Long, lastRow As Long
     Me.Caption = "Add invoice"
     Me.Width = 340
-    Me.Height = 300
+    Me.Height = 330
 
     AddLbl "Supplier", 12
     Set cboSupplier = AddCtl("Forms.ComboBox.1", "cboSupplier", 108, 12, 214, 20)
@@ -162,25 +166,27 @@ Private Sub UserForm_Initialize()
     AddLbl "Batch (tab)", 42
     Set cboBatch = AddCtl("Forms.ComboBox.1", "cboBatch", 108, 42, 214, 20)
     cboBatch.Style = 2
-    AddLbl "Doc Ref", 72
+    AddLbl "Sales invoice (SI)", 72
     Set txtDoc = AddCtl("Forms.TextBox.1", "txtDoc", 108, 72, 214, 20)
-    AddLbl "Invoice date", 102
-    Set cboMonth = AddCtl("Forms.ComboBox.1", "cboMonth", 108, 102, 96, 20)
+    AddLbl "DR no. (if any)", 102
+    Set txtDr = AddCtl("Forms.TextBox.1", "txtDr", 108, 102, 214, 20)
+    AddLbl "Invoice date", 132
+    Set cboMonth = AddCtl("Forms.ComboBox.1", "cboMonth", 108, 132, 96, 20)
     cboMonth.Style = 2
-    Set cboDay = AddCtl("Forms.ComboBox.1", "cboDay", 208, 102, 52, 20)
+    Set cboDay = AddCtl("Forms.ComboBox.1", "cboDay", 208, 132, 52, 20)
     cboDay.Style = 2
-    Set cboYear = AddCtl("Forms.ComboBox.1", "cboYear", 264, 102, 58, 20)
+    Set cboYear = AddCtl("Forms.ComboBox.1", "cboYear", 264, 132, 58, 20)
     cboYear.Style = 2
-    AddLbl "Amount", 132
-    Set txtAmount = AddCtl("Forms.TextBox.1", "txtAmount", 108, 132, 110, 20)
-    AddLbl "Less %", 162
-    Set txtLess = AddCtl("Forms.TextBox.1", "txtLess", 108, 162, 60, 20)
-    Set lblInfo = AddCtl("Forms.Label.1", "lblInfo", 12, 196, 310, 32)
+    AddLbl "Amount", 162
+    Set txtAmount = AddCtl("Forms.TextBox.1", "txtAmount", 108, 162, 110, 20)
+    AddLbl "Less %", 192
+    Set txtLess = AddCtl("Forms.TextBox.1", "txtLess", 108, 192, 60, 20)
+    Set lblInfo = AddCtl("Forms.Label.1", "lblInfo", 12, 226, 310, 32)
     lblInfo.Caption = "Pick a supplier to start."
-    Set btnAdd = AddCtl("Forms.CommandButton.1", "btnAdd", 108, 236, 100, 28)
+    Set btnAdd = AddCtl("Forms.CommandButton.1", "btnAdd", 108, 266, 100, 28)
     btnAdd.Caption = "Add invoice"
     btnAdd.Default = True
-    Set btnClose = AddCtl("Forms.CommandButton.1", "btnClose", 222, 236, 100, 28)
+    Set btnClose = AddCtl("Forms.CommandButton.1", "btnClose", 222, 266, 100, 28)
     btnClose.Caption = "Close"
 
     building = True
@@ -316,7 +322,7 @@ Private Sub RefreshInfo()
         lblInfo.Caption = "A new tab will be created for this batch."
     ElseIf SheetExists(cboBatch.Value) Then
         Set ws = ThisWorkbook.Worksheets(cboBatch.Value)
-        lblInfo.Caption = ws.Name & ": " & ws.Range("G1").Value & " invoice(s), total " & Format(ws.Range("G2").Value, "#,##0.00")
+        lblInfo.Caption = ws.Name & ": " & ws.Range("H1").Value & " invoice(s), total " & Format(ws.Range("H2").Value, "#,##0.00")
     End If
 End Sub
 
@@ -325,12 +331,13 @@ Private Sub btnClose_Click()
 End Sub
 
 Private Sub btnAdd_Click()
-    Dim base As String, docRef As String, amtText As String, lessText As String
+    Dim base As String, docRef As String, drNo As String, amtText As String, lessText As String
     Dim amt As Double, less As Double, ws As Worksheet, r As Long, dupTab As String, invDate As Date
 
     If cboSupplier.ListIndex < 0 Then MsgBox "Pick a supplier first.", vbExclamation: Exit Sub
     docRef = Trim(txtDoc.Value)
-    If Len(docRef) = 0 Then MsgBox "Type the Doc Ref (invoice number).", vbExclamation: txtDoc.SetFocus: Exit Sub
+    If Len(docRef) = 0 Then MsgBox "Type the sales invoice no. (SI). A DR number goes in the DR box.", vbExclamation: txtDoc.SetFocus: Exit Sub
+    drNo = Trim(txtDr.Value)
     If cboYear.ListIndex < 0 Or cboMonth.ListIndex < 0 Or cboDay.ListIndex < 0 Then MsgBox "Pick the invoice date (month, day and year).", vbExclamation: Exit Sub
     invDate = DateSerial(SelNum(cboYear, 0), SelNum(cboMonth, 0), SelNum(cboDay, 0))
     If invDate > Date Then MsgBox "That invoice date is in the future (" & Format(invDate, "yyyy-mm-dd") & "). Please check it.", vbExclamation: Exit Sub
@@ -348,7 +355,7 @@ Private Sub btnAdd_Click()
     base = BaseTabName(cboSupplier.Value)
     dupTab = FindDuplicate(base, docRef)
     If Len(dupTab) > 0 Then
-        If MsgBox("Doc Ref " & docRef & " is already on tab """ & dupTab & """ for this supplier." & vbCrLf & vbCrLf & _
+        If MsgBox("Sales invoice " & docRef & " is already on tab """ & dupTab & """ for this supplier." & vbCrLf & vbCrLf & _
                   "Add it anyway?", vbYesNo + vbExclamation, "Possible double entry") <> vbYes Then Exit Sub
     End If
 
@@ -367,8 +374,11 @@ Private Sub btnAdd_Click()
     ws.Cells(r, 2).Value = invDate
     ws.Cells(r, 3).Value = amt
     ws.Cells(r, 4).Value = less
+    ws.Cells(r, 5).NumberFormat = "@"
+    ws.Cells(r, 5).Value = drNo
 
     txtDoc.Value = ""
+    txtDr.Value = ""
     txtAmount.Value = ""
     RefreshInfo
     txtDoc.SetFocus

@@ -14,6 +14,7 @@ import os
 import re
 import sqlite3
 from engines.common import get_conn
+from engines.common import us_date
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -153,7 +154,7 @@ def bank_schedule_warnings(bank_loan_id: int, rows: list) -> list[str]:
     with _conn() as conn:
         for due, _ in rows:
             if conn.execute("SELECT 1 FROM bank_loan_installments WHERE bank_loan_id = ? AND due_date = ? LIMIT 1", (bank_loan_id, str(due)[:10])).fetchone():
-                out.append(f"This loan already has an installment due {str(due)[:10]}.")
+                out.append(f"This loan already has an installment due {us_date(due)}.")
         need = min(3, len(pairs))
         if need:
             for other_id, ref in conn.execute("SELECT bank_loan_id, loan_ref FROM bank_loans WHERE bank_loan_id != ? AND is_cancelled = 0", (bank_loan_id,)).fetchall():
@@ -250,14 +251,14 @@ def loan_check_mismatches(loan_note_id: int, proposed: dict | None = None) -> li
         if inst_no is None:
             if not has_schedule:
                 continue     # migrated note with no repayment schedule on file -- nothing to match against
-            out.append(f"{label} for {_php(amount)} dated {str(check_date)[:10]} is not tied to any row of the repayment schedule.")
+            out.append(f"{label} for {_php(amount)} dated {us_date(check_date)} is not tied to any row of the repayment schedule.")
             continue
         expected = float(principal) + float(interest)
         problems = []
         if abs(float(amount) - expected) > 0.005:
             problems.append(f"amount is {_php(amount)} but the schedule says {_php(expected)} (principal {_php(principal)} + interest {_php(interest)})")
         if str(check_date)[:10] != str(due)[:10]:
-            problems.append(f"dated {str(check_date)[:10]} but the installment is due {str(due)[:10]}")
+            problems.append(f"dated {us_date(check_date)} but the installment is due {us_date(due)}")
         if problems:
             out.append(f"{label} (installment #{inst_no}): " + "; ".join(problems) + ".")
     return out

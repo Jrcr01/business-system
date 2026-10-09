@@ -157,8 +157,8 @@ def statement(request, sid: int):
              ("Numbered", "done" if n and numbered == n else ("part" if numbered else "wait"))]
     links = po_links_for_batch(sid)
     invoices, memos = _invoices(sid), _memos(sid)
-    checks = _rows("SELECT check_id, check_number, check_date, amount, status, datetime(printed_at, '+8 hours') AS printed_at, bank_cleared_date FROM checks_issued "
-                   "WHERE statement_id = ? ORDER BY check_id", (sid,))
+    from payables.batch_checks import checks_for
+    checks = checks_for(_rows, sid)
     cancelled, locked = b["status"] == "Cancelled", bool(b["is_locked"])
     from engines.statement_rules import unbatched_invoices
     waiting = unbatched_invoices(int(b["creditor_id"])).to_dict("records") if not cancelled and not locked else []
@@ -171,7 +171,25 @@ def statement(request, sid: int):
            "today": manila_today(), "due_today": resolve_due_date(manila_today(), b["terms"] or ""),
            "edit_inv": request.GET.get("edit_inv", ""), "edit_memo": request.GET.get("edit_memo", ""),
            "warnings": request.session.pop("inv_warnings", None), "typed": request.session.pop("inv_typed", None),
-           "memo_warnings": request.session.pop("memo_warnings", None), "memo_typed": request.session.pop("memo_typed", None)}
+           "memo_warnings": request.session.pop("memo_warnings", None), "memo_typed": request.session.pop("memo_typed", None),
+           "skipped": request.session.pop("skipped", None), "remaining": max(balance, 0.0),
+           "may_park": _can(request, "check.park"), "may_write": _can(request, "check.issue"), "may_release": _can(request, "check.release"),
+           "may_void": _can(request, "check.void"),
+           "n_parked": sum(1 for c in checks if c["stage"] == "Parked"), "n_unnumbered": sum(1 for c in checks if c["stage"] == "Written" and not c["check_number"]),
+           "n_to_release": sum(1 for c in checks if c["stage"] == "Written" and c["check_number"])}
+    if tab == "checks":                                         # a panel the row buttons open: number these, edit / void that one
+        picked = {int(k[5:]) for k, v in request.GET.items() if k.startswith("tick_") and v == "1" and k[5:].isdigit()}
+        ctx["num_mode"] = "hand" if request.GET.get("hand") else ("number" if request.GET.get("number") else "")
+        ctx["num_checks"] = [c for c in checks if c["check_id"] in picked and c["stage"] in ("Parked", "Written") and not c["check_number"]] if ctx["num_mode"] else []
+        if ctx["num_checks"]:
+            from payables.batch_checks import booklet_plan
+            ctx.update(booklet_plan(request, ctx["num_checks"]))
+        one = int(request.GET.get("edit") or request.GET.get("void") or 0)
+        ctx["edit_check"] = next((c for c in checks if c["check_id"] == one and c["stage"] == "Parked"), None) if request.GET.get("edit") else None
+        ctx["void_check"] = next((c for c in checks if c["check_id"] == one and c["status"] == "Active" and c["stage"] != "Cleared"), None) if request.GET.get("void") else None
+    if ctx.get("may_park") and ctx.get("remaining", 0) > 0.004:
+        from payables.batch_checks import park_context
+        ctx.update(park_context(b, _rows, ctx["due_today"]))
     return render(request, "payables/statement.html", ctx)
 
 
@@ -184,10 +202,14 @@ def _statement_post(request, b: dict):
     sid, cid, terms = int(b["statement_id"]), int(b["creditor_id"]), b["terms"] or ""
     p, what = request.POST, request.POST.get("action", "")
     back = f"/order-statements/{sid}/"
+    if what.startswith("chk_"):                                 # the Checks tab (web/payables/batch_checks.py)
+        from payables import batch_checks
+        return batch_checks.post(request, b, lambda ok, msg: _say(request, ok, msg), lambda action: _can(request, action))
     if what == "add_invoice":
-        doc, day, gross, less = p.get("doc", "").strip(), _date(p.get("date")), _num(p.get("gross"), 0), _num(p.get("less"), 0) or 0
+        from engines.statement_rules import doc_reference
+        doc, day, gross, less = doc_reference(p.get("doc"), p.get("dr")), _date(p.get("date")), _num(p.get("gross"), 0), _num(p.get("less"), 0) or 0
         if not doc or not day or gross <= 0:
-            _say(request, False, "A new invoice needs its sales invoice no., date received and a positive amount.")
+            _say(request, False, "A new invoice needs a document reference (its SI no. or DR no.), the date received and a positive amount.")
         elif not 0 <= less <= 100:
             _say(request, False, "Less % must be between 0 and 100.")
         else:
@@ -197,7 +219,7 @@ def _statement_post(request, b: dict):
                 return redirect(back + "#add_invoice")
             try:
                 net, _, _ = add_invoice(cid, doc, day, resolve_due_date(day, terms), gross, [less] if less else [], sid, dr_no=p.get("dr", ""))
-                _say(request, True, f"Sales invoice {doc} added (net ₱{net:,.2f}).")
+                _say(request, True, f"Invoice {doc} added (net ₱{net:,.2f}).")
             except sqlite3.IntegrityError:
                 _say(request, False, f"Invoice {doc} already exists for this supplier.")
         return redirect(back + "#add_invoice")
@@ -214,7 +236,10 @@ def _statement_post(request, b: dict):
         if not day:
             _say(request, False, "Enter the date received.")
             return redirect(back + f"?edit_inv={inv_id}")
-        ok, msg = edit_invoice(inv_id, p.get("doc", "").strip(), day, resolve_due_date(day, terms), gross, less, dr_no=p.get("dr", ""))
+        from engines.statement_rules import doc_reference
+        ref = doc_reference(p.get("doc"), p.get("dr"))
+        ok, msg = (edit_invoice(inv_id, ref, day, resolve_due_date(day, terms), gross, less, dr_no=p.get("dr", "")) if ref
+                   else (False, "An invoice needs a document reference: its SI no. or DR no."))
         _say(request, ok, msg)
         return redirect(back if ok else back + f"?edit_inv={inv_id}")
     if what == "put_in_batch":
@@ -301,41 +326,32 @@ def statement_pdf(request, sid: int, kind: str):
 
 # --- Add data -----------------------------------------------------------------------------------------------------------------------------------------
 
-@page_needed("add-data")
-def add_data(request):
-    """One place to start adding records: invoices go into a batch (the supplier's open Draft is suggested), the rest open the page that keeps them."""
-    from core.menu import BUILT
-    from engines.statement_rules import create_order_statement
-    suppliers = _suppliers()
-    ids = [s for s, _ in suppliers]
-    cid = int(request.GET.get("s") or request.POST.get("s") or (ids[0] if ids else 0) or 0)
-    if cid not in ids:
-        cid = ids[0] if ids else 0
-    if request.method == "POST":
-        pick = request.POST.get("batch", "new")
-        if pick == "new":
-            sid = create_order_statement(cid)
-            _say(request, True, "Draft batch created. Add its invoices below.")
-        else:
-            sid = int(pick)
-        return redirect(f"/order-statements/{sid}/" + ("?tab=memos" if request.POST.get("what") == "memos" else ""))
-    open_batches = [r for r in _batches("os.creditor_id = ? AND os.status != 'Cancelled' AND os.is_locked = 0", (cid,))] if cid else []
-    open_batches.sort(key=lambda r: (r["status"] != "Draft", -r["statement_id"]))
-    for r in open_batches:
-        r["n_inv"] = _rows("SELECT COUNT(*) AS n FROM invoices WHERE statement_id = ?", (r["statement_id"],))[0]["n"]
-    later = lambda pid, stage: "" if pid in BUILT else stage      # noqa: E731
-    kinds = [("receipt", "Invoices / credit memos", "Pick the supplier and the batch below", "#invoices", ""),
-             ("contacts", "New creditor", "Set-up → Creditors", "/creditors/new/", ""),
-             ("handshake", "Loans", "Lenders and bank loans", "/lenders/", later("lenders", "D6")),
-             ("credit_card", "Credit card statement", "Credit cards", "/credit-cards/", later("credit-cards", "D7")),
-             ("edit_note", "Handwritten / guarantee check", "Checks", "/checks/", later("checks", "D6")),
-             ("menu_book", "Checkbook booklet / spoiled check", "Checks and checkbook", "/checks/", later("checks", "D4"))]
-    return render(request, "payables/add_data.html", {"page_id": "add-data", "suppliers": suppliers, "cid": cid, "open_batches": open_batches, "kinds": kinds})
-
-
 # --- Payables due -------------------------------------------------------------------------------------------------------------------------------------
 
 KIND_COLORS = {"Supplier checks": "#16305B", "Lender checks": "#4C78A8", "Bank loans": "#C26A00", "Credit cards": "#9FB3D1", "Purchase orders": "#2E7D32"}
+
+
+DAILY_SHOWS = [("due", "Today + overdue"), ("week", "Next 7 days"), ("ticked", "Ticked, waiting for the bank"), ("all", "All")]
+
+
+def _daily(df, show: str, today) -> dict:
+    """The daily payables checklist, grouped by day (owner, 2026-10-09): items stay on their day until cleared; days before today are overdue."""
+    from datetime import timedelta
+    show = show if show in dict(DAILY_SHOWS) else "due"
+    if df.empty:
+        return {"days": [], "shows": DAILY_SHOWS, "show": show, "counts": {k: 0 for k, _ in DAILY_SHOWS}, "n_overdue": 0, "total_due": 0.0}
+    open_ = df[df["ticked"].isna()]
+    week = (today + timedelta(days=7)).isoformat()
+    sets = {"due": open_[open_["due"]], "week": open_[open_["day"] <= week], "ticked": df[df["ticked"].notna()], "all": df}
+    rows = sets[show].astype(object).where(sets[show].notna(), None)       # no NaN reaching the page (a NaN "ticked" would read as ticked)
+    days = []
+    for day, part in rows.groupby("day", sort=True):
+        items = part.to_dict("records")
+        days.append({"day": day, "overdue": day < today.isoformat() and show != "ticked", "today": day == today.isoformat(), "items": items,
+                     "total": float(sum(float(x or 0) for x in part["amount"])), "n_open": sum(1 for x in part["ticked"] if x is None)})
+    due = sets["due"]
+    return {"days": days, "shows": DAILY_SHOWS, "show": show, "counts": {k: len(x) for k, x in sets.items()},
+            "n_overdue": int((due["day"] < today.isoformat()).sum()), "total_due": float(due["amount"].sum())}
 
 
 @page_needed("checks")
@@ -345,10 +361,43 @@ def checks(request):
     from engines import clearing
     from engines.permissions import can
     role = request.slicks_user["role"]
-    may_tick = can(role, "bank.use")
+    may_tick = can(role, "payables.mark_paid")          # its own switch (2026-10-09); was the Bank switch
     is_admin = role == "admin"
     if request.method == "POST":
         what, cid = request.POST.get("action"), int(request.POST.get("check_id") or 0)
+        if what == "clear_many" and may_tick:                   # the daily payables checklist: everything ticked, one date and note (owner, 2026-10-09)
+            on, note = _date(request.POST.get("on")), request.POST.get("note", "")
+            picked = [k[5:].split("_", 1) for k, val in request.POST.items() if k.startswith("tick_") and val == "1"]
+            done, refused = 0, []
+            for kind, item in picked:
+                if not item.isdigit():
+                    continue
+                fn = {"check": clearing.mark_cleared, "loan": clearing.mark_loan_cleared, "card": clearing.pay_card}.get(kind)
+                if fn is None:
+                    continue
+                if kind == "card":                                  # a card can be paid partly: the amount typed on its line (owner, 2026-10-09)
+                    typed = request.POST.get(f"amt_card_{item}", "").replace(",", "").strip()
+                    try:
+                        one_ok, one_msg = fn(int(item), on, note, float(typed) if typed else None)
+                    except ValueError:
+                        one_ok, one_msg = False, f"'{typed}' is not an amount."
+                else:
+                    one_ok, one_msg = fn(int(item), on, note)
+                done += one_ok
+                if not one_ok:
+                    refused.append(one_msg)
+            if not picked:
+                ok, msg = False, "Tick the payables that are paid."
+            else:
+                ok, msg = not refused, f"{done} marked paid." + (" Not marked: " + " · ".join(refused) if refused else "")
+            _say(request, ok, msg)
+            return redirect("/checks/?show=" + request.POST.get("show", "due"))
+        if what == "unpay_card" and may_tick:
+            _say(request, *clearing.unpay_card(int(request.POST.get("item_id") or 0)))
+            return redirect("/checks/?show=ticked")
+        if what == "unclear_loan" and may_tick:
+            _say(request, *clearing.unmark_loan_cleared(int(request.POST.get("item_id") or 0)))
+            return redirect("/checks/?show=ticked")
         if what == "clear" and may_tick:
             ok, msg = clearing.mark_cleared(cid, _date(request.POST.get("on")), request.POST.get("note", ""))
         elif what == "unclear" and may_tick:
@@ -366,13 +415,13 @@ def checks(request):
         else:
             ok, msg = False, "You can't do that here."
         _say(request, ok, msg)
-        return redirect("/checks/" + ("?tab=cutoff" if what == "cutoff" else ""))
+        return redirect("/checks/" + ("?tab=cutoff" if what == "cutoff" else "?show=ticked" if what == "unclear" else ""))
     tab = request.GET.get("tab", "waiting")
-    waiting = clearing.waiting_for_bank()
-    ctx = {"page_id": "checks", "tab": tab, "may_tick": may_tick, "is_admin": is_admin, "today": __import__("engines.clock", fromlist=["manila_today"]).manila_today(),
-           "rows": waiting.to_dict("records"), "total": float(waiting["amount"].sum()) if not waiting.empty else 0.0,
-           "n_past": int(waiting["past"].sum()) if not waiting.empty else 0, "n_ticked": int(waiting["ticked"].sum()) if not waiting.empty else 0,
+    today = __import__("engines.clock", fromlist=["manila_today"]).manila_today()
+    ctx = {"page_id": "checks", "tab": tab, "may_tick": may_tick, "is_admin": is_admin, "today": today, "today_iso": today.isoformat(),
            "more": _more_page("checks") if can(role, "more.use") else ""}
+    if tab != "cutoff":
+        ctx.update(_daily(clearing.daily_payables(), request.GET.get("show", "due"), today))
     if is_admin:
         from engines.common import get_conn
         with get_conn() as conn:
@@ -380,7 +429,9 @@ def checks(request):
         if tab == "cutoff":
             prev = clearing.cutoff_preview()
             ctx.update({"first_day": prev["first_day"], "before_n": len(prev["before"]), "before_total": float(prev["before"]["amount"].sum()) if len(prev["before"]) else 0.0,
-                        "inside": prev["inside"].to_dict("records")})
+                        "inside": prev["inside"].to_dict("records"), "loans_n": len(prev["loans_before"]),
+                        "loans_total": float(prev["loans_before"]["amount"].sum()) if len(prev["loans_before"]) else 0.0,
+                        "cards_before": prev["cards_before"].to_dict("records")})
     return render(request, "payables/checks.html", ctx)
 
 
@@ -417,6 +468,9 @@ def reports(request):
     """Reports -> Schedule of payments (owner, 2026-10-08, stage D8 begun for the co-owner): everything still owed across the four kinds, by pay day, with
     Excel and PDF of exactly what is shown. The other reports are still in the old screens (/more/), for the people allowed there."""
     from engines.permissions import can, hide_check_details
+    if request.GET.get("r") == "soa":                           # the reports kept after the review (owner, 2026-10-09; Decision reports dropped too)
+        from payables import report_more
+        return report_more.soa(request)
     df, f, payees = _schedule(request)
     what = request.GET.get("download")
     show_ref = not hide_check_details(request.slicks_user["role"])
@@ -449,7 +503,7 @@ def reports(request):
     heaviest = max(days, key=lambda d: d["total"]) if days else None
     from urllib.parse import urlencode
     query = urlencode({k: ("" if v is None else str(v)) for k, v in f.items()})
-    return render(request, "payables/reports.html", {"page_id": "reports", "f": f, "kinds": SCHEDULE_KINDS, "payees": payees, "days": days, "show_ref": show_ref,
+    return render(request, "payables/reports.html", {"page_id": "reports", "r": "schedule", "f": f, "kinds": SCHEDULE_KINDS, "payees": payees, "days": days, "show_ref": show_ref,
                                                      "total": sum(d["total"] for d in days), "count": sum(d["n"] for d in days), "heaviest": heaviest, "query": query,
                                                      "more": _more_reports() if can(request.slicks_user["role"], "more.use") else ""})
 
@@ -460,35 +514,3 @@ def _more_reports() -> str:
     return f"{base.rstrip('/')}/reports" if base else ""
 
 
-@page_needed("payables-due")
-def payables_due(request):
-    from engines.payables_due_service import COLUMNS, by_supplier, by_week, next_days
-    tab = request.GET.get("tab", "weeks")
-    ctx = {"page_id": "payables-due", "tab": tab, "w": next_days(7), "m": next_days(30)}
-    if tab == "suppliers":
-        ctx["by_supplier"] = by_supplier(30).to_dict("records")
-    elif tab == "past":
-        from engines.cash_insights_service import float_summary
-        fs = float_summary()
-        ctx["fs"] = fs
-        if fs:
-            ctx.update({"overdue_total": float(fs["overdue"]["amount"].sum()) if not fs["overdue"].empty else 0.0, "overdue_n": len(fs["overdue"]),
-                        "by_payee": fs["by_payee"].to_dict("records") if len(fs["by_payee"]) else []})
-    elif tab == "weeks":
-        import pandas as pd
-
-        from engines.clock import manila_today
-        from engines.reports_service import get_payment_calendar_items
-        items = get_payment_calendar_items()
-        if not items.empty:
-            day = pd.to_datetime(items["actual_payment_date"]).dt.date
-            items = items[(items["state"] == "Due") & (day >= manila_today()) & (day <= manila_today() + timedelta(days=6))]
-        weeks = by_week(12)
-        top = max([float(t) for t in weeks["Total"]] + [1.0])
-        week_rows = []
-        for r in weeks.to_dict("records"):
-            r["parts"] = [{"kind": k, "amount": float(r[k]), "h": round(float(r[k]) / top * 100, 1), "color": KIND_COLORS[k]} for k in COLUMNS if float(r[k]) > 0]
-            r["cells"] = [float(r[k]) for k in COLUMNS]
-            week_rows.append(r)
-        ctx.update({"next7": items.to_dict("records") if not items.empty else [], "weeks": week_rows, "columns": COLUMNS, "colors": KIND_COLORS})
-    return render(request, "payables/payables_due.html", ctx)

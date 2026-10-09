@@ -126,12 +126,12 @@ DATASETS: dict[str, Dataset] = {
                FROM loan_installments li JOIN loan_notes ln ON ln.loan_note_id = li.loan_note_id JOIN creditors cr ON cr.creditor_id = ln.creditor_id
                ORDER BY li.due_date, li.installment_id"""),
     "bank_loan_installments": Dataset(
-        "Bank-loan installments", "Bank-loan dues, installment by installment (paid once the due date has passed, as on the Bank loans page).",
+        "Bank-loan installments", "Bank-loan dues, installment by installment (paid once ticked or on the bank statement, 2026-10-09).",
         {"loan_ref": Field("Loan ref"), "bank": Field("Bank", "choice"), "installment_no": Field("#", "number"), "due_date": Field("Due date", "date"),
          "amount": Field("Amount", "money"), "interest_portion": Field("Interest part", "money"), "status": Field("Status", "choice")},
         ("loan_ref", "bank", "installment_no", "due_date", "amount", "status"), ("due_date",),
         sql="""SELECT bl.loan_ref, cr.creditor_name AS bank, bli.installment_no, bli.due_date, bli.amount, bli.interest_portion,
-                      CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' WHEN bli.due_date < manila_today() THEN 'Paid' ELSE 'Upcoming' END AS status
+                      CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' WHEN (bli.cleared_at IS NOT NULL OR bli.installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)) THEN 'Paid' ELSE 'Upcoming' END AS status
                FROM bank_loan_installments bli JOIN bank_loans bl ON bl.bank_loan_id = bli.bank_loan_id JOIN creditors cr ON cr.creditor_id = bl.creditor_id
                ORDER BY bli.due_date, bli.installment_id"""),
     "card_statements": Dataset(
@@ -249,7 +249,7 @@ def _show_key(v: str, part: str | None) -> str:
         if part == "month" and len(str(v)) == 7 and str(v)[4] == "-":
             return datetime.strptime(v + "-01", "%Y-%m-%d").strftime("%b %Y")
         if part in ("day", "week") and len(str(v)) == 10 and str(v)[4] == "-":
-            return datetime.strptime(v, "%Y-%m-%d").strftime("%b %d, %Y")
+            return datetime.strptime(v, "%Y-%m-%d").strftime("%m/%d/%Y")
     except ValueError:
         pass
     return v
@@ -432,8 +432,8 @@ def run(spec: dict, today: date | None = None, data: pd.DataFrame | None = None,
             df = df[keep]
             when = (spec.get("preset") if override_range is None and spec.get("preset") not in ("Custom range",) else "") or ""
             when = when.replace("N days", f"{int(spec.get('n_days') or 30)} days")
-            span = f"{rng[0]:%b %d, %Y}" if rng[0] else "the start"
-            span += f" to {rng[1]:%b %d, %Y}" if rng[1] else " onward"
+            span = f"{rng[0]:%m/%d/%Y}" if rng[0] else "the start"
+            span += f" to {rng[1]:%m/%d/%Y}" if rng[1] else " onward"
             criteria.append(f"{ds.fields[date_field].label}: {when + ' — ' if when else ''}{span}")
         else:
             criteria.append(f"{ds.fields[date_field].label}: all dates")
@@ -547,10 +547,10 @@ def _cell(v, kind: str) -> str:
             return str(v)
     if kind == "date":
         d = pd.to_datetime(v, errors="coerce")
-        return f"{d:%b %d, %Y}" if pd.notna(d) else str(v)
+        return f"{d:%m/%d/%Y}" if pd.notna(d) else str(v)
     if kind == "datetime":
         d = pd.to_datetime(v, errors="coerce")
-        return f"{d:%b %d, %Y %I:%M %p}" if pd.notna(d) else str(v)
+        return f"{d:%m/%d/%Y %I:%M %p}" if pd.notna(d) else str(v)
     return str(v)
 
 

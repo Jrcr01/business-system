@@ -29,6 +29,7 @@ from datetime import date, datetime
 import db_location
 from engines.common import get_conn, write_tx
 from engines.clock import manila_now
+from engines.common import us_date
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -96,7 +97,7 @@ def clean_amount(v) -> float:
 def parse_date(v) -> date | None:
     """MBOS dates are MM/DD/YYYY (confirmed by 'Period Covered ... From 01/01/2026 To 02/28/2026')."""
     s = str(v or "").strip()
-    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y", "%d-%b-%Y", "%b %d, %Y"):
+    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y", "%d-%b-%Y", "%b %d, %Y"):   # reading the bank's file: keep "Oct 09, 2026"
         try:
             return datetime.strptime(s, fmt).date()
         except ValueError:
@@ -453,7 +454,7 @@ def match_checks() -> dict:
         ours = {}
         for r in conn.execute("SELECT check_id, check_number, amount, status, bank_txn_id FROM checks_issued WHERE check_number IS NOT NULL AND check_number != ''"):
             ours.setdefault(norm_check_number(r["check_number"]), []).append(dict(r))
-        pending = conn.execute("""SELECT txn_id, check_number, debit, posting_date FROM bank_transactions
+        pending = conn.execute("""SELECT txn_id, check_number, debit, posting_date, rejected_check_ids FROM bank_transactions
                                   WHERE kind = 'CHECK' AND reviewed = 0
                                     AND (match_status IS NULL OR match_status IN ('amount_mismatch', 'not_in_system'))""").fetchall()
         try:                                                              # guarantee checks (migration 057): given to a lender as security, never meant to be paid
@@ -471,7 +472,8 @@ def match_checks() -> dict:
                              (gid, f"The bank paid / received guarantee check {t['check_number']} on {t['posting_date']} for PHP {float(t['debit']):,.2f}"))
                 exceptions += 1
                 continue
-            cands = ours.get(norm_check_number(t["check_number"]), [])
+            rejected = {x for x in (t["rejected_check_ids"] or "").split(",") if x}           # a pair the owner took back (Reopen) is never re-matched
+            cands = [c for c in ours.get(norm_check_number(t["check_number"]), []) if str(c["check_id"]) not in rejected]
             same_amount = [c for c in cands if abs(float(c["amount"]) - float(t["debit"])) < 0.005]
             free = [c for c in same_amount if not c["bank_txn_id"] or int(c["bank_txn_id"]) == int(t["txn_id"])]
             if same_amount and not free:
@@ -540,7 +542,7 @@ def _match_other_debits(conn) -> int:
                                     (str(t["posting_date"])[:10], hit[0], t["debit"])).rowcount
                 if paid:
                     conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CC_STATEMENT_PAID_FROM_BANK', 'cc_statements', ?, ?)",
-                                 (hit[0], f"Paid PHP {float(t['debit']):,.2f} on {str(t['posting_date'])[:10]} (matched to the bank debit)"))
+                                 (hit[0], f"Paid PHP {float(t['debit']):,.2f} on {us_date(t['posting_date'])} (matched to the bank debit)"))
         if hit:
             n += 1
         else:
@@ -775,10 +777,16 @@ def reopen(txn_id: int) -> None:
         t = conn.execute("SELECT txn_id, resolution FROM bank_transactions WHERE txn_id = ?", (int(txn_id),)).fetchone()
         if not t:
             return
-        undone = [r[0] for r in conn.execute("SELECT matched_check_id FROM bank_transactions WHERE txn_id = ? AND match_status = 'matched_manual' AND matched_check_id IS NOT NULL",
-                                             (t["txn_id"],))]
+        auto = conn.execute("SELECT matched_check_id FROM bank_transactions WHERE txn_id = ? AND match_status = 'matched' AND matched_check_id IS NOT NULL",
+                            (t["txn_id"],)).fetchone()
+        undone = [r[0] for r in conn.execute("SELECT matched_check_id FROM bank_transactions WHERE txn_id = ? AND match_status IN ('matched_manual', 'matched') "
+                                             "AND matched_check_id IS NOT NULL", (t["txn_id"],))]
         conn.execute("UPDATE checks_issued SET bank_cleared_date = NULL, bank_txn_id = NULL WHERE bank_txn_id = ? AND check_id IN "
-                     "(SELECT matched_check_id FROM bank_transactions WHERE txn_id = ? AND match_status = 'matched_manual')", (t["txn_id"], t["txn_id"]))
+                     "(SELECT matched_check_id FROM bank_transactions WHERE txn_id = ? AND match_status IN ('matched_manual', 'matched'))", (t["txn_id"], t["txn_id"]))
+        if auto:                                             # a wrong automatic match (2026-10-08 gap fix): undone, and that pair is not matched again
+            row = conn.execute("SELECT rejected_check_ids FROM bank_transactions WHERE txn_id = ?", (t["txn_id"],)).fetchone()
+            ids = [x for x in ((row[0] or "").split(",") if row else []) if x] + [str(int(auto[0]))]
+            conn.execute("UPDATE bank_transactions SET rejected_check_ids = ? WHERE txn_id = ?", (",".join(ids), t["txn_id"]))
         try:
             n_adj = conn.execute("UPDATE bank_adjustments SET reversed_at = CURRENT_TIMESTAMP WHERE bank_txn_id = ? AND reversed_at IS NULL",
                                  (t["txn_id"],)).rowcount

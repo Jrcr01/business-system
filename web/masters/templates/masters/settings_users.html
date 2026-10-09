@@ -14,7 +14,7 @@
   <tr>
     <td>{{ u.name }}</td><td><b>{{ u.username|default:"—" }}</b></td><td>{{ u.email }}</td><td>{{ u.role_label }}</td>
     <td>{% if not u.is_active %}<span class="pill off">Switched off</span>{% elif u.locked_until %}<span class="pill warn">Locked</span>{% elif u.must_change_password %}<span class="pill warn">Temporary password</span>{% else %}<span class="pill">Active</span>{% endif %}</td>
-    <td>{{ u.last_login_at|default:"—" }}</td>
+    <td>{{ u.last_login_at|dmy|default:"—" }}</td>
     <td>{% if u.user_id == me_id %}<span class="hint">you</span>{% endif %} <a href="/settings/users/{{ u.user_id }}/">Change</a></td>
   </tr>
   {% endfor %}

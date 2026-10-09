@@ -69,6 +69,7 @@ def test_cost_of_borrowing_ranks_interest_paid_and_to_pay(db):
     with sqlite3.connect(db) as conn:
         bl = conn.execute("INSERT INTO bank_loans (creditor_id, loan_ref, status) VALUES (?, 'L1', 'Active')", (bank,)).lastrowid
         conn.execute("INSERT INTO bank_loan_installments (bank_loan_id, installment_no, due_date, amount, interest_portion) VALUES (?, 1, ?, 1000, 100)", (bl, str(date.today() - timedelta(days=30))))
+        conn.execute("UPDATE bank_loan_installments SET cleared_at = due_date WHERE bank_loan_id = ? AND installment_no = 1", (bl,))   # paid = ticked (2026-10-09)
         conn.execute("INSERT INTO bank_loan_installments (bank_loan_id, installment_no, due_date, amount, interest_portion) VALUES (?, 2, ?, 1000, 80)", (bl, str(date.today() + timedelta(days=30))))
 
     r = cost_of_borrowing()

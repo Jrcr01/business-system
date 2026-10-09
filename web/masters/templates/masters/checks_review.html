@@ -1,0 +1,48 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Checks and review{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">fact_check</span> Checks and review</h2>
+<p class="note">What the system flagged for a person to look at, the data checks, and entries that look made twice. Nothing here blocks the work: look, then tick it.</p>
+<nav class="tabs">
+  <a href="?tab=review"{% if tab == "review" %} class="on"{% endif %}>Review list ({{ n_flags }})</a>
+  {% if may_health %}<a href="?tab=data"{% if tab == "data" %} class="on"{% endif %}>Data checks ({{ n_health }})</a>
+  <a href="?tab=dups"{% if tab == "dups" %} class="on"{% endif %}>Possible duplicates ({{ n_dups }})</a>{% endif %}
+</nav>
+
+{% if tab == "data" and may_health %}
+<form method="post">{% csrf_token %}
+<p class="hint">{% if show_fine %}<a href="?tab=data">Hide the ones marked fine</a>{% else %}<a href="?tab=data&fine=1">Show the ones marked fine too</a>{% endif %}</p>
+<div class="scroll-x"><table class="list"><tr><th></th><th>Area</th><th>Check</th><th>Details</th><th>Pay to</th><th style="text-align:right">Amount</th></tr>
+  {% for h in health %}<tr{% if h.fine %} class="off"{% endif %}><td><input type="checkbox" name="pick_{{ h.key }}" value="1" aria-label="Pick"></td><td>{{ h.group }}</td><td>{{ h.check }}</td>
+    <td>{{ h.detail|usdates }}{% if h.fine and h.note %} <span class="hint">· fine: {{ h.note }}</span>{% endif %}</td><td>{{ h.payee }}</td>
+    <td class="num">{% if h.amount is not None %}{{ h.amount|floatformat:2|intcomma }}{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="6" class="hint">Nothing to look at.</td></tr>{% endfor %}</table></div>
+{% if health %}<div class="bar" style="margin-top:8px"><div class="grow"><label for="note1">Note (optional)</label><input id="note1" type="text" name="note"></div>
+  <button class="btn small" type="submit" name="action" value="fine"><span class="ms">check</span>Mark ticked as fine</button>
+  {% if show_fine %}<button class="btn small ghost" type="submit" name="action" value="again">Show ticked again</button>{% endif %}</div>{% endif %}
+</form>
+
+{% elif tab == "dups" and may_health %}
+<form method="post">{% csrf_token %}
+<p class="hint">{% if show_all %}<a href="?tab=dups">Hide the ones set aside</a>{% else %}<a href="?tab=dups&all=1">Show the ones set aside too</a>{% endif %}</p>
+<div class="scroll-x"><table class="list"><tr><th></th><th>Kind</th><th>Supplier</th><th>Details</th><th>Where</th><th style="text-align:right">Amount</th></tr>
+  {% for d in dups %}<tr{% if d.dismissed %} class="off"{% endif %}><td><input type="checkbox" name="pick_{{ d.dup_key }}" value="1" aria-label="Pick"></td><td>{{ d.kind }}</td><td>{{ d.supplier }}</td>
+    <td>{{ d.detail|usdates }}</td><td>{{ d.where_found }}</td><td class="num">{% if d.amount %}{{ d.amount|floatformat:2|intcomma }}{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="6" class="hint">Nothing looks entered twice.</td></tr>{% endfor %}</table></div>
+{% if dups %}<div class="bar" style="margin-top:8px"><div class="grow"><label for="note2">Note (optional)</label><input id="note2" type="text" name="note"></div>
+  <button class="btn small" type="submit" name="action" value="dismiss">Not duplicates: set ticked aside</button>
+  {% if show_all %}<button class="btn small ghost" type="submit" name="action" value="restore">Show ticked again</button>{% endif %}</div>{% endif %}
+</form>
+
+{% else %}
+<form method="post">{% csrf_token %}
+<div class="scroll-x"><table class="list"><tr><th></th><th>Flag</th><th>Details</th><th>Raised</th><th></th></tr>
+  {% for f in flags %}<tr><td><input type="checkbox" name="pick_{{ f.flag_id }}" value="1" aria-label="Pick"></td><td><span class="pill warn">{{ f.label }}</span></td>
+    <td>{{ f.detail|usdates }}</td><td style="white-space:nowrap">{{ f.raised_at|dmy }}{% if f.who %} <span class="hint">· {{ f.who }}</span>{% endif %}</td>
+    <td>{% if f.url %}<a class="btn small ghost" href="{{ f.url }}">Open</a>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="5" class="hint">Nothing flagged.</td></tr>{% endfor %}</table></div>
+{% if flags %}<div class="bar" style="margin-top:8px"><div class="grow"><label for="note">Note: what was found (optional)</label><input id="note" type="text" name="note"></div>
+  <button class="btn small" type="submit" name="action" value="reviewed"><span class="ms">task_alt</span>Mark ticked as reviewed</button></div>{% endif %}
+</form>
+{% endif %}
+{% endblock %}

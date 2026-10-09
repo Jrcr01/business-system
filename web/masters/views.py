@@ -120,7 +120,7 @@ def _settings_tabs(role: str) -> list[tuple[str, str]]:
     from engines.permissions import can
     tabs = [("/settings/", "Numbers")]
     if can(role, "users.manage"):
-        tabs += [("/settings/users/", "Users"), ("/settings/access/", "Who can do what")]
+        tabs += [("/settings/users/", "Users"), ("/settings/audit/", "Audit log"), ("/settings/backup/", "Backup")]          # "Who can do what" dropped (owner, 2026-10-09): each person's page says what they may do
     return tabs
 
 
@@ -206,9 +206,8 @@ def settings_user(request, user_id: int):
         elif what == "role" and not is_me:
             ok, msg = au.set_role(user_id, request.POST.get("role", ""))
         elif what == "switches" and u["role"] != "admin":
-            from engines.permissions import SWITCHES
-            allowed = set(request.POST.getlist("on"))
-            ok, msg = au.set_restrictions(user_id, set(SWITCHES) - allowed)
+            from engines.permissions import denied_from_lines          # one line may stand for several actions (owner, 2026-10-09)
+            ok, msg = au.set_restrictions(user_id, denied_from_lines(set(request.POST.getlist("on")), au.get_restrictions(user_id)))
         elif what == "username":
             ok, msg = au.set_username(user_id, request.POST.get("username", ""))
         elif what == "reset_code":
@@ -222,14 +221,19 @@ def settings_user(request, user_id: int):
     return render(request, "masters/settings_user.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/users/",
                                                           "u": u, "role_label": ROLE_LABEL.get(u["role"], u["role"]), "roles": [(r, ROLE_LABEL[r]) for r in ROLES],
                                                           "is_me": is_me, "shown": shown, "code_since": (au.totp_enabled_at(user_id) or "")[:10],
-                                                          "switches": None if u["role"] == "admin" else __import__("engines.permissions", fromlist=["switch_table"]).switch_table(au.get_restrictions(user_id))})
+                                                          **_switch_ctx(request, u, user_id)})
 
 
-@page_needed("settings")
-@_admin_only
-def settings_access(request):
-    from engines.permissions import ROLE_LABEL, ROLES, matrix_table
-    roles = [ROLE_LABEL[r] for r in ROLES]
-    rows = [{"group": r["group"], "operation": r["operation"], "cells": [r[x] for x in roles]} for r in matrix_table()]
-    return render(request, "masters/settings_access.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/access/",
-                                                            "roles": roles, "rows": rows})
+def _switch_ctx(request, u: dict, user_id: int) -> dict:
+    """The person's switches (owner, 2026-10-09): plain lines with the pages they open; starting points; another person's switches to copy (not saved until Save)."""
+    if u["role"] == "admin":
+        return {"switches": None}
+    from engines import auth_service as au
+    from engines.permissions import SWITCH_PRESETS, switch_lines
+    others = [x for x in au.list_users().to_dict("records") if x["role"] != "admin" and int(x["user_id"]) != int(user_id)]
+    copy = int(request.GET.get("copy")) if (request.GET.get("copy") or "").isdigit() else None
+    source = next((x for x in others if int(x["user_id"]) == copy), None)
+    lines = switch_lines(au.get_restrictions(source["user_id"] if source else user_id))
+    return {"switches": lines, "presets": [(k, label, sorted(keys)) for k, (label, keys) in SWITCH_PRESETS.items()], "others": others, "copied_from": source}
+
+

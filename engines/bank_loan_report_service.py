@@ -45,6 +45,11 @@ SECTION_TABLE_STYLE = [
 ]
 
 
+def _us(v, empty: str = "") -> str:
+    from engines.common import us_date
+    return us_date(v, empty)
+
+
 def _money(v) -> str:
     return f"{v:,.2f}" if v is not None else "—"
 
@@ -63,11 +68,12 @@ def _fetch_bank_loan_data(bank_loan_id: int) -> dict | None:
         ).fetchone()
         if not loan:
             return None
-        installments = cur.execute(
-            """SELECT installment_no, due_date, amount FROM bank_loan_installments
+        from engines.clearing import bank_loan_cleared_sql      # paid = ticked or on the bank statement (2026-10-09), not by its date
+        installments = [dict(r) for r in cur.execute(
+            f"""SELECT installment_no, due_date, amount, {bank_loan_cleared_sql('i')} AS paid FROM bank_loan_installments i
                WHERE bank_loan_id = ? ORDER BY due_date, installment_id""",
             (bank_loan_id,),
-        ).fetchall()
+        ).fetchall()]
     return {"loan": loan, "installments": installments}
 
 
@@ -99,7 +105,7 @@ def _info_panel(loan, styles) -> Table:
          Paragraph(loan["account_number"] or "—", value_style), Paragraph(loan["status"], value_style)],
         [Paragraph("START DATE", label_style), Paragraph("MATURITY DATE", label_style),
          Paragraph("PRINCIPAL", label_style), Paragraph("MODE OF PAYMENT", label_style)],
-        [Paragraph(loan["start_date"] or "—", value_style), Paragraph(loan["maturity_date"] or "—", value_style),
+        [Paragraph(_us(loan["start_date"], "—"), value_style), Paragraph(_us(loan["maturity_date"], "—"), value_style),
          Paragraph(f"PHP {_money(loan['principal_amount'])}", value_style), Paragraph(loan["mode_of_payment"] or "—", value_style)],
         [Paragraph("ATTRIBUTABLE TO", label_style), Paragraph("", label_style),
          Paragraph("", label_style), Paragraph("", label_style)],
@@ -135,7 +141,7 @@ def generate_bank_loan_pdf(bank_loan_id: int) -> bytes | None:
     today = manila_today()
 
     total_amount = sum(r["amount"] for r in installments)
-    outstanding = sum(r["amount"] for r in installments if date.fromisoformat(r["due_date"]) >= today)
+    outstanding = sum(r["amount"] for r in installments if not r.get("paid"))
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -147,8 +153,8 @@ def generate_bank_loan_pdf(bank_loan_id: int) -> bytes | None:
 
     recon_rows = [
         ["Total Scheduled", f"PHP {_money(total_amount)}"],
-        ["Outstanding (not yet due)", f"PHP {_money(outstanding)}"],
-        ["Generated", manila_now().strftime("%Y-%m-%d %H:%M")],
+        ["Outstanding (not yet paid)", f"PHP {_money(outstanding)}"],
+        ["Generated", manila_now().strftime("%m/%d/%Y %H:%M")],
     ]
     recon_table = Table(recon_rows, colWidths=[CONTENT_WIDTH * 0.72, CONTENT_WIDTH * 0.28])
     recon_table.setStyle(TableStyle([
@@ -166,8 +172,7 @@ def generate_bank_loan_pdf(bank_loan_id: int) -> bytes | None:
     story.append(_section_heading("Repayment Schedule", styles))
     sched_rows = [["No.", "Due Date", "Amount (PHP)", "Status"]]
     for r in installments:
-        cleared = date.fromisoformat(r["due_date"]) < today
-        sched_rows.append([r["installment_no"], r["due_date"], _money(r["amount"]), "Paid" if cleared else "Pending"])
+        sched_rows.append([r["installment_no"], _us(r["due_date"]), _money(r["amount"]), "Paid" if r.get("paid") else "Pending"])
     if len(sched_rows) == 1:
         sched_rows.append(["—", "—", "—", "—"])
     sched_table = Table(sched_rows, colWidths=[CONTENT_WIDTH * w for w in (0.12, 0.3, 0.33, 0.25)], repeatRows=1)

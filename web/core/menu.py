@@ -20,25 +20,21 @@ PAGES: dict[str, Page] = {
     "settings": Page("Settings", "tune", "D1"),
     "price-lists": Page("Price lists", "sell", "D2"),
     "purchase-orders": Page("Purchase orders", "shopping_cart", "D2"),
-    "add-data": Page("Add data", "add_box", "D3"),
     "order-statements": Page("Order statements", "description", "D3"),
-    "payables-due": Page("Payables due", "event_upcoming", "D3"),
-    "payment-run": Page("Payment run", "checklist", "D4"),
-    "checks": Page("Checks and checkbook", "receipt_long", "D4"),
+    "calendar": Page("Calendar", "calendar_month", "D4"),      # replaces Payables due (owner, 2026-10-09)
+    "checks": Page("Daily payables", "fact_check", "D4"),      # was "Checks and checkbook": the daily checklist of every track (owner, 2026-10-09)
     "planner": Page("Check-date planner", "event_available", "D4"),
-    "release": Page("Release checks", "outbox", "D5"),
     "lenders": Page("Lenders", "handshake", "D6"),
     "bank-loans": Page("Bank loans", "account_balance", "D6"),
     "credit-cards": Page("Credit cards", "credit_card", "D7"),
     "bank-cash": Page("Bank and cash", "account_balance_wallet", "D7"),
     "reports": Page("Reports", "summarize", "D8"),
-    "controls": Page("Roles and controls", "rule", "D8"),
-    "admin": Page("Admin and audit", "admin_panel_settings", "D8"),
-    "data-health": Page("Data health", "health_and_safety", "D8"),
+    "analytics": Page("Analytics", "monitoring", "D8"),
+    "review": Page("Checks and review", "fact_check", "D8"),     # Roles and controls + Admin and audit + Data health, combined (owner, 2026-10-09)
 }
 
-BUILT = {"home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "add-data", "payables-due",
-         "reports", "checks"}     # drawn by Django (D0-D3; Reports: the schedule of payments first; Checks: waiting for the bank + the cleared tick, 2026-10-08)
+BUILT = {"home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "calendar",
+         "reports", "checks", "bank-cash", "lenders", "analytics", "bank-loans", "credit-cards", "review"}     # drawn by Django (D0-D3; Reports: the schedule of payments first; Checks: waiting for the bank + the cleared tick, 2026-10-08)
 
 STAGE_NAME = {"D1": "Masters", "D2": "Buying", "D3": "Payables", "D4": "Paying", "D5": "Release", "D6": "Loans", "D7": "Cards and bank", "D8": "Oversight"}
 
@@ -46,19 +42,22 @@ STAGE_NAME = {"D1": "Masters", "D2": "Buying", "D3": "Payables", "D4": "Paying",
 MENU: dict[str, list] = {
     "Buy": ["price-lists", "purchase-orders", ("Receive goods", "inventory_2", "purchase-orders", "mode=receive", "po.receive_goods")],
     "Pay suppliers": [("Match invoices", "receipt_long", "purchase-orders", "mode=match", "po.receive"),
-                      "order-statements", "payment-run", "checks", "release", "payables-due", "add-data"],
+                      "order-statements", "checks", "calendar"],     # Payment run, Release checks and Add data removed (owner, 2026-10-09): its work is in the batch and Daily payables
     "Bank": ["bank-cash", "planner"],
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records": ["reports"],
-    "Set-up": ["creditors", "controls", "settings", "admin", "data-health"],
+    "Analytics": [("Payables", "receipt_long", "analytics", "tab=payables", "reports.use"), ("Lenders", "handshake", "analytics", "tab=lenders", "reports.use"),
+                  ("Bank and cash", "account_balance", "analytics", "tab=bank", "reports.use"), ("Purchasing", "shopping_cart", "analytics", "tab=purchasing", "reports.use")],
+    "Set-up": ["creditors", "settings", "review"],
 }
 
 # each top-bar section's row of tiles on Home (engines/home_tiles.py GROUPS): clicking the section name goes there, resting on it opens its pages (owner, 2026-10-03:
 # "combine" the top bar and Home's blue group bar)
-SECTION_GROUP = {"Buy": "buy", "Pay suppliers": "pay", "Bank": "bank", "Other payables": "other", "Records": "records", "Set-up": "system"}
+SECTION_GROUP = {"Buy": "buy", "Pay suppliers": "pay", "Bank": "bank", "Other payables": "other", "Records": "records", "Analytics": "analytics", "Set-up": "system"}
 
 # the Home tiles' page states (engines/home_tiles.py, written for Streamlit's widget keys) in this site's words
-TILE_QUERY = {("po_mode", "Receive"): "mode=receive", ("po_mode", "Match invoice"): "mode=match"}
+TILE_QUERY = {("po_mode", "Receive"): "mode=receive", ("po_mode", "Match invoice"): "mode=match",
+              **{("analytics_tab", t): f"tab={t}" for t in ("payables", "lenders", "bank", "purchasing")}}
 
 
 def page_url(page_id: str, query: str = "") -> str:

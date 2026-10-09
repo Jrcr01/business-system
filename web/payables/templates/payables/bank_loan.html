@@ -1,0 +1,102 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}{{ l.loan_ref }} · {{ l.creditor_name }}{% endblock %}
+{% block content %}
+<p class="note"><a href="/bank-loans/">← Bank loans</a></p>
+<h2>{{ l.loan_ref }} · {{ l.creditor_name }} <span class="pill{% if l.is_cancelled or l.status == 'Closed' %} off{% endif %}">{% if l.is_cancelled %}Cancelled{% else %}{{ l.status }}{% endif %}</span></h2>
+<div class="facts"><div><span>Principal</span><b>{% if l.principal_amount %}₱{{ l.principal_amount|floatformat:2|intcomma }}{% else %}not known yet{% endif %}</b></div>
+  <div><span>Schedule</span><b>₱{{ total|floatformat:2|intcomma }} ({{ inst|length }})</b></div><div><span>Still to pay</span><b>₱{{ still|floatformat:2|intcomma }}</b></div>
+  <div><span>Interest on file</span><b>₱{{ interest|floatformat:2|intcomma }}</b></div>
+  <div><span>Term</span><b>{{ l.start_date|dmy|default:"—" }} → {{ l.maturity_date|dmy|default:"—" }}</b></div>
+  <div><span>For</span><b>{% if l.beneficiary %}{{ l.beneficiary }} ({{ l.beneficiary_type }}){% else %}—{% endif %}</b></div></div>
+{% if l.is_beginning_balance %}<div class="warnbox">Beginning balance (from MS Access): brought over as a repayment schedule only. Complete its details on the Details tab;
+  {% if may_write %}<form method="post" style="display:inline" onsubmit="return confirm('Remove the beginning-balance label? Do this only when its real details are known.');">{% csrf_token %}
+  <input type="hidden" name="action" value="unlabel"><button class="btn small ghost" type="submit">Remove the label</button></form>{% endif %}</div>{% endif %}
+<div class="actions">
+  <a class="btn small ghost" href="/bank-loans/{{ l.bank_loan_id }}/loan.pdf"><span class="ms">print</span>Bank loan PDF</a>
+  {% if may_write and inst %}<form method="post" onsubmit="return confirm('Cancel this bank loan? Its {{ inst|length }} repayment rows are kept but no longer counted as due.');">{% csrf_token %}
+    <input type="hidden" name="action" value="cancel"><button class="btn small danger" type="submit"><span class="ms">cancel</span>Cancel this bank loan</button></form>{% endif %}
+  {% if may_write and not inst %}<form method="post" onsubmit="return confirm('Delete this bank loan? It has no repayment rows yet, so it is removed completely.');">{% csrf_token %}
+    <input type="hidden" name="action" value="delete"><button class="btn small danger" type="submit"><span class="ms">delete</span>Delete this bank loan</button></form>{% endif %}
+</div>
+<nav class="tabs" style="margin-top:14px">
+  <a href="?tab=schedule"{% if tab == "schedule" %} class="on"{% endif %}>Schedule ({{ inst|length }})</a>
+  <a href="?tab=details"{% if tab == "details" %} class="on"{% endif %}>Details</a>
+  {% if may_write %}<a href="?tab=import"{% if tab == "import" %} class="on"{% endif %}>Import a schedule file</a>{% endif %}
+</nav>
+
+{% if tab == "details" %}
+{% if may_write %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="details">
+  <div class="bar">
+    <div class="grow"><label for="bank">Bank</label><select id="bank" name="bank">{% for b in banks %}<option value="{{ b.creditor_id }}"{% if b.creditor_id == l.creditor_id %} selected{% endif %}>{{ b.creditor_name }}</option>{% endfor %}</select></div>
+    <div class="grow"><label for="ref">Loan reference</label><input id="ref" type="text" name="ref" value="{{ l.loan_ref }}" required></div>
+    <div><label for="account">Account number</label><input id="account" type="text" name="account" value="{{ l.account_number|default:'' }}"></div>
+  </div>
+  <div class="bar">
+    <div><label for="start">Start date</label><input id="start" type="date" name="start" value="{{ l.start_date|slice:':10'|default:'' }}"></div>
+    <div><label for="maturity">Maturity date</label><input id="maturity" type="date" name="maturity" value="{{ l.maturity_date|slice:':10'|default:'' }}"></div>
+    <div><label for="repricing">Repricing date</label><input id="repricing" type="date" name="repricing" value="{{ l.repricing_date|slice:':10'|default:'' }}"></div>
+    <div><label for="principal">Principal (0 = not known yet)</label><input id="principal" class="inline-input" inputmode="decimal" name="principal" value="{{ l.principal_amount|default_if_none:''|floatformat:2 }}"></div>
+    <div><label for="mode">Mode of payment</label><input id="mode" type="text" name="mode" value="{{ l.mode_of_payment|default:'ADA' }}" style="width:7em"></div>
+    <div><label for="beneficiary">Attributable to</label><select id="beneficiary" name="beneficiary"><option value="">—</option>
+      {% for b in beneficiaries %}<option value="{{ b.beneficiary_id }}"{% if b.beneficiary_id == l.beneficiary_id %} selected{% endif %}>{{ b.name }} ({{ b.beneficiary_type }})</option>{% endfor %}</select></div>
+    <div><label><input type="checkbox" name="amort" value="1"{% if l.has_amortization %} checked{% endif %}> Has an amortization schedule</label></div>
+  </div>
+  <button class="btn small" type="submit"><span class="ms">save</span>Save the details</button>
+  <p class="hint">The repayment schedule is not changed. Entering a start date and principal removes the "beginning balance" label.</p>
+</form>
+{% else %}<p class="note">Account {{ l.account_number|default:"—" }} · mode {{ l.mode_of_payment|default:"—" }} · repricing {{ l.repricing_date|dmy|default:"—" }}</p>{% endif %}
+
+{% elif tab == "import" and may_write %}
+<form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="parse">
+  <div class="grow"><label for="file">The bank's repayment schedule (Excel or CSV: due date and amount)</label><input id="file" type="file" name="file" accept=".xlsx,.xls,.csv" required></div>
+  <button class="btn small" type="submit"><span class="ms">upload_file</span>Read the file</button>
+</form>
+<p class="hint"><a href="/bank-loans/template.csv">Download a blank template (CSV)</a></p>
+{% if staged and staged.rows %}
+<div class="grp">{{ staged.file }}: {{ staged.rows|length }} row(s), before anything is saved</div>
+<div class="scroll-x"><table class="list" style="max-width:420px"><tr><th>Due</th><th style="text-align:right">Amount</th></tr>
+  {% for r in staged.rows %}<tr><td>{{ r.due|dmy }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>
+<div class="actions"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="import"><button class="btn small" type="submit"><span class="ms">playlist_add</span>Add these installments</button></form>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="discard"><button class="btn small ghost" type="submit">Discard</button></form></div>
+{% endif %}
+
+{% else %}
+<div class="scroll-x"><table class="list">
+  <tr><th>#</th><th>Due</th><th style="text-align:right">Amount</th><th style="text-align:right">Interest part</th><th>Paid</th><th></th></tr>
+  {% for r in inst %}
+  {% if edit == r.installment_id and may_write and not r.paid %}
+  <tr><td>{{ r.installment_no }}</td><td colspan="5"><form class="bar" method="post" style="margin:0">{% csrf_token %}<input type="hidden" name="action" value="edit"><input type="hidden" name="installment_id" value="{{ r.installment_id }}">
+      <input type="date" name="due" value="{{ r.due_date|slice:':10' }}" aria-label="Due date" required>
+      <input class="inline-input" inputmode="decimal" name="amount" value="{{ r.amount|floatformat:2 }}" aria-label="Amount" required>
+      <input class="inline-input" inputmode="decimal" name="interest" value="{{ r.interest_portion|floatformat:2 }}" aria-label="Interest part">
+      <button class="btn small" type="submit">Save</button> <a class="btn small ghost" href="?tab=schedule">Cancel</a></form></td></tr>
+  {% else %}
+  <tr><td>{{ r.installment_no }}</td><td>{{ r.due_date|dmy }}{% if not r.paid and r.due_date|slice:":10" < today|date:"Y-m-d" and not l.is_cancelled %} <span class="pill warn">overdue</span>{% endif %}</td>
+    <td class="num">{{ r.amount|floatformat:2|intcomma }}</td><td class="num">{{ r.interest_portion|floatformat:2|intcomma }}</td>
+    <td>{% if r.paid %}<span class="pill">{{ r.paid }}</span>{% else %}<span class="hint">not yet</span>{% endif %}</td>
+    <td>{% if may_write and not r.paid %}<a class="btn small ghost" href="?tab=schedule&edit={{ r.installment_id }}">Edit</a>
+      <form method="post" style="display:inline" onsubmit="return confirm('Delete this installment of {{ r.amount|floatformat:2 }} due {{ r.due_date|dmy }}?');">{% csrf_token %}
+        <input type="hidden" name="action" value="delete_row"><input type="hidden" name="installment_id" value="{{ r.installment_id }}"><button class="btn small ghost" type="submit">Delete</button></form>{% endif %}</td></tr>
+  {% endif %}
+  {% empty %}<tr><td colspan="6" class="hint">No repayment schedule yet: add the payments below, fill a monthly schedule, or import the bank's file.</td></tr>{% endfor %}
+</table></div>
+{% if may_write %}
+<form class="bar" method="post" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="action" value="add">
+  <div><label for="due">Add a payment: due</label><input id="due" type="date" name="due" required></div>
+  <div><label for="amount">Amount</label><input id="amount" class="inline-input" inputmode="decimal" name="amount" required></div>
+  <div><label for="interest">Interest part (optional)</label><input id="interest" class="inline-input" inputmode="decimal" name="interest"></div>
+  <button class="btn small" type="submit"><span class="ms">add</span>Add</button>
+</form>
+{% if not inst %}
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="fill">
+  <div><label for="monthly">Or fill monthly: amount</label><input id="monthly" class="inline-input" inputmode="decimal" name="monthly" required></div>
+  <div><label for="n">How many months</label><input id="n" class="inline-input" type="number" min="1" max="600" name="n" required style="width:6em"></div>
+  <div><label for="first_due">First due date</label><input id="first_due" type="date" name="first_due" required></div>
+  <div><label for="f_interest">Interest part each (optional)</label><input id="f_interest" class="inline-input" inputmode="decimal" name="interest"></div>
+  <button class="btn small ghost" type="submit"><span class="ms">calendar_add_on</span>Fill the schedule</button>
+</form>{% endif %}
+<p class="hint">A paid payment (on the bank statement, or ticked on Daily payables) can't be changed. Due date and amount come straight off the bank's document.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

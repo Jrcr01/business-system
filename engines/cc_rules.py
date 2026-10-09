@@ -17,4 +17,4 @@ def cc_owed_case(alias: str = "cs") -> str:
     """SQL CASE giving the amount of one statement row (aliased `alias`) that counts as still owed."""
     a = alias
     return (f"CASE WHEN {a}.unpaid_balance_next > 0 THEN (CASE WHEN {superseded_sql(a)} THEN 0 ELSE {a}.unpaid_balance_next END) "
-            f"WHEN {a}.due_date >= manila_today() THEN {a}.total_amount_due ELSE 0 END")
+            f"ELSE {a}.total_amount_due END")          # owed until it is paid, after its due date too (daily payables, owner 2026-10-09)

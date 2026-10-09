@@ -1,0 +1,59 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Bank loans{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">account_balance</span> Bank loans</h2>
+<p class="note">The bank loans: each holds its repayment schedule, straight off the bank's document. A payment is paid when the bank statement shows the debit,
+  or it is ticked on Daily payables, not just because its date has passed. Click a reference to open it.</p>
+{% if may_write %}<form class="bar" method="get" action="/bank-loans/#new"><input type="hidden" name="new" value="1">
+  <div class="grow"><label for="new_b">New bank loan for</label><select id="new_b" name="bank">{% for b in banks %}<option value="{{ b.creditor_id }}">{{ b.creditor_name }}</option>{% endfor %}</select></div>
+  <button class="btn small" type="submit"{% if not banks %} disabled{% endif %}><span class="ms">note_add</span>New bank loan</button>
+</form>
+{% if not banks %}<p class="hint">Add the lending bank on the Creditors page first (type: Bank loan).</p>{% endif %}{% endif %}
+
+{% if new and may_write %}
+<div class="grp" id="new">New bank loan</div>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="create">
+  <div class="bar">
+    <div class="grow"><label for="bank">Bank</label><select id="bank" name="bank" required>{% for b in banks %}<option value="{{ b.creditor_id }}"{% if b.creditor_id|stringformat:"s" == pick or b.creditor_id|stringformat:"s" == typed.bank %} selected{% endif %}>{{ b.creditor_name }}</option>{% endfor %}</select></div>
+    <div class="grow"><label for="ref">Loan reference</label><input id="ref" type="text" name="ref" value="{{ typed.ref|default:'' }}" required placeholder="the loan / promissory-note number"></div>
+    <div><label for="account">Account number (optional)</label><input id="account" type="text" name="account" value="{{ typed.account|default:'' }}"></div>
+  </div>
+  <div class="bar">
+    <div><label for="start">Start date</label><input id="start" type="date" name="start" value="{{ typed.start|default:'' }}" required></div>
+    <div><label for="maturity">Maturity date</label><input id="maturity" type="date" name="maturity" value="{{ typed.maturity|default:'' }}" required></div>
+    <div><label for="repricing">Repricing date (optional)</label><input id="repricing" type="date" name="repricing" value="{{ typed.repricing|default:'' }}"></div>
+    <div><label for="principal">Principal</label><input id="principal" class="inline-input" inputmode="decimal" name="principal" value="{{ typed.principal|default:'' }}" required></div>
+    <div><label for="mode">Mode of payment</label><input id="mode" type="text" name="mode" value="{{ typed.mode|default:'ADA' }}" style="width:7em"></div>
+    <div><label for="beneficiary">Attributable to</label><select id="beneficiary" name="beneficiary"><option value="">—</option>
+      {% for b in beneficiaries %}<option value="{{ b.beneficiary_id }}"{% if b.beneficiary_id|stringformat:"s" == typed.beneficiary %} selected{% endif %}>{{ b.name }} ({{ b.beneficiary_type }})</option>{% endfor %}</select></div>
+  </div>
+  <button class="btn" type="submit"><span class="ms">account_balance</span>Create the bank loan</button> <a class="btn ghost" href="/bank-loans/">Cancel</a>
+</form>
+<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Not in the list? Add the person or affiliate this loan is for</summary>
+  <form class="bar" method="post" style="margin-top:6px">{% csrf_token %}<input type="hidden" name="action" value="beneficiary">
+    <div class="grow"><label for="b_name">Name</label><input id="b_name" type="text" name="b_name"></div>
+    <div><label for="b_type">Type</label><select id="b_type" name="b_type"><option>Person</option><option>Affiliate</option></select></div>
+    <div><label for="b_contact">Contact (optional)</label><input id="b_contact" type="text" name="b_contact"></div>
+    <button class="btn small ghost" type="submit">Add</button></form></details>
+{% endif %}
+
+<form class="bar" method="get" action="/bank-loans/" style="margin-top:12px">
+  <div class="grow"><label for="q">Search</label><input id="q" type="text" name="q" value="{{ q }}" placeholder="Loan reference or account number"></div>
+  <div><label for="s">Bank</label><select id="s" name="s" onchange="this.form.submit()"><option value="">All banks</option>
+    {% for b in banks %}<option value="{{ b.creditor_id }}"{% if b.creditor_id|stringformat:"s" == who %} selected{% endif %}>{{ b.creditor_name }}</option>{% endfor %}</select></div>
+  <div><label for="status">Status</label><select id="status" name="status" onchange="this.form.submit()">{% for k, label in statuses %}<option value="{{ k }}"{% if k == status %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <button class="btn small ghost" type="submit"><span class="ms">search</span>Search</button>
+</form>
+{% if rows %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Loan reference</th><th>Bank</th><th>For</th><th style="text-align:right">Principal</th><th style="text-align:right">Still to pay</th><th>Next due</th><th>Mode</th><th>Status</th></tr>
+  {% for r in rows %}<tr>
+    <td><a href="/bank-loans/{{ r.bank_loan_id }}/">{{ r.loan_ref }}</a>{% if r.is_beginning_balance %} <span class="pill off" title="Beginning balance (from MS Access)">beginning</span>{% endif %}</td>
+    <td>{{ r.creditor_name }}</td><td>{{ r.beneficiary|default:"—" }}</td>
+    <td class="num">{% if r.principal_amount %}{{ r.principal_amount|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num">{{ r.still_to_pay|floatformat:2|intcomma }}</td><td>{{ r.next_due|dmy|default:"—" }}</td><td>{{ r.mode_of_payment|default:"" }}</td>
+    <td><span class="pill{% if r.status == 'Cancelled' or r.status == 'Closed' %} off{% endif %}">{{ r.status }}</span></td></tr>{% endfor %}
+</table></div>
+<p class="hint">{{ rows|length }} bank loan(s) · still to pay ₱{{ still_to_pay|floatformat:2|intcomma }}.</p>
+{% else %}<p class="note">No bank loans here.</p>{% endif %}
+{% endblock %}

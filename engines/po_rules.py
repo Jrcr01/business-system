@@ -407,7 +407,7 @@ def update_cash_flag(po_id: int) -> None:
         chk = cash_check(int(h["creditor_id"]), po["total"], h["expected_delivery_date"], exclude_po_id=po_id)
         if chk["known"] and not chk["ok"]:
             day, bal = chk["lowest"]
-            over, note = 1, f"Cash would be short by {chk['shortfall']:,.2f} (lowest {bal:,.2f} on {day:%b %d, %Y}) when this falls due on {chk['pay_date']:%b %d, %Y}."
+            over, note = 1, f"Cash would be short by {chk['shortfall']:,.2f} (lowest {bal:,.2f} on {day:%m/%d/%Y}) when this falls due on {chk['pay_date']:%m/%d/%Y}."
     with write_tx() as conn:
         was = conn.execute("SELECT over_cash_plan, cash_note FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()
         keep_ack = bool(was and was[0] == over and was[1] == note)
@@ -524,7 +524,7 @@ def note_high_day(po_id: int) -> None:
         from engines.review_flags import flag
         with write_tx() as conn:
             flag(conn, "PO_HIGH_DAY", "purchase_orders", po_id,
-                 f"{h['po_no']}: {po['total']:,.2f} falls due {g['pay_date']:%b %d, %Y}, a day that would carry {g['with_order']:,.2f} against the limit of {g['limit']:,.2f}")
+                 f"{h['po_no']}: {po['total']:,.2f} falls due {g['pay_date']:%m/%d/%Y}, a day that would carry {g['with_order']:,.2f} against the limit of {g['limit']:,.2f}")
 
 
 def week_schedule(pay_date, exclude_po_id: int | None = None) -> dict | None:

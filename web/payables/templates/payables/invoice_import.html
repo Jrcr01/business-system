@@ -12,7 +12,7 @@
   <button class="btn small" type="submit"><span class="ms">document_scanner</span>Read the files</button>
 </form>
 <div class="grp">From a spreadsheet</div>
-<p class="note">A .csv or .xlsx with columns like Sales invoice no. / Date / Amount / Less % (any reasonable header works). More reliable than reading photos.</p>
+<p class="note">A .csv or .xlsx with columns like Sales invoice no. / DR no. / Date / Amount / Less % (any reasonable header works). The sales invoice is the reference; a DR number is kept beside it. More reliable than reading photos.</p>
 <form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="read_sheet">
   <div class="grow"><label for="file">The spreadsheet</label><input id="file" type="file" name="file" accept=".csv,.xlsx" required></div>
   <button class="btn small" type="submit"><span class="ms">upload_file</span>Read the spreadsheet</button>
@@ -24,11 +24,12 @@
 {% if warnings %}<div class="msg warning"><b>Is this a double entry?</b><ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul>Press <b>Yes, add them anyway</b> only if they are different invoices.</div>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="staged" value="{{ token }}">
   {% if warnings %}<input type="hidden" name="confirmed" value="1">{% endif %}
-  <div class="scroll-x"><table class="list"><tr><th>Add</th><th>From</th><th>Sales invoice no. (SI)</th><th>Date received</th><th>Due</th><th>Amount</th><th>Less %</th></tr>
+  <div class="scroll-x"><table class="list"><tr><th>Add</th><th>From</th><th>Sales invoice no. (SI)</th><th>DR no.</th><th>Date received</th><th>Due</th><th>Amount</th><th>Less %</th></tr>
     {% for r in rows %}<tr>
       <td><input type="checkbox" name="keep_{{ r.i }}" value="1"{% if r.keep is not False %} checked{% endif %} aria-label="Add line {{ forloop.counter }}"></td><td class="hint">{{ r.source }}</td>
-      <td><input class="inline-input" name="doc_{{ r.i }}" value="{{ r.doc }}"></td><td><input type="date" name="date_{{ r.i }}" value="{{ r.date|slice:':10' }}"></td>
-      <td class="hint">{% if r.due %}{{ r.due|date:"M d, Y" }}{% else %}—{% endif %}</td>
+      <td><input class="inline-input" name="doc_{{ r.i }}" value="{{ r.doc }}" aria-label="Sales invoice no."></td>
+      <td><input class="inline-input" style="width:90px" name="dr_{{ r.i }}" value="{{ r.dr|default:'' }}" aria-label="DR no."></td><td><input type="date" name="date_{{ r.i }}" value="{{ r.date|slice:':10' }}"></td>
+      <td class="hint">{% if r.due %}{{ r.due|date:"m/d/Y" }}{% else %}—{% endif %}</td>
       <td><input class="inline-input" inputmode="decimal" name="gross_{{ r.i }}" value="{{ r.gross }}"></td><td><input class="inline-input" style="width:60px" inputmode="decimal" name="less_{{ r.i }}" value="{{ r.less }}"></td></tr>
     {% endfor %}</table></div>
   {% if b.statement_ref|slice:":6" == "DRAFT-" %}<label class="inline" style="margin-top:10px"><input type="checkbox" name="promote" value="1" checked> Also give the batch its OS number once they are added</label>{% endif %}

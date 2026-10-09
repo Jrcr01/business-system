@@ -23,7 +23,7 @@ def _menu_pages() -> set[str]:
 
 def test_every_tile_points_at_a_real_page_and_a_known_group():
     pages, groups = _menu_pages(), {g.key for g in GROUPS}
-    assert {t.page_id for t in TILES} <= pages
+    assert {t.page_id for t in TILES} <= pages | {"analytics", "calendar", "review"}      # Django-only pages (2026-10-09)
     assert {t.group for t in TILES} <= groups
     assert pages - {"home"} <= {t.page_id for t in TILES}          # every menu page has a tile
 
@@ -42,7 +42,7 @@ def test_waiting_work_turns_tiles_orange_and_an_order_over_the_plan_turns_red(db
     app.add_invoice(cid, "INV-1", date(2026, 9, 1), date(2026, 10, 1), 1000.0, [], sid)
     app.issue_check(cid, 400.0, date(2026, 10, 30), statement_id=sid)                   # a parked check: waiting to print
     by = {t.page_id: evaluate(t) for t in TILES}
-    assert by["checks"]["figure"] == "1" and by["checks"]["level"] == "warn"
+    assert by["checks"]["figure"] == "0"           # Daily payables (2026-10-09): a parked check (no number yet) is not on the checklist
     assert by["order-statements"]["figure"] == "1"                                     # 600 still to cover
     from engines import settings_registry as sr
     sr.save("show_cash_forecast", 1)                         # the over-plan warning is part of the cash plan, hidden by default
@@ -134,7 +134,7 @@ def test_a_module_can_bring_its_own_actions(monkeypatch):
 
 
 def test_the_rows_follow_the_cycle_and_the_two_receiving_steps_have_tiles_of_their_own():
-    assert [g.key for g in GROUPS] == ["buy", "pay", "bank", "other", "records", "system"]
+    assert [g.key for g in GROUPS] == ["buy", "pay", "bank", "other", "records", "analytics", "system"]
     rows = dict(layout(_menu_pages()))
     assert [t.tid for t in rows["buy"]][:2] == ["price-lists", "purchase-orders"] and "receive-goods" in [t.tid for t in rows["buy"]]
     assert "match-invoices" in [t.tid for t in rows["pay"]]

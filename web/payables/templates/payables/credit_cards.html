@@ -1,0 +1,166 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Credit cards{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">credit_card</span> Credit cards</h2>
+<p class="note">Two ways a card payment is known: the next statement (SOA) shows it, entered here, which is the final word; or it is recorded on
+  <a href="/checks/">Daily payables</a> the day it posts. When the two differ, the SOA figure is kept and it goes on the Review list.</p>
+<nav class="tabs">
+  <a href="?tab=statements"{% if tab == "statements" %} class="on"{% endif %}>Statements</a>
+  <a href="?tab=cards"{% if tab == "cards" %} class="on"{% endif %}>Cards and cardholders</a>
+  <a href="?tab=missing"{% if tab == "missing" %} class="on"{% endif %}>Missing statement check</a>
+</nav>
+
+{% if tab == "cards" %}
+<div class="grp" style="margin-top:0">Cards</div>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="from_bank">
+<div class="scroll-x"><table class="list">
+  <tr><th>Card</th><th>Issuer</th><th>Cardholder</th><th style="text-align:right">Limit</th><th>Statement day</th><th>Annual fee month</th><th title="Paid straight from the Metrobank account (so the bank statement matches its payment)">Paid from Metrobank</th><th></th></tr>
+  {% for c in cards %}<tr{% if not c.is_active %} class="off"{% endif %}>
+    <td>{{ c.name }}{% if not c.is_active %} <span class="pill off">inactive</span>{% endif %}</td><td>{{ c.issuer }}</td><td>{{ c.holder|default:"—" }}</td>
+    <td class="num">{{ c.credit_limit|floatformat:0|intcomma }}</td><td>{{ c.statement_day|default:"—" }}</td><td>{{ c.annual_fee_due_month|default:"—" }}</td>
+    <td><input type="checkbox" name="bank_{{ c.card_id }}" value="1"{% if c.card_id in from_bank %} checked{% endif %}{% if not may_write %} disabled{% endif %} aria-label="Paid from Metrobank: {{ c.name }}"></td>
+    <td>{% if may_write %}<a class="btn small ghost" href="?tab=cards&edit_card={{ c.card_id }}#edit">Edit</a>{% endif %}</td></tr>{% endfor %}
+</table></div>
+{% if may_write and cards %}<button class="btn small ghost" type="submit"><span class="ms">save</span>Save "paid from Metrobank"</button>{% endif %}
+</form>
+{% if may_write %}
+{% if edit_card %}
+<div class="grp" id="edit">Edit {{ edit_card.name }}</div>
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="edit_card"><input type="hidden" name="card_id" value="{{ edit_card.card_id }}">
+  <div><label>Issuer</label><select name="issuer">{% for i in issuers %}<option value="{{ i.creditor_id }}"{% if i.creditor_id == edit_card.creditor_id %} selected{% endif %}>{{ i.creditor_name }}</option>{% endfor %}</select></div>
+  <div class="grow"><label>Card name</label><input type="text" name="card_name" value="{{ edit_card.card_name }}" required></div>
+  <div><label>Cardholder</label><select name="holder"><option value="">—</option>{% for h in holders %}{% if h.is_active or h.cardholder_id == edit_card.cardholder_id %}<option value="{{ h.cardholder_id }}"{% if h.cardholder_id == edit_card.cardholder_id %} selected{% endif %}>{{ h.name }}</option>{% endif %}{% endfor %}</select></div>
+  <div><label>Credit limit</label><input class="inline-input" inputmode="decimal" name="limit" value="{{ edit_card.credit_limit|floatformat:2 }}"></div>
+  <div><label>Statement day</label><input class="inline-input" type="number" min="1" max="31" name="statement_day" value="{{ edit_card.statement_day|default:'' }}" style="width:5em"></div>
+  <div><label>Annual fee month</label><select name="fee_month"><option value="">—</option>{% for n, m in months %}<option value="{{ n }}"{% if n == edit_card.annual_fee_due_month %} selected{% endif %}>{{ m }}</option>{% endfor %}</select></div>
+  <button class="btn small" type="submit"><span class="ms">save</span>Save</button> <a class="btn small ghost" href="?tab=cards">Cancel</a>
+</form>
+<form method="post" style="margin-top:6px">{% csrf_token %}<input type="hidden" name="card_id" value="{{ edit_card.card_id }}">
+  {% if edit_card.is_active %}<input type="hidden" name="action" value="deactivate_card"><button class="btn small ghost" type="submit" onclick="return confirm('Deactivate this card? Its statements stay.');">Deactivate this card</button>
+  {% else %}<input type="hidden" name="action" value="reactivate_card"><button class="btn small ghost" type="submit">Reactivate this card</button>{% endif %}</form>
+{% else %}
+<details style="margin-top:10px"><summary class="hint" style="cursor:pointer"><b>Add a card</b></summary>
+<form class="bar" method="post" style="margin-top:6px">{% csrf_token %}<input type="hidden" name="action" value="add_card">
+  <div><label>Issuer</label><select name="issuer" required>{% for i in issuers %}<option value="{{ i.creditor_id }}">{{ i.creditor_name }}</option>{% endfor %}</select></div>
+  <div class="grow"><label>Card name</label><input type="text" name="card_name" required placeholder="e.g. Gold, Platinum"></div>
+  <div><label>Last 4 digits</label><input class="inline-input" name="last4" required maxlength="4" style="width:5em"></div>
+  <div><label>Cardholder</label><select name="holder"><option value="">—</option>{% for h in holders %}{% if h.is_active %}<option value="{{ h.cardholder_id }}">{{ h.name }}</option>{% endif %}{% endfor %}</select></div>
+  <div><label>Credit limit</label><input class="inline-input" inputmode="decimal" name="limit" required></div>
+  <div><label>Statement day</label><input class="inline-input" type="number" min="1" max="31" name="statement_day" style="width:5em"></div>
+  <div><label>Annual fee month</label><select name="fee_month"><option value="">—</option>{% for n, m in months %}<option value="{{ n }}">{{ m }}</option>{% endfor %}</select></div>
+  <button class="btn small" type="submit"><span class="ms">add</span>Add the card</button></form>
+  {% if not issuers %}<p class="hint">Add the issuing bank on the Creditors page first (type: Credit card).</p>{% endif %}</details>
+{% endif %}
+{% endif %}
+
+<div class="grp">Cardholders</div>
+<div class="scroll-x"><table class="list" style="max-width:760px"><tr><th>Name</th><th>Department</th><th>Contact</th><th></th></tr>
+  {% for h in holders %}<tr><td>{{ h.name }}{% if not h.is_active %} <span class="pill off">inactive</span>{% endif %}</td><td>{{ h.department|default:"" }}</td><td>{{ h.contact_number|default:"" }}</td>
+    <td>{% if may_write %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="holder_id" value="{{ h.cardholder_id }}">
+      {% if h.is_active %}<input type="hidden" name="action" value="deactivate_holder"><button class="btn small ghost" type="submit">Deactivate</button>
+      {% else %}<input type="hidden" name="action" value="reactivate_holder"><button class="btn small ghost" type="submit">Reactivate</button>{% endif %}</form>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="4" class="hint">No cardholders yet.</td></tr>{% endfor %}</table></div>
+{% if may_write %}<form class="bar" method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="add_holder">
+  <div class="grow"><label>Add a cardholder: name</label><input type="text" name="name" required></div>
+  <div><label>Department</label><input type="text" name="department"></div><div><label>Contact</label><input type="text" name="contact"></div>
+  <button class="btn small ghost" type="submit"><span class="ms">person_add</span>Add</button></form>{% endif %}
+
+{% elif tab == "missing" %}
+<div class="facts">{% for k, n in counts.items %}<div><span>{{ k }}</span><b>{{ n }}</b></div>{% endfor %}</div>
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="wait">
+  <div><label for="days">Days to wait before a card counts as missing</label><input id="days" class="inline-input" type="number" min="0" max="60" name="days" value="{{ wait }}" style="width:6em"></div>
+  <button class="btn small ghost" type="submit">Save</button>
+  <span class="hint">{% if show_all %}<a href="?tab=missing">Show only the cards that need attention</a>{% else %}<a href="?tab=missing&all=1">Show every active card</a>{% endif %}</span>
+</form>
+{% if cov %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Status</th><th>Cardholder</th><th>Issuer</th><th>Card</th><th>Last 4</th><th>Latest due on file</th><th>Expected by</th><th></th></tr>
+  {% for r in cov %}<tr><td><span class="pill{% if r.status != 'OK' and r.status != 'No due' %} warn{% endif %}">{{ r.status }}</span></td><td>{{ r.cardholder|default:"—" }}</td>
+    <td>{{ r.issuer }}</td><td>{{ r.card_name }}</td><td>{{ r.card_number_last4 }}</td><td>{{ r.last_due_date|dmy|default:"—" }}</td><td>{{ r.expected_by|dmy|default:"—" }}</td>
+    <td>{% if may_write and r.status != "No due" and r.status != "OK" %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="no_due">
+      <input type="hidden" name="card_id" value="{{ r.card_id }}"><input type="hidden" name="month" value="{{ this_month }}"><button class="btn small ghost" type="submit" title="Nothing is due on this card for {{ this_label }}">No due this month</button></form>
+      {% elif may_write and r.status == "No due" %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="undo_no_due">
+      <input type="hidden" name="card_id" value="{{ r.card_id }}"><input type="hidden" name="month" value="{{ this_month }}"><button class="btn small ghost" type="submit">Undo "no due"</button></form>{% endif %}</td></tr>{% endfor %}
+</table></div>
+{% else %}<div class="msg success">Every active card has a statement recorded for {{ this_label }}.</div>{% endif %}
+
+{% else %}
+{% if may_write %}
+<div class="grp" style="margin-top:0">Add a statement (SOA)</div>
+<form method="post" id="soa-form">{% csrf_token %}<input type="hidden" name="action" value="statement">
+  <div class="bar">
+    <div class="grow"><label for="card">Card</label><div class="pick-row">
+      <input type="search" class="card-find" data-for="card" placeholder="Last 4 digits…" aria-label="Search the cards: last 4 digits, card or holder">
+      <select id="card" name="card" required><option value="">Pick the card</option>
+      {% for c in active_cards %}<option value="{{ c.card_id }}" data-earlier="{% if c.latest %}{{ c.latest.total_amount_due }}{% endif %}" data-due="{% if c.latest %}{{ c.latest.due_date|dmy }}{% endif %}"
+        data-daily="{% if c.latest %}{{ c.latest.daily }}{% endif %}" data-confirmed="{% if c.latest %}{{ c.latest.paid_confirmed }}{% endif %}"
+        {% if c.card_id|stringformat:"s" == card or c.card_id|stringformat:"s" == typed.card %} selected{% endif %}>{{ c.name }}{% if c.holder %} · {{ c.holder }}{% endif %}</option>{% endfor %}</select></div></div>
+    <div><label for="month">Statement month</label><input id="month" type="month" name="month" value="{{ typed.month|default:month_default }}"></div>
+    <div><label for="due">Due date</label><input id="due" type="date" name="due" value="{{ typed.due|default:'' }}" required></div>
+    <div><label for="total">Total amount due</label><input id="total" class="inline-input" inputmode="decimal" name="total" value="{{ typed.total|default:'' }}" required></div>
+    <div><label for="payments">Payments since the earlier statement</label><input id="payments" class="inline-input" inputmode="decimal" name="payments" value="{{ typed.payments|default:'' }}" placeholder="leave empty if unknown"></div>
+    <div><label for="interest">Finance charge</label><input id="interest" class="inline-input" inputmode="decimal" name="interest" value="{{ typed.interest|default:'' }}" style="width:7em"></div>
+  </div>
+  <p class="hint" id="soa-math">The total already includes any balance carried over. Add up the payment lines on the statement (the ones ending in C).</p>
+  <button class="btn" type="submit"><span class="ms">receipt_long</span>Add statement</button>
+</form>
+<script>
+(function () {
+  var f = document.getElementById("soa-form"); if (!f) return;
+  var out = document.getElementById("soa-math"), base = out.textContent;
+  var n = function (v) { var x = parseFloat(String(v || "").replace(/,/g, "")); return isNaN(x) ? null : x; };
+  var peso = function (v) { return "₱" + v.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  function calc() {
+    var o = f.card.options[f.card.selectedIndex], earlier = o ? n(o.dataset.earlier) : null, total = n(f.total.value), pay = n(f.payments.value), fin = n(f.interest.value) || 0;
+    if (earlier === null || pay === null || total === null) { out.textContent = base; return; }
+    var carried = Math.max(earlier - pay, 0), fresh = Math.round((total - carried - fin) * 100) / 100, daily = n(o.dataset.daily) || 0;
+    var line = "Earlier " + peso(earlier) + " (due " + o.dataset.due + ") − payments " + peso(pay) + " = " + peso(carried) + " carried over · + new charges " + peso(Math.max(fresh, 0)) +
+               " + finance charge " + peso(fin) + " = " + peso(total) + ".";
+    if (fresh < -1) line = "These don't add up: earlier " + peso(earlier) + " − payments " + peso(pay) + " + finance charge is already more than the total due.";
+    if (o.dataset.confirmed === "0" && daily > 0) line += Math.abs(daily - pay) < 0.01 ? "  ✓ Daily payables recorded " + peso(daily) + ": it matches."
+                                                         : "  ⚠ Daily payables recorded " + peso(daily) + ": it differs, so it will go on the Review list (the SOA figure is kept).";
+    out.textContent = line;
+  }
+  f.addEventListener("input", calc); f.addEventListener("change", calc); calc();
+})();
+</script>
+{% endif %}
+
+<form class="bar" method="get" action="/credit-cards/" style="margin-top:14px">
+  <div class="grow"><label for="fcard">Card</label><div class="pick-row">
+    <input type="search" class="card-find" data-for="fcard" placeholder="Last 4 digits…" aria-label="Search the cards: last 4 digits, card or holder">
+    <select id="fcard" name="card" onchange="this.form.submit()"><option value="">All cards</option>
+    {% for c in cards %}<option value="{{ c.card_id }}"{% if c.card_id|stringformat:"s" == card %} selected{% endif %}>{{ c.name }}{% if c.holder %} · {{ c.holder }}{% endif %}</option>{% endfor %}</select></div></div>
+  <div><label for="show">Show</label><select id="show" name="show" onchange="this.form.submit()"><option value="open"{% if show == "open" %} selected{% endif %}>Not paid or not confirmed yet</option>
+    <option value="all"{% if show == "all" %} selected{% endif %}>All</option></select></div>
+</form>
+{% if stmts %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Card</th><th>Month</th><th>Due</th><th style="text-align:right">Total due</th><th style="text-align:right">Paid</th><th>Payments (posting date)</th><th>Status</th><th>SOA</th><th></th></tr>
+  {% for s in stmts %}<tr><td>{{ s.card }}{% if s.holder %} <span class="hint">· {{ s.holder }}</span>{% endif %}</td><td>{{ s.statement_month|default:"—" }}</td><td>{{ s.due_date|dmy }}</td>
+    <td class="num">{{ s.total_amount_due|floatformat:2|intcomma }}</td><td class="num">{{ s.amount_paid|floatformat:2|intcomma }}</td>
+    <td>{% for p in s.payments %}{{ p.payment_date|dmy }} · {{ p.amount|floatformat:2|intcomma }}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="hint">—</span>{% endfor %}</td>
+    <td><span class="pill{% if s.status != 'Paid' %} warn{% endif %}">{{ s.status }}</span></td>
+    <td>{% if s.paid_confirmed %}confirmed{% else %}<span class="hint">not yet confirmed</span>{% endif %}</td>
+    <td>{% if may_write and s.is_latest %}<form method="post" style="display:inline" onsubmit="return confirm('Delete this statement of {{ s.total_amount_due|floatformat:2 }} due {{ s.due_date|dmy }}? Only the latest statement of a card can be deleted.');">{% csrf_token %}
+      <input type="hidden" name="action" value="delete_statement"><input type="hidden" name="statement_id" value="{{ s.cc_statement_id }}"><button class="btn small ghost" type="submit">Delete</button></form>{% endif %}</td></tr>{% endfor %}
+</table></div>
+<p class="hint">{{ stmts|length }} statement(s). Pay a card on <a href="/checks/">Daily payables</a>, in full or in part; the next SOA confirms it.</p>
+{% else %}<p class="note">No statements here.</p>{% endif %}
+{% endif %}
+<script>
+/* card pickers: type the last 4 digits (or part of the card or holder name) to narrow the list; one match is picked by itself (owner, 2026-10-09) */
+document.querySelectorAll(".card-find").forEach(function (box) {
+  var sel = document.getElementById(box.dataset.for); if (!sel) return;
+  box.addEventListener("input", function () {
+    var q = box.value.trim().toLowerCase(), shown = [];
+    [].forEach.call(sel.options, function (o) {
+      var keep = !o.value || !q || o.text.toLowerCase().indexOf(q) >= 0;
+      o.hidden = !keep; o.disabled = !keep; if (keep && o.value) shown.push(o);
+    });
+    if (shown.length === 1 && sel.value !== shown[0].value) { sel.value = shown[0].value; sel.dispatchEvent(new Event("change", {bubbles: true})); }
+  });
+  box.addEventListener("keydown", function (e) { if (e.key === "Enter") e.preventDefault(); });
+});
+</script>
+{% endblock %}

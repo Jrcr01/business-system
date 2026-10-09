@@ -112,5 +112,5 @@ def test_the_daily_sweep_runs_once_a_day_and_only_calls_drive_when_needed(db):
 def test_the_slip_prints_the_online_copy_date_under_the_qr(db):
     sid = _batch(db, check_dates=(date(2026, 11, 30),))
     lines = [ln.strip() for ln in render_text(build_slip(sid, "SUPPLIER", qr_link="https://x/y", link_until=date(2027, 2, 28))).splitlines()]
-    assert lines.index("[ QR ]") + 1 == lines.index("Online copy until Feb 28, 2027")
+    assert lines.index("[ QR ]") + 1 == lines.index("Online copy until 02/28/2027")
     assert "Online copy until" not in render_text(build_slip(sid, "SUPPLIER"))

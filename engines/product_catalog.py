@@ -153,8 +153,11 @@ def split_other_specs(category: str, model: str, size: str, other: str) -> tuple
     leftover = _clean(" ".join(rest))
     if category == "Tires":
         vals.update({"size": size, "pattern": model})
-    elif category == "Battery":
-        vals["model"] = model or size
+    elif category == "Battery":                                  # the line AND the size/group code (owner, 2026-10-09): "MF Plus" + "NS40" -> "MF Plus NS40",
+        parts = [model] if model else []                         # so each battery is its own product
+        if size and size.upper() not in (model or "").upper().split():
+            parts.append(size)
+        vals["model"] = _clean(" ".join(parts))
     elif category == "Mags":
         vals.update({"model": model, "size": size, **({"finish": leftover} if leftover else {})})
         leftover = ""

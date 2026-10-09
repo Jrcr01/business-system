@@ -278,7 +278,7 @@ def get_total_ap_outstanding() -> float:
     with get_conn(DB_PATH) as conn:
         checks = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' "
                               "AND NOT (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)").fetchone()[0]   # owed until cleared (2026-10-08)
-        loans = conn.execute("""SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date >= manila_today()
+        loans = conn.execute("""SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE NOT (cleared_at IS NOT NULL OR installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL))
                                 AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)""").fetchone()[0]
         cards = conn.execute(f"SELECT COALESCE(SUM({cc_owed_case('cs')}), 0) FROM cc_statements cs WHERE cs.status NOT IN ('Paid', 'Cancelled')").fetchone()[0]
     return float(checks) + float(loans) + float(cards)

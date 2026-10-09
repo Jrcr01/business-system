@@ -46,7 +46,7 @@ def test_no_line_is_wider_than_48_columns_and_all_three_copies_carry_the_slip_bl
 
 def test_reprint_and_revised_headers(db):
     sid = _batch(db)
-    assert "REPRINT - Sep 27, 2026" in render_text(build_slip(sid, "FILE", print_type="REPRINT", reprint_date="2026-09-27"))
+    assert "REPRINT - 09/27/2026" in render_text(build_slip(sid, "FILE", print_type="REPRINT", reprint_date="2026-09-27"))
     assert "REVISED v3 – supersedes v2" in render_text(build_slip(sid, "FILE", print_type="REVISED", version=3))
 
 
@@ -66,7 +66,7 @@ def test_missing_values_print_a_dash_never_none_or_a_false_zero(monkeypatch):
     assert inv9.rstrip().endswith(DASH) and "0.00" not in inv9                        # the missing amount is a dash, not 0.00
     assert next(line for line in text.split("\n") if line.startswith("NET AMOUNT DUE")).rstrip().endswith(DASH)
     assert "Supplier: " + DASH in text and inv9.split()[1] == DASH                              # missing date received -> dash
-    assert "Sep 01, 2026" in text                                                              # INV-10's date received is shown
+    assert "09/01/2026" in text                                                              # INV-10's date received is shown
     assert "2027-02-01" not in text and "Feb 01, 2027" not in text and "Oct 15, 2026" not in text  # due dates are not on the slip
     assert fmt_text(None) == fmt_text("") == fmt_text(float("nan")) == DASH and fmt_money(None) == DASH and fmt_money(0) == "PHP 0.00"
 

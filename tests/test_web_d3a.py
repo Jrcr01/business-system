@@ -140,24 +140,31 @@ def test_statements_as_pdf(web, db):
         assert r.status_code == 200 and r.content[:4] == b"%PDF", url
 
 
-def test_add_data_suggests_the_open_draft_or_makes_a_batch(web, db):
+def test_add_data_is_gone(web, db):
+    # owner, 2026-10-09: every card on Add data was a shortcut to a page with its own menu entry
     _admin(web)
-    cid = make_creditor(db, "Motolite")
-    page = web.get(f"/add-data/?s={cid}").content.decode()
-    assert "A new batch for this supplier" in page and "Invoices / credit memos" in page and "later (D6)" in page
-    r = web.post("/add-data/", {"s": cid, "batch": "new", "what": "invoices"})
-    sid = int(r["Location"].split("/")[2])
-    assert "Draft · " in web.get(f"/add-data/?s={cid}").content.decode()
-    r = web.post("/add-data/", {"s": cid, "batch": str(sid), "what": "memos"})
-    assert r["Location"] == f"/order-statements/{sid}/?tab=memos"
+    assert web.get("/add-data/").status_code == 404 and "Add data" not in web.get("/").content.decode()
 
-
-def test_payables_due_tabs(web, db):
+def test_the_calendar_replaces_payables_due(web, db):
+    # owner, 2026-10-09: "drop payables due and make the calendar a tile"
+    import sqlite3
+    from datetime import timedelta
+    from engines.clock import manila_today
     _admin(web)
-    for tab in ("weeks", "suppliers", "past", "calendar", "all"):
-        r = web.get(f"/payables-due/?tab={tab}")
-        assert r.status_code == 200, tab
-    assert b"Can hit the bank in the next 7 days" in web.get("/payables-due/").content
+    cid = make_creditor(db, "Goodyear Philippines")
+    sid = _new_batch(web, cid)
+    _add_inv(web, sid, gross="10,000")
+    day = manila_today() + timedelta(days=3)
+    web.post(f"/order-statements/{sid}/", {"action": "chk_park", "d1": str(day), "a1": "10,000"})
+    with sqlite3.connect(_db()) as conn:
+        conn.execute("UPDATE checks_issued SET check_number = '0001' WHERE statement_id = ?", (sid,))
+    page = web.get(f"/calendar/?m={day:%Y-%m}&day={day}").content.decode()
+    assert "Calendar" in page and "Goodyear Philippines" in page and "10,000.00" in page
+    web.post("/calendar/", {"day": str(day), "kind": "holiday", "label": "Test holiday", "m": f"{day:%Y-%m}", "action": "mark"})
+    assert "Test holiday" in web.get(f"/calendar/?m={day:%Y-%m}&day={day}").content.decode()
+    assert web.get("/payables-due/").status_code == 404
+    home = web.get("/").content.decode()
+    assert 'href="/calendar/"' in home and "Payables due" not in home
 
 
 def test_match_invoice_opens_with_the_batch_chosen(web, db):
@@ -173,10 +180,9 @@ def test_roles(web, db):
     _admin(web)
     buyer = _sign_in_new("buyer@slicks.test", "purchasing")
     assert buyer.get("/order-statements/").status_code == 403
-    assert buyer.get("/add-data/").status_code == 403
-    assert buyer.get("/payables-due/").status_code == 403
+    assert buyer.get("/calendar/").status_code == 403
     ap = _sign_in_new("ap@slicks.test", "payables")
-    assert ap.get("/payables-due/").status_code == 200 and ap.get("/order-statements/").status_code == 200
+    assert ap.get("/calendar/").status_code == 200 and ap.get("/order-statements/").status_code == 200
 
 
 def test_an_edited_invoice_can_be_deleted_and_a_matched_one_is_refused_plainly(db):
@@ -211,7 +217,7 @@ def test_the_sales_invoice_is_the_reference_with_the_dr_beside_it(web, db):
     _add_inv(web, sid, doc="SI-1001", dr="DR-77")
     assert fetchone(_db(), "SELECT dr_no FROM invoices WHERE doc_ref = 'SI-1001'")[0] == "77"
     page = web.get(f"/order-statements/{sid}/").content.decode()
-    assert "Sales invoice no. (SI)" in page and "DR no." in page and ">77<" in page
+    assert "Reference (SI or DR)" in page and "DR no." in page and ">77<" in page
     assert "No PO</span>" in page and "1 of 1 sales invoice(s) typed in with no purchase order" in page
     inv_id = _inv("SI-1001")[0]
     web.post(f"/order-statements/{sid}/", {"action": "save_invoice", "invoice_id": inv_id, "stamp": _stamp_of(web, sid, inv_id), "doc": "SI-1001", "date": "2026-09-08",

@@ -9,7 +9,7 @@ import pandas as pd
 import os
 from engines.common import get_conn
 from engines.clock import manila_today
-from engines.clearing import cleared_sql, owed_sql
+from engines.clearing import bank_loan_cleared_sql, bank_loan_owed_sql, cleared_sql, owed_sql
 DB_PATH =os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
@@ -136,7 +136,7 @@ _PAYMENT_SCHEDULE_TEMPLATE = """
     JOIN bank_loans bl ON bli.bank_loan_id = bl.bank_loan_id
     JOIN creditors cr ON bl.creditor_id = cr.creditor_id
     LEFT JOIN loan_beneficiaries lb ON bl.beneficiary_id = lb.beneficiary_id
-    WHERE bli.due_date __CMP__ manila_today() AND bl.is_cancelled = 0
+    WHERE __BL__ AND bl.is_cancelled = 0
 
     UNION ALL
 
@@ -150,18 +150,21 @@ _PAYMENT_SCHEDULE_TEMPLATE = """
     JOIN credit_cards cc ON cs.card_id = cc.card_id
     JOIN creditors cr ON cc.creditor_id = cr.creditor_id
     LEFT JOIN cardholders ch ON cc.cardholder_id = ch.cardholder_id
-    WHERE __CARD_STATUS__ AND cs.due_date __CMP__ manila_today()
+    WHERE __CARD_STATUS__ AND __CARD_DATE__
       AND NOT (cs.unpaid_balance_next > 0 AND """ + superseded_sql("cs") + """)
 """
 
 # Still owed -- the Schedule of payments, forecasts and reports. A check is owed until it CLEARS (2026-10-08, engines/clearing.py), whatever its date:
 # a past-dated check not cleared yet is paid "today" (get_payment_schedule_all_tracks moves it), since the supplier can deposit it any day.
+# Daily payables (owner, 2026-10-09): a bank-loan installment is owed until it clears, a card statement until it is paid -- whatever their dates.
 _PAYMENT_SCHEDULE_UNION = (_PAYMENT_SCHEDULE_TEMPLATE.replace("__CHECKS__", owed_sql("c")).replace("__CMP__", ">=")
+                           .replace("__BL__", bank_loan_owed_sql("bli")).replace("__CARD_DATE__", "1 = 1")
                            .replace("__CARD_STATUS__", "cs.status IN ('Unpaid', 'Partially Paid')"))
 # What was paid on a day that has already passed (owner, 2026-09-30: "the calendar shows 0 on past days"): same four tracks, same references.
 # A check: cleared, dated before today. A card statement counts whether or not it was marked paid.
 _PAYMENT_PAST_UNION = (_PAYMENT_SCHEDULE_TEMPLATE.replace("__CHECKS__", "c.check_date < manila_today() AND c.settled_outside_at IS NULL "    # paid by the check, not outside the bank
                                                          "AND (c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL)").replace("__CMP__", "<")
+                       .replace("__BL__", bank_loan_cleared_sql("bli") + " AND bli.due_date < manila_today()").replace("__CARD_DATE__", "cs.due_date < manila_today()")
                        .replace("__CARD_STATUS__", "cs.status != 'Cancelled'"))
 
 
@@ -291,7 +294,7 @@ def get_combined_ap_summary() -> pd.DataFrame:
                FROM loan_notes ln WHERE status IN ('Active', 'Defaulted')"""
         ).fetchone()[0]
         bank_loan = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE due_date >= manila_today() AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)"
+            "SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE NOT (cleared_at IS NOT NULL OR installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)) AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)"
         ).fetchone()[0]
         credit_card = conn.execute(
             f"""SELECT COALESCE(SUM({cc_owed_case('cs')}), 0)
@@ -580,7 +583,7 @@ def get_bank_loan_servicing_report() -> pd.DataFrame:
         bl.principal_amount,
         CASE WHEN bl.is_cancelled = 1 THEN 0 ELSE COALESCE(
             (SELECT SUM(amount) FROM bank_loan_installments
-             WHERE bank_loan_id = bl.bank_loan_id AND due_date >= manila_today()), 0
+             WHERE bank_loan_id = bl.bank_loan_id AND NOT (cleared_at IS NOT NULL OR installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL))), 0
         ) END AS outstanding,
         bl.mode_of_payment, CASE WHEN bl.is_cancelled = 1 THEN 'Cancelled' ELSE bl.status END AS status, lb.name AS beneficiary, lb.beneficiary_type,
         CASE WHEN bl.is_beginning_balance = 1 THEN 'Beginning balance (from MS Access)' ELSE '' END AS source

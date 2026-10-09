@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Callable
+from engines.common import us_date
 
 LEVELS = ("none", "ok", "warn", "alert")
 
@@ -84,6 +85,7 @@ GROUPS: list[Group] = [                              # in the order the money mo
     Group("bank", "Bank", "The bank statement is the truth"),
     Group("other", "Other payables", "Loans and cards"),
     Group("records", "Records", "Look things up"),
+    Group("analytics", "Analytics", "Dashboards: owed, due, cleared, spend"),
     Group("system", "Set-up and system", "Settings and safety"),
 ]
 TILES: list[Tile] = []
@@ -163,11 +165,37 @@ def _order_statements():
     return _waiting(n, "with a balance")
 
 
+def _review():
+    """Checks and review (owner, 2026-10-09): the review lines, data checks and possible duplicates still to look at."""
+    from engines import data_health_service as dh
+    from engines import review_flags as rf
+    from engines.duplicate_scan_service import scan_possible_duplicates
+    n = rf.open_count() + dh.open_count() + len(scan_possible_duplicates())
+    return str(n), "to look at", ("warn" if n else "ok")
+
+
+def _calendar():
+    """Calendar (owner, 2026-10-09; replaces Payables due): what falls on today, every kind."""
+    from engines.clock import manila_today
+    from engines.reports_service import get_payment_schedule_all_tracks
+    df = get_payment_schedule_all_tracks()
+    if df.empty:
+        return "₱0", "due today", "none"
+    import pandas as pd
+    today = df[pd.to_datetime(df["actual_payment_date"]).dt.date == manila_today()]
+    return peso_short(float(today["amount"].sum())), f"due today · {len(today)} item(s)", ("warn" if len(today) else "none")
+
+
 def _checks():
-    from engines.check_run_service import get_pending_check_run
-    from engines.pdc_release_service import release_summary
-    n, rel = len(get_pending_check_run()), release_summary()["waiting"]
-    return _waiting(n + rel, f"{n} to print · {rel} to release")
+    """Daily payables (owner, 2026-10-09): what is due today or overdue, every track, until it is paid."""
+    from engines.clearing import daily_payables
+    from engines.clock import manila_today
+    df = daily_payables()
+    if df.empty:
+        return "0", "nothing due today", "none"
+    due = df[df["ticked"].isna() & df["due"]]
+    overdue = int((due["day"] < manila_today().isoformat()).sum())
+    return str(len(due)), f"{peso_short(float(due['amount'].sum()))} due · {overdue} overdue", ("warn" if overdue else ("ok" if len(due) else "none"))
 
 
 def _bank_cash():
@@ -177,7 +205,7 @@ def _bank_cash():
         return "", "No bank statement yet", "none"
     f = forecast_if_shown(30)
     dip = f.get("first_below") if f else None
-    return peso_short(pos["balance"]), (f"under the buffer {dip:%b %d}" if dip else f"as of {pos['as_of']:%b %d}"), "alert" if dip else "ok"
+    return peso_short(pos["balance"]), (f"under the buffer {dip:%m/%d}" if dip else f"as of {pos['as_of']:%m/%d}"), "alert" if dip else "ok"
 
 
 def _payables_due():
@@ -227,6 +255,35 @@ def _price_lists():
 def _lenders():
     n = _count("SELECT COUNT(*) FROM loan_notes WHERE status = 'Active'")
     return str(n), "active loan notes", "ok" if n else "none"
+
+
+def _an_payables():
+    from engines.reports_service import get_combined_ap_summary
+    df = get_combined_ap_summary()
+    v = float(df.loc[df["track"].str.startswith("Supplier"), "outstanding"].sum())
+    return peso_short(v), "owed to suppliers", "ok" if v else "none"
+
+
+def _an_lenders():
+    from engines.reports_service import get_combined_ap_summary
+    df = get_combined_ap_summary()
+    v = float(df.loc[df["track"].str.startswith("Private Lender"), "outstanding"].sum())
+    return peso_short(v), "owed to lenders", "ok" if v else "none"
+
+
+def _an_bank():
+    from engines.common import get_conn
+    with get_conn() as conn:
+        r = conn.execute("SELECT COALESCE(posting_date, txn_date), balance FROM bank_transactions WHERE balance IS NOT NULL "
+                         "ORDER BY COALESCE(posting_date, txn_date) DESC, txn_id DESC LIMIT 1").fetchone()
+    if not r:
+        return "—", "no bank statement yet", "none"
+    return peso_short(float(r[1])), f"bank balance, {us_date(r[0])}", "ok"
+
+
+def _an_purchasing():
+    n = _count("SELECT COUNT(*) FROM purchase_orders WHERE status IN ('ORDERED', 'PARTIAL')")
+    return str(n), "open purchase orders", "ok" if n else "none"
 
 
 def _bank_loans():
@@ -280,7 +337,8 @@ for _t in (
         A("New batch", "Start a batch for a supplier", ":material/add:", os_mode="New batch"),
         A("Print statements in bulk", "One PDF for many batches", ":material/picture_as_pdf:", os_mode="Browse batches", bulk_print_exp=True)]),
     Tile("payment-run", "pay", "Payment run", _payment_run),
-    Tile("checks", "pay", "Checks and checkbook", _checks),
+    Tile("checks", "pay", "Daily payables", _checks, icon=":material/fact_check:"),
+    Tile("calendar", "pay", "Calendar", _calendar, icon=":material/calendar_month:"),
     Tile("release", "pay", "Release checks", _release),
     Tile("payables-due", "pay", "Payables due", _payables_due, actions=[
         A("Everything owed, with downloads", "All tracks, by date; CSV, Excel and PDF", ":material/event:", pd_tab="Everything owed"),
@@ -319,10 +377,15 @@ for _t in (
           report_type_picker="Statement of account — supplier, lender, bank loan or card", rpt_soa_view="Supplier history"),
         A("Possible duplicates", "Check everything on file", ":material/content_copy:", rpt_mode="Standard reports", report_type_picker="Possible duplicates — check everything on file"),
         A("Decision reports", "Answers for choices", ":material/lightbulb:", rpt_mode="Standard reports", report_type_picker="Decision reports — answers for choices")]),
+    Tile("analytics", "analytics", "Payables", _an_payables, key="an-payables", icon=":material/receipt_long:", state=(("analytics_tab", "payables"),), needs="reports.use"),
+    Tile("analytics", "analytics", "Lenders", _an_lenders, key="an-lenders", icon=":material/handshake:", state=(("analytics_tab", "lenders"),), needs="reports.use"),
+    Tile("analytics", "analytics", "Bank and cash", _an_bank, key="an-bank", icon=":material/account_balance:", state=(("analytics_tab", "bank"),), needs="reports.use"),
+    Tile("analytics", "analytics", "Purchasing", _an_purchasing, key="an-purchasing", icon=":material/shopping_cart:", state=(("analytics_tab", "purchasing"),), needs="reports.use"),
     Tile("creditors", "system", "Creditors", _creditors),
     Tile("controls", "system", "Roles and controls", hint="Who can do what, and what is checked"),
     Tile("settings", "system", "Settings", hint="Numbers and shortcuts"),
     Tile("admin", "system", "Admin and audit", hint="Booklets, backup"),
     Tile("data-health", "system", "Data health", _data_health),
+    Tile("review", "system", "Checks and review", _review, icon=":material/fact_check:"),
 ):
     register_tile(_t)

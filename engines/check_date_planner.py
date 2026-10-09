@@ -143,7 +143,7 @@ def _baseline(today: date, end: date, start_cash: float | None, inflow_per_day: 
     if start_cash is None:
         if not src["fresh"]:
             raise ValueError("No recent bank balance to plan from — type the cash in the bank today, or import a recent statement.")
-        start, source = float(src["balance"]), f"bank balance of {src['as_of']:%b %d, %Y}"
+        start, source = float(src["balance"]), f"bank balance of {src['as_of']:%m/%d/%Y}"
         out = scheduled_outflows(today, end)[["day", "track", "amount"]]
     else:
         start, source = float(start_cash), "the cash you typed in"
@@ -256,7 +256,7 @@ def plan(today: date | None = None, start_cash: float | None = None, inflow_per_
                           "On its due date" if chosen == it["due"] else "Due on a weekend / marked day — next bank day")
             else:
                 first = why_not[0]
-                reason = f"Moved {(chosen - earliest).days} day(s): on {first[0]:%b %d} {first[1]}"
+                reason = f"Moved {(chosen - earliest).days} day(s): on {first[0]:%m/%d} {first[1]}"
         else:
             # does not fit: the latest allowed day where the supplier is free, flagged with the shortfall
             free = [d for d in cands if (cid, d.isoformat()) not in taken and planned.get((cid, d.isoformat()), sid) == sid] or cands

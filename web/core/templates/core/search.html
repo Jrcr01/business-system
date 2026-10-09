@@ -1,0 +1,13 @@
+{% extends "core/base.html" %}
+{% block title %}Search{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">search</span> Search{% if q %}: “{{ q }}”{% endif %}</h2>
+<p class="note">Checks, invoices, batches, loan notes, bank loans, creditors, cards and spoiled checks, by number, reference, name or an exact amount.</p>
+<form class="bar" method="get" action="/search/"><div class="grow"><input type="search" name="q" value="{{ q }}" aria-label="Search everything" placeholder="e.g. 3992554590, SI 48812, Goodyear, 50595" autofocus></div>
+  <button class="btn small" type="submit"><span class="ms">search</span>Search</button></form>
+{% if q and not groups %}<p class="note">Nothing found for “{{ q }}”.{% if q|length < 2 %} Type at least 2 characters.{% endif %}</p>{% endif %}
+{% for g in groups %}
+<div class="grp">{{ g.title }} <span class="hint">· {% if g.total > g.rows|length %}first {{ g.rows|length }} of {{ g.total }}{% else %}{{ g.total }}{% endif %}</span></div>
+<ul class="search-hits">{% for r in g.rows %}<li><a href="{{ r.href }}">{{ r.label|usdates }}</a></li>{% endfor %}</ul>
+{% endfor %}
+{% endblock %}

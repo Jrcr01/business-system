@@ -1,0 +1,42 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Calendar{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">calendar_month</span> Calendar</h2>
+<p class="note">Every payable, day by day: supplier and lender checks, bank loans and cards. <span class="cal-key paid">paid</span> cleared or ticked ·
+  <span class="cal-key due">to pay</span> · <span class="cal-key off">weekend, holiday or no-check day</span>. Unpaid items from earlier days count on today.</p>
+<div class="cal-head">
+  <a class="btn small ghost" href="?m={{ prev }}" aria-label="Month before"><span class="ms">chevron_left</span></a>
+  <b>{{ first|date:"F Y" }}</b>
+  <a class="btn small ghost" href="?m={{ next }}" aria-label="Month after"><span class="ms">chevron_right</span></a>
+  {% if m != this_m %}<a class="btn small ghost" href="/calendar/">This month</a>{% endif %}
+  <span class="hint" style="margin-left:auto">Month total ₱{{ month_total|floatformat:2|intcomma }}</span>
+</div>
+<div class="cal">
+  <div class="dn">Mon</div><div class="dn">Tue</div><div class="dn">Wed</div><div class="dn">Thu</div><div class="dn">Fri</div><div class="dn">Sat</div><div class="dn">Sun</div>
+  {% for w in cells %}{% for c in w %}
+  <a class="cell{% if c.out %} out{% endif %}{% if c.off %} off{% endif %}{% if c.n and c.state == 'Paid' %} paid{% elif c.n %} due{% endif %}{% if c.today %} today{% endif %}{% if c.pick %} pick{% endif %}"
+     href="?m={{ m }}&day={{ c.d|date:'Y-m-d' }}#day">
+    <span class="dd">{{ c.d|date:"d" }}</span>{% if c.mark %}<span class="mk" title="{{ c.mark.label }}">{% if c.mark.kind == "holiday" %}holiday{% elif c.mark.kind == "custom" %}no checks{% else %}note{% endif %}</span>{% endif %}
+    {% if c.n %}<b>₱{{ c.total|floatformat:0|intcomma }}</b><span class="cnt">{% if c.due_n %}{{ c.due_n }} to pay{% endif %}{% if c.due_n and c.paid_n %} · {% endif %}{% if c.paid_n %}{{ c.paid_n }} paid{% endif %}</span>{% endif %}
+  </a>{% endfor %}{% endfor %}
+</div>
+
+<div class="grp" id="day">{{ pick|date:"l" }} {{ pick|date:"m/d/Y" }}{% if day_rows %} · ₱{{ day_total|floatformat:2|intcomma }} · {{ day_rows|length }} item{{ day_rows|length|pluralize }}{% endif %}
+  {% if pick_mark %}<span class="pill warn">{% if pick_mark.kind == "holiday" %}Holiday{% elif pick_mark.kind == "custom" %}No-check day{% else %}Note{% endif %}{% if pick_mark.label %}: {{ pick_mark.label }}{% endif %}</span>{% endif %}</div>
+{% if day_rows %}
+<div class="scroll-x"><table class="list"><tr><th>Pay to</th><th>Kind</th><th>Check / reference</th><th style="text-align:right">Amount</th><th>Status</th></tr>
+  {% for r in day_rows %}<tr><td>{{ r.payee }}</td><td>{{ r.kind }}</td><td>{{ r.ref|default:"—" }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td>
+    <td>{% if r.paid %}<span class="pill">paid</span>{% elif r.late_from %}<span class="pill warn">to pay · from {{ r.late_from|date:"m/d/Y" }}</span>{% else %}to pay{% endif %}</td></tr>{% endfor %}
+</table></div>
+<p class="hint">Mark what is paid on <a href="/checks/">Daily payables</a>.</p>
+{% else %}<p class="note">Nothing on this day.</p>{% endif %}
+{% if may_mark %}
+<form class="bar" method="post" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="day" value="{{ pick|date:'Y-m-d' }}"><input type="hidden" name="m" value="{{ m }}">
+  <div><label for="kind">Mark {{ pick|date:"m/d/Y" }} as</label><select id="kind" name="kind">{% for k, label in kinds %}<option value="{{ k }}"{% if pick_mark.kind == k %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="grow"><label for="label">Label (optional; needed for a note)</label><input id="label" type="text" name="label" value="{{ pick_mark.label|default:'' }}" placeholder="e.g. Bonifacio Day"></div>
+  <button class="btn small ghost" type="submit" name="action" value="mark"><span class="ms">event_busy</span>Mark the day</button>
+  {% if pick_mark %}<button class="btn small ghost" type="submit" name="action" value="unmark">Remove the mark</button>{% endif %}
+</form>
+<p class="hint">Checks falling on a holiday or no-check day move to the next bank day.</p>
+{% endif %}
+{% endblock %}

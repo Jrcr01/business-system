@@ -68,6 +68,8 @@ def test_lender_bank_loan_and_card_dues_of_past_days_are_included(db):
     bank = make_creditor(db, name="BDO", creditor_type="BANK_LOAN")
     blid = create_bank_loan(bank, "L1", "A", date(2026, 1, 1), date(2027, 1, 1), None, 500000.0, "ADA")
     add_bank_loan_installment(blid, past, 20000.0)
+    with sqlite3.connect(db) as conn:                          # paid = ticked (or on the bank statement), not its date (2026-10-09)
+        conn.execute("UPDATE bank_loan_installments SET cleared_at = ? WHERE bank_loan_id = ?", (str(past), blid))
     issuer = make_creditor(db, name="RCBC", creditor_type="CREDIT_CARD")
     with sqlite3.connect(db) as conn:
         card = conn.execute("INSERT INTO credit_cards (creditor_id, card_name, card_number_last4, credit_limit) VALUES (?, 'Gold', '1234', 1)", (issuer,)).lastrowid

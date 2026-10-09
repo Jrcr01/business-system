@@ -235,6 +235,9 @@ CREATE TABLE IF NOT EXISTS bank_loan_installments (
     amount REAL NOT NULL DEFAULT 0 CHECK(amount >= 0),
     interest_portion REAL NOT NULL DEFAULT 0 CHECK(interest_portion >= 0),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    cleared_at DATE,                 -- migration 080 (2026-10-09): ticked paid (or the go-live cut-off); a matched bank line also clears it
+    cleared_by TEXT,
+    cleared_note TEXT,
     FOREIGN KEY (bank_loan_id) REFERENCES bank_loans(bank_loan_id)
 );
 

@@ -53,7 +53,7 @@ def populated(db):
 
 def test_every_page_in_the_menu_has_a_module():
     assert PAGE_MODULES and "home" in PAGE_MODULES and "release" in PAGE_MODULES and "controls" in PAGE_MODULES
-    assert set(PAGE_MODULES) >= {p for ids in __import__("engines.permissions", fromlist=["PAGE_ACTION"]).PAGE_ACTION for p in [ids]}
+    assert set(PAGE_MODULES) >= {p for ids in __import__("engines.permissions", fromlist=["PAGE_ACTION"]).PAGE_ACTION for p in [ids]} - {"analytics", "calendar", "review"}   # Django only
 
 
 @pytest.mark.parametrize("role", ROLES)

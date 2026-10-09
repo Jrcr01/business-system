@@ -28,21 +28,23 @@ from engines.validators import money_amount_error
 from datetime import date
 from engines.common import get_conn
 from engines.clock import manila_today
+from engines.common import us_date
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 # Same "cleared" convention as v_checks_ledger.effective_status (schema.sql) and the Loan Notes/
 # Order Statement cleared-vs-issued work: a due date counts as cleared once it's in the past.
-CLEARED_SQL = "due_date < manila_today()"
+CLEARED_SQL = "(cleared_at IS NOT NULL OR installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL))"   # 2026-10-09: paid when it clears, not by its date
 
 
 def _get_conn():
     return get_conn(DB_PATH)
 
 
-def is_installment_cleared(due_date) -> bool:
-    d = due_date if isinstance(due_date, date) else date.fromisoformat(str(due_date))
-    return d <= manila_today()
+def is_installment_cleared(installment_id: int) -> bool:
+    """Paid: ticked, or the bank statement shows it (2026-10-09; it used to be "its due date has passed")."""
+    with _get_conn() as conn:
+        return bool(conn.execute(f"SELECT 1 FROM bank_loan_installments WHERE installment_id = ? AND {CLEARED_SQL}", (installment_id,)).fetchone())
 
 
 def _renumber_installments(cur: sqlite3.Cursor, bank_loan_id: int) -> None:
@@ -188,11 +190,9 @@ def edit_bank_loan_installment(installment_id: int, due_date: date, amount: floa
         if not row:
             return False, "Installment not found."
         bank_loan_id, existing_due_date = row
-        if is_installment_cleared(existing_due_date):
-            # Same rule as delete_bank_loan_installment(): a due date already in the past is
-            # treated as paid -- silently rewriting its amount afterwards would rewrite settled
-            # history with no audit trail.
-            return False, "Cannot edit an installment whose due date has already passed — it's treated as paid."
+        if is_installment_cleared(installment_id):
+            # Same rule as delete_bank_loan_installment(): a paid installment (ticked, or on the bank statement) is settled history.
+            return False, "Cannot edit an installment that is already paid (ticked or on the bank statement)."
         cur.execute(
             "UPDATE bank_loan_installments SET due_date = ?, amount = ?, interest_portion = ? WHERE installment_id = ?",
             (str(due_date), amount, interest_portion, installment_id),
@@ -211,12 +211,12 @@ def delete_bank_loan_installment(installment_id: int) -> tuple[bool, str]:
         if not row:
             return False, "Installment not found."
         bank_loan_id, due_date, amount, interest_portion = row
-        if is_installment_cleared(due_date):
-            return False, "Cannot delete an installment whose due date has already passed — it's treated as paid."
+        if is_installment_cleared(installment_id):
+            return False, "Cannot delete an installment that is already paid (ticked or on the bank statement)."
         cur.execute("DELETE FROM bank_loan_installments WHERE installment_id = ?", (installment_id,))
         cur.execute(
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'BANK_LOAN_INSTALLMENT_DELETED', 'bank_loan_installments', ?, ?)",
-            (installment_id, f"Bank loan {bank_loan_id}: installment due {str(due_date)[:10]} deleted (amount {float(amount or 0):,.2f}, interest part {float(interest_portion or 0):,.2f})"),
+            (installment_id, f"Bank loan {bank_loan_id}: installment due {us_date(due_date)} deleted (amount {float(amount or 0):,.2f}, interest part {float(interest_portion or 0):,.2f})"),
         )
         _renumber_installments(cur, bank_loan_id)
         _sync_loan_status(cur, bank_loan_id)

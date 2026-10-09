@@ -1,0 +1,45 @@
+"""Template filters every page has without a {% load %} (registered as builtins in config/settings.py)."""
+from __future__ import annotations
+
+from datetime import date, datetime
+
+from django import template
+
+register = template.Library()
+
+
+import re as _re
+
+_ISO = _re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+_MONTHS = {m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), start=1)}
+_WORDS = _re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? (\d{1,2}), (\d{4})\b")
+
+
+@register.filter
+def usdates(text) -> str:
+    """Dates written inside free text -- stored notes, the audit log, review details, messages written before 2026-10-09 -- shown mm/dd/yyyy:
+    '2026-10-09' and 'Oct 09, 2026' both become '10/09/2026'. The stored text itself is never changed."""
+    if text in (None, ""):
+        return ""
+    s = _ISO.sub(lambda m: f"{m.group(2)}/{m.group(3)}/{m.group(1)}", str(text))
+    return _WORDS.sub(lambda m: f"{_MONTHS[m.group(1).lower()]:02d}/{int(m.group(2)):02d}/{m.group(3)}", s)
+
+
+@register.filter
+def dmy(value) -> str:
+    """A date shown mm/dd/yyyy (owner, 2026-10-09: one date format across the system, mm/dd/yyyy); with its time (mm/dd/yyyy HH:MM) when it has one.
+    Takes a date, a datetime or an ISO text ('2026-10-09', '2026-10-09 14:30:00'); anything else is shown as it is; empty shows nothing."""
+    if value in (None, ""):
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%m/%d/%Y %H:%M")
+    if isinstance(value, date):
+        return value.strftime("%m/%d/%Y")
+    text = str(value).strip()
+    try:
+        d = date.fromisoformat(text[:10])
+    except ValueError:
+        return text
+    out = d.strftime("%m/%d/%Y")
+    rest = text[10:].strip().lstrip("T")
+    return out + (" " + rest[:5] if len(rest) >= 5 and rest[2] == ":" else "")

@@ -71,7 +71,7 @@ def mark_day(day: date, kind: str, label: str = "") -> tuple[bool, str]:
                          "ON CONFLICT(blocked_date) DO UPDATE SET label = excluded.label, kind = excluded.kind", (str(day), label or None, kind))
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, new_values) VALUES (acting_user(), 'CALENDAR_MARKED', 'calendar', ?)",
                      (f"{day}: {KINDS[kind]}" + (f" ({label})" if label else ""),))
-    return True, f"{day:%b %d, %Y} marked: {KINDS[kind].lower()}."
+    return True, f"{day:%m/%d/%Y} marked: {KINDS[kind].lower()}."
 
 
 def unmark_day(day: date) -> tuple[bool, str]:
@@ -83,7 +83,7 @@ def unmark_day(day: date) -> tuple[bool, str]:
         n += conn.execute("DELETE FROM calendar_blocked_dates WHERE blocked_date = ?", (str(day),)).rowcount
         if n:
             conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, new_values) VALUES (acting_user(), 'CALENDAR_UNMARKED', 'calendar', ?)", (str(day),))
-    return True, f"{day:%b %d, %Y} is no longer marked." if n else "That day was not marked."
+    return True, f"{day:%m/%d/%Y} is no longer marked." if n else "That day was not marked."
 
 
 def payments_on(day: date) -> int:

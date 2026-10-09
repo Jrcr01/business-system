@@ -66,7 +66,7 @@ _add("banks", "Banks", "Banks we have loans or cards with (a bank used for both 
          COALESCE((SELECT COUNT(*) FROM bank_loans b JOIN creditors cb ON cb.creditor_id = b.creditor_id WHERE cb.creditor_name = c.creditor_name AND b.is_cancelled = 0), 0) AS bank_loans,
          COALESCE((SELECT COUNT(*) FROM credit_cards cc JOIN creditors cx ON cx.creditor_id = cc.creditor_id WHERE cx.creditor_name = c.creditor_name AND cc.is_active = 1), 0) AS cards,
          COALESCE((SELECT SUM(i.amount) FROM bank_loan_installments i JOIN bank_loans b ON b.bank_loan_id = i.bank_loan_id JOIN creditors cb ON cb.creditor_id = b.creditor_id
-                   WHERE cb.creditor_name = c.creditor_name AND b.is_cancelled = 0 AND i.due_date >= {TODAY}), 0)
+                   WHERE cb.creditor_name = c.creditor_name AND b.is_cancelled = 0 AND NOT (i.cleared_at IS NOT NULL OR i.installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL))), 0)
          + COALESCE((SELECT SUM({cc_owed_case('cs')}) FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id JOIN creditors cx ON cx.creditor_id = cc.creditor_id
                      WHERE cx.creditor_name = c.creditor_name AND cs.status NOT IN ('Paid', 'Cancelled')), 0) AS owed
          FROM creditors c WHERE c.creditor_type IN ('BANK_LOAN', 'CREDIT_CARD') GROUP BY c.creditor_name ORDER BY c.creditor_name""",

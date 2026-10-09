@@ -13,6 +13,7 @@ import sqlite3
 from datetime import date
 
 from engines.validators import money_amount_error
+from engines.common import us_date
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -45,7 +46,7 @@ def edit_loan_note_details(loan_note_id: int, note_ref: str, issue_date: date, c
             return False, f"Loan note number {note_ref} is already used by another loan note."
         first_due = conn.execute("SELECT MIN(due_date) FROM loan_installments WHERE loan_note_id = ?", (loan_note_id,)).fetchone()[0]
         if first_due and str(issue_date) > str(first_due)[:10]:
-            return False, f"The issue date cannot be after the first installment ({str(first_due)[:10]}). Change that installment first."
+            return False, f"The issue date cannot be after the first installment ({us_date(first_due)}). Change that installment first."
         new_name = old_name
         if creditor_id != old_creditor:
             c = conn.execute("SELECT creditor_type, creditor_name FROM creditors WHERE creditor_id = ?", (creditor_id,)).fetchone()

@@ -96,7 +96,8 @@ def test_order_pdf_receive_match_and_follow_it_to_the_bank(web, db):
     inv = fetchone(_db(), "SELECT amount, statement_id FROM invoices WHERE doc_ref = 'INV-88'")
     assert inv[0] == 10500.0 and inv[1] is not None                            # the price actually charged, in a new batch
     order_page = web.get(f"/purchase-orders/{po_id}/").content.decode()
-    assert "INV-88" in order_page and "Follow this order to the bank" in order_page
+    assert f'data-rmap="/related/po/{po_id}/"' in order_page and "Follow this order to the bank" not in order_page   # replaced by the relationship map
+    assert "SI INV-88" in web.get(f"/related/po/{po_id}/").content.decode()
     diffs = web.get("/purchase-orders/?tab=diffs").content.decode()
     assert "Eagle F1" in diffs and "500.00" in diffs
     again = web.post("/purchase-orders/match/", {"s": cid, "action": "match", f"pick_{line_id}": "1", f"qty_{line_id}": "1", f"price_{line_id}": "1", "doc": "INV-88",

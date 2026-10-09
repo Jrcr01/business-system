@@ -46,14 +46,16 @@ _ROWS: list[tuple[str, str, str, tuple]] = [
     ("po.receive", "Purchasing", "Match the supplier's invoice to received goods, which creates the payable in a batch", (Y, None, Y, None, None)),
     ("po.ack_over_plan", "Purchasing", "Acknowledge 'orders over the cash plan'", (Y, None, None, None, None)),
     ("committed.view", "Purchasing", "Committed payables by week (totals by kind, no check numbers)", (Y, None, Y, Y, VIEW)),
-    ("payables_due.view", "Payables", "Payables due: checks by week and supplier", (Y, None, Y, None, None)),
+    ("payables_due.view", "Payables", "See the payables calendar", (Y, None, Y, None, None)),
+    ("payables.mark_paid", "Payables", "Mark payables paid on Daily payables: checks, bank-loan payments, card payments", (Y, None, Y, None, None)),
     ("invoice.enter", "Payables", "Enter invoices and credit memos; work with batches (order statements)", (Y, None, Y, None, None)),
     ("check.park", "Payables", "Park (prepare) checks", (Y, None, Y, None, None)),
     ("check.issue", "Payables", "Issue and print checks; handwritten and guarantee checks", (Y, None, None, None, None)),
     ("check.release", "Payables", "Mark post-dated checks as released to the supplier, or undo it", (Y, None, Y, None, None)),
     ("check.void", "Payables", "Cancel or void a check, cancel a batch, change a locked batch", (Y, None, None, None, None)),
     ("bank.use", "Payables", "Bank and cash: import a bank statement, reconcile", (Y, None, Y, None, None)),
-    ("loans.use", "Payables", "Lenders, bank loans, credit cards", (Y, None, Y, None, None)),
+    ("loans.use", "Payables", "Lenders and bank loans", (Y, None, Y, None, None)),
+    ("cards.use", "Payables", "Credit cards: statements (SOA), cards and cardholders", (Y, None, Y, None, None)),
     ("creditors.edit", "Payables", "Add and change suppliers (terms, delivery days)", (Y, None, Y, None, None)),
     ("calendar.mark", "Payables", "Mark holidays, no-check days and notes on the payment calendar", (Y, None, Y, None, None)),
     ("search.use", "Records", "Search everything; the mini calendar of payments", (Y, None, Y, None, Y)),
@@ -80,24 +82,25 @@ ACTIONS: dict[str, dict] = {a: {"group": g, "label": text, "levels": _levels(a, 
 
 # the menu page that needs an action (a page is open to a role that has that action at any level except None; a page with writes also guards them in the engine)
 PAGE_ACTION = {
-    "home": "home.open", "price-lists": "price.view", "purchase-orders": "po.view", "payables-due": "payables_due.view",
-    "payment-run": "invoice.enter", "add-data": "invoice.enter", "order-statements": "invoice.enter", "checks": "check.park", "release": "check.release", "controls": "controls.view", "bank-cash": "bank.use", "planner": "bank.use",
-    "lenders": "loans.use", "bank-loans": "loans.use", "credit-cards": "loans.use", "creditors": "creditors.edit",
-    "reports": "reports.use", "data-health": "health.view",
+    "home": "home.open", "price-lists": "price.view", "purchase-orders": "po.view", "payables-due": "payables_due.view", "calendar": "payables_due.view",
+    "payment-run": "invoice.enter", "add-data": "invoice.enter", "order-statements": "invoice.enter", "checks": "payables.mark_paid", "release": "check.release", "controls": "controls.view", "bank-cash": "bank.use", "planner": "bank.use",
+    "lenders": "loans.use", "bank-loans": "loans.use", "credit-cards": "cards.use", "creditors": "creditors.edit",
+    "reports": "reports.use", "analytics": "reports.use", "review": "review.use", "data-health": "health.view",
     "settings": "settings.edit", "admin": "audit.view",
 }
 # a "view" level opens the page only where the page can show without forms that change AP records
-VIEW_PAGES = {"home", "price-lists", "purchase-orders", "payables-due"}
+VIEW_PAGES = {"home", "price-lists", "purchase-orders", "payables-due", "calendar"}
 
 
 # the per-person switches, in the order of the work (owner, 2026-10-08); every business action is in exactly one group. Home, own password and the System admin's
 # own actions (SYSTEM_ONLY) are never switches.
 WORKFLOW: list[tuple[str, list[str]]] = [
     ("Buy", ["price.view", "price.write", "po.view", "po.create", "po.order", "po.cancel", "po.receive_goods", "committed.view"]),
-    ("Pay suppliers", ["po.receive", "invoice.enter", "payables_due.view", "check.park", "check.issue", "check.void", "creditors.edit", "calendar.mark"]),
+    ("Pay suppliers", ["po.receive", "invoice.enter", "payables_due.view", "check.park", "check.issue", "check.void", "creditors.edit", "calendar.mark",
+                       "payables.mark_paid"]),
     ("Release", ["check.release"]),
     ("Bank", ["bank.use"]),
-    ("Loans and cards", ["loans.use"]),
+    ("Loans and cards", ["loans.use", "cards.use"]),
     ("Records", ["search.use", "reports.use", "health.view"]),
     ("Review", ["review.use", "po.ack_over_plan", "controls.view"]),
     ("Sales", ["sales.use", "inventory.use"]),
@@ -203,6 +206,58 @@ def may_search(role: str | None) -> bool:
 def hide_check_details(role: str | None) -> bool:
     """Check numbers, who collected a check and the like are for roles that handle checks."""
     return level(role, "check.park") != Y or _switched_off("check.park")
+
+
+# The person's page (owner, 2026-10-09): one line per thing a person does, in plain words, naming the pages it opens; a line may stand for several actions.
+# (section, [(key, label, pages, [actions])]). Sales and inventory are left off until they exist; their switches are kept as they are.
+SWITCH_LINES: list[tuple[str, list[tuple[str, str, str, list[str]]]]] = [
+    ("Buy", [
+        ("see_po", "See prices and purchase orders", "Price lists, Purchase orders", ["price.view", "po.view", "committed.view"]),
+        ("write_po", "Add prices, create and send purchase orders", "Price lists, New order", ["price.write", "po.create", "po.order"]),
+        ("receive", "Receive goods against an order", "Receive goods", ["po.receive_goods"]),
+        ("cancel_po", "Cancel an order", "", ["po.cancel"])]),
+    ("Pay suppliers", [
+        ("invoices", "Match invoices, enter invoices and batches", "Match invoice, Order statements, Add data", ["po.receive", "invoice.enter"]),
+        ("checks", "Park, write and number checks; release them", "a batch's Checks tab", ["check.park", "check.issue", "check.release"]),
+        ("mark_paid", "Mark payables paid (checks, bank loans, card payments)", "Daily payables", ["payables.mark_paid"]),
+        ("calendar", "See the calendar; mark holidays and no-check days", "Calendar", ["payables_due.view", "calendar.mark"]),
+        ("void", "Void or replace a check, cancel or reopen a batch", "", ["check.void"]),
+        ("suppliers", "Add and change suppliers", "Creditors", ["creditors.edit"])]),
+    ("Bank, loans and cards", [
+        ("bank", "Import bank statements, reconcile, booklets", "Bank and cash", ["bank.use"]),
+        ("loans", "Lenders and bank loans", "Lenders, Bank loans", ["loans.use"]),
+        ("cards", "Card statements (SOA) and cards", "Credit cards", ["cards.use"])]),
+    ("Records", [
+        ("reports", "Reports and analytics", "Reports, Analytics", ["reports.use"]),
+        ("search", "Search everything", "", ["search.use"]),
+        ("health", "Data health checks", "Data health", ["health.view"])]),
+    ("Review", [
+        ("review", "The Review list; roles and controls (read only)", "", ["review.use", "controls.view"]),
+        ("over_plan", "Confirm an order over the cash plan", "", ["po.ack_over_plan"])]),
+    ("Old screens", [
+        ("more", "Sign in to the old screens (/more/)", "", ["more.use"])]),
+]
+_ALL_LINES = [k for _, lines in SWITCH_LINES for k, _, _, _ in lines]
+# quick starting points; the person's page then changes only the exceptions
+SWITCH_PRESETS = {
+    "daily": ("Daily operations", set(_ALL_LINES) - {"void", "suppliers", "bank", "cards", "health", "review", "over_plan", "more"}),
+    "purchasing": ("Purchasing only", {"see_po", "write_po", "receive", "cancel_po", "search"}),
+    "view": ("View only", {"see_po", "calendar", "reports", "search"}),
+    "all": ("Everything", set(_ALL_LINES)),
+}
+
+
+def switch_lines(denied: set) -> list[dict]:
+    """The person's page: [{'section', 'lines': [{'key', 'label', 'pages', 'on'}]}] (on = none of its actions is switched off)."""
+    return [{"section": s, "lines": [{"key": k, "label": label, "pages": pages, "on": not (set(acts) & set(denied))} for k, label, pages, acts in lines]}
+            for s, lines in SWITCH_LINES]
+
+
+def denied_from_lines(on_keys: set, denied_before: set) -> set:
+    """What to switch off when the page is saved: every action of a line left off; the switches not on the page (sales, inventory) stay as they were."""
+    shown = {a for _, lines in SWITCH_LINES for _, _, _, acts in lines for a in acts}
+    off = {a for _, lines in SWITCH_LINES for k, _, _, acts in lines if k not in on_keys for a in acts}
+    return off | (set(denied_before) & (SWITCHES - shown))
 
 
 def switch_table(denied: set) -> list[dict]:

@@ -61,7 +61,7 @@ def _title_band(title: str, subtitle: str, styles) -> Table:
 
 def _date_text(d: date) -> str:
     # %-d (no leading zero) is a glibc extension, not portable to Windows -- build it manually.
-    return f"{d.strftime('%A, %B')} {d.day}, {d.year}" if isinstance(d, date) else str(d)
+    return f"{d.strftime('%A')} {d.strftime('%m/%d/%Y')}" if isinstance(d, date) else str(d)
 
 
 def _build_due_date_schedule_pdf(title: str, subtitle: str, df, ref_label: str) -> bytes:
@@ -137,7 +137,7 @@ def _build_due_date_schedule_pdf(title: str, subtitle: str, df, ref_label: str) 
             day_total = 0.0
             for _, r in group.iterrows():
                 due = r["due_date"] if isinstance(r["due_date"], date) else date.fromisoformat(str(r["due_date"]))
-                due_text = due.strftime("%b %d") + (" *" if due != d else "")
+                due_text = due.strftime("%m/%d") + (" *" if due != d else "")
                 line = [due_text, _cell(r["payee_name"]), r["track"], _cell(_or_dash(r.get("reference")))]
                 line.append(_money(r["amount"]))
                 data.append(line)
@@ -186,7 +186,7 @@ def _build_due_date_schedule_pdf(title: str, subtitle: str, df, ref_label: str) 
         ))
 
     story.append(Spacer(1, 10))
-    story.append(Paragraph(f"Generated {manila_now().strftime('%Y-%m-%d %H:%M')}", ParagraphStyle("Gen", parent=styles["Normal"], fontSize=8.4, textColor=GREY)))
+    story.append(Paragraph(f"Generated {manila_now().strftime('%m/%d/%Y %H:%M')}", ParagraphStyle("Gen", parent=styles["Normal"], fontSize=8.4, textColor=GREY)))
 
     doc.build(story)
     buffer.seek(0)
@@ -232,8 +232,8 @@ def generate_payment_schedule_pdf(tracks: list[str] | None = None, month: str | 
     if month:
         subtitle_bits.append(date.fromisoformat(month + "-01").strftime("%B %Y").upper())
     elif date_from or date_to:
-        subtitle_bits.append(f"{date_from:%b %d, %Y}".upper() + " TO " + f"{date_to:%b %d, %Y}".upper() if date_from and date_to
-                             else (f"FROM {date_from:%b %d, %Y}" if date_from else f"UNTIL {date_to:%b %d, %Y}").upper())
+        subtitle_bits.append(f"{date_from:%m/%d/%Y}".upper() + " TO " + f"{date_to:%m/%d/%Y}".upper() if date_from and date_to
+                             else (f"FROM {date_from:%m/%d/%Y}" if date_from else f"UNTIL {date_to:%m/%d/%Y}").upper())
     if payees:
         subtitle_bits.append((", ".join(payees) if len(payees) <= 3 else f"{len(payees)} PAYEES").upper())
     subtitle = f"{' — '.join(subtitle_bits)} — BY PAYMENT DATE" if subtitle_bits else "ALL TRACKS — BY PAYMENT DATE"

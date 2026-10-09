@@ -66,4 +66,4 @@ def update_to_invoice(creditor_id: int, item_name: str, effective_date: date | N
     new_list = round(float(row["invoiced"]) / factor, 2) if factor else float(row["invoiced"])
     unit = row["unit"] or (listed or {}).get("unit") or ""
     ok, msg = add_price(creditor_id, item_name, unit, new_list, day, replace=True)
-    return ok, (f"{item_name}: list price now {new_list:,.2f} from {day:%b %d, %Y} (the invoice price {float(row['invoiced']):,.2f} after the discount)." if ok else msg)
+    return ok, (f"{item_name}: list price now {new_list:,.2f} from {day:%m/%d/%Y} (the invoice price {float(row['invoiced']):,.2f} after the discount)." if ok else msg)

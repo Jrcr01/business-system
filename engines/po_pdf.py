@@ -24,7 +24,7 @@ MARGIN = 0.6 * inch
 
 
 def _day(value) -> str:
-    return date.fromisoformat(str(value)[:10]).strftime("%b %d, %Y") if value else "To be advised"
+    return date.fromisoformat(str(value)[:10]).strftime("%m/%d/%Y") if value else "To be advised"
 
 
 def _qty(q: float) -> str:

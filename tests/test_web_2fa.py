@@ -24,7 +24,7 @@ def test_the_password_alone_does_not_sign_anyone_in(web):
     c = Client()
     r = c.post("/login/", {"username": "family", "password": PW})
     assert r["Location"] == "/2fa/setup/"                                    # first time: set the code up
-    for page in ("/", "/payables-due/", "/settings/users/"):
+    for page in ("/", "/calendar/", "/settings/users/"):
         assert c.get(page)["Location"].startswith("/login/")                # nothing else is open
     page = c.get("/2fa/setup/").content.decode()
     assert "<svg" in page and "Set up your sign-in code" in page
@@ -144,3 +144,18 @@ def test_a_new_person_gets_the_username_typed_and_old_accounts_get_one_from_the_
     with write_tx() as conn:                                                   # an account from before usernames
         conn.execute("UPDATE app_users SET username = NULL WHERE email = 'co@slicks.test'")
     assert fill_missing_usernames() == [("co@slicks.test", "co0")] and fill_missing_usernames() == []
+
+
+def test_the_sandbox_switch_skips_sign_in_and_is_off_unless_set(web):
+    from django.conf import settings
+    from django.test import override_settings
+    _admin(web)
+    _new()
+    web.post("/logout/")
+    assert settings.SANDBOX_NO_SIGNIN is False                                          # off unless run_web_sandbox.bat sets it (never on the server)
+    assert "Sandbox: sign in as" not in web.get("/login/").content.decode()
+    with override_settings(SANDBOX_NO_SIGNIN=True):
+        page = web.get("/login/").content.decode()
+        assert "Sandbox: sign in as" in page and "Family" in page
+        r = web.post("/login/", {"uid": fetchone_uid("family@slicks.test")})
+        assert r["Location"] == "/" and web.get("/").status_code == 200                # no password, no code

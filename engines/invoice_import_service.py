@@ -21,9 +21,10 @@ from engines.clock import manila_today
 # column (unusual, but resolved deterministically rather than picking either
 # at random).
 _HEADER_SYNONYMS = {
-    "doc_ref": ["doc ref", "docref", "doc_ref", "invoice no", "invoice number", "invoice #",
-                "sales invoice no", "sales invoice number", "sales invoice", "si number", "si #",   # the SI is the reference (owner, 2026-10-03)
-                "reference", "reference no", "ref", "dr no", "si no", "or no", "ci no"],
+    "doc_ref": ["sales invoice no", "sales invoice number", "sales invoice no. (si)", "sales invoice", "si no", "si number", "si #",   # the SI is the reference (owner, 2026-10-03)
+                "doc ref", "docref", "doc_ref", "invoice no", "invoice number", "invoice #", "reference", "reference no", "ref", "or no", "ci no"],
+    # the delivery receipt goes beside the SI, never in its place (owner, 2026-10-08: "DR no" used to be read as the invoice number)
+    "dr_no": ["dr no", "dr no.", "dr number", "dr #", "dr", "delivery receipt", "delivery receipt no", "delivery receipt number"],
     "invoice_date": ["invoice date", "date received", "date", "doc date"],
     "amount": ["amount", "gross amount", "gross", "total", "total amount", "net amount"],
     "less_pct": ["less %", "less pct", "less", "discount %", "discount", "discount pct"],
@@ -35,8 +36,8 @@ def get_template_csv() -> bytes:
     row — the example uses obviously-fake values so it's not mistaken for a
     real invoice if uploaded as-is."""
     return (
-        "Doc Ref,Date,Amount,Less %\n"
-        "SAMPLE-0001,2026-01-01,1000.00,0\n"
+        "Sales Invoice No,DR No,Date,Amount,Less %\n"
+        "SAMPLE-0001,DR-0001,2026-01-01,1000.00,0\n"
     ).encode("utf-8")
 
 
@@ -46,6 +47,7 @@ class ImportedInvoiceRow:
     invoice_date: date
     amount: float
     less_pct: float
+    dr_no: str = ""                                          # the delivery receipt beside the SI (owner, 2026-10-08)
 
 
 def _normalize_header(h: str) -> str:
@@ -95,8 +97,8 @@ def _rows_from_df(df: pd.DataFrame) -> tuple[list[ImportedInvoiceRow], list[str]
     col_map = _map_columns(df.columns)
     if "doc_ref" not in col_map and "amount" not in col_map:
         return [], [
-            "Could not find a Doc Ref or Amount column. Expected headers like "
-            "'Doc Ref'/'Invoice No', 'Date', 'Amount', 'Less %' (any reasonable variant works)."
+            "Could not find a Sales invoice no. or Amount column. Expected headers like "
+            "'Sales Invoice No', 'DR No', 'Date', 'Amount', 'Less %' (any reasonable variant works)."
         ]
 
     rows: list[ImportedInvoiceRow] = []
@@ -113,12 +115,12 @@ def _rows_from_df(df: pd.DataFrame) -> tuple[list[ImportedInvoiceRow], list[str]
         amount_str = cell("amount").replace(",", "").replace("₱", "").replace("PHP", "").strip()
         less_pct_str = cell("less_pct").replace("%", "").strip()
 
-        if not doc_ref and not date_str and not amount_str:
+        if not doc_ref and not date_str and not amount_str and not cell("dr_no"):
             continue  # fully blank row (common trailing blank rows in exported sheets)
 
         row_issues = []
-        if not doc_ref:
-            row_issues.append("Doc Ref")
+        if not doc_ref and not cell("dr_no"):                     # SI or DR (owner, 2026-10-09)
+            row_issues.append("SI no. or DR no.")
 
         invoice_date = manila_today()
         if date_str:
@@ -148,7 +150,8 @@ def _rows_from_df(df: pd.DataFrame) -> tuple[list[ImportedInvoiceRow], list[str]
         if row_issues:
             messages.append(f"Row {excel_row_num}: could not read {', '.join(row_issues)} — check/fill in manually.")
 
-        rows.append(ImportedInvoiceRow(doc_ref=doc_ref, invoice_date=invoice_date, amount=amount, less_pct=less_pct))
+        from engines.statement_rules import doc_reference
+        rows.append(ImportedInvoiceRow(doc_ref=doc_reference(doc_ref, cell("dr_no")), invoice_date=invoice_date, amount=amount, less_pct=less_pct, dr_no=cell("dr_no")))
 
     if not rows:
         messages.append("No usable rows found in the spreadsheet.")

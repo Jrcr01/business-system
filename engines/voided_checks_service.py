@@ -11,6 +11,7 @@ import sqlite3
 from datetime import date
 
 import pandas as pd
+from engines.common import us_date
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -43,7 +44,7 @@ WHERE c.status IN ('Cancelled', 'Replaced')
 
 def _bank_note(cleared, line_date) -> str:
     when = cleared or line_date
-    return f"Yes - bank cleared it {str(when)[:10]}" if when else ""
+    return f"Yes - bank cleared it {us_date(when)}" if when else ""
 
 
 def voided_checks(date_from: date | None = None, date_to: date | None = None, creditor_id: int | None = None) -> pd.DataFrame:

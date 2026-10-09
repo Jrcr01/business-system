@@ -109,7 +109,7 @@ def _cover_page(c, doc) -> None:
     c.saveState()
     c.setFillColor(GREY)
     c.setFont("Helvetica", 9)
-    c.drawCentredString(PAGE_W / 2, 0.45 * inch, f"{COMPANY}  |  Accounts payable overview  |  Prepared {manila_now():%B %d, %Y}")
+    c.drawCentredString(PAGE_W / 2, 0.45 * inch, f"{COMPANY}  |  Accounts payable overview  |  Prepared {manila_now():%m/%d/%Y}")
     c.restoreState()
 
 

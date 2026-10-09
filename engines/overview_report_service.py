@@ -36,11 +36,11 @@ def _php(v) -> str:
 def period_bounds(kind: str, anchor: date) -> tuple[date, date, str]:
     """(start, end, label) of the day / Mon-Sun week / month / quarter / year containing `anchor`."""
     if kind == "Day":
-        return anchor, anchor, f"{anchor:%A, %B %d, %Y}"
+        return anchor, anchor, f"{anchor:%A, %m/%d/%Y}"
     if kind == "Week":
         start = anchor - timedelta(days=anchor.weekday())
         end = start + timedelta(days=6)
-        return start, end, f"Week of {start:%b %d} to {end:%b %d, %Y}"
+        return start, end, f"Week of {start:%m/%d} to {end:%m/%d/%Y}"
     if kind == "Month":
         start = anchor.replace(day=1)
         return start, anchor.replace(day=monthrange(anchor.year, anchor.month)[1]), f"{anchor:%B %Y}"
@@ -264,7 +264,7 @@ def _highlights(kind: str, label: str, cur: dict, prev: dict, upcoming: dict, wa
 
 
 def _short_label(kind: str, start: date) -> str:
-    return {"Day": f"{start:%b %d}", "Week": f"{start:%b %d}", "Month": f"{start:%b %y}", "Quarter": f"Q{(start.month - 1) // 3 + 1} {start:%y}", "Year": f"{start:%Y}"}[kind]
+    return {"Day": f"{start:%m/%d}", "Week": f"{start:%m/%d}", "Month": f"{start:%b %y}", "Quarter": f"Q{(start.month - 1) // 3 + 1} {start:%y}", "Year": f"{start:%Y}"}[kind]
 
 
 def _trend(kind: str, start: date, periods: int = 6) -> list[dict]:
@@ -298,11 +298,11 @@ def _bank_highlight(kind: str, b: dict) -> str | None:
     ch = None if b["money_in_prev"] is None else _pct_change(b["money_in"], b["money_in_prev"])
     trend = "" if ch is None else f" ({abs(ch):.0f}% {'more' if ch >= 0 else 'less'} than the previous {kind.lower()})"
     text = (f"Bank: {_php(b['money_in'])} came in{trend}; the bank cleared {b['cleared_n']} of your checks ({_php(b['cleared_amount'])}); "
-            f"{b['float_n']} check(s) ({_php(b['float_amount'])}) were still not cleared on {b['as_of']:%b %d}.")
+            f"{b['float_n']} check(s) ({_php(b['float_amount'])}) were still not cleared on {b['as_of']:%m/%d}.")
     if b["bounced_n"]:
         text += f" {b['bounced_n']} customer check(s) bounced ({_php(b['bounced_amount'])})."
     if b["covered"] == "part":
-        text += f" (Bank statements cover {b['first']:%b %d} to {b['last']:%b %d, %Y} only.)"
+        text += f" (Bank statements cover {b['first']:%m/%d} to {b['last']:%m/%d/%Y} only.)"
     return text
 
 
@@ -311,11 +311,11 @@ def bank_rows(b: dict) -> list[list[str]]:
     if b["covered"] == "none":
         return []
     prev = "" if b["money_in_prev"] is None else f" (previous: {_php(b['money_in_prev'])})"
-    rows = [["Bank balance" + (f" on {b['balance_date']:%b %d, %Y}" if b["balance_date"] else ""), _php(b["balance"]) if b["balance"] is not None else "-"],
+    rows = [["Bank balance" + (f" on {b['balance_date']:%m/%d/%Y}" if b["balance_date"] else ""), _php(b["balance"]) if b["balance"] is not None else "-"],
             ["Money in (deposits and transfers)", _php(b["money_in"]) + prev],
             ["Checks cleared by the bank", f"{b['cleared_n']} · {_php(b['cleared_amount'])}"],
             ["Checks dated in the period", f"{b['issued_n']} · {_php(b['issued_amount'])}"],
-            [f"Checks not yet cleared on {b['as_of']:%b %d}", f"{b['float_n']} · {_php(b['float_amount'])}"],
+            [f"Checks not yet cleared on {b['as_of']:%m/%d}", f"{b['float_n']} · {_php(b['float_amount'])}"],
             ["Customer checks bounced", f"{b['bounced_n']} · {_php(b['bounced_amount'])}" if b["bounced_n"] else "None"],
             ["Bank lines still needing a look", str(b["open_items"])]]
     return rows
@@ -324,10 +324,10 @@ def bank_rows(b: dict) -> list[list[str]]:
 def bank_note(b: dict) -> str:
     """One line under the Bank and cash section: what the statements cover."""
     if b["covered"] == "none":
-        return ("No imported bank statement covers this period" + (f" (statements on file: {b['first']:%b %d, %Y} to {b['last']:%b %d, %Y})" if b["first"] else "")
+        return ("No imported bank statement covers this period" + (f" (statements on file: {b['first']:%m/%d/%Y} to {b['last']:%m/%d/%Y})" if b["first"] else "")
                 + ". Import the Metrobank statement on Bank and cash.")
     part = " -- only part of this period" if b["covered"] == "part" else ""
-    return f"From the imported Metrobank statements ({b['first']:%b %d, %Y} to {b['last']:%b %d, %Y}{part})."
+    return f"From the imported Metrobank statements ({b['first']:%m/%d/%Y} to {b['last']:%m/%d/%Y}{part})."
 
 
 def get_overview(kind: str, anchor: date) -> dict:

@@ -72,7 +72,7 @@ def trail_for_po(po_id: int) -> dict | None:
     else:
         late = h["status"] in LIVE_STATUSES and expected_delivery is not None and expected_delivery < today
         S["delivered"] = {"state": "late" if late else "waiting", "date": expected_delivery,
-                          "detail": (f"Expected {expected_delivery:%b %d, %Y}" + (f" — {(today - expected_delivery).days} day(s) late." if late else ".")) if expected_delivery else "No delivery date set."}
+                          "detail": (f"Expected {expected_delivery:%m/%d/%Y}" + (f" — {(today - expected_delivery).days} day(s) late." if late else ".")) if expected_delivery else "No delivery date set."}
     if inv.empty:
         S["invoiced"] = {"state": "waiting", "date": None, "detail": "No supplier invoice matched yet."}
         S["batch"] = {"state": "waiting", "date": None, "detail": "Goes into a batch when the invoice is matched."}
@@ -89,7 +89,7 @@ def trail_for_po(po_id: int) -> dict | None:
     else:
         covered = float(checks["allocated"].sum())
         S["checks"] = {"state": "done" if covered >= invoiced_total - 0.005 else "partly", "date": _d(checks["check_date"].max()),
-                       "detail": f"{len(checks)} check(s), {_money(covered)} of {_money(invoiced_total)}; dated {', '.join(sorted({_d(x).strftime('%b %d, %Y') for x in checks['check_date']}))}."}
+                       "detail": f"{len(checks)} check(s), {_money(covered)} of {_money(invoiced_total)}; dated {', '.join(sorted({_d(x).strftime('%m/%d/%Y') for x in checks['check_date']}))}."}
         collected = checks[(checks["released_date"].notna()) | (checks["is_handwritten"] == 1)]
         who = ", ".join(sorted({str(w) for w in collected["released_to"].dropna()}))
         if len(collected) == len(checks):

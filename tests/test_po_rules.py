@@ -143,7 +143,7 @@ def test_the_supplier_pdf_has_the_order_and_no_cash_information(db):
     pdf = build_po_pdf(po_id)
     assert pdf[:4] == b"%PDF"
     text = "".join(p.get_text() for p in pymupdf.open(stream=pdf, filetype="pdf"))
-    for needed in ("PURCHASE ORDER", "2026 - PO 0001", "Acme Tires", "Tire 175/70R13", "18,500.00", "Oct 10, 2026", "60"):
+    for needed in ("PURCHASE ORDER", "2026 - PO 0001", "Acme Tires", "Tire 175/70R13", "18,500.00", "10/10/2026", "60"):
         assert needed in text, needed
     for forbidden in ("cash", "balance", "forecast", "bank"):
         assert forbidden not in text.lower(), forbidden

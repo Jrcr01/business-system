@@ -10,6 +10,7 @@ from datetime import date
 from engines.validators import money_amount_error
 from engines.common import get_conn, php, q_live
 from engines.clock import manila_today
+from engines.common import us_date
 
 
 def add_cardholder(name: str, department: str, contact_number: str) -> int:
@@ -139,6 +140,16 @@ def confirm_cc_payment_from_next_statement(cc_statement_id: int, carried_over: f
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CC_PAYMENT_CONFIRMED', 'cc_statements', ?, ?)",
             (cc_statement_id, f"paid {php(paid)}, carried over {php(unpaid_next)} (from the next statement)"),
         )
+        # Two ways a card payment is known (owner, 2026-10-09): the owner's -- from the next SOA (this function) -- and the co-owners' daily one -- each payment
+        # recorded on Daily payables (cc_payments). The SOA is the final word, like the bank statement for checks; a difference goes on the Review list.
+        recorded = conn.execute("SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM cc_payments WHERE cc_statement_id = ?", (cc_statement_id,)).fetchone()
+        if recorded[0] and abs(float(recorded[1]) - paid) > 0.005:
+            from engines.review_flags import flag
+            card = conn.execute("SELECT cc.card_name || ' - ' || cc.card_number_last4, cs.due_date FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id "
+                                "WHERE cs.cc_statement_id = ?", (cc_statement_id,)).fetchone()
+            flag(conn, "CC_PAYMENT_MISMATCH", "cc_statements", cc_statement_id,
+                 f"{card[0]} statement due {us_date(card[1])}: the next SOA shows {php(paid)} paid, but {php(float(recorded[1]))} was recorded "
+                 f"on Daily payables ({recorded[0]} payment(s)). The SOA figure is kept -- find out which is right.")
         conn.commit()
     return paid, status
 
@@ -260,3 +271,36 @@ def delete_cc_statement(cc_statement_id: int) -> tuple[bool, str]:
         )
         conn.commit()
     return True, "Statement deleted."
+
+
+def add_statement_from_soa(card_id: int, statement_month: str, due_date: date, total_due: float, payments_since: float | None,
+                           interest: float = 0.0) -> tuple[bool, str, int | None]:
+    """The owner's way of recording a card (2026-10-09, the Credit cards screen's arithmetic moved here for the web page): a new SOA's total, the payments it
+    shows since the earlier statement, and its finance charge. What the earlier statement carried over = earlier total - payments; the new charges are what
+    is left of the total. The earlier statement, if not confirmed yet, is confirmed from this SOA (confirm_cc_payment_from_next_statement -- which flags a
+    difference with the payments recorded day by day). Returns (ok, message, new statement id)."""
+    if total_due is None or total_due <= 0:
+        return False, "Type the total amount due from the statement.", None
+    with get_conn() as conn:
+        earlier = conn.execute("""SELECT cc_statement_id, total_amount_due, paid_confirmed, due_date FROM cc_statements
+                                  WHERE card_id = ? AND status != 'Cancelled' ORDER BY due_date DESC, cc_statement_id DESC LIMIT 1""", (card_id,)).fetchone()
+    if earlier and str(earlier[3])[:10] >= str(due_date):
+        earlier = None                                   # a statement dated before the latest one on file: no chaining
+    interest = float(interest or 0)
+    if earlier and payments_since is not None:
+        carried = max(float(earlier[1]) - float(payments_since), 0.0)
+        new_charges = round(total_due - carried - interest, 2)
+        if new_charges < -1.0:
+            return False, (f"These don't add up: earlier statement {php(earlier[1])} - payments {php(payments_since)} + interest {php(interest)} is already "
+                           f"{php(carried + interest)}, more than the total due {php(total_due)}. Check the payments, or the earlier statement's amount."), None
+        if new_charges < 0:                              # a few centavos of rounding on the bank's side
+            carried, new_charges = max(total_due - interest, 0.0), 0.0
+        previous = round(carried, 2)
+    else:
+        previous, new_charges = 0.0, max(round(total_due - interest, 2), 0.0)
+    new_id = add_cc_statement(card_id, due_date, previous, new_charges, interest, 0.0, statement_month=statement_month, paid_confirmed=0)
+    msg = f"Statement recorded: {php(total_due)} due {due_date:%m/%d/%Y}."
+    if earlier and payments_since is not None and int(earlier[2]) == 0:
+        paid, status = confirm_cc_payment_from_next_statement(int(earlier[0]), previous)
+        msg += f" The earlier statement is confirmed: {php(paid)} paid ({status})."
+    return True, msg, new_id

@@ -143,25 +143,27 @@ def test_switching_someone_off_or_changing_the_password_signs_them_out_everywher
 def test_the_top_bar_follows_the_role(web):
     _admin(web)
     admin_page = web.get("/").content.decode()
-    for word in ("Buy", "Pay suppliers", "Bank", "Other payables", "Records", "Set-up", "Admin and audit"):
+    for word in ("Buy", "Pay suppliers", "Bank", "Other payables", "Records", "Set-up", "Checks and review"):
         assert word in admin_page
     mother = _sign_in_new("mother@slicks.test", "releaser").get("/").content.decode()
-    assert "Release checks" in mother
-    assert "Lenders" not in mother and "Purchase orders" not in mother and "Admin and audit" not in mother and "Settings" not in mother
+    assert "Release checks" not in mother                         # the Release page is gone (2026-10-09): release is on each batch's Checks tab
+    assert "Lenders" not in mother and "Purchase orders" not in mother and "Checks and review" not in mother and "Settings" not in mother
 
 
 def test_a_page_not_for_the_role_is_refused(web):
     _admin(web)
     mother = _sign_in_new("mother@slicks.test", "releaser")
     assert mother.get("/lenders/").status_code == 403
-    assert mother.get("/release/").status_code == 200
     assert web.get("/no-such-page/").status_code == 404
+    assert web.get("/release/").status_code == 404 and web.get("/payment-run/").status_code == 404     # removed (2026-10-09)
 
 
 def test_a_page_still_in_streamlit_says_which_stage_brings_it(web):
     _admin(web)
-    r = web.get("/release/")
-    assert r.status_code == 200 and b"stage D5" in r.content and b"Streamlit" in r.content
+    from engines.settings_store import set_setting
+    set_setting("show_cash_forecast", "1")                     # the planner is the last page still in the old screens (2026-10-09); shown with the forecast
+    r = web.get("/planner/")
+    assert r.status_code == 200 and b"stage D4" in r.content and b"Streamlit" in r.content
 
 
 def test_home_shows_the_tiles_by_group_with_their_figures(web):
@@ -169,13 +171,13 @@ def test_home_shows_the_tiles_by_group_with_their_figures(web):
     page = web.get("/").content.decode()
     assert "Welcome, Admin" in page and 'class="home-top"' not in page                 # one header: the top bar (logo = Home, the person's name on the account button)
     assert 'alt="Slick\'s"' in page and "<span class=\"ms\">person</span> Admin" in page
-    for word in ("Purchase orders", "Receive goods", "Payment run", "Release checks", "Lenders", "Data health"):
+    for word in ("Purchase orders", "Receive goods", "Daily payables", "Bank loans", "Credit cards", "Lenders", "Checks and review"):
         assert word in page, word
     assert 'href="/purchase-orders/?mode=receive"' in page
     assert 'class="tb-label" href="/#g-buy"' in page and 'id="g-buy"' in page      # the top bar's section name goes to its tiles on Home
     assert "home-groups" not in page                                                # no second, blue group bar
     mother = _sign_in_new("mother@slicks.test", "releaser").get("/").content.decode()
-    assert "Release checks" in mother and "Lenders" not in mother
+    assert "Release checks" not in mother and "Lenders" not in mother
 
 
 def test_sandbox_tag(web):
@@ -213,9 +215,12 @@ def test_on_the_server_pages_not_moved_yet_open_in_the_streamlit_screens(web, se
     try:
         dj.STREAMLIT_URL = "/more/"
         home = web.get("/").content.decode()
-        assert 'href="/more/payment-run"' in home and 'href="/purchase-orders/"' in home      # built pages stay in Django
-        later = web.get("/payment-run/").content.decode()
-        assert 'href="/more/payment-run"' in later and "same email and password" in later
+        from engines.settings_store import set_setting
+        set_setting("show_cash_forecast", "1")
+        home = web.get("/").content.decode()
+        assert 'href="/more/planner"' in home and 'href="/purchase-orders/"' in home      # built pages stay in Django
+        later = web.get("/planner/").content.decode()
+        assert 'href="/more/planner"' in later and "same email and password" in later
     finally:
         dj.STREAMLIT_URL = old
     assert 'href="/more/' not in web.get("/").content.decode()

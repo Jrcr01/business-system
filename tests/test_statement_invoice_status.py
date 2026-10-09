@@ -42,7 +42,7 @@ def test_check_issued_with_the_last_check_date_when_fully_covered_but_not_cleare
     later = date.today() + timedelta(days=60)
     _park(db, creditor_id, statement_id, invoice_id, 6000.0, later)
 
-    assert _label(statement_id) == f"Check issued \u00b7 {later}"
+    assert _label(statement_id) == f"Check issued \u00b7 {later:%m/%d/%Y}"
 
 
 def test_paid_once_every_covering_check_has_cleared(db):

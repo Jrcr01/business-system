@@ -54,11 +54,12 @@ Public Function NewBatchSheet(ByVal base As String) As Worksheet
     Loop
     Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
     ws.Name = nm
-    ws.Range("A1").Value = "Doc Ref"
+    ws.Range("A1").Value = "Sales Invoice No"
     ws.Range("B1").Value = "Date"
     ws.Range("C1").Value = "Amount"
     ws.Range("D1").Value = "Less %"
-    With ws.Range("A1:D1")
+    ws.Range("E1").Value = "DR No"
+    With ws.Range("A1:E1")
         .Font.Bold = True
         .Font.Color = RGB(255, 255, 255)
         .Interior.Color = RGB(31, 58, 95)
@@ -67,18 +68,20 @@ Public Function NewBatchSheet(ByVal base As String) As Worksheet
     ws.Columns("B").ColumnWidth = 14
     ws.Columns("C").ColumnWidth = 16
     ws.Columns("D").ColumnWidth = 10
+    ws.Columns("E").ColumnWidth = 14
+    ws.Columns("E").NumberFormat = "@"
     ws.Columns("B").NumberFormat = "yyyy-mm-dd"
     ws.Columns("C").NumberFormat = "#,##0.00"
-    ws.Range("F1").Value = "Invoices"
-    ws.Range("G1").Formula = "=COUNTA(A2:A5000)"
-    ws.Range("F2").Value = "Total"
-    ws.Range("G2").Formula = "=SUM(C2:C5000)"
-    ws.Range("G2").NumberFormat = "#,##0.00"
-    ws.Range("F1:F2").Font.Bold = True
+    ws.Range("G1").Value = "Invoices"
+    ws.Range("H1").Formula = "=COUNTA(A2:A5000)"
+    ws.Range("G2").Value = "Total"
+    ws.Range("H2").Formula = "=SUM(C2:C5000)"
+    ws.Range("H2").NumberFormat = "#,##0.00"
+    ws.Range("G1:G2").Font.Bold = True
     Set NewBatchSheet = ws
 End Function
 
-' Name of the first tab of this supplier that already holds this Doc Ref, or "" if none.
+' Name of the first tab of this supplier that already holds this sales invoice no., or "" if none.
 Public Function FindDuplicate(ByVal base As String, ByVal docRef As String) As String
     Dim ws As Worksheet, r As Long, last As Long
     For Each ws In ThisWorkbook.Worksheets

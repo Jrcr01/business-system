@@ -1,6 +1,6 @@
 {% load humanize %}<div class="formgrid" style="margin-top:12px">
-  <div><label for="doc{{ k }}">Sales invoice no. (SI)</label><input id="doc{{ k }}" type="text" name="doc" value="{{ came_with|default:'' }}" required placeholder="from the supplier's SI"></div>
-  <div><label for="dr{{ k }}">DR no. (optional)</label><input id="dr{{ k }}" type="text" name="dr" placeholder="blank = the DR the goods came with">
+  <div><label for="doc{{ k }}">SI no.</label><input id="doc{{ k }}" type="text" name="doc" value="{{ came_with|default:'' }}" placeholder="if there is one"></div>
+  <div><label for="dr{{ k }}">DR no. <span class="hint">(SI or DR: at least one)</span></label><input id="dr{{ k }}" type="text" name="dr" placeholder="blank = the DR the goods came with">
     <div class="hint">Left blank, the delivery receipt recorded when the goods were received is used.</div></div>
   <div><label for="inv_date{{ k }}">Invoice date</label><input id="inv_date{{ k }}" type="date" name="inv_date" value="{{ today|date:'Y-m-d' }}">
     <div class="hint">The due date is worked out from this date and the supplier's terms.</div></div>

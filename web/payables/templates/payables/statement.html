@@ -16,6 +16,7 @@
 {% else %}<p class="note">Locks by itself once its checks cover the full amount.</p>{% endif %}
 
 <div class="actions">
+  <button class="btn small ghost" type="button" data-rmap="/related/statement/{{ b.statement_id }}/"><span class="ms">account_tree</span>Relationship map</button>
   <a class="btn small ghost" href="#print"><span class="ms">print</span>Print this batch</a>
   {% if may_number %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="number"><button class="btn small" type="submit"><span class="ms">tag</span>Give it its OS number</button></form>{% endif %}
   {% if may_cancel %}<form method="post" onsubmit="return confirm('Cancel this batch? Its {{ n }} active check(s) are cancelled and its invoices are marked Cancelled. This cannot be undone.');">{% csrf_token %}
@@ -40,12 +41,12 @@
   {% if links %}<p class="note"><b>Matched to purchase orders:</b> {{ n_links }} of {{ invoices|length }} invoice(s).
     {% for l in links %}{{ l.doc_ref }} {% if l.matches %}✓ same as the order{% else %}Δ {{ l.difference|floatformat:2|intcomma }}{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
   <div class="scroll-x"><table class="list">
-    <tr><th>Sales invoice no. (SI)</th><th>DR no.</th><th>Date received</th><th>Due</th><th>Amount</th><th>Less %</th><th>Net</th><th>Status</th>{% if editable %}<th></th>{% endif %}</tr>
+    <tr><th>Reference (SI or DR)</th><th>DR no.</th><th>Date received</th><th>Due</th><th>Amount</th><th>Less %</th><th>Net</th><th>Status</th>{% if editable %}<th></th>{% endif %}</tr>
     {% for r in invoices %}
       {% if editable and edit_inv == r.invoice_id|stringformat:"s" %}
       <tr style="background:#f8fafc"><td colspan="9">
         <form method="post" class="bar" style="margin:0">{% csrf_token %}<input type="hidden" name="invoice_id" value="{{ r.invoice_id }}"><input type="hidden" name="stamp" value="{{ r.stamp }}">
-          <div><label>Sales invoice no. (SI)</label><input class="inline-input" name="doc" value="{{ r.doc_ref }}" required></div>
+          <div><label>SI no.</label><input class="inline-input" name="doc" value="{% if r.doc_ref|slice:':3' != 'DR ' %}{{ r.doc_ref }}{% endif %}" placeholder="if there is one"></div>
           <div><label>DR no. (optional)</label><input class="inline-input" name="dr" value="{{ r.dr_no|default:'' }}"></div>
           <div><label>Date received</label><input type="date" name="date" value="{{ r.invoice_date|slice:':10' }}"></div>
           <div><label>Amount</label><input class="inline-input" inputmode="decimal" name="gross" value="{{ r.gross_amount|floatformat:2 }}"></div>
@@ -57,7 +58,7 @@
         </form><p class="hint" style="margin:4px 0 0">The due date is worked out again from the date and the supplier's terms when you save.</p></td></tr>
       {% else %}
       <tr><td>{{ r.doc_ref }}{% if not r.from_po and r.status != "Cancelled" %} <span class="pill warn" title="Typed in with no purchase order">No PO</span>{% endif %}</td>
-        <td>{{ r.dr_no|default:"" }}</td><td>{{ r.invoice_date|slice:":10" }}</td><td>{{ r.due_date|slice:":10" }}</td><td class="num">{{ r.gross_amount|floatformat:2|intcomma }}</td>
+        <td>{{ r.dr_no|default:"" }}</td><td>{{ r.invoice_date|dmy }}</td><td>{{ r.due_date|dmy }}</td><td class="num">{{ r.gross_amount|floatformat:2|intcomma }}</td>
         <td class="num">{% if r.less_pct %}{{ r.less_pct|floatformat:"-2" }}{% else %}—{% endif %}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td><td>{{ r.status }}</td>
         {% if editable %}<td><a href="?tab=invoices&amp;edit_inv={{ r.invoice_id }}">Edit</a></td>{% endif %}</tr>
       {% endif %}
@@ -66,9 +67,9 @@
   {% if editable and waiting %}
   <div class="grp" id="waiting">Waiting for a batch: {{ waiting|length }} sales invoice(s) from {{ b.creditor_name }}</div>
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="put_in_batch">
-    <div class="scroll-x"><table class="list"><tr><th>Include</th><th>Sales invoice no. (SI)</th><th>DR no.</th><th>Date</th><th>Due</th><th>Net</th><th></th></tr>
+    <div class="scroll-x"><table class="list"><tr><th>Include</th><th>Reference (SI or DR)</th><th>DR no.</th><th>Date</th><th>Due</th><th>Net</th><th></th></tr>
       {% for w in waiting %}<tr><td><input type="checkbox" name="pick_{{ w.invoice_id }}" value="1" aria-label="Include {{ w.doc_ref }}"></td><td>{{ w.doc_ref }}</td><td>{{ w.dr_no|default:"" }}</td>
-        <td>{{ w.invoice_date|slice:":10" }}</td><td>{{ w.due_date|slice:":10" }}</td><td class="num">{{ w.amount|floatformat:2|intcomma }}</td>
+        <td>{{ w.invoice_date|dmy }}</td><td>{{ w.due_date|dmy }}</td><td class="num">{{ w.amount|floatformat:2|intcomma }}</td>
         <td>{% if not w.from_po %}<span class="pill warn">No PO</span>{% endif %}</td></tr>{% endfor %}</table></div>
     <div class="actions"><button class="btn small" type="submit"><span class="ms">playlist_add</span>Put the ticked invoices in this batch</button>
       <span class="hint">Matched from purchase orders and left out of a batch; tick the ones this order statement covers.</span></div>
@@ -78,14 +79,24 @@
   {% if warnings %}<div class="msg warning" id="add_invoice"><b>Is this a double entry?</b><ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul>Press <b>Yes, add it anyway</b> only if it is a different invoice.</div>{% endif %}
   <form method="post" class="bar" style="margin-top:12px" id="{% if not warnings %}add_invoice{% endif %}">{% csrf_token %}<input type="hidden" name="action" value="add_invoice">
     {% if warnings %}<input type="hidden" name="confirmed" value="1">{% endif %}
-    <div><label for="doc">Sales invoice no. (SI)</label><input id="doc" class="inline-input" name="doc" required value="{{ typed.doc|default:'' }}" placeholder="from the supplier's SI"></div>
-    <div><label for="dr">DR no. (optional)</label><input id="dr" class="inline-input" name="dr" value="{{ typed.dr|default:'' }}"></div>
+    <div><label for="doc">SI no.</label><input id="doc" class="inline-input" name="doc" value="{{ typed.doc|default:'' }}" placeholder="if there is one"></div>
+    <div><label for="dr">DR no.</label><input id="dr" class="inline-input" name="dr" value="{{ typed.dr|default:'' }}" placeholder="if there is one"></div>
     <div><label for="date">Date received</label><input id="date" type="date" name="date" value="{% if typed.date %}{{ typed.date }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}"></div>
     <div><label for="gross">Amount</label><input id="gross" class="inline-input" inputmode="decimal" name="gross" required value="{{ typed.gross|default:'' }}"></div>
     <div><label for="less">Less %</label><input id="less" class="inline-input" style="width:60px" inputmode="decimal" name="less" placeholder="0" value="{{ typed.less|default:'' }}"></div>
     <button class="btn small" type="submit"><span class="ms">add</span>{% if warnings %}Yes, add it anyway{% else %}Add invoice{% endif %}</button>
   </form>
-  <p class="hint"><b>Type the supplier's sales invoice number</b>, not the delivery receipt's; the DR number, if there is one, goes in its own box. Due = date received + the supplier's terms (today's invoice would be due {{ due_today|date:"M d, Y" }}). A number this supplier already has is refused.
+  <script>
+  (function () {               /* SI or DR: at least one (owner, 2026-10-09) */
+    var f = document.getElementById("doc") && document.getElementById("doc").form; if (!f) return;
+    f.addEventListener("submit", function (e) {
+      if (!f.doc.value.trim() && !f.dr.value.trim()) { e.preventDefault(); f.doc.setCustomValidity("Type the SI no. or the DR no."); f.doc.reportValidity(); }
+    });
+    f.doc.addEventListener("input", function () { f.doc.setCustomValidity(""); });
+    f.dr.addEventListener("input", function () { f.doc.setCustomValidity(""); });
+  })();
+  </script>
+  <p class="hint"><b>Every invoice needs a document reference: the SI no. or the DR no.</b> (either, or both). With only a DR, the invoice is listed as "DR 342". Due = date received + the supplier's terms (today's invoice would be due {{ due_today|date:"m/d/Y" }}). A number this supplier already has is refused.
     <a href="/purchase-orders/match/?s={{ b.creditor_id }}&amp;batch={{ b.statement_id }}">From a purchase order</a> opens Match invoice with this batch chosen.
     <a href="/order-statements/{{ b.statement_id }}/import/">From photos, PDFs or a spreadsheet</a> reads many at once.</p>
   {% else %}<p class="hint">{% if cancelled %}This batch is cancelled and can't be edited.{% else %}Closed (fully covered by checks). To change an invoice, use Edit this batch above; a new invoice for this supplier goes in a new batch.{% endif %}</p>{% endif %}
@@ -104,7 +115,7 @@
         <button class="btn small danger" type="submit" name="action" value="delete_memo" onclick="return confirm('Delete credit memo {{ m.memo_ref|escapejs }}?');">Delete</button>
         <a class="hint" href="?tab=memos">Cancel</a></form></td></tr>
       {% else %}
-      <tr><td>{{ m.memo_ref }}</td><td>{{ m.memo_date|slice:":10" }}</td><td class="num">{{ m.amount|floatformat:2|intcomma }}</td><td>{{ m.reason|default:"" }}</td>
+      <tr><td>{{ m.memo_ref }}</td><td>{{ m.memo_date|dmy }}</td><td class="num">{{ m.amount|floatformat:2|intcomma }}</td><td>{{ m.reason|default:"" }}</td>
         {% if editable %}<td><a href="?tab=memos&amp;edit_memo={{ m.credit_memo_id }}">Edit</a></td>{% endif %}</tr>
       {% endif %}
     {% empty %}<tr><td colspan="5" class="note">No credit memos on this batch.</td></tr>{% endfor %}
@@ -122,11 +133,7 @@
   {% endif %}
 
 {% else %}
-  <div class="scroll-x"><table class="list"><tr><th>Check no.</th><th>Dated</th><th>Amount</th><th>Status</th><th>Printed</th><th>Cleared</th></tr>
-    {% for c in checks %}<tr><td>{{ c.check_number|default:"(no number yet)" }}</td><td>{{ c.check_date|slice:":10" }}</td><td class="num">{{ c.amount|floatformat:2|intcomma }}</td>
-      <td>{% if c.status == "Active" and not c.check_number %}Parked{% else %}{{ c.status }}{% endif %}</td><td>{{ c.printed_at|default:"—"|slice:":10" }}</td><td>{{ c.bank_cleared_date|default:"—"|slice:":10" }}</td></tr>
-    {% empty %}<tr><td colspan="6" class="note">No checks on this batch yet.</td></tr>{% endfor %}</table></div>
-  <p class="hint">Issuing, parking, numbering and corrections come with stage D4 (Paying); until then they are on this batch in Streamlit.</p>
+  {% include "payables/_batch_checks.html" %}
 {% endif %}
 
 <div class="grp" id="print">Print this batch</div>

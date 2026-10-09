@@ -1,6 +1,6 @@
 from django.urls import path
 
-from payables import bulk, views
+from payables import analytics, bank, bankloans, bulk, calendar, cards, lenders, views
 
 urlpatterns = [
     path("order-statements/", views.statements, name="statements"),
@@ -13,8 +13,18 @@ urlpatterns = [
     path("order-statements/<int:sid>/", views.statement, name="statement"),
     path("order-statements/<int:sid>/import/", bulk.invoice_import, name="invoice_import"),
     path("order-statements/<int:sid>/<str:kind>.pdf", views.statement_pdf, name="statement_pdf"),
-    path("add-data/", views.add_data, name="add_data"),
-    path("payables-due/", views.payables_due, name="payables_due"),
+    path("calendar/", calendar.payables_calendar, name="calendar"),
     path("reports/", views.reports, name="reports"),
+    path("analytics/", analytics.analytics, name="analytics"),
     path("checks/", views.checks, name="checks"),
+    path("lenders/", lenders.lenders, name="lenders"),
+    path("lenders/<int:lnid>/", lenders.loan_note, name="loan_note"),
+    path("lenders/<int:lnid>/sheet.pdf", lenders.loan_note_pdf, name="loan_note_pdf"),
+    path("bank-loans/", bankloans.bank_loans, name="bank_loans"),
+    path("bank-loans/template.csv", bankloans.schedule_template, name="bank_loan_template"),
+    path("bank-loans/<int:blid>/", bankloans.bank_loan, name="bank_loan"),
+    path("bank-loans/<int:blid>/loan.pdf", bankloans.bank_loan_pdf, name="bank_loan_pdf"),
+    path("credit-cards/", cards.credit_cards, name="credit_cards"),
+    path("bank-cash/", bank.bank, name="bank"),
+    path("bank-cash/recon/<int:import_id>.pdf", bank.recon_pdf, name="bank_recon_pdf"),
 ]

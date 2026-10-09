@@ -152,12 +152,12 @@ def get_bank_loan_pareto(limit: int = 10) -> pd.DataFrame:
                FROM bank_loan_installments bli
                JOIN bank_loans bl ON bli.bank_loan_id = bl.bank_loan_id
                JOIN creditors cr ON bl.creditor_id = cr.creditor_id
-               WHERE bli.due_date >= manila_today() AND bl.is_cancelled = 0
+               WHERE NOT (bli.cleared_at IS NOT NULL OR bli.installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)) AND bl.is_cancelled = 0
                GROUP BY bl.bank_loan_id ORDER BY value DESC LIMIT ?""",
             conn, params=(limit,),
         )
         total_row = pd.read_sql_query(
-            "SELECT COALESCE(SUM(amount), 0) AS total FROM bank_loan_installments WHERE due_date >= manila_today() AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)",
+            "SELECT COALESCE(SUM(amount), 0) AS total FROM bank_loan_installments WHERE NOT (cleared_at IS NOT NULL OR installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)) AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)",
             conn,
         )
     if df.empty:
@@ -229,7 +229,7 @@ def get_all_tracks_pareto(limit: int = 15) -> pd.DataFrame:
                FROM bank_loan_installments bli
                JOIN bank_loans bl ON bli.bank_loan_id = bl.bank_loan_id
                JOIN creditors cr ON bl.creditor_id = cr.creditor_id
-               WHERE bli.due_date >= manila_today() AND bl.is_cancelled = 0
+               WHERE NOT (bli.cleared_at IS NOT NULL OR bli.installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)) AND bl.is_cancelled = 0
                GROUP BY bl.bank_loan_id""",
             conn,
         )
@@ -384,7 +384,7 @@ def get_missing_debt_terms(limit: int = 10) -> pd.DataFrame:
                FROM bank_loans bl
                JOIN creditors cr ON bl.creditor_id = cr.creditor_id
                LEFT JOIN bank_loan_installments bli
-                 ON bli.bank_loan_id = bl.bank_loan_id AND bli.due_date >= manila_today()
+                 ON bli.bank_loan_id = bl.bank_loan_id AND NOT (bli.cleared_at IS NOT NULL OR bli.installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL))
                WHERE bl.principal_amount IS NULL AND bl.is_cancelled = 0
                GROUP BY bl.bank_loan_id
                HAVING outstanding > 0""",

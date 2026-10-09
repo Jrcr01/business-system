@@ -1,0 +1,176 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Lenders{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">handshake</span> Lenders</h2>
+<nav class="tabs">
+  <a href="/lenders/"{% if tab != "guarantees" %} class="on"{% endif %}>Loan notes</a>
+  <a href="/lenders/?tab=guarantees"{% if tab == "guarantees" %} class="on"{% endif %}>Guarantee checks{% if g_exposure.held %} <span class="pill warn">{{ g_exposure.held }} held</span>{% endif %}</a>
+</nav>
+{% if tab == "guarantees" %}
+<p class="note">Checks given to a lender as security. They are not payments: never in payables or the schedule. Held ones are what a lender could
+  present; mark them returned when the loan is settled. One the bank pays turns Presented and shows on Bank and cash.</p>
+<div class="facts"><div><span>Held</span><b>{{ g_exposure.held }} · ₱{{ g_exposure.total|floatformat:2|intcomma }}</b></div>
+  {% if g_exposure.no_amount %}<div><span>Held with no amount stated</span><b>{{ g_exposure.no_amount }}</b></div>{% endif %}
+  <div><span>Presented (needs a look)</span><b>{{ g_counts.Presented }}</b></div><div><span>Returned</span><b>{{ g_counts.Returned }}</b></div></div>
+{% if may_write %}
+<details{% if not g_rows %} open{% endif %} style="margin:8px 0"><summary class="hint" style="cursor:pointer"><b>Record a guarantee check</b></summary>
+<form method="post" style="margin-top:6px">{% csrf_token %}<input type="hidden" name="action" value="gc_record">
+  <div class="bar">
+    <div class="grow"><label for="g_lender">Held by (lender)</label><select id="g_lender" name="lender" required><option value="">Pick the lender</option>
+      {% for p in all_lenders %}<option value="{{ p.creditor_id }}">{{ p.creditor_name }}</option>{% endfor %}</select></div>
+    <div><label for="g_number">Check number</label><input id="g_number" class="inline-input" inputmode="numeric" name="number" required placeholder="as printed"></div>
+    <div><label for="g_amount">Amount (if written)</label><input id="g_amount" class="inline-input" inputmode="decimal" name="amount"></div>
+    <div><label for="g_given">Given on</label><input id="g_given" type="date" name="given_on" value="{{ today|date:'Y-m-d' }}"></div>
+  </div>
+  <div class="bar">
+    <div class="grow"><label for="g_note_for">Loan note it guarantees (optional)</label><select id="g_note_for" name="loan_note"><option value="">—</option>
+      {% for n in g_notes %}<option value="{{ n.loan_note_id }}" data-lender="{{ n.creditor_id }}">{{ n.note_ref }}</option>{% endfor %}</select></div>
+    <div class="grow"><label for="g_note">Note (optional)</label><input id="g_note" type="text" name="note" placeholder="e.g. 2M guarantee for the 2026 loan"></div>
+    <button class="btn small" type="submit"><span class="ms">verified_user</span>Record it</button>
+  </div>
+</form>
+<script>(function () { var l = document.getElementById("g_lender"), n = document.getElementById("g_note_for"); if (!l) return;
+  l.addEventListener("change", function () { [].forEach.call(n.options, function (o) { o.hidden = !!o.value && o.dataset.lender !== l.value; }); n.value = ""; }); })();</script>
+</details>
+{% endif %}
+<form class="bar" method="get"><input type="hidden" name="tab" value="guarantees">
+  <div><label for="g_show">Show</label><select id="g_show" name="show" onchange="this.form.submit()">
+    <option value="Held"{% if g_show == "Held" %} selected{% endif %}>Held</option><option value="Presented"{% if g_show == "Presented" %} selected{% endif %}>Presented</option>
+    <option value="Returned"{% if g_show == "Returned" %} selected{% endif %}>Returned</option><option value="all"{% if g_show == "all" %} selected{% endif %}>All</option></select></div>
+</form>
+<div class="scroll-x"><table class="list">
+  <tr><th>Check no.</th><th>Held by</th><th>Loan note</th><th style="text-align:right">Amount</th><th>Given on</th><th>Status</th><th></th></tr>
+  {% for g in g_rows %}
+  {% if may_write and g_edit == g.guarantee_id and g.status != "Presented" %}
+  <tr><td>{{ g.check_number }}</td><td>{{ g.holder }}</td><td colspan="5">
+    <form class="bar" method="post" style="margin:0">{% csrf_token %}<input type="hidden" name="action" value="gc_edit"><input type="hidden" name="guarantee_id" value="{{ g.guarantee_id }}">
+      <input type="hidden" name="show" value="{{ g_show }}">
+      <div><label>Loan note</label><select name="loan_note"><option value="">—</option>
+        {% for n in g_notes %}{% if n.creditor_id == g.creditor_id %}<option value="{{ n.loan_note_id }}"{% if n.loan_note_id == g.loan_note_id %} selected{% endif %}>{{ n.note_ref }}</option>{% endif %}{% endfor %}</select></div>
+      <div><label>Amount (if written)</label><input class="inline-input" inputmode="decimal" name="amount" value="{% if g.face_amount is not None %}{{ g.face_amount|floatformat:2 }}{% endif %}"></div>
+      <div><label>Given on</label><input type="date" name="given_on" value="{{ g.given_on|slice:':10'|default:'' }}"></div>
+      <div class="grow"><label>Note</label><input type="text" name="note" value="{{ g.note|default:'' }}"></div>
+      <button class="btn small" type="submit"><span class="ms">save</span>Save</button> <a class="btn small ghost" href="?tab=guarantees&show={{ g_show }}">Cancel</a>
+    </form></td></tr>
+  {% else %}
+  <tr><td>{{ g.check_number }}</td><td>{{ g.holder }}</td><td>{{ g.loan_note|default:"—" }}</td>
+    <td class="num">{% if g.face_amount is not None %}{{ g.face_amount|floatformat:2|intcomma }}{% else %}<span class="hint">not stated</span>{% endif %}</td>
+    <td>{{ g.given_on|dmy|default:"—" }}</td>
+    <td><span class="pill{% if g.status == 'Presented' %} warn{% elif g.status == 'Returned' %} off{% endif %}">{{ g.status }}</span>
+      {% if g.returned_on %}<span class="hint">{{ g.returned_on|dmy }}</span>{% endif %}{% if g.presented_on %}<span class="hint">{{ g.presented_on|dmy }}</span>{% endif %}
+      {% if g.note %}<div class="hint">{{ g.note|usdates }}</div>{% endif %}</td>
+    <td>{% if may_write and g.status == "Held" %}<form class="bar" method="post" style="margin:0" onsubmit="return confirm('Mark check {{ g.check_number }} returned by {{ g.holder|escapejs }}?');">{% csrf_token %}
+        <input type="hidden" name="action" value="gc_return"><input type="hidden" name="guarantee_id" value="{{ g.guarantee_id }}">
+        <input type="date" name="returned_on" value="{{ today|date:'Y-m-d' }}" aria-label="Returned on"><button class="btn small ghost" type="submit">Mark returned</button></form>
+      {% elif may_write and g.status == "Returned" %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="gc_undo">
+        <input type="hidden" name="guarantee_id" value="{{ g.guarantee_id }}"><button class="btn small ghost" type="submit">Undo: held again</button></form>{% endif %}
+      {% if may_write and g.status != "Presented" %}<a class="btn small ghost" href="?tab=guarantees&show={{ g_show }}&edit={{ g.guarantee_id }}"><span class="ms">edit</span>Edit</a>{% endif %}</td></tr>
+  {% endif %}
+  {% empty %}<tr><td colspan="7" class="hint">None here.</td></tr>{% endfor %}
+</table></div>
+{% else %}
+<p class="note">The loan notes: each holds a lender's payments, interest by days (balance × monthly rate × days ÷ 30), and the checks that pay them. Click a number to open it.</p>
+{% if may_write %}<form class="bar" method="get" action="/lenders/#new"><input type="hidden" name="new" value="1">
+  <div class="grow"><label for="new_l">New loan note for</label><select id="new_l" name="lender">{% for p in all_lenders %}<option value="{{ p.creditor_id }}">{{ p.creditor_name }}</option>{% endfor %}</select></div>
+  <button class="btn small" type="submit"{% if not all_lenders %} disabled{% endif %}><span class="ms">note_add</span>New loan note</button>
+</form>{% endif %}
+{% if new and may_write %}
+<div class="grp" id="new">New loan note</div>
+<form method="post" id="noteform">{% csrf_token %}
+  <div class="bar">
+    <div class="grow"><label for="lender">Lender</label><select id="lender" name="lender" required><option value="">Pick the lender</option>
+      {% for p in all_lenders %}<option value="{{ p.creditor_id }}"{% if typed.lender == p.creditor_id|stringformat:"s" or pick == p.creditor_id|stringformat:"s" %} selected{% endif %}>{{ p.creditor_name }}</option>{% endfor %}</select></div>
+    <div><label for="issue_date">Loan date</label><input id="issue_date" type="date" name="issue_date" value="{% if typed.issue_date %}{{ typed.issue_date }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}" required></div>
+    <div><label for="principal">Principal</label><input id="principal" class="inline-input" inputmode="decimal" name="principal" value="{{ typed.principal|default:'' }}" required></div>
+    <div><label for="rate">Interest per month (%)</label><input id="rate" class="inline-input" inputmode="decimal" name="rate" value="{{ typed.rate|default:'' }}" required></div>
+  </div>
+  <p class="hint">Quick fill:
+    <button class="btn small ghost" type="button" data-fill="monthly">Every month, same day</button>
+    <button class="btn small ghost" type="button" data-fill="d30">Every 30 days</button>
+    <button class="btn small ghost" type="button" data-fill="d15">Every 15 days</button>
+    for <input id="fill_n" class="inline-input" style="width:4em" inputmode="numeric" value="6"> payments, principal split equally ·
+    <button class="btn small ghost" type="button" data-fill="clear">Clear</button></p>
+  <div class="scroll-x"><table class="list" id="pays"><tr><th>#</th><th>Payment date</th><th style="text-align:right">Days</th><th style="text-align:right">Principal</th>
+      <th style="text-align:right">Interest</th><th style="text-align:right">Total</th><th style="text-align:right">Balance after</th></tr>
+    {% for i in n_rows %}<tr data-row="{{ i }}"><td>{{ i }}</td>
+      <td><input type="date" name="d{{ i }}" aria-label="Payment {{ i }} date"></td><td class="num" data-days></td>
+      <td class="num"><input class="inline-input num" style="text-align:right;width:9em" inputmode="decimal" name="p{{ i }}" aria-label="Payment {{ i }} principal"></td>
+      <td class="num"><input class="inline-input num" style="text-align:right;width:9em" inputmode="decimal" name="i{{ i }}" aria-label="Payment {{ i }} interest" title="Worked out by days; type over it if the lender counts differently">
+        <input type="hidden" name="io{{ i }}" value="0"></td>
+      <td class="num" data-total></td><td class="num" data-bal></td></tr>{% endfor %}
+    <tr><th colspan="3">Totals</th><th class="num" id="t_p"></th><th class="num" id="t_i"></th><th class="num" id="t_t"></th><th></th></tr>
+  </table></div>
+  <p class="hint">Interest typed over is kept as typed (shown in <b>bold</b>). Leave principal 0 on an interest-only payment.</p>
+  <button class="btn" type="submit"><span class="ms">save</span>Create the loan note</button> <a class="btn ghost" href="/lenders/">Cancel</a>
+</form>
+<script>
+(function () {
+  const f = document.getElementById("noteform"), rows = [...f.querySelectorAll("tr[data-row]")];
+  const num = s => { const v = parseFloat(String(s || "").replace(/,/g, "")); return isNaN(v) ? null : v; };
+  const money = v => v.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const q = (r, n) => r.querySelector(`[name="${n}${r.dataset.row}"]`);
+  function calc() {
+    let bal = num(f.principal.value) || 0, rate = num(f.rate.value) || 0, prev = f.issue_date.value, tp = 0, ti = 0;
+    rows.forEach(r => {
+      const d = q(r, "d").value, io = q(r, "io"), iv = q(r, "i");
+      ["days", "total", "bal"].forEach(k => r.querySelector(`[data-${k}]`).textContent = "");
+      if (!d) { if (io.value !== "1") iv.value = ""; return; }
+      const days = prev ? Math.round((new Date(d) - new Date(prev)) / 864e5) : 0, p = num(q(r, "p").value) || 0;
+      if (io.value !== "1") iv.value = money(Math.round(bal * rate / 100 * days / 30 * 100) / 100);
+      const i = num(iv.value) || 0;
+      bal = Math.round((bal - p) * 100) / 100; tp += p; ti += i; prev = d;
+      r.querySelector("[data-days]").textContent = days;
+      r.querySelector("[data-total]").textContent = money(p + i);
+      r.querySelector("[data-bal]").textContent = money(bal);
+      r.querySelector("[data-days]").style.color = days <= 0 ? "#b3261e" : "";
+      r.querySelector("[data-bal]").style.color = bal < -0.004 ? "#b3261e" : "";
+    });
+    document.getElementById("t_p").textContent = money(tp);
+    document.getElementById("t_i").textContent = money(ti);
+    document.getElementById("t_t").textContent = money(tp + ti);
+  }
+  rows.forEach(r => q(r, "i").addEventListener("input", e => { q(r, "io").value = e.target.value.trim() ? "1" : "0"; e.target.style.fontWeight = e.target.value.trim() ? "bold" : ""; calc(); }));
+  f.addEventListener("input", e => { if (!/^i\d+$/.test(e.target.name)) calc(); });
+  f.addEventListener("change", calc);
+  const iso = d => d.toISOString().slice(0, 10);
+  f.querySelectorAll("[data-fill]").forEach(b => b.addEventListener("click", () => {
+    const kind = b.dataset.fill;
+    rows.forEach(r => { ["d", "p", "i"].forEach(k => q(r, k).value = ""); q(r, "io").value = "0"; q(r, "i").style.fontWeight = ""; });
+    if (kind !== "clear" && f.issue_date.value) {
+      const n = Math.max(1, Math.min(rows.length, parseInt(document.getElementById("fill_n").value) || 1));
+      const total = num(f.principal.value) || 0, each = Math.floor(total / n * 100) / 100, start = new Date(f.issue_date.value + "T00:00:00Z");
+      for (let k = 1; k <= n; k++) {
+        let d = new Date(start);
+        if (kind === "monthly") { d.setUTCMonth(start.getUTCMonth() + k); if (d.getUTCDate() !== start.getUTCDate()) d.setUTCDate(0); }
+        else d.setUTCDate(start.getUTCDate() + (kind === "d30" ? 30 : 15) * k);
+        q(rows[k - 1], "d").value = iso(d);
+        q(rows[k - 1], "p").value = (k === n ? Math.round((total - each * (n - 1)) * 100) / 100 : each).toFixed(2);
+      }
+    }
+    calc();
+  }));
+  calc();
+})();
+</script>
+{% endif %}
+
+<form class="bar" method="get" action="/lenders/" style="margin-top:12px">
+  <div class="grow"><label for="q">Search</label><input id="q" type="text" name="q" value="{{ q }}" placeholder="Loan note number"></div>
+  <div><label for="s">Lender</label><select id="s" name="s" onchange="this.form.submit()"><option value="">All lenders</option>
+    {% for p in all_lenders %}<option value="{{ p.creditor_id }}"{% if p.creditor_id|stringformat:"s" == who %} selected{% endif %}>{{ p.creditor_name }}</option>{% endfor %}</select></div>
+  <div><label for="status">Status</label><select id="status" name="status" onchange="this.form.submit()">{% for k, label in statuses %}<option value="{{ k }}"{% if k == status %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <button class="btn small ghost" type="submit"><span class="ms">search</span>Search</button>
+</form>
+{% if rows %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Loan note</th><th>Lender</th><th>Status</th><th>Loan date</th><th>Principal</th><th>Rate / month</th><th>Total payable</th><th>Outstanding</th><th>Next payment</th></tr>
+  {% for r in rows %}<tr>
+    <td><a href="/lenders/{{ r.loan_note_id }}/">{{ r.note_ref|default:"(draft)" }}</a></td><td>{{ r.creditor_name }}</td>
+    <td><span class="pill{% if r.status == 'Cancelled' or r.status == 'Settled' %} off{% elif r.status != 'Active' %} warn{% endif %}">{{ r.status }}</span></td>
+    <td>{{ r.issue_date|dmy }}</td><td class="num">{{ r.principal_amount|floatformat:2|intcomma }}</td><td class="num">{{ r.monthly_interest_rate|floatformat:2 }}%</td>
+    <td class="num">{{ r.total_payable|floatformat:2|intcomma }}</td><td class="num">{{ r.outstanding|floatformat:2|intcomma }}</td><td>{{ r.next_day|dmy|default:"—" }}</td></tr>{% endfor %}
+</table></div>
+<p class="hint">{{ rows|length }} loan note(s) · outstanding on the active ones ₱{{ outstanding|floatformat:2|intcomma }}. Outstanding = total payable less the checks cleared.</p>
+{% else %}<p class="note">No loan notes here.</p>{% endif %}
+{% endif %}
+{% endblock %}

@@ -15,6 +15,7 @@ import pandas as pd
 from engines.permissions import require as require_permission
 from engines.clock import manila_today
 from engines.common import get_conn, write_tx
+from engines.common import us_date
 
 WAITING = """c.status = 'Active' AND c.printed_at IS NOT NULL AND c.is_handwritten = 0 AND c.released_date IS NULL
              AND c.bank_cleared_date IS NULL AND c.settled_outside_at IS NULL"""
@@ -76,13 +77,13 @@ def mark_released(check_ids: list[int], released_date, released_to: str = "") ->
             if released is not None:
                 return False, f"{label} was already released on {released}."
             if when < _day(printed_at):
-                return False, f"{label}: the collection date cannot be before it was printed ({str(printed_at)[:10]})."
+                return False, f"{label}: the collection date cannot be before it was printed ({us_date(printed_at)})."
             found.append((cid, label, float(amount)))
         for cid, label, amount in found:
             conn.execute("UPDATE checks_issued SET released_date = ?, released_to = ? WHERE check_id = ?", (str(when), who, cid))
             conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_RELEASED', 'checks_issued', ?, ?)",
                          (cid, f"{label} for {amount:,.2f} released on {when}" + (f" to {who}" if who else "")))
-    return True, f"{len(found)} check(s) released" + (f" to {who}" if who else "") + f" on {when:%b %d, %Y}."
+    return True, f"{len(found)} check(s) released" + (f" to {who}" if who else "") + f" on {when:%m/%d/%Y}."
 
 
 def undo_release(check_id: int) -> tuple[bool, str]:

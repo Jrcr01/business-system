@@ -1,0 +1,17 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Backup{% endblock %}
+{% block content %}
+{% include "masters/_settings_tabs.html" %}
+<p class="note">Copies of the whole database. A copy is also made by itself every day and before every update. Restoring one is done on the server,
+  never from a button, so the live data can't be overwritten by a wrong click.</p>
+<form method="post" onsubmit="return confirm('Make a copy of the whole database now?');">{% csrf_token %}
+  <button class="btn" type="submit"><span class="ms">backup</span>Make a copy now</button></form>
+<div class="grp">{{ count }} cop{{ count|pluralize:"y,ies" }}{% if count > files|length %} (the latest {{ files|length }} shown){% endif %}</div>
+<div class="scroll-x"><table class="list" style="max-width:760px">
+  <tr><th>Made</th><th>File</th><th style="text-align:right">Size</th><th></th></tr>
+  {% for f in files %}<tr><td>{{ f.at|dmy }}</td><td>{{ f.name }}</td><td class="num">{{ f.size_mb|floatformat:1 }} MB</td>
+    <td><a class="btn small ghost" href="?download={{ f.name|urlencode }}"><span class="ms">download</span>Download</a></td></tr>
+  {% empty %}<tr><td colspan="4" class="hint">No copies yet.</td></tr>{% endfor %}
+</table></div>
+<p class="hint">A downloaded copy holds everything: keep it somewhere safe.</p>
+{% endblock %}

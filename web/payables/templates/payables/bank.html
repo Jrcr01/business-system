@@ -1,0 +1,120 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Bank and cash{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">account_balance_wallet</span> Bank and cash</h2>
+<p class="note">{% if first %}Bank statements on file: <b>{{ first|date:"m/d/Y" }} → {{ last|date:"m/d/Y" }}</b>{% if last_import %} · last import {{ last_import.imported_at|dmy }}{% endif %}.{% else %}No bank statement imported yet.{% endif %}
+  The bank is the final word: a difference becomes a tagged adjustment, never an edit of the book.</p>
+<nav class="tabs">
+  <a href="?tab=import"{% if tab == "import" %} class="on"{% endif %}>Import statement</a>
+  <a href="?tab=look"{% if tab == "look" %} class="on"{% endif %}>Needs a look{% if n_look %} <span class="pill warn">{{ n_look }}</span>{% endif %}</a>
+  <a href="?tab=recon"{% if tab == "recon" %} class="on"{% endif %}>Reconciliation</a>
+  <a href="?tab=booklets"{% if tab == "booklets" %} class="on"{% endif %}>Booklets</a>
+</nav>
+
+{% if tab == "import" %}
+  <form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="check_file">
+    <div class="grow"><label for="file">The bank's statement file (PDF, Excel or CSV, from Metrobank MBOS)</label><input id="file" type="file" name="file" accept=".pdf,.xlsx,.xls,.csv" required></div>
+    <button class="btn small" type="submit"><span class="ms">fact_check</span>Check the file</button>
+  </form>
+  {% if pv %}
+  <div class="grp">{{ file_name }}, before anything is saved</div>
+  <p>{{ pv.period_from|date:"m/d/Y" }} → {{ pv.period_to|date:"m/d/Y" }}{% if pv.account %} · account {{ pv.account }}{% endif %} · {{ pv.lines }} line(s):
+    <b>{{ pv.new }} new</b>, {{ pv.already }} already imported (skipped).{% if pv.closing is not None %} Closing balance ₱{{ pv.closing|floatformat:2|intcomma }}.{% endif %}</p>
+  {% if pv.kinds %}<p class="note">New lines: {% for k, v in pv.kinds.items %}{{ k }} {{ v }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+  <p><span class="pill">{{ pv.match.matched }} check(s) clear</span>
+    {% if pv.match.amount_mismatch %} <span class="pill warn">{{ pv.match.amount_mismatch }} amount differs</span>{% endif %}
+    {% if pv.match.not_in_system %} <span class="pill warn">{{ pv.match.not_in_system }} not in the system</span>{% endif %}
+    {% if pv.match.cancelled_check_cleared %} <span class="pill warn">{{ pv.match.cancelled_check_cleared }} voided check cleared</span>{% endif %}
+    {% if pv.ticked_missing %} <span class="pill warn">{{ pv.ticked_missing }} ticked check(s) not shown</span>{% endif %}</p>
+  <details{% if not pv.ok %} open{% endif %}><summary>Capture check: {% if pv.ok %}passed{% else %}<b style="color:#b3261e">failed, so this file won't be imported</b>{% endif %}</summary>
+    <ul>{% for c in pv.capture %}<li>{% if c.ok %}✓{% else %}✗{% endif %} {{ c.name }}: {{ c.detail|usdates }}</li>{% endfor %}</ul></details>
+  {% if pv.ok and pv.new %}<form method="post" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="action" value="import_file"><input type="hidden" name="file" value="{{ file }}">
+    <button class="btn" type="submit"><span class="ms">upload_file</span>Import {{ pv.new }} line(s)</button></form>
+  {% elif pv.ok %}<p class="note">Every line of this file is already imported: nothing to add.</p>{% endif %}
+  {% endif %}
+  {% if imports %}<div class="grp">Imported statements</div>
+  <div class="scroll-x"><table class="list"><tr><th>Period</th><th>File</th><th>New lines</th><th style="text-align:right">Closing</th><th>Status</th></tr>
+    {% for i in imports %}<tr><td>{{ i.period_from|default:"—"|dmy }} → {{ i.period_to|default:"—"|dmy }}</td><td>{{ i.file_name }}</td><td>{{ i.new_lines|default:i.line_count }}</td>
+      <td class="num">{% if i.closing_balance is not None %}{{ i.closing_balance|floatformat:2|intcomma }}{% endif %}</td>
+      <td>{% if i.status == "Reconciled" %}<span class="pill">Reconciled</span>{% else %}<span class="pill warn">{{ i.open_items }} open</span>{% endif %}</td></tr>{% endfor %}</table></div>{% endif %}
+
+{% elif tab == "look" %}
+  {% if ticks %}<div class="grp" style="margin-top:0">Ticked cleared, but not on the bank statement</div>
+  <div class="scroll-x"><table class="list"><tr><th>Check</th><th>Pay to</th><th style="text-align:right">Amount</th><th>Ticked</th><th></th></tr>
+    {% for t in ticks %}<tr><td>{{ t.check_number }}</td><td>{{ t.creditor_name }}</td><td class="num">{{ t.amount|floatformat:2|intcomma }}</td><td>{{ t.manual_cleared_at|dmy }}</td>
+      <td style="white-space:nowrap"><form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="flag_id" value="{{ t.flag_id }}"><input type="hidden" name="check_id" value="{{ t.check_id }}">
+        <button class="btn small ghost" name="action" value="tick_undo" type="submit">Undo the tick</button>
+        <button class="btn small ghost" name="action" value="tick_keep" type="submit" onclick="return confirm('Keep it cleared although the bank statement does not show it?');">Still cleared</button></form></td></tr>{% endfor %}</table></div>{% endif %}
+
+  {% if link_for %}<div class="warnbox" style="background:#f1f5fa;border-left-color:var(--blue)"><b>Link this bank line to one of our checks</b> (same amount first, then the nearest date)
+    <div class="scroll-x"><table class="list">{% for c in candidates %}<tr><td>{{ c.check_number|default:"(no number)" }}</td><td>{{ c.creditor_name }}</td><td>{{ c.check_date|dmy }}</td>
+      <td class="num">{{ c.amount|floatformat:2|intcomma }}{% if c.same_amount %} <span class="pill">same amount</span>{% endif %}</td>
+      <td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="link"><input type="hidden" name="txn_id" value="{{ link_for }}"><input type="hidden" name="check_id" value="{{ c.check_id }}">
+        <button class="btn small" type="submit">This one</button></form></td></tr>{% empty %}<tr><td class="note">No check waiting for the bank.</td></tr>{% endfor %}</table></div>
+    <a class="btn small ghost" href="?tab=look">Cancel</a></div>{% endif %}
+
+  <div class="grp"{% if not ticks %} style="margin-top:0"{% endif %}>Bank lines we couldn't pair by ourselves</div>
+  {% if rows %}<div class="scroll-x"><table class="list"><tr><th>Bank date</th><th>Bank line</th><th style="text-align:right">Amount</th><th>What</th><th>Fix</th></tr>
+    {% for r in rows %}<tr><td>{{ r.posting_date|dmy }}</td><td>{% if r.check_number %}Check {{ r.check_number }}{% else %}{{ r.description|usdates|truncatechars:40 }}{% endif %}</td>
+      <td class="num">{{ r.amount|floatformat:2|intcomma }}</td>
+      <td><span class="pill warn">{{ r.what }}</span>
+        {% if r.fix %}<span class="hint">our {{ r.fix.check_number }} is {{ r.fix.old_amount|floatformat:2|intcomma }}</span>{% if r.fix.warn %}<div class="hint">{{ r.fix.warn }}</div>{% endif %}{% endif %}
+        {% for s in r.suggest %}<div class="hint">Suggest: {{ s.payee }} {{ s.our_number|default:"(no number)" }} dated {{ s.check_date|dmy }} · {{ s.confidence }} ({{ s.reasons|join:", " }})
+          <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="txn_id" value="{{ r.txn_id }}"><input type="hidden" name="check_id" value="{{ s.check_id }}">
+            <button class="btn small" name="action" value="accept" type="submit">Yes, that one</button> <button class="btn small ghost" name="action" value="reject" type="submit">No</button></form></div>{% endfor %}</td>
+      <td style="white-space:nowrap">
+        {% if r.fix and r.fix.ok %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="adjust"><input type="hidden" name="txn_id" value="{{ r.txn_id }}">
+          <button class="btn small" type="submit" onclick="return confirm('Keep our check as recorded and add an adjustment to the bank amount?');">Adjust to the bank</button></form>{% endif %}
+        {% if r.kind == "CHECK" %}<a class="btn small ghost" href="?tab=look&link={{ r.txn_id }}">Link to a check</a>{% endif %}
+        <form method="post" class="bar" style="display:inline-flex;margin:4px 0 0">{% csrf_token %}<input type="hidden" name="action" value="tag"><input type="hidden" name="txn_id" value="{{ r.txn_id }}">
+          <select name="resolution" aria-label="What this line is"><option value="">Tag as…</option>{% for x in resolutions %}<option>{{ x }}</option>{% endfor %}</select>
+          <input type="text" name="note" placeholder="Note" aria-label="Note" style="width:120px"><button class="btn small ghost" type="submit">Tag</button></form></td></tr>{% endfor %}</table></div>
+  {% else %}<p class="note">Nothing needs a look: every bank line is paired or tagged.</p>{% endif %}
+
+  {% if resolved %}<details style="margin-top:12px"><summary>Lines already dealt with ({{ resolved|length }}), to reopen a wrong one</summary>
+    <div class="scroll-x"><table class="list"><tr><th>Bank date</th><th>Line</th><th>How</th><th></th></tr>
+    {% for r in resolved %}<tr><td>{{ r.posting_date|dmy }}</td><td>{% if r.check_number %}Check {{ r.check_number }}{% else %}{{ r.description|usdates|truncatechars:40 }}{% endif %}</td>
+      <td>{{ r.resolution|usdates }}{% if r.note %} · {{ r.note|usdates }}{% endif %}</td>
+      <td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="reopen"><input type="hidden" name="txn_id" value="{{ r.txn_id }}">
+        <button class="btn small ghost" type="submit" onclick="return confirm('Reopen this line? Any check it cleared is owed again.');">Reopen</button></form></td></tr>{% endfor %}</table></div></details>{% endif %}
+
+{% elif tab == "recon" %}
+  {% if imports %}<form class="bar" method="get"><input type="hidden" name="tab" value="recon">
+    <div><label for="imp">As of the statement</label><select id="imp" name="import" onchange="this.form.submit()">{% for i in imports %}<option value="{{ i.import_id }}"{% if i.import_id == pick %} selected{% endif %}>{{ i.period_to|dmy }} · {{ i.file_name|truncatechars:40 }}</option>{% endfor %}</select></div>
+    {% if pick %}<a class="btn small ghost" href="/bank-cash/recon/{{ pick }}.pdf"><span class="ms">picture_as_pdf</span>Reconciliation PDF</a>{% endif %}</form>
+  {% if r %}
+  <table class="list" style="max-width:520px">
+    <tr><td>Balance per bank, {{ r.as_of|date:"m/d/Y" }}</td><td class="num">₱{{ r.bank_balance|floatformat:2|intcomma }}</td></tr>
+    <tr><td>Less: checks not cleared yet ({{ outstanding|length }})</td><td class="num">({{ r.outstanding_total|floatformat:2|intcomma }})</td></tr>
+    <tr class="subhead"><td><b>Available</b></td><td class="num"><b>₱{{ r.available|floatformat:2|intcomma }}</b></td></tr></table>
+  <p class="note">{{ r.checks_cleared }} check(s) cleared on this statement · {{ r.open_items }} line(s) still need a look.</p>
+  {% if outstanding %}<details><summary>The {{ outstanding|length }} check(s) not cleared yet</summary><div class="scroll-x"><table class="list"><tr><th>Check</th><th>Dated</th><th>Pay to</th><th>Ref</th><th style="text-align:right">Amount</th></tr>
+    {% for c in outstanding %}<tr><td>{{ c.check_number|default:"—" }}</td><td>{{ c.check_date|dmy }}</td><td>{{ c.payee }}</td><td>{{ c.reference|default:"" }}</td><td class="num">{{ c.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div></details>{% endif %}
+  {% if bank_items %}<details><summary>Bank debits that aren't our checks ({{ bank_items|length }})</summary><div class="scroll-x"><table class="list"><tr><th>Date</th><th>Line</th><th style="text-align:right">Amount</th><th>How</th></tr>
+    {% for b in bank_items %}<tr><td>{{ b.posting_date|dmy }}</td><td>{{ b.description|usdates|truncatechars:50 }}</td><td class="num">{{ b.debit|floatformat:2|intcomma }}</td><td>{{ b.how }}</td></tr>{% endfor %}</table></div></details>{% endif %}
+  {% endif %}
+  {% else %}<p class="note">Import a bank statement first.</p>{% endif %}
+
+{% else %}
+  <div class="scroll-x"><table class="list"><tr><th>Booklet</th><th>Leaves</th><th>Next free</th><th>Checks recorded</th><th>Unaccounted for</th><th>Status</th></tr>
+    {% for b in books %}<tr><td>{{ b.booklet_code|default:b.booklet_id }}</td><td>{{ b.start_number }}–{{ b.end_number }}</td><td>{{ b.next_available_number }}</td><td>{{ b.used }}</td>
+      <td>{% if b.gap %}<span class="pill warn">{{ b.gap.count }}: {{ b.gap.leaves }}</span>{% else %}—{% endif %}</td><td>{{ b.status }}</td></tr>
+    {% empty %}<tr><td colspan="6" class="note">No booklet registered.</td></tr>{% endfor %}</table></div>
+  <p class="hint">Unaccounted for = leaves below the highest one used that have no check, no spoiled entry and aren't on a bank statement.</p>
+  <div class="grp">Register a new booklet</div>
+  <form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="new_booklet">
+    <div><label for="b_code">Name</label><input id="b_code" type="text" name="code" placeholder="e.g. B-4551"></div>
+    <div><label for="b_start">First leaf</label><input id="b_start" type="text" inputmode="numeric" name="start" required></div>
+    <div><label for="b_end">Last leaf</label><input id="b_end" type="text" inputmode="numeric" name="end" required></div>
+    <div><label for="b_rec">Received</label><input id="b_rec" type="date" name="received"></div>
+    <button class="btn small" type="submit"><span class="ms">add</span>Register</button></form>
+  <div class="grp">Log spoiled checks</div>
+  <form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="spoiled">
+    <div class="grow"><label for="s_num">Check number(s), separated by commas</label><input id="s_num" type="text" name="numbers" required placeholder="e.g. 4496, 4497"></div>
+    <div class="grow"><label for="s_reason">Why</label><input id="s_reason" type="text" name="reason" placeholder="e.g. torn, wrong payee written"></div>
+    <button class="btn small" type="submit"><span class="ms">block</span>Log as spoiled</button></form>
+  <p style="margin-top:12px"><a href="?tab=booklets&voided=1#voided">Show the voided register (latest 30)</a></p>
+  {% if voided %}<div class="scroll-x" id="voided"><table class="list"><tr>{% for k in voided.0.keys %}<th>{{ k }}</th>{% endfor %}</tr>
+    {% for v in voided %}<tr>{% for x in v.values %}<td>{{ x|default:"" }}</td>{% endfor %}</tr>{% endfor %}</table></div>{% endif %}
+{% endif %}
+{% endblock %}

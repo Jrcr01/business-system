@@ -1,0 +1,34 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Statement of account{% endblock %}
+{% block content %}
+{% include "payables/_report_cards.html" %}
+<p class="note">One dated history with a running balance: charges add, payments subtract. A payment counts on the day it cleared (the bank, or ticked);
+  checks written but not cleared yet are listed apart.</p>
+<form method="get" class="bar" style="flex-wrap:wrap;align-items:flex-end"><input type="hidden" name="r" value="soa">
+  <div><label for="kind">Whose</label><select id="kind" name="kind" onchange="this.form.elements['id'].value='';this.form.submit()">{% for k, label in kinds %}<option value="{{ k }}"{% if k == kind %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="grow"><label for="who">Name</label><select id="who" name="id" onchange="this.form.submit()"><option value="">Pick one</option>
+    {% for i, name in who %}<option value="{{ i }}"{% if i == pick %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+  <div><label for="from">From</label><input id="from" type="date" name="from" value="{{ start|date:'Y-m-d' }}"></div>
+  <div><label for="to">To</label><input id="to" type="date" name="to" value="{{ end|date:'Y-m-d' }}"></div>
+  <button class="btn small ghost" type="submit"><span class="ms">search</span>Show</button>
+</form>
+{% if st %}
+<div class="actions"><a class="btn small ghost" href="?{{ query }}&download=xlsx"><span class="ms">table_view</span>Excel</a>
+  <a class="btn small ghost" href="?{{ query }}&download=pdf"><span class="ms">picture_as_pdf</span>PDF</a></div>
+<div class="facts">{% if start %}<div><span>Brought forward</span><b>₱{{ st.opening|floatformat:2|intcomma }}</b></div>{% endif %}
+  <div><span>Charges</span><b>₱{{ st.charges|floatformat:2|intcomma }}</b></div><div><span>Payments (cleared)</span><b>₱{{ st.payments|floatformat:2|intcomma }}</b></div>
+  <div><span>Balance</span><b>₱{{ st.closing|floatformat:2|intcomma }}</b></div>
+  {% if st.waiting %}<div><span>Checks waiting for the bank</span><b>₱{{ st.waiting_total|floatformat:2|intcomma }}</b></div>{% endif %}</div>
+<div class="scroll-x"><table class="list">
+  <tr><th>Date</th><th>Document</th><th>Reference</th><th style="text-align:right">Charge</th><th style="text-align:right">Payment</th><th style="text-align:right">Balance</th></tr>
+  {% if start %}<tr><td></td><td><i>Balance brought forward</i></td><td></td><td></td><td></td><td class="num">{{ st.opening|floatformat:2|intcomma }}</td></tr>{% endif %}
+  {% for x in st.lines %}<tr><td>{{ x.day|dmy }}</td><td>{{ x.doc }}</td><td>{{ x.ref }}</td>
+    <td class="num">{% if x.charge %}{{ x.charge|floatformat:2|intcomma }}{% endif %}</td><td class="num">{% if x.payment %}{{ x.payment|floatformat:2|intcomma }}{% endif %}</td>
+    <td class="num">{{ x.balance|floatformat:2|intcomma }}</td></tr>
+  {% empty %}<tr><td colspan="6" class="hint">Nothing in this period.</td></tr>{% endfor %}
+</table></div>
+{% if st.waiting %}<div class="grp">Checks written, waiting for the bank (not counted as paid yet)</div>
+<div class="scroll-x"><table class="list" style="max-width:640px"><tr><th>Dated</th><th>Check</th><th>Reference</th><th style="text-align:right">Amount</th></tr>
+  {% for w in st.waiting %}<tr><td>{{ w.day|dmy }}</td><td>{{ w.doc }}</td><td>{{ w.ref }}</td><td class="num">{{ w.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>{% endif %}
+{% elif not pick %}<p class="note">Pick whose statement, then the name.</p>{% endif %}
+{% endblock %}

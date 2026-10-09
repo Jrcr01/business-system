@@ -50,33 +50,41 @@ def test_edit_bank_loan_installment_updates_amount(db):
     assert row == (7500.0,)
 
 
-def test_edit_bank_loan_installment_rejected_once_due_date_has_passed(db):
-    """2026-09-17 fix: edit_bank_loan_installment() had no is_installment_cleared() check at
-    all, unlike delete_bank_loan_installment() -- an already-"Paid" (past due date) row's
-    amount could be silently rewritten with no audit trail."""
+def _tick_paid(db, installment_id):
+    import sqlite3
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE bank_loan_installments SET cleared_at = date('now') WHERE installment_id = ?", (installment_id,))
+
+
+def test_edit_bank_loan_installment_rejected_once_paid(db):
+    """2026-09-17 fix: edit_bank_loan_installment() had no is_installment_cleared() check at all -- a paid row's amount could be silently rewritten.
+    Since 2026-10-09 (daily payables) "paid" means ticked or on the bank statement, not "its due date has passed"."""
     bank_loan_id = _make_bank_loan(db)
     past_due = date.today() - timedelta(days=5)
     add_bank_loan_installment(bank_loan_id, past_due, 5000.0)
     installment_id = fetchone(db, "SELECT installment_id FROM bank_loan_installments WHERE bank_loan_id = ?", (bank_loan_id,))[0]
+    _tick_paid(db, installment_id)
 
     ok, msg = edit_bank_loan_installment(installment_id, past_due, 99999.0)
 
     assert not ok
-    assert "already passed" in msg.lower()
+    assert "already paid" in msg.lower()
     row = fetchone(db, "SELECT amount FROM bank_loan_installments WHERE installment_id = ?", (installment_id,))
     assert row == (5000.0,)  # unchanged
 
 
-def test_delete_bank_loan_installment_still_rejected_once_past_due_unchanged_behavior(db):
+def test_delete_bank_loan_installment_rejected_once_paid_but_not_just_past_due(db):
     bank_loan_id = _make_bank_loan(db)
     past_due = date.today() - timedelta(days=5)
     add_bank_loan_installment(bank_loan_id, past_due, 5000.0)
-    installment_id = fetchone(db, "SELECT installment_id FROM bank_loan_installments WHERE bank_loan_id = ?", (bank_loan_id,))[0]
+    add_bank_loan_installment(bank_loan_id, past_due + timedelta(days=1), 5000.0)
+    first, second = [r[0] for r in __import__("sqlite3").connect(db).execute(
+        "SELECT installment_id FROM bank_loan_installments WHERE bank_loan_id = ? ORDER BY due_date", (bank_loan_id,)).fetchall()]
+    _tick_paid(db, first)
 
-    ok, msg = delete_bank_loan_installment(installment_id)
-
-    assert not ok
-    assert "already passed" in msg.lower()
+    ok, msg = delete_bank_loan_installment(first)
+    assert not ok and "already paid" in msg.lower()
+    assert delete_bank_loan_installment(second)[0]          # past due but not paid yet: still owed, can be corrected
 
 
 def test_create_bank_loan_rejects_sub_peso_typo_principal(db):

@@ -380,6 +380,23 @@ def get_restrictions(user_id: int) -> set[str]:
         return {r[0] for r in conn.execute("SELECT action FROM user_restrictions WHERE user_id = ?", (user_id,))}
 
 
+def split_new_switches() -> int:
+    """Once (2026-10-09): the two new switches start as the switch they were split from -- "Mark payables paid" as Bank, "Card statements" as Loans --
+    so nobody gains or loses anything until the System admin changes it. Marked done in the settings; returns how many switches were set."""
+    from engines.settings_store import get_setting, set_setting
+    if str(get_setting("switches_split_2026_10_09", "0")) == "1":
+        return 0
+    n = 0
+    with get_conn() as conn:
+        for old, new in (("bank.use", "payables.mark_paid"), ("loans.use", "cards.use")):
+            for (uid,) in conn.execute("SELECT user_id FROM user_restrictions WHERE action = ?", (old,)).fetchall():
+                if not conn.execute("SELECT 1 FROM user_restrictions WHERE user_id = ? AND action = ?", (uid, new)).fetchone():
+                    conn.execute("INSERT INTO user_restrictions (user_id, action, created_by) VALUES (?, ?, 'split 2026-10-09')", (uid, new))
+                    n += 1
+    set_setting("switches_split_2026_10_09", "1")
+    return n
+
+
 def set_restrictions(user_id: int, denied: set[str]) -> tuple[bool, str]:
     """The System admin saves what this person may NOT do (everything else they may). Never for a System admin. Audited with what changed."""
     from engines.permissions import SWITCHES

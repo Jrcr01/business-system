@@ -41,6 +41,36 @@ def q_live(sql: str, params: tuple = ()) -> pd.DataFrame:
     return df_query(sql, params)
 
 
+def us_date(value, empty: str = "") -> str:
+    """A date as people read it in this system: mm/dd/yyyy (owner, 2026-10-09), with HH:MM when it has a time. Takes a date, a datetime or ISO text;
+    anything else is returned as it is."""
+    from datetime import date as _date, datetime as _dt
+    if value in (None, "") or str(value).lower() in ("nan", "nat", "none"):
+        return empty
+    if isinstance(value, _dt):
+        return value.strftime("%m/%d/%Y %H:%M")
+    if isinstance(value, _date):
+        return value.strftime("%m/%d/%Y")
+    text = str(value).strip()
+    try:
+        d = _date.fromisoformat(text[:10])
+    except ValueError:
+        return text
+    rest = text[10:].strip().lstrip("T")
+    return d.strftime("%m/%d/%Y") + (" " + rest[:5] if len(rest) >= 5 and rest[2] == ":" else "")
+
+
+def us_dates_in(text) -> str:
+    """Dates written inside free text (notes, resolutions, stored messages) as mm/dd/yyyy: '2026-10-09' and 'Oct 09, 2026' -> '10/09/2026'."""
+    import re
+    if text in (None, ""):
+        return ""
+    months = {m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), start=1)}
+    s = re.sub(r"\b(\d{4})-(\d{2})-(\d{2})\b", lambda m: f"{m.group(2)}/{m.group(3)}/{m.group(1)}", str(text))
+    return re.sub(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? (\d{1,2}), (\d{4})\b",
+                  lambda m: f"{months[m.group(1).lower()]:02d}/{int(m.group(2)):02d}/{m.group(3)}", s)
+
+
 def php(amount) -> str:
     try:
         if pd.isna(amount):

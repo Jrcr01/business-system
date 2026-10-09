@@ -1,0 +1,49 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}{{ n.note_ref|default:"Loan note" }} · {{ n.creditor_name }}{% endblock %}
+{% block content %}
+<p class="note"><a href="/lenders/">← Lenders</a></p>
+<h2>{{ n.note_ref|default:"Loan note" }} · {{ n.creditor_name }} <span class="pill{% if n.status != 'Active' %} warn{% endif %}">{{ n.status }}</span></h2>
+<div class="facts"><div><span>Loan date</span><b>{{ n.issue_date|dmy }}</b></div><div><span>Principal</span><b>₱{{ n.principal_amount|floatformat:2|intcomma }}</b></div>
+  <div><span>Interest per month</span><b>{{ n.monthly_interest_rate|floatformat:2 }}%</b></div>
+  <div><span>Interest (by days)</span><b>₱{{ total_interest|floatformat:2|intcomma }}</b></div><div><span>Total payable</span><b>₱{{ total_pay|floatformat:2|intcomma }}</b></div></div>
+<div class="actions"><button class="btn small ghost" type="button" data-rmap="/related/loan/{{ n.loan_note_id }}/"><span class="ms">account_tree</span>Relationship map</button> <a class="btn small ghost" href="/lenders/{{ n.loan_note_id }}/sheet.pdf"><span class="ms">print</span>Loan sheet (PDF)</a></div>
+{% if guarantees %}<div class="warnbox" style="background:#f1f5fa;border-left-color:var(--blue)"><b>Guarantee check{{ guarantees|length|pluralize }} held for this loan</b>:
+  {% for g in guarantees %}{{ g.check_number }}{% if g.face_amount %} (₱{{ g.face_amount|floatformat:2|intcomma }}){% endif %} · {{ g.status }}{% if not forloop.last %}; {% endif %}{% endfor %}
+  · <a href="/lenders/?tab=guarantees&show=all">Guarantee checks</a></div>{% endif %}
+<nav class="tabs" style="margin-top:14px">
+  <a href="?tab=schedule"{% if tab != "checks" %} class="on"{% endif %}>Schedule ({{ inst|length }})</a>
+  <a href="?tab=checks"{% if tab == "checks" %} class="on"{% endif %}>Checks ({{ checks|length }})</a>
+</nav>
+
+{% if tab == "checks" %}
+  {% include "payables/_batch_checks.html" %}
+  {% if not checks %}<p class="note">No check yet: park them from the Schedule tab.</p>{% endif %}
+{% else %}
+<div class="scroll-x"><table class="list"><tr><th>#</th><th>Payment date</th><th style="text-align:right">Days</th><th style="text-align:right">Principal</th>
+    <th style="text-align:right">Interest</th><th style="text-align:right">Total</th><th style="text-align:right">Balance after</th><th>Check</th><th></th></tr>
+  {% for r in inst %}<tr>
+    <td>{{ r.installment_no }}</td><td>{{ r.due_date|dmy }}</td><td class="num">{{ r.days }}</td>
+    <td class="num">{{ r.principal|floatformat:2|intcomma }}</td><td class="num">{{ r.interest|floatformat:2|intcomma }}</td>
+    <td class="num">{{ r.total|floatformat:2|intcomma }}</td><td class="num">{{ r.outstanding_balance|floatformat:2|intcomma }}</td>
+    <td>{% if r.check_id %}{{ r.check_number|default:"(no number)" }} <span class="pill{% if r.stage == 'Parked' %} warn{% endif %}">{{ r.stage }}</span>{% else %}<span class="hint">none yet</span>{% endif %}</td>
+    <td>{% if not r.check_id and n.status == "Active" %}
+        {% if move == r.installment_id and may_loans %}
+          <form class="bar" method="post" style="display:inline-flex">{% csrf_token %}<input type="hidden" name="action" value="move"><input type="hidden" name="installment_id" value="{{ r.installment_id }}">
+            <input type="date" name="new_date" value="{{ r.due_date|slice:':10' }}" aria-label="New payment date" required autofocus>
+            <button class="btn small" type="submit">Move</button> <a class="btn small ghost" href="?tab=schedule">Cancel</a></form>
+          <div class="hint">This payment's interest and the next one's are worked out again by days.</div>
+        {% else %}
+          {% if may_loans %}<a class="btn small ghost" href="?tab=schedule&move={{ r.installment_id }}"><span class="ms">event</span>Change date</a>{% endif %}
+          {% if may_park %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="park_one"><input type="hidden" name="installment_id" value="{{ r.installment_id }}">
+            <button class="btn small ghost" type="submit"><span class="ms">local_parking</span>Park its check</button></form>{% endif %}
+        {% endif %}
+      {% endif %}</td></tr>
+  {% empty %}<tr><td colspan="9" class="hint">No payment scheduled.</td></tr>{% endfor %}
+</table></div>
+{% if may_park and n_unparked > 1 and n.status == "Active" %}
+<form method="post" style="margin-top:8px" onsubmit="return confirm('Park a check for each of the {{ n_unparked }} payments without one, on its own date and amount?');">{% csrf_token %}
+  <input type="hidden" name="action" value="park_all"><button class="btn small" type="submit"><span class="ms">local_parking</span>Park all {{ n_unparked }} checks</button></form>
+{% endif %}
+<p class="hint">A payment with a check keeps its date: delete the parked check (or void a written one) on the Checks tab first.</p>
+{% endif %}
+{% endblock %}

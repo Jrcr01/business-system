@@ -1,0 +1,23 @@
+{% extends "core/base.html" %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+{% include "masters/_settings_tabs.html" %}
+<p class="note">Every change, who made it and when. The log can't be changed or deleted by anyone. The latest 300 are shown; the Excel has everything in the filter.</p>
+<form class="bar" method="get" style="flex-wrap:wrap;align-items:flex-end">
+  <div><label for="who">Who</label><select id="who" name="who"><option value="">Everyone</option>
+    {% for p in people %}<option value="{{ p.e }}"{% if p.e == who %} selected{% endif %}>{{ p.e }}</option>{% endfor %}</select></div>
+  <div><label for="what">What</label><select id="what" name="what"><option value="">All changes</option>
+    {% for a in actions %}<option value="{{ a.a }}"{% if a.a == what %} selected{% endif %}>{{ a.a }}</option>{% endfor %}</select></div>
+  <div><label for="from">From</label><input id="from" type="date" name="from" value="{{ start|date:'Y-m-d' }}"></div>
+  <div><label for="to">To</label><input id="to" type="date" name="to" value="{{ end|date:'Y-m-d' }}"></div>
+  <div class="grow"><label for="q">Search the details</label><input id="q" type="text" name="q" value="{{ q }}" placeholder="a check number, a supplier, an amount"></div>
+  <button class="btn small ghost" type="submit"><span class="ms">search</span>Show</button>
+  <a class="btn small ghost" href="?{{ query }}&download=xlsx"><span class="ms">table_view</span>Excel</a>
+</form>
+<div class="scroll-x"><table class="list">
+  <tr><th>When</th><th>Who</th><th>What</th><th>On</th><th>Details</th></tr>
+  {% for r in rows %}<tr><td style="white-space:nowrap">{{ r.at|dmy }}</td><td>{{ r.who_name }}</td><td>{{ r.what }}</td><td class="hint">{{ r.entity_name }}{% if r.entity_id %} #{{ r.entity_id }}{% endif %}</td>
+    <td>{{ r.details|usdates|truncatechars:180 }}</td></tr>
+  {% empty %}<tr><td colspan="5" class="hint">Nothing for this filter.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

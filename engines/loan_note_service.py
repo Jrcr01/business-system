@@ -99,12 +99,12 @@ def _info_panel(note, styles) -> Table:
         [Paragraph("LN. NO.", label_style), Paragraph("LENDER", label_style),
          Paragraph("DATE", label_style), Paragraph("STATUS", label_style)],
         [Paragraph(note["note_ref"], value_style), Paragraph(note["creditor_name"], value_style),
-         Paragraph(note["issue_date"], value_style), Paragraph(note["status"], value_style)],
+         Paragraph(__import__("engines.common", fromlist=["us_date"]).us_date(note["issue_date"]), value_style), Paragraph(note["status"], value_style)],
         [Paragraph("PRINCIPAL", label_style), Paragraph("MONTHLY INTEREST", label_style),
          Paragraph("GENERATED", label_style), Paragraph("", label_style)],
         [Paragraph(f"PHP {_money(note['principal_amount'])}", value_style),
          Paragraph("—" if note["monthly_interest_rate"] is None else f"{note['monthly_interest_rate']:g}%", value_style),
-         Paragraph(manila_now().strftime("%Y-%m-%d %H:%M"), value_style), Paragraph("", value_style)],
+         Paragraph(manila_now().strftime("%m/%d/%Y %H:%M"), value_style), Paragraph("", value_style)],
     ]
     panel = Table(rows, colWidths=[CONTENT_WIDTH * 0.25] * 4)
     panel.setStyle(TableStyle([

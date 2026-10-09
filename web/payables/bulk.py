@@ -82,7 +82,7 @@ def invoice_import(request, sid: int):
                 _say(request, False, "Choose a .csv or .xlsx file.")
                 return redirect(back)
             parsed, notes = parse_invoice_spreadsheet(f.read(), f.name)
-            rows = [{"source": f.name, "doc": r.doc_ref, "date": str(r.invoice_date), "gross": r.amount, "less": r.less_pct} for r in parsed]
+            rows = [{"source": f.name, "doc": r.doc_ref, "dr": r.dr_no, "date": str(r.invoice_date), "gross": r.amount, "less": r.less_pct} for r in parsed]
             return redirect(back + "?staged=" + _stage({"sid": sid, "rows": rows, "notes": notes, "raw": {}, "kind": "spreadsheet"}))
         if what == "add":
             return _add_staged(request, b)
@@ -116,26 +116,27 @@ def _add_staged(request, b: dict):
     for i in range(len(staged["rows"])):
         if p.get(f"keep_{i}") != "1":
             continue
-        doc, day, gross, less = p.get(f"doc_{i}", "").strip(), _date(p.get(f"date_{i}")), _num(p.get(f"gross_{i}"), 0), _num(p.get(f"less_{i}"), 0) or 0
+        from engines.statement_rules import doc_reference
+        doc, day, gross, less = doc_reference(p.get(f"doc_{i}"), p.get(f"dr_{i}")), _date(p.get(f"date_{i}")), _num(p.get(f"gross_{i}"), 0), _num(p.get(f"less_{i}"), 0) or 0
         if not doc or not day or gross <= 0:
             skipped.append(f"Line {i + 1}: needs its sales invoice no., date and a positive amount.")
             continue
-        rows.append((doc, day, gross, less))
+        rows.append((doc, day, gross, less, p.get(f"dr_{i}", "").strip()))
     if not rows:
         _say(request, False, "Nothing to add. " + " ".join(skipped))
         return redirect(back + f"?staged={token}")
     if p.get("confirmed") != "1":
-        warns = invoice_warnings(cid, [(d, day, g) for d, day, g, _ in rows])
+        warns = invoice_warnings(cid, [(d, day, g) for d, day, g, _, _ in rows])
         if warns:
-            staged["rows"] = [{"source": staged["rows"][i]["source"], "doc": p.get(f"doc_{i}", ""), "date": p.get(f"date_{i}", ""), "gross": p.get(f"gross_{i}", ""),
-                               "less": p.get(f"less_{i}", ""), "keep": p.get(f"keep_{i}") == "1"} for i in range(len(staged["rows"]))]
+            staged["rows"] = [{"source": staged["rows"][i]["source"], "doc": p.get(f"doc_{i}", ""), "dr": p.get(f"dr_{i}", ""), "date": p.get(f"date_{i}", ""),
+                               "gross": p.get(f"gross_{i}", ""), "less": p.get(f"less_{i}", ""), "keep": p.get(f"keep_{i}") == "1"} for i in range(len(staged["rows"]))]
             _drop(token)
             request.session["bulk_warnings"] = warns
             return redirect(back + "?staged=" + _stage(staged))
     added, errors = 0, list(skipped)
-    for doc, day, gross, less in rows:
+    for doc, day, gross, less, dr in rows:
         try:
-            add_invoice(cid, doc, day, resolve_due_date(day, b["terms"] or ""), gross, [less] if less else [], sid)
+            add_invoice(cid, doc, day, resolve_due_date(day, b["terms"] or ""), gross, [less] if less else [], sid, dr_no=dr)
             added += 1
         except sqlite3.IntegrityError:
             errors.append(f"{doc} already exists for this supplier.")
@@ -178,7 +179,7 @@ def import_many(request):
             for pr in problems:
                 messages.error(request, pr)
             data = {"sheets": [{"name": sh.sheet_name, "messages": sh.messages,
-                                "rows": [{"doc": r.doc_ref, "date": str(r.invoice_date), "amount": r.amount, "less": r.less_pct} for r in sh.rows]} for sh in sheets]}
+                                "rows": [{"doc": r.doc_ref, "dr": r.dr_no, "date": str(r.invoice_date), "amount": r.amount, "less": r.less_pct} for r in sh.rows]} for sh in sheets]}
             return redirect("/order-statements/import-many/" + ("?staged=" + _stage(data) if sheets else ""))
         if what == "create":
             return _create_many(request, suppliers)
@@ -186,7 +187,7 @@ def import_many(request):
     plan = []
     if staged and "sheets" in staged:
         for i, sh in enumerate(staged["sheets"]):
-            good = [r for r in sh["rows"] if str(r["doc"]).strip() and float(r["amount"] or 0) > 0]
+            good = [r for r in sh["rows"] if (str(r["doc"]).strip() or str(r.get("dr") or "").strip()) and float(r["amount"] or 0) > 0]
             plan.append({"i": i, "name": sh["name"], "good": len(good), "total": sum(float(r["amount"]) for r in good), "bad": len(sh["rows"]) - len(good),
                          "messages": sh["messages"][:3], "guess": match_supplier(sh["name"], suppliers)})
     results = _staged(request.GET.get("done", ""))
@@ -208,7 +209,7 @@ def _create_many(request, suppliers: dict):
         if not pick.isdigit() or int(pick) not in suppliers:
             continue
         cid = int(pick)
-        rows = [r for r in sh["rows"] if str(r["doc"]).strip() and float(r["amount"] or 0) > 0]
+        rows = [r for r in sh["rows"] if (str(r["doc"]).strip() or str(r.get("dr") or "").strip()) and float(r["amount"] or 0) > 0]
         if not rows:
             continue
         from engines.common import get_conn
@@ -219,7 +220,8 @@ def _create_many(request, suppliers: dict):
         for r in rows:
             day = _date(r["date"])
             try:
-                add_invoice(cid, str(r["doc"]).strip(), day, resolve_due_date(day, terms), float(r["amount"]), [float(r["less"])] if r["less"] else [], sid)
+                add_invoice(cid, __import__("engines.statement_rules", fromlist=["x"]).doc_reference(r["doc"], r.get("dr")), day, resolve_due_date(day, terms), float(r["amount"]), [float(r["less"])] if r["less"] else [], sid,
+                            dr_no=str(r.get("dr") or "").strip())
                 added += 1
             except sqlite3.IntegrityError:
                 skipped.append(str(r["doc"]).strip())

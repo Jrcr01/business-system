@@ -21,7 +21,7 @@
       {% for r in recon %}<tr><td>{{ r.item_name }}</td><td class="num">{% if r.list_net is not None %}{{ r.list_net|floatformat:2|intcomma }}{% else %}not on the list{% endif %}</td>
         <td class="num">{{ r.invoiced|floatformat:2|intcomma }}</td>
         <td class="num">{% if r.difference is not None %}{{ r.difference|floatformat:2|intcomma }}{% if r.difference_pct is not None %} ({{ r.difference_pct }}%){% endif %}{% endif %}</td>
-        <td>{{ r.invoice_no }} · {{ r.invoice_date|slice:":10" }}</td>
+        <td>{{ r.invoice_no }} · {{ r.invoice_date|dmy }}</td>
         {% if writer %}<td><form method="post">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="update_to_invoice">
           <input type="hidden" name="item" value="{{ r.item_name }}"><button class="btn small" type="submit">Update the list</button></form></td>{% endif %}</tr>{% endfor %}
     </table></div></div>
@@ -30,7 +30,7 @@
   <div class="scroll-x"><table class="list">
     <tr><th>Item</th><th>Code</th><th>Unit</th><th>Price</th><th>Since</th><th>Price before</th><th>Change</th><th></th></tr>
     {% for r in rows %}<tr><td>{{ r.item_name }}</td><td>{{ r.item_code|default:"" }}</td><td>{{ r.unit|default:"" }}</td><td class="num">{{ r.unit_price|floatformat:2|intcomma }}</td>
-      <td>{{ r.effective_date|slice:":10" }}</td><td class="num">{% if r.change is not None %}{{ r.previous_price|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+      <td>{{ r.effective_date|dmy }}</td><td class="num">{% if r.change is not None %}{{ r.previous_price|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
       <td class="num {% if r.change > 0 %}chg-up{% elif r.change < 0 %}chg-down{% endif %}">{% if r.change is not None %}{% if r.change > 0 %}+{% endif %}{{ r.change }}%{% endif %}</td>
       <td><a href="/price-lists/?s={{ cid }}&amp;tab=prices&amp;item={{ r.item_name|urlencode }}#history">History</a></td></tr>{% endfor %}
   </table></div>
@@ -41,7 +41,7 @@
   {% if item %}
   <div class="grp" id="history">History of {{ item }}</div>
   <table class="list" style="max-width:640px"><tr><th>Price</th><th>Starts</th><th>In use</th>{% if writer %}<th></th>{% endif %}</tr>
-    {% for h in history %}<tr><td class="num">{{ h.unit_price|floatformat:2|intcomma }}</td><td>{{ h.effective_date|slice:":10" }}</td><td>{% if h.is_active %}Yes{% else %}<span class="pill off">off</span>{% endif %}</td>
+    {% for h in history %}<tr><td class="num">{{ h.unit_price|floatformat:2|intcomma }}</td><td>{{ h.effective_date|dmy }}</td><td>{% if h.is_active %}Yes{% else %}<span class="pill off">off</span>{% endif %}</td>
       {% if writer %}<td><form method="post"{% if h.is_active %} onsubmit="return confirm('Switch this price off? It stops being used for new orders. It stays in the history and can be switched back on.');"{% endif %}>{% csrf_token %}
         <input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="price_on_off"><input type="hidden" name="item" value="{{ item }}">
         <input type="hidden" name="price_id" value="{{ h.price_id }}"><input type="hidden" name="on" value="{% if h.is_active %}0{% else %}1{% endif %}">
@@ -50,19 +50,38 @@
   {% endif %}
 
 {% elif tab == "add" %}
-  <p class="note">Choose a product from the catalog (or one already on this supplier's list) to give it a price, or type a new item. Many products at once: use Import Excel.</p>
-  <form method="post">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="add_price">
+  <p class="note">One product, typed in the same columns as the price list template: it is read and checked exactly like a row of the file, so a product
+    typed here and the same product in a file are one product. Many products at once: use Import Excel.</p>
+  <form method="post" id="manual-price">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="add_row">
     <div class="formgrid">
-      <div style="grid-column:span 2"><label for="item">Item</label><input id="item" type="text" name="item" list="item_names" required placeholder="Choose or type an item"></div>
-      <div><label for="unit">Unit</label><input id="unit" type="text" name="unit" placeholder="pc, set, box"></div>
-      <div><label for="price">Price</label><input id="price" type="text" inputmode="decimal" name="price" required></div>
-      <div><label for="start">Starts on</label><input id="start" type="date" name="start" value="{{ today|date:'Y-m-d' }}"><div class="hint">Applies from this date until a later one is added.</div></div>
-      <div><label for="code">Item code (optional)</label><input id="code" type="text" name="code"></div>
+      <div><label for="m_category">Category *</label><select id="m_category" name="category" required><option value="">Pick one</option>
+        {% for c in categories %}<option{% if typed.category == c %} selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+      <div><label for="m_brand">Brand *</label><input id="m_brand" type="text" name="brand" list="m_brands" required value="{{ typed.brand|default:'' }}"></div>
+      <div><label for="m_model">Model/Pattern</label><input id="m_model" type="text" name="model" value="{{ typed.model|default:'' }}" placeholder="e.g. NU025, MF Plus"></div>
+      <div><label for="m_size">Size</label><input id="m_size" type="text" name="size" value="{{ typed.size|default:'' }}" placeholder="e.g. 265/70R16, NS40"></div>
+      <div data-only="Tires"><label for="m_terrain">Terrain</label><select id="m_terrain" name="terrain"><option value="">—</option>
+        {% for t in terrains %}<option{% if typed.terrain == t %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+      <div style="grid-column:span 2"><label for="m_other">Other specs</label><input id="m_other" type="text" name="other" value="{{ typed.other|default:'' }}"
+        placeholder="e.g. 14PR Rib TL · 12V 45Ah L MF · 5x114.3 ET40 Silver"></div>
+      <div><label for="m_unit">Unit</label><input id="m_unit" type="text" name="unit" value="{{ typed.unit|default:'pc' }}" placeholder="pc, set, box"></div>
+      <div><label for="m_code">Supplier item code</label><input id="m_code" type="text" name="supplier_code" value="{{ typed.supplier_code|default:'' }}"></div>
+      <div><label for="m_price">List price *</label><input id="m_price" type="text" inputmode="decimal" name="list_price" required value="{{ typed.list_price|default:'' }}"></div>
+      <div><label for="m_date">Effective date</label><input id="m_date" type="date" name="effective_date" value="{% if typed.effective_date %}{{ typed.effective_date }}{% else %}{{ today_iso }}{% endif %}">
+        <div class="hint">Applies from this date until a later one is added.</div></div>
     </div>
-    <datalist id="item_names">{% for n in names %}<option value="{{ n }}">{% endfor %}</datalist>
+    <datalist id="m_brands">{% for b in all_brands %}<option value="{{ b }}">{% endfor %}</datalist>
+    <p class="hint" id="m_help">Tires: Size (e.g. 265/70R16) and Model/Pattern (e.g. AT52); Terrain on its own. Batteries: the size/group code in Size (NS40, 1SMF) and the line in
+      Model/Pattern (MF Plus, Excel). Everything else printed for the line goes in Other specs. The list price is before any discount.</p>
     <label class="inline" style="display:flex;gap:6px;color:#1c2733;margin-top:10px"><input type="checkbox" name="replace" value="1"> Replace the price already on this date, if there is one</label>
     <button class="btn small" type="submit" style="margin-top:10px"><span class="ms">save</span>Save price</button>
   </form>
+  <script>
+  (function () {                          /* Terrain is for tires only */
+    var f = document.getElementById("manual-price"); if (!f) return;
+    function show() { f.querySelectorAll("[data-only]").forEach(function (d) { d.hidden = f.category.value !== d.dataset.only; if (d.hidden) d.querySelector("select").value = ""; }); }
+    f.category.addEventListener("change", show); show();
+  })();
+  </script>
 
 {% elif tab == "import" %}
   <p class="note">Download the template, fill its one sheet (one row per product: Supplier, Category, Brand, Model/Pattern, Size, Terrain, Other specs, Unit, Supplier item code, List price, Effective date), and upload it. Older files with a sheet per category still work. You see every line first; nothing is saved until you press Import.
@@ -108,9 +127,9 @@
     A purchase order line starts with the discount set here and can be changed on that line.</p>
   {% if discounts %}
   <table class="list" style="max-width:760px"><tr><th>Brand</th><th>Discount</th><th>Since</th><th></th></tr>
-    {% for d in discounts %}<tr><td>{{ d.brand }}</td><td>{{ d.label }}</td><td>{{ d.effective_date|slice:":10" }}</td>
-      <td style="white-space:nowrap"><button class="btn small ghost" type="button" onclick="editDiscount('{{ d.brand_value|escapejs }}', '{{ d.chain_shown|escapejs }}', '{{ d.effective_date|slice:':10' }}')"><span class="ms">edit</span>Change</button>
-        <form method="post" style="display:inline" onsubmit="return confirm('Remove the discount {{ d.label|escapejs }} for {{ d.brand|escapejs }} from {{ d.effective_date|slice:':10' }}? Orders already saved keep their discount.');">{% csrf_token %}
+    {% for d in discounts %}<tr><td>{{ d.brand }}</td><td>{{ d.label }}</td><td>{{ d.effective_date|dmy }}</td>
+      <td style="white-space:nowrap"><button class="btn small ghost" type="button" onclick="editDiscount('{{ d.brand_value|escapejs }}', '{{ d.chain_shown|escapejs }}', '{{ d.effective_date|dmy }}')"><span class="ms">edit</span>Change</button>
+        <form method="post" style="display:inline" onsubmit="return confirm('Remove the discount {{ d.label|escapejs }} for {{ d.brand|escapejs }} from {{ d.effective_date|dmy }}? Orders already saved keep their discount.');">{% csrf_token %}
           <input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="remove_discount"><input type="hidden" name="discount_id" value="{{ d.discount_id }}">
           <button class="btn small danger" type="submit"><span class="ms">delete</span>Remove</button></form></td></tr>{% endfor %}</table>
   {% else %}<p class="note">No discount set for this supplier. List prices are used as they are.</p>{% endif %}
@@ -144,7 +163,7 @@
   {% if side %}
   <div class="scroll-x"><table class="list"><tr><th>SKU</th><th>Product</th><th>Supplier</th><th>List</th><th>Discount</th><th>Net</th><th>Since</th><th></th></tr>
     {% for r in side %}<tr><td>{{ r.sku }}</td><td>{{ r.product }}</td><td>{{ r.supplier }}</td><td class="num">{{ r.list_price|floatformat:2|intcomma }}</td><td>{{ r.discount|default:"none" }}</td>
-      <td class="num">{{ r.net_price|floatformat:2|intcomma }}</td><td>{{ r.effective_date|slice:":10" }}</td><td>{% if r.cheapest %}<span class="pill">cheapest</span>{% endif %}</td></tr>{% endfor %}
+      <td class="num">{{ r.net_price|floatformat:2|intcomma }}</td><td>{{ r.effective_date|dmy }}</td><td>{% if r.cheapest %}<span class="pill">cheapest</span>{% endif %}</td></tr>{% endfor %}
   </table></div>
   {% else %}<p class="note">{% if one_too %}No priced products in this category yet.{% else %}No product has prices from two or more suppliers yet.{% endif %}</p>{% endif %}
 

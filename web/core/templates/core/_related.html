@@ -1,0 +1,20 @@
+{% load humanize %}{% if related %}
+  <div class="rmap">
+  {% for col in related %}
+    <div class="rcol">
+      <div class="rstep"><span class="ring{% if col.done %} done{% elif col.has %} part{% endif %}"><span class="ms">{{ col.icon }}</span></span>
+        {% if not forloop.last %}<span class="rline"><span class="ms">keyboard_double_arrow_right</span></span>{% endif %}</div>
+      <div class="rlbl">{{ col.label }}</div>
+      {% for d in col.docs %}
+      {% if d.url and not d.me %}<a class="rdoc{% if d.off %} off{% endif %}" href="{{ d.url }}">{% else %}<div class="rdoc{% if d.me %} me{% endif %}{% if d.off %} off{% endif %}">{% endif %}
+        <b>{{ d.title }}</b>
+        <span class="st{% if d.done %} ok{% endif %}"><span class="ms">{% if d.done %}check_circle{% else %}keyboard_double_arrow_right{% endif %}</span>{{ d.status }}</span>
+        <span class="kv">Amount: ₱{{ d.amount|floatformat:2|intcomma }}</span>
+        {% if d.date %}<span class="kv">{{ d.date_label }}: {{ d.date|dmy }}</span>{% endif %}
+      {% if d.url and not d.me %}</a>{% else %}</div>{% endif %}
+      {% empty %}<div class="rdoc none">none yet</div>{% endfor %}
+      {% if col.more %}<div class="hint">and {{ col.more }} more</div>{% endif %}
+    </div>
+  {% endfor %}
+  </div>
+{% else %}<p class="hint">No related documents.</p>{% endif %}

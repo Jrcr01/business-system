@@ -100,12 +100,12 @@ def add_price(creditor_id: int, item_name: str, unit: str, unit_price, effective
     with write_tx() as conn:
         result = _put(conn, creditor_id, name, _clean_name(unit), price, on, _clean_name(item_code), replace)
         if result == "skipped":
-            return False, f"{name} already has a price starting {on:%b %d, %Y}. Use Replace to change it, or pick a later date for the new price."
+            return False, f"{name} already has a price starting {on:%m/%d/%Y}. Use Replace to change it, or pick a later date for the new price."
         spelling = _existing_spelling(conn, creditor_id, name) or name
         conn.execute("UPDATE supplier_price_list SET item_id = (SELECT id FROM items WHERE lower(name) = ? LIMIT 1) "       # a price for an item we already have belongs to that item
                      "WHERE creditor_id = ? AND lower(item_name) = ? AND item_id IS NULL", (_key(spelling), creditor_id, _key(spelling)))
         _audit(conn, "PRICE_ADDED" if result == "added" else "PRICE_REPLACED", creditor_id, f"{spelling}: {price:,.2f} from {on} (supplier {creditor_id})")
-    return True, f"{spelling}: {price:,.2f} from {on:%b %d, %Y} saved."
+    return True, f"{spelling}: {price:,.2f} from {on:%m/%d/%Y} saved."
 
 
 def set_price_active(price_id: int, active: bool) -> tuple[bool, str]:

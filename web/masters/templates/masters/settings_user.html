@@ -38,12 +38,34 @@
 
 {% if switches %}
 <div class="grp">What {{ u.name }} may do</div>
-<p class="note">Everyone in the family is an Owner. Untick what this person must <b>not</b> do; it applies at their next click. Their own password, the System admin's settings, users and the audit log stay yours alone.</p>
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="switches">
-  {% for g in switches %}<div style="margin:8px 0 2px"><b>{{ g.group }}</b></div>
-  <div class="formgrid" style="max-width:none">{% for a in g.actions %}<label class="inline" style="display:flex;gap:6px;color:#1c2733;margin:2px 0"><input type="checkbox" name="on" value="{{ a.id }}"{% if a.on %} checked{% endif %}> {{ a.label }}</label>{% endfor %}</div>{% endfor %}
+<p class="note">Everyone in the family is an Owner. Switch off what this person must <b>not</b> do; it applies at their next click. Their own password, the System
+  admin's settings, users and the audit log stay yours alone.</p>
+{% if copied_from %}<div class="msg info">Showing <b>{{ copied_from.name }}</b>'s switches. Press <b>Save</b> to give {{ u.name }} the same, or
+  <a href="?">cancel</a>.</div>{% endif %}
+<form method="post" id="sw-form">{% csrf_token %}<input type="hidden" name="action" value="switches">
+  <div class="sw-presets">Start from:
+    {% for k, label, keys in presets %}<button class="btn small ghost" type="button" data-preset="{{ keys|join:',' }}">{{ label }}</button>{% endfor %}
+    {% if others %}<select class="sw-copy" aria-label="Copy from another person" onchange="if(this.value)location='?copy='+this.value">
+      <option value="">Copy from another person…</option>{% for o in others %}<option value="{{ o.user_id }}">{{ o.name }}</option>{% endfor %}</select>{% endif %}
+  </div>
+  {% for g in switches %}<div class="sw-sec">
+    <div class="sw-head"><b>{{ g.section }}</b><span><a href="#" data-all="1">all on</a> · <a href="#" data-all="0">all off</a></span></div>
+    {% for l in g.lines %}<label class="sw-line"><input type="checkbox" class="sw" name="on" value="{{ l.key }}"{% if l.on %} checked{% endif %}>
+      <span class="sw-label">{{ l.label }}</span><span class="sw-pages">{{ l.pages }}</span></label>{% endfor %}
+  </div>{% endfor %}
   <div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save what {{ u.name }} may do</button></div>
 </form>
+<script>
+(function () {
+  var f = document.getElementById("sw-form"); if (!f) return;
+  f.querySelectorAll("[data-preset]").forEach(function (b) {
+    b.addEventListener("click", function () { var on = b.dataset.preset.split(","); f.querySelectorAll("input.sw").forEach(function (x) { x.checked = on.indexOf(x.value) >= 0; }); });
+  });
+  f.querySelectorAll("[data-all]").forEach(function (a) {
+    a.addEventListener("click", function (e) { e.preventDefault(); a.closest(".sw-sec").querySelectorAll("input.sw").forEach(function (x) { x.checked = a.dataset.all === "1"; }); });
+  });
+})();
+</script>
 {% endif %}
 
 <div class="grp">Role</div>

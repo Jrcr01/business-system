@@ -54,6 +54,9 @@ def test_bank_loan_installment_due_today_is_still_owed(db):
             conn.execute("INSERT INTO bank_loan_installments (bank_loan_id, installment_no, due_date, amount) VALUES (?, ?, ?, 500)",
                          (loan, n, d.isoformat()))
         cleared = [r[0] for r in conn.execute(f"SELECT installment_no FROM bank_loan_installments WHERE {CLEARED_SQL} ORDER BY installment_no")]
+        assert cleared == []                       # daily payables (2026-10-09): owed until ticked or on the bank statement, not paid by its date
+        conn.execute("UPDATE bank_loan_installments SET cleared_at = ? WHERE installment_no = 1 AND bank_loan_id = ?", (YESTERDAY.isoformat(), loan))
+        cleared = [r[0] for r in conn.execute(f"SELECT installment_no FROM bank_loan_installments WHERE {CLEARED_SQL} ORDER BY installment_no")]
     assert cleared == [1]
 
 

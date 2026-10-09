@@ -5,13 +5,13 @@
 <h2><span class="ms" style="font-size:28px">picture_as_pdf</span> Print many batches as one PDF</h2>
 <p class="note">Printing here does not lock batches and marks nothing as printed, so you can always print again after a change.</p>
 <div class="seg">{% for k, label in scopes %}<a href="?scope={{ k }}"{% if k == scope %} class="on"{% endif %}>{{ label }}</a>{% endfor %}</div>
-<p class="hint">{% if scope == "since" %}{% if last %}Created or changed on or after {{ last }}, the day checks were last printed.{% else %}No check has been printed yet, so this shows everything.{% endif %}{% endif %}</p>
+<p class="hint">{% if scope == "since" %}{% if last %}Created or changed on or after {{ last|dmy }}, the day checks were last printed.{% else %}No check has been printed yet, so this shows everything.{% endif %}{% endif %}</p>
 {% if not pool %}<p class="note">No order statements in that period: pick a wider one above.</p>{% else %}
 <form method="get" action="/order-statements/print-many/" target="_blank">
   <input type="hidden" name="go" value="1"><input type="hidden" name="scope" value="{{ scope }}">
   <div class="scroll-x"><table class="list"><tr><th>Print</th><th>Order statement</th><th>Supplier</th><th>Status</th><th>Net</th></tr>
     {% for r in pool %}<tr><td><input type="checkbox" name="ids" value="{{ r.statement_id }}" checked aria-label="Print {{ r.statement_ref }}"></td>
-      <td>{% if r.statement_ref|slice:":6" == "DRAFT-" %}Draft · {{ r.created_at|slice:":10" }}{% else %}{{ r.statement_ref }}{% endif %}</td><td>{{ r.creditor_name }}</td><td>{{ r.stage }}</td>
+      <td>{% if r.statement_ref|slice:":6" == "DRAFT-" %}Draft · {{ r.created_at|dmy }}{% else %}{{ r.statement_ref }}{% endif %}</td><td>{{ r.creditor_name }}</td><td>{{ r.stage }}</td>
       <td class="num">{{ r.net_total|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>
   <p class="hint">{{ pool|length }} order statement(s) · net ₱{{ summary_total|floatformat:2|intcomma }} · {{ n_checks }} check(s). Untick any you don't want.</p>
   <div class="bar">

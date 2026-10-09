@@ -114,7 +114,7 @@ def fmt_date_long(v) -> str:
     if s == DASH:
         return DASH
     try:
-        return datetime.strptime(s, "%Y-%m-%d").strftime("%b %d, %Y")
+        return datetime.strptime(s, "%Y-%m-%d").strftime("%m/%d/%Y")
     except ValueError:
         return s
 
@@ -230,7 +230,7 @@ def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: b
         add(Line(f"REVISED v{version} – supersedes v{version - 1}", "center", bold=True))
     rule("=")
     for label, value in (("Batch", stmt["statement_ref"]), ("Supplier", stmt["creditor_name"]), ("Status", stmt["status"]),
-                         ("Version", str(version)), ("Printed", (printed_at or manila_now()).strftime("%b %d, %Y %I:%M %p"))):
+                         ("Version", str(version)), ("Printed", (printed_at or manila_now()).strftime("%m/%d/%Y %I:%M %p"))):
         for i, ln in enumerate(wrap(fmt_text(value), COLUMNS - 10)):
             add(Line((f"{label + ':':<10}" if i == 0 else " " * 10) + ln))
 
@@ -319,7 +319,7 @@ def build_loan_release_slip(loan_note_id: int, copy: str = "SUPPLIER", slip_no: 
     add(Line("CHECK RELEASE SLIP", "center", bold=True))
     add(Line(COPY_LABELS[copy], "center", bold=True, big=True))
     rule("=")
-    for label, value in (("Loan note", note[0]), ("Lender", note[1]), ("Printed", manila_now().strftime("%b %d, %Y %I:%M %p"))):
+    for label, value in (("Loan note", note[0]), ("Lender", note[1]), ("Printed", manila_now().strftime("%m/%d/%Y %I:%M %p"))):
         for i, ln in enumerate(wrap(fmt_text(value), COLUMNS - 10)):
             add(Line((f"{label + ':':<10}" if i == 0 else " " * 10) + ln))
     add(Line(""))

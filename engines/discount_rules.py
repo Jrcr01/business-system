@@ -18,6 +18,7 @@ import pandas as pd
 from engines.permissions import require as require_permission
 from engines.clock import manila_today
 from engines.common import get_conn, write_tx
+from engines.common import us_date
 
 
 def parse_chain(text) -> list[float] | None:
@@ -88,7 +89,7 @@ def set_discount(creditor_id: int, brand: str, chain, effective_date: date) -> t
         else:
             conn.execute("INSERT INTO supplier_discounts (creditor_id, brand, chain, effective_date) VALUES (?, ?, ?, ?)", (creditor_id, brand, text, str(effective_date)))
         _audit(conn, "DISCOUNT_SET", creditor_id, f"{brand or 'all brands'}: {chain_label(text) or 'no discount'} from {effective_date}")
-    return True, f"{brand or 'All brands'}: {chain_label(text) or 'no discount'} from {effective_date:%b %d, %Y} saved."
+    return True, f"{brand or 'All brands'}: {chain_label(text) or 'no discount'} from {effective_date:%m/%d/%Y} saved."
 
 
 def supplier_brands(creditor_id: int) -> list[str]:
@@ -110,8 +111,8 @@ def remove_discount(creditor_id: int, discount_id: int) -> tuple[bool, str]:
         if not row:
             return False, "That discount is already gone."
         conn.execute("UPDATE supplier_discounts SET is_active = 0 WHERE discount_id = ?", (discount_id,))
-        _audit(conn, "DISCOUNT_REMOVED", creditor_id, f"{row[0] or 'all brands'}: {chain_label(row[1]) or 'no discount'} from {str(row[2])[:10]} removed")
-    return True, f"Removed: {row[0] or 'All brands'}, {chain_label(row[1]) or 'no discount'} from {str(row[2])[:10]}."
+        _audit(conn, "DISCOUNT_REMOVED", creditor_id, f"{row[0] or 'all brands'}: {chain_label(row[1]) or 'no discount'} from {us_date(row[2])} removed")
+    return True, f"Removed: {row[0] or 'All brands'}, {chain_label(row[1]) or 'no discount'} from {us_date(row[2])}."
 
 
 def standing_chain(creditor_id: int, item_name: str, on: date | None = None) -> str:

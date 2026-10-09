@@ -4,15 +4,15 @@
 <p class="note"><a href="/purchase-orders/">← Purchase orders</a></p>
 <h2>{% if h.status == "DRAFT" %}Draft order{% else %}{{ h.po_no }}{% endif %} · {{ po.supplier }} <span class="pill{% if h.status == 'DRAFT' or h.status == 'CANCELLED' %} off{% endif %}">{{ status_label }}</span></h2>
 <div class="facts">
-  <div><span>Ordered</span><b>{{ h.order_date|slice:":10" }}</b></div><div><span>Delivery</span><b>{{ h.expected_delivery_date|default:"not set"|slice:":10" }}</b></div>
+  <div><span>Ordered</span><b>{{ h.order_date|dmy }}</b></div><div><span>Delivery</span><b>{{ h.expected_delivery_date|default:"not set"|dmy }}</b></div>
   <div><span>Terms</span><b>{% if h.terms_snapshot %}{{ h.terms_snapshot }}{% if h.terms_snapshot != "COD" %} days{% endif %}{% else %}not set{% endif %}</b></div>
-  <div><span>Falls due</span><b>{{ h.expected_pay_date|default:"not set"|slice:":10" }}</b></div><div><span>Estimated</span><b>₱{{ po.total|floatformat:2|intcomma }}</b></div>
+  <div><span>Falls due</span><b>{{ h.expected_pay_date|default:"not set"|dmy }}</b></div><div><span>Estimated</span><b>₱{{ po.total|floatformat:2|intcomma }}</b></div>
 </div>
 {% if h.notes %}<p class="note">Notes: {{ h.notes }}</p>{% endif %}
 
 {% if trail %}
-<div class="stages">{% for s in trail.stages %}<div class="{% if s.state == 'done' %}done{% elif trail.current and s.key == trail.current.key %}now{% endif %}{% if s.state == 'late' %} late{% endif %}">{{ s.title }}<span>{% if s.date %}{{ s.date|date:"M d" }}{% endif %}{% if s.state == "late" %} · late{% elif s.state == "partly" %} · partly{% endif %}</span></div>{% endfor %}</div>
-<p>{% if trail.current %}<b>Next:</b> {{ trail.current.title }}. {{ trail.current.detail }}{% else %}<b>Complete:</b> the order has been paid and cleared by the bank.{% endif %}</p>
+<div class="stages">{% for s in trail.stages %}<div class="{% if s.state == 'done' %}done{% elif trail.current and s.key == trail.current.key %}now{% endif %}{% if s.state == 'late' %} late{% endif %}">{{ s.title }}<span>{% if s.date %}{{ s.date|date:"m/d" }}{% endif %}{% if s.state == "late" %} · late{% elif s.state == "partly" %} · partly{% endif %}</span></div>{% endfor %}</div>
+<p>{% if trail.current %}<b>Next:</b> {{ trail.current.title }}. {{ trail.current.detail|usdates }}{% else %}<b>Complete:</b> the order has been paid and cleared by the bank.{% endif %}</p>
 {% endif %}
 
 <div class="scroll-x"><table class="list"><tr><th>Item</th><th>Unit</th><th>Qty</th><th>Unit price</th><th>Amount</th>{% if h.status != "DRAFT" %}<th>Received</th>{% endif %}</tr>
@@ -21,6 +21,7 @@
 </table></div>
 
 <div class="actions" style="margin-top:12px">
+  <button class="btn small ghost" type="button" data-rmap="/related/po/{{ h.po_id }}/"><span class="ms">account_tree</span>Relationship map</button>
   {% if may_order %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="order"><button class="btn small" type="submit"><span class="ms">send</span>Order it</button></form>{% endif %}
   {% if may_pdf %}<a class="btn small ghost" href="/purchase-orders/{{ h.po_id }}/pdf/"><span class="ms">picture_as_pdf</span>Download PO (PDF)</a>{% endif %}
   {% if may_receive %}<a class="btn small" href="/purchase-orders/receive/?s={{ h.creditor_id }}&amp;po={{ h.po_id }}"><span class="ms">inventory_2</span>Receive goods</a>{% endif %}
@@ -39,18 +40,5 @@
     <div class="grow"><label for="sreason">Why will the rest not come?</label><input id="sreason" type="text" name="reason" required placeholder="e.g. supplier out of stock"></div>
     <button class="btn small ghost" type="submit"><span class="ms">done_all</span>Close the order</button></form>
   <p class="hint">What was not delivered stops counting as money owed.</p></details>
-{% endif %}
-
-{% if trail %}
-<details style="margin-top:16px"><summary style="cursor:pointer"><b>Follow this order to the bank</b></summary>
-  {% for s in trail.stages %}<p style="margin:6px 0"><b>{{ s.title }}</b> — {{ s.detail }}</p>{% endfor %}
-  {% if trail.dates %}<div class="grp">Planned against actual</div><table class="list" style="max-width:520px">{% for d in trail.dates %}<tr><td>{{ d.what }}</td><td>{{ d.date|date:"M d, Y" }}</td></tr>{% endfor %}</table>{% endif %}
-  {% if trail.invoices %}<div class="grp">Invoices</div><div class="scroll-x"><table class="list"><tr><th>Invoice</th><th>Dated</th><th>Due</th><th>Batch</th><th>Estimated</th><th>Invoiced</th></tr>
-    {% for i in trail.invoices %}<tr><td>{{ i.doc_ref }}</td><td>{{ i.invoice_date|slice:":10" }}</td><td>{{ i.due_date|slice:":10" }}</td><td>{{ i.batch|default:"" }}</td>
-      <td class="num">{{ i.est_amount|floatformat:2|intcomma }}</td><td class="num">{{ i.actual_amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>{% endif %}
-  {% if trail.checks %}<div class="grp">Checks</div><div class="scroll-x"><table class="list"><tr><th>Check no.</th><th>Dated</th><th>For this order</th><th>Released</th><th>Collected by</th><th>Cleared</th></tr>
-    {% for c in trail.checks %}<tr><td>{{ c.check_number|default:"" }}</td><td>{{ c.check_date|slice:":10" }}</td><td class="num">{{ c.allocated|floatformat:2|intcomma }}</td>
-      <td>{{ c.released_date|default:""|slice:":10" }}</td><td>{{ c.released_to|default:"" }}</td><td>{{ c.bank_cleared_date|default:""|slice:":10" }}</td></tr>{% endfor %}</table></div>{% endif %}
-</details>
 {% endif %}
 {% endblock %}

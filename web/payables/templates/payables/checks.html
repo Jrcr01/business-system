@@ -1,53 +1,121 @@
 {% extends "core/base.html" %}{% load humanize %}
-{% block title %}Checks{% endblock %}
+{% block title %}Daily payables{% endblock %}
 {% block content %}
-<h2><span class="ms" style="font-size:28px">receipt_long</span> Checks</h2>
-<p class="note">A check is paid only when it clears: the bank shows it on an imported statement, it was settled outside the bank, or someone ticks it cleared here.
-  Its date passing is not enough. A tick is confirmed by the next bank statement; if the statement doesn't show it, it goes on the Review list.
+<h2><span class="ms" style="font-size:28px">fact_check</span> Daily payables</h2>
+<p class="note">Everything to pay, day by day: supplier and lender checks, bank loans and cards. An item stays payable on its day until it is paid:
+  the bank statement shows it, or it is ticked here. Its date passing is not enough.
   {% if more %}Booklets, spoiled checks and the rest are still in the <a href="{{ more }}">old screens</a>.{% endif %}</p>
 <nav class="tabs">
-  <a href="?tab=waiting"{% if tab != "cutoff" %} class="on"{% endif %}>Waiting for the bank</a>
+  <a href="?show=due"{% if tab != "cutoff" %} class="on"{% endif %}>Checklist</a>
   {% if is_admin %}<a href="?tab=cutoff"{% if tab == "cutoff" %} class="on"{% endif %}>Cut-off (once){% if not cutoff_done %} <span class="pill warn">to do</span>{% endif %}</a>{% endif %}
 </nav>
 
 {% if tab != "cutoff" %}
 <div class="facts">
-  <div><span>Waiting for the bank</span><b>{{ rows|length }} check{{ rows|length|pluralize }} · ₱{{ total|floatformat:2|intcomma }}</b></div>
-  <div><span>Past their date</span><b>{{ n_past }}</b></div>
-  <div><span>Ticked, not yet on a bank statement</span><b>{{ n_ticked }}</b></div>
+  <div><span>Due today and overdue</span><b>{{ counts.due }} item{{ counts.due|pluralize }} · ₱{{ total_due|floatformat:2|intcomma }}</b></div>
+  <div><span>Overdue (before today)</span><b>{{ n_overdue }}</b></div>
+  <div><span>Ticked, waiting for the bank</span><b>{{ counts.ticked }}</b></div>
 </div>
-{% if rows %}
-<div class="scroll-x"><table class="list">
-  <tr><th>Check</th><th>Pay to</th><th>Kind</th><th>Date</th><th style="text-align:right">Amount</th><th>Released</th><th>{% if may_tick %}Cleared?{% endif %}</th></tr>
-  {% for r in rows %}<tr>
-    <td>{{ r.check_number }}</td><td>{{ r.payee }}</td><td>{{ r.track }}</td>
-    <td>{{ r.check_date|slice:":10" }}{% if r.past %} <span class="pill warn">past date</span>{% endif %}</td>
-    <td class="num">{{ r.amount|floatformat:2|intcomma }}</td><td>{{ r.released_date|default:"—"|slice:":10" }}</td>
-    <td>{% if r.ticked %}<span class="pill">ticked {{ r.manual_cleared_at|slice:":10" }}</span>{% if r.manual_cleared_note %} <span class="hint">{{ r.manual_cleared_note }}</span>{% endif %}
-          {% if may_tick %}<form method="post" style="display:inline" onsubmit="return confirm('Take back the cleared tick of check {{ r.check_number|escapejs }}? It will be owed again.');">{% csrf_token %}
-            <input type="hidden" name="action" value="unclear"><input type="hidden" name="check_id" value="{{ r.check_id }}"><button class="btn small ghost" type="submit">Undo</button></form>{% endif %}
-        {% elif may_tick %}<form method="post" class="tickform">{% csrf_token %}<input type="hidden" name="action" value="clear"><input type="hidden" name="check_id" value="{{ r.check_id }}">
-            <input type="date" name="on" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}" aria-label="Cleared on">
-            <input type="text" name="note" placeholder="Note, e.g. seen in online banking" aria-label="Note">
-            <button class="btn small" type="submit"><span class="ms">task_alt</span>Mark cleared</button></form>{% endif %}</td>
+<div class="chips">
+  {% for k, label in shows %}<a class="chip{% if k == show %} on{% endif %}" href="?show={{ k }}">{{ label }} <b>{% for ck, n in counts.items %}{% if ck == k %}{{ n }}{% endif %}{% endfor %}</b></a>{% endfor %}
+  <input id="dp-search" type="search" placeholder="Search payee or check / reference" aria-label="Search payee or reference">
+</div>
+{% if days %}
+<form method="post" id="dp-form">{% csrf_token %}<input type="hidden" name="action" value="clear_many"><input type="hidden" name="show" value="{{ show }}">
+<div class="scroll-x"><table class="list dp">
+  <tr><th style="width:34px">{% if may_tick and show != "ticked" %}<input type="checkbox" id="dp-all" aria-label="Tick every item shown that is due">{% endif %}</th>
+      <th>Date</th><th>Pay to</th><th>Check / reference</th><th style="text-align:right">Amount</th><th></th></tr>
+  {% for d in days %}
+  <tr class="dp-day{% if d.overdue %} overdue{% elif d.today %} today{% endif %}"><td colspan="6">
+    <b>{{ d.day|dmy }}</b>{% if d.today %} · today{% elif d.overdue %} · <span class="pill warn">overdue</span>{% endif %}
+    <span class="hint">· {{ d.items|length }} item{{ d.items|length|pluralize }} · ₱{{ d.total|floatformat:2|intcomma }}{% if d.n_open and show == "all" %} · {{ d.n_open }} not paid{% endif %}</span></td></tr>
+  {% for r in d.items %}
+  <tr class="dp-row" data-q="{{ r.payee|lower }} {{ r.ref|lower }}">
+    <td>{% if not r.ticked and may_tick %}<input type="checkbox" name="tick_{{ r.kind }}_{{ r.item_id }}" value="1" data-amt="{{ r.amount }}"{% if not r.due %} disabled title="Not due yet: it can't be paid before its date"{% endif %} aria-label="Paid: {{ r.payee }} {{ r.ref }}">{% endif %}</td>
+    <td>{{ r.day|dmy }}</td><td>{{ r.payee }}</td>
+    <td>{{ r.ref|default:"—" }} <span class="kind">{{ r.track }}</span></td>
+    <td class="num">{% if r.kind == "card" and not r.ticked and may_tick and r.due %}<input class="inline-input num card-amt" style="text-align:right;width:8.5em" inputmode="decimal"
+          name="amt_card_{{ r.item_id }}" value="{{ r.amount|floatformat:2 }}" data-max="{{ r.amount }}" aria-label="Amount paid on {{ r.ref }}" title="Pay part of it: type the amount paid">
+        {% else %}{{ r.amount|floatformat:2|intcomma }}{% endif %}</td>
+    <td>{% if r.ticked %}<span class="pill">paid {{ r.ticked|dmy }}</span>{% if r.note %} <span class="hint">{{ r.note|usdates }}</span>{% endif %}
+          {% if may_tick and r.kind == "check" %}<button class="btn small ghost" type="submit" form="undo-c{{ r.item_id }}">Undo</button>
+          {% elif may_tick and r.kind == "loan" %}<button class="btn small ghost" type="submit" form="undo-l{{ r.item_id }}">Undo</button>
+          {% elif may_tick and r.kind == "cardpay" %}<button class="btn small ghost" type="submit" form="undo-p{{ r.item_id }}">Undo</button>{% endif %}
+        {% elif r.note %}<span class="hint">{{ r.note|usdates }}</span>
+        {% elif not r.due %}<span class="hint">not due yet</span>{% endif %}</td>
   </tr>{% endfor %}
+  {% endfor %}
 </table></div>
-{% else %}<p class="note">No written check is waiting for the bank.</p>{% endif %}
+{% if may_tick and show != "ticked" %}
+<div class="dp-bar">
+  <b id="dp-sum">0 ticked · ₱0.00</b>
+  <label for="dp-on">Paid on</label><input id="dp-on" type="date" name="on" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}">
+  <input type="text" name="note" placeholder="Note, e.g. seen in online banking" aria-label="Note" style="flex:1;min-width:180px">
+  <button class="btn" type="submit" id="dp-go" disabled><span class="ms">task_alt</span><span id="dp-go-t">Mark paid</span></button>
+</div>
+<p class="hint">A check or bank-loan payment ticked here is confirmed by the next bank statement. A card line records a card payment on its statement, dated the day
+  it posts; type a smaller amount to pay part of it: the statement is done here (Partially Paid) and the rest carries to the next statement. A tick can't be dated before the item's own date.</p>
+{% endif %}
+</form>
+{% for d in days %}{% for r in d.items %}{% if r.ticked and may_tick %}
+  {% if r.kind == "check" %}<form id="undo-c{{ r.item_id }}" method="post" onsubmit="return confirm('Take back the paid tick of {{ r.ref|escapejs }}? It will be owed again.');">{% csrf_token %}
+    <input type="hidden" name="action" value="unclear"><input type="hidden" name="check_id" value="{{ r.item_id }}"></form>
+  {% elif r.kind == "loan" %}<form id="undo-l{{ r.item_id }}" method="post" onsubmit="return confirm('Take back the paid tick of {{ r.ref|escapejs }}? It will be owed again.');">{% csrf_token %}
+    <input type="hidden" name="action" value="unclear_loan"><input type="hidden" name="item_id" value="{{ r.item_id }}"></form>
+  {% elif r.kind == "cardpay" %}<form id="undo-p{{ r.item_id }}" method="post" onsubmit="return confirm('Take back this card payment? That amount will be owed again.');">{% csrf_token %}
+    <input type="hidden" name="action" value="unpay_card"><input type="hidden" name="item_id" value="{{ r.item_id }}"></form>{% endif %}
+{% endif %}{% endfor %}{% endfor %}
+<script>
+(function () {
+  var form = document.getElementById("dp-form"); if (!form) return;
+  var boxes = [].slice.call(form.querySelectorAll('input[type=checkbox][name^="tick_"]')), all = document.getElementById("dp-all");
+  var sum = document.getElementById("dp-sum"), go = document.getElementById("dp-go"), goT = document.getElementById("dp-go-t");
+  var peso = function (v) { return v.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  function update() {
+    var n = 0, t = 0;
+    boxes.forEach(function (b) {
+      var tr = b.closest("tr"), typed = tr.querySelector(".card-amt");
+      tr.classList.toggle("sel", b.checked);
+      if (b.checked) { n++; t += typed ? (parseFloat(String(typed.value).replace(/,/g, "")) || 0) : (parseFloat(b.dataset.amt) || 0); }
+    });
+    if (sum) sum.textContent = n + " ticked · ₱" + peso(Math.round(t * 100) / 100);
+    if (go) { go.disabled = !n; goT.textContent = n ? "Mark " + n + " paid" : "Mark paid"; }
+  }
+  form.addEventListener("change", update);
+  form.addEventListener("input", function (e) {                 /* typing a card amount ticks its line */
+    if (e.target.classList.contains("card-amt")) { var b = e.target.closest("tr").querySelector('input[type=checkbox]'); if (b && !b.disabled) b.checked = true; update(); }
+  });
+  if (all) all.addEventListener("change", function () {
+    boxes.forEach(function (b) { if (!b.disabled && b.closest("tr").style.display !== "none") b.checked = all.checked; }); update();
+  });
+  var q = document.getElementById("dp-search");
+  if (q) q.addEventListener("input", function () {
+    var s = q.value.trim().toLowerCase();
+    form.querySelectorAll("tr.dp-row").forEach(function (r) { r.style.display = !s || r.dataset.q.indexOf(s) >= 0 ? "" : "none"; });
+  });
+  update();
+})();
+</script>
+{% else %}<p class="note">{% if show == "ticked" %}Nothing ticked is waiting for the bank.{% else %}Nothing to pay here.{% endif %}</p>{% endif %}
 
 {% else %}
 <div class="grp" style="margin-top:0">The cut-off: once, at go-live</div>
-{% if cutoff_done %}<div class="msg success">Done on {{ cutoff_done|slice:":16" }}. The checks before the first bank statement are marked "cleared before go-live".</div>{% endif %}
+{% if cutoff_done %}<div class="msg success">Done on {{ cutoff_done|dmy }}. The checks before the first bank statement are marked "cleared before go-live".</div>{% endif %}
 {% if not first_day %}<p class="note">Import a bank statement first (Bank → Bank and cash): the cut-off is the day the first statement starts.</p>
 {% else %}
-<p>The first imported bank statement starts on <b>{{ first_day|date:"M d, Y" }}</b>.</p>
+<p>The first imported bank statement starts on <b>{{ first_day|date:"m/d/Y" }}</b>.</p>
 <ul>
   <li><b>{{ before_n }} check{{ before_n|pluralize }}</b> (₱{{ before_total|floatformat:2|intcomma }}) dated before it and not cleared → marked <i>cleared before go-live</i> on their own dates.</li>
-  <li><b>{{ inside|length }} check{{ inside|length|pluralize }}</b> dated on or after it, not on any statement → listed below for you to tick cleared (on the Waiting tab) or leave owed.</li>
+  <li><b>{{ loans_n }} bank-loan payment{{ loans_n|pluralize }}</b> (₱{{ loans_total|floatformat:2|intcomma }}) due before it and not ticked → marked <i>cleared before go-live</i> on their own dates.</li>
+  <li><b>{{ inside|length }} check{{ inside|length|pluralize }}</b> dated on or after it, not on any statement → listed below for you to tick paid (on the Checklist) or leave owed.</li>
+  <li><b>{{ cards_before|length }} card statement{{ cards_before|length|pluralize }}</b> due before it and still unpaid → listed below for you to look at (not paid automatically).</li>
 </ul>
-{% if before_n %}<form method="post" onsubmit="return confirm('Make a database copy, then mark {{ before_n }} check(s) cleared before go-live?');">{% csrf_token %}<input type="hidden" name="action" value="cutoff">
+{% if before_n or loans_n %}<form method="post" onsubmit="return confirm('Make a database copy, then mark {{ before_n }} check(s) and {{ loans_n }} bank-loan payment(s) cleared before go-live?');">{% csrf_token %}<input type="hidden" name="action" value="cutoff">
   <button class="btn" type="submit"><span class="ms">backup</span>Back up and apply the cut-off</button></form>{% endif %}
+{% if cards_before %}<div class="grp">Old card statements still unpaid</div><div class="scroll-x"><table class="list"><tr><th>Card</th><th>Due</th><th style="text-align:right">Amount</th></tr>
+  {% for c in cards_before %}<tr><td>{{ c.card }}</td><td>{{ c.due_date|dmy }}</td><td class="num">{{ c.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>{% endif %}
 {% if inside %}<div class="scroll-x" style="margin-top:12px"><table class="list"><tr><th>Check</th><th>Pay to</th><th>Date</th><th style="text-align:right">Amount</th></tr>
-  {% for r in inside %}<tr><td>{{ r.check_number }}</td><td>{{ r.payee }}</td><td>{{ r.check_date|slice:":10" }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>{% endif %}
+  {% for r in inside %}<tr><td>{{ r.check_number }}</td><td>{{ r.payee }}</td><td>{{ r.check_date|dmy }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>{% endif %}
 {% endif %}
 {% endif %}
 {% endblock %}

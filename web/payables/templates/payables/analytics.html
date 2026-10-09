@@ -1,0 +1,37 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Analytics{% endblock %}
+{% block content %}
+<div class="home">
+<h2><span class="ms" style="font-size:28px">monitoring</span> Analytics</h2>
+<nav class="tabs">
+  {% for k, label in tabs %}<a href="?tab={{ k }}&period={{ period }}"{% if k == tab %} class="on"{% endif %}>{{ label }}</a>{% endfor %}
+  <form method="get" style="margin-left:auto"><input type="hidden" name="tab" value="{{ tab }}">
+    <select name="period" aria-label="Period" onchange="this.form.submit()">{% for k, label in periods %}<option value="{{ k }}"{% if k == period %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></form>
+</nav>
+<p class="hint">Period {{ start|date:"m/d/Y" }} → {{ end|date:"m/d/Y" }} (for spend and checks cleared). What is owed and due is as of today. A check counts as paid only once it has cleared.</p>
+{% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+{% if cards %}
+<div class="kpis">
+  {% for label, value, kind, url in cards %}<a class="kpi" href="{{ url }}"><span>{{ label }}</span><b>{% if kind == "peso" %}₱{{ value|floatformat:0|intcomma }}{% else %}{{ value|intcomma }}{% endif %}</b></a>{% endfor %}
+</div>
+<div class="charts">
+  {% for chart in charts %}{% if chart %}
+  <div class="chart"><div class="ct">{{ chart.0 }}</div>
+    {% for b in chart.1 %}<div class="hbar"><span class="n" title="{{ b.label }}">{{ b.label }}</span><span class="track"><span class="fill" style="width:{{ b.pct }}%"></span></span><span class="v">₱{{ b.amount|floatformat:0|intcomma }}</span></div>
+    {% empty %}<p class="hint">Nothing to show yet.</p>{% endfor %}
+  </div>{% endif %}{% endfor %}
+</div>
+{% if aging %}
+<div class="chart" style="margin-top:12px"><div class="ct">Supplier aging: unpaid invoices by how overdue they are</div>
+<div class="scroll-x"><table class="list"><tr><th>Supplier</th><th style="text-align:right">Invoices</th><th style="text-align:right">Not yet due</th><th style="text-align:right">1–30 days</th>
+  <th style="text-align:right">31–60 days</th><th style="text-align:right">Over 60 days</th><th style="text-align:right">Total unpaid</th></tr>
+  {% for a in aging %}<tr><td>{{ a.supplier_name }}</td><td class="num">{{ a.open_invoices }}</td><td class="num">{{ a.current_due|floatformat:2|intcomma }}</td>
+    <td class="num">{{ a.days_1_30|floatformat:2|intcomma }}</td><td class="num">{{ a.days_31_60|floatformat:2|intcomma }}</td>
+    <td class="num">{% if a.days_over_60 %}<b style="color:var(--red)">{{ a.days_over_60|floatformat:2|intcomma }}</b>{% else %}0.00{% endif %}</td><td class="num"><b>{{ a.total_unpaid|floatformat:2|intcomma }}</b></td></tr>{% endfor %}
+  <tr><th>Total</th><th></th><th class="num">{{ aging_total.current_due|floatformat:2|intcomma }}</th><th class="num">{{ aging_total.days_1_30|floatformat:2|intcomma }}</th>
+    <th class="num">{{ aging_total.days_31_60|floatformat:2|intcomma }}</th><th class="num">{{ aging_total.days_over_60|floatformat:2|intcomma }}</th><th class="num">{{ aging_total.total_unpaid|floatformat:2|intcomma }}</th></tr>
+</table></div></div>
+{% endif %}
+{% endif %}
+</div>
+{% endblock %}

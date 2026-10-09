@@ -152,7 +152,7 @@ def _doc(buffer) -> SimpleDocTemplate:
 def _finish(doc, story) -> bytes:
     st = _styles()
     story.append(Spacer(1, 10))
-    story.append(Paragraph(f"Generated {manila_now().strftime('%Y-%m-%d %H:%M')}", st["grey_small"]))
+    story.append(Paragraph(f"Generated {manila_now().strftime('%m/%d/%Y %H:%M')}", st["grey_small"]))
     doc.build(story)
 
 

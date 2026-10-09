@@ -37,7 +37,7 @@ STANDARD_HOW_TO = [
     "1. Supplier: the supplier's name exactly as printed on its price list, on EVERY row. One file = one supplier.",
     "2. Category: Tires, Battery, Mags or Rims.",
     "3. Brand: on EVERY row, even when the brand is only on the logo or in the file name.",
-    "4. Size: only the size, e.g. 285/50R20, LT255/55R19, 225/55ZR17, 11R22.5, 7.00R16, 31X10.50R15. (Batteries: leave empty.)",
+    "4. Size: only the size, e.g. 285/50R20, LT255/55R19, 225/55ZR17, 11R22.5, 7.00R16, 31X10.50R15. (Batteries: the size/group code, e.g. NS40, NS60L, 1SMF, DIN66H; the line, e.g. MF Plus, Excel, Gold, goes in Model/Pattern.)",
     "5. Model/Pattern: only the pattern or model code, e.g. NU025, SL369, EZ525. If a line shows two patterns ('NU006 / NU033', 'RF02/RA85'), make ONE ROW PER PATTERN",
     "   with the same size and price.",
     "6. Terrain (tires): A/T, H/T, M/T or R/T only, or leave it empty. Never inside Model/Pattern.",
@@ -408,6 +408,24 @@ def compare(creditor_id: int, parsed: dict, on: date | None = None) -> pd.DataFr
             if p.category in covered and p.product_key not in listed:
                 lines.append({"category": p.category, "row": None, "name": p.name, "old_price": float(p.unit_price), "new_price": None, "change_pct": None, "status": "missing"})
     return pd.DataFrame(lines, columns=["category", "row", "name", "old_price", "new_price", "change_pct", "status"])
+
+
+def one_row(creditor_id: int, fields: dict) -> dict:
+    """Manual entry (owner, 2026-10-09: "aligned with the template"): one row typed on the screen, read exactly like a row of the standard sheet --
+    the same columns, checks and product key -- by putting it in a one-row sheet. fields: the STANDARD keys (category, brand, model, size, terrain, other,
+    unit, supplier_code, list_price, effective_date). Returns parse_workbook's result (rows / problems)."""
+    import io
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = SHEET
+    ws.append([_title(label, req) for _, label, req in STANDARD])
+    vals = dict(fields)
+    vals["supplier"] = _supplier_name(creditor_id)
+    ws.append([vals.get(key, "") or "" for key, _, _ in STANDARD])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return parse_workbook(buf.getvalue())
 
 
 def import_workbook(creditor_id: int, parsed: dict, on_duplicate: str = "skip") -> tuple[bool, str, dict]:

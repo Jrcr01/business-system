@@ -15,9 +15,9 @@
 {% for m in g.items %}
 <div class="numrow" id="{{ m.key }}">
   <form method="post">{% csrf_token %}<input type="hidden" name="key" value="{{ m.key }}">
-    <div class="lbl"><b>{{ m.label }}{% if m.unit %} ({{ m.unit }}){% endif %}</b><span>{{ m.help }}</span></div>
+    <div class="lbl"><b>{{ m.label }}{% if m.unit %} ({{ m.unit }}){% endif %}</b><span>{{ m.help|usdates }}</span></div>
     <input type="text" inputmode="decimal" name="value" value="{{ m.shown }}" aria-label="{{ m.label }}">
-    <span class="hint">Default {{ m.default_shown }}</span>
+    <span class="hint">Default {{ m.default_shown|usdates }}</span>
     <button class="btn small" type="submit" name="action" value="save">Save</button>
     <button class="btn small ghost" type="submit" name="action" value="reset"{% if m.is_default %} disabled{% endif %}>Back to default</button>
   </form>

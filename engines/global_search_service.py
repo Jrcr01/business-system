@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from engines.common import get_conn
+from engines.common import us_date
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -52,7 +53,7 @@ def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
                 WHERE c.check_number LIKE ? OR cr.creditor_name LIKE ? OR os.statement_ref LIKE ? OR ln.note_ref LIKE ? OR ABS(c.amount - ?) < 0.005
                 ORDER BY c.check_date DESC, c.check_id DESC LIMIT {limit}""",
             (like, like, like, like, a),
-            lambda r: {"label": f"{r[1] or 'no number yet'} \u00b7 {r[5]} \u00b7 {_php(r[2])} \u00b7 {str(r[4])[:10]} \u00b7 {r[3]} \u00b7 {r[8] or ''}",
+            lambda r: {"label": f"{r[1] or 'no number yet'} \u00b7 {r[5]} \u00b7 {_php(r[2])} \u00b7 {us_date(r[4])} \u00b7 {r[3]} \u00b7 {r[8] or ''}",
                        **({"page": TAB_ORDER_STATEMENT, "state": {"selected_statement_id": r[6], "os_mode": "Browse batches", "os_subtab": "Checks",
                                                                      f"os_checks_view__{r[6]}": "Checks in this batch"}} if r[6] is not None
                           else {"page": TAB_LENDERS, "state": {"selected_loan_note_id": r[7], "ln_mode": "Browse loan notes", "ln_subtab": "Checks"}})})
@@ -100,7 +101,7 @@ def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
                 ORDER BY creditor_name LIMIT {limit}""",
             (like, like, like, like, like),
             lambda r: {"label": f"{r[1]} \u00b7 {str(r[2]).replace('_', ' ').title()}" + ("" if r[3] else " \u00b7 inactive"), "page": TAB_CREDITOR_MASTER,
-                       "state": {"creditor_master_search": r[1]}})
+                       "state": {"creditor_master_search": r[1]}, "url": f"/creditors/{r[0]}/"})
 
         run("Credit cards",
             f"""SELECT cc.card_id, cc.card_name, cc.card_number_last4, ch.name, iss.creditor_name
@@ -109,11 +110,11 @@ def search_everything(term: str, limit: int = LIMIT) -> list[dict]:
                 ORDER BY cc.card_id DESC LIMIT {limit}""",
             (like, like, like, like),
             lambda r: {"label": f"{r[1]} \u00b7 {r[2] or ''} \u00b7 {r[3] or 'no cardholder'} \u00b7 {r[4]}", "page": TAB_CREDIT_CARDS,
-                       "state": {"stmt_search": r[2] or r[1]}})
+                       "state": {"stmt_search": r[2] or r[1]}, "url": f"/credit-cards/?card={r[0]}&show=all"})
 
         run("Spoiled checks (error checks)",
             f"""SELECT spoiled_id, check_number, reason, logged_at FROM spoiled_checks WHERE check_number LIKE ? OR reason LIKE ?
                 ORDER BY spoiled_id DESC LIMIT {limit}""",
             (like, like),
-            lambda r: {"label": f"{r[1]} \u00b7 logged {str(r[3])[:16]}" + (f" \u00b7 {r[2]}" if r[2] else ""), "page": TAB_CHECKS, "state": {}})
+            lambda r: {"label": f"{r[1]} \u00b7 logged {us_date(r[3])}" + (f" \u00b7 {r[2]}" if r[2] else ""), "page": TAB_CHECKS, "state": {}, "url": "/bank-cash/?tab=booklets"})
     return groups

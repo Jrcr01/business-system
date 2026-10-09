@@ -364,16 +364,16 @@ def _edit_ctx(request, po: dict, stamp: str) -> dict:
         cal = month_calendar(_date(request.GET.get("m")) or pay, pay, po_id)
     if view == "weekly":
         strip = weeks_strip(pay, exclude_po_id=po_id)
-        bars = [{"label": f"{r.week_start:%b %d}", "total": float(r.total), "mine": total if r.selected else 0.0, "selected": bool(r.selected), "lightest": bool(r.lightest),
+        bars = [{"label": f"{r.week_start:%m/%d}", "total": float(r.total), "mine": total if r.selected else 0.0, "selected": bool(r.selected), "lightest": bool(r.lightest),
                  "week": r.week_start, "reachable": True} for r in strip.itertuples()]
     else:
         strip = days_strip(pay, before=7, after=14, exclude_po_id=po_id)
-        bars = [{"label": f"{r.day:%b %d} {r.day:%a}", "total": float(r.total), "mine": total if r.selected else 0.0, "selected": bool(r.selected), "lightest": bool(r.lightest)}
+        bars = [{"label": f"{r.day:%m/%d} {r.day:%a}", "total": float(r.total), "mine": total if r.selected else 0.0, "selected": bool(r.selected), "lightest": bool(r.lightest)}
                 for r in strip.itertuples()]
     top = max([b["total"] + b["mine"] for b in bars] + [1.0])
     for b in bars:
         b["h"], b["h_mine"] = round(b["total"] / top * 100, 1), round(b["mine"] / top * 100, 1)
-    weeks = [{"week": r.week_start, "label": f"{r.week_start:%b %d}", "total": float(r.total), "selected": bool(r.selected), "lightest": bool(r.lightest)}
+    weeks = [{"week": r.week_start, "label": f"{r.week_start:%m/%d}", "total": float(r.total), "selected": bool(r.selected), "lightest": bool(r.lightest)}
              for r in weeks_strip(pay, exclude_po_id=po_id).itertuples()]
     sched = week_schedule(pay, exclude_po_id=po_id)
     show_ref = not hide_check_details(request.slicks_user["role"])
@@ -439,12 +439,14 @@ def _match(request, cid: int, lines: list[dict], goods_received: bool):
     picks = _picks(p, lines, True)
     if not picks:
         return False, "Tick at least one line the invoice covers."
-    if not p.get("doc", "").strip():
-        return False, "Enter the supplier's sales invoice number (SI)."
+    from engines.statement_rules import doc_reference
+    ref = doc_reference(p.get("doc"), p.get("dr"))
+    if not ref:
+        return False, "Enter the document reference: the supplier's SI no. or DR no."
     batch = p.get("batch", "")
     sid = int(batch) if batch.isdigit() else (create_order_statement(cid) if batch == "new" else None)      # None: waits for a batch (owner, 2026-10-03)
     override = _num(p.get("override"))
-    ok, msg, _ = receive_into_batch(cid, sid, p.get("doc", ""), _date(p.get("inv_date")), picks, update_prices=p.get("update_prices") == "1",
+    ok, msg, _ = receive_into_batch(cid, sid, ref, _date(p.get("inv_date")), picks, update_prices=p.get("update_prices") == "1",
                                     gross_override=override if override and override > 0 else None, goods_received=goods_received, dr_no=p.get("dr", "").strip() or None)
     return ok, msg
 

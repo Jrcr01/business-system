@@ -230,7 +230,7 @@ def inflow_trends() -> dict:
     full = weekly[~weekly["partial"]]
     avg = float(full["money_in"].mean()) if not full.empty else float(weekly["money_in"].mean()) if not weekly.empty else 0.0
     weekly["slow"] = (~weekly["partial"]) & (weekly["money_in"] < 0.75 * avg)
-    weekly["label"] = weekly["week_ending"].dt.strftime("%b %d") + weekly["partial"].map({True: " (part)", False: ""})
+    weekly["label"] = weekly["week_ending"].dt.strftime("%m/%d") + weekly["partial"].map({True: " (part)", False: ""})
     monthly = df.groupby([df["day"].dt.to_period("M").astype(str), "type"])["credit"].sum().unstack(fill_value=0.0)
     by_type = df.groupby("type")["credit"].agg(["count", "sum"]).reset_index().rename(columns={"count": "lines", "sum": "amount"}).sort_values("amount", ascending=False)
     return {"weekly": weekly, "weekly_average": avg, "monthly": monthly, "by_type": by_type, "total": float(df["credit"].sum())}

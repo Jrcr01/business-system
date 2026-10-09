@@ -95,7 +95,9 @@ def _add_ctx(request, cid: int) -> dict:
     from engines import product_catalog as pc
     from engines.price_list_service import item_names
     names = sorted(set(item_names(cid)) | set(pc.list_products()["name"]), key=str.lower)
-    return {"names": names}
+    from engines.price_template_service import STANDARD                     # the template's columns, for manual entry (2026-10-09)
+    return {"names": names, "categories": pc.CATEGORIES, "terrains": pc.TERRAIN, "all_brands": pc.brands(), "today_iso": __import__("engines.clock", fromlist=["manila_today"]).manila_today().isoformat(),
+            "typed": request.session.pop("price_typed", None) if request is not None else None}
 
 
 def _import_ctx(request, cid: int) -> dict:
@@ -175,6 +177,22 @@ def _post(request, cid: int, tab: str):
     from engines.price_reconcile import update_to_invoice
     p, action = request.POST, request.POST.get("action", "")
     say = lambda ok, msg: (messages.success if ok else messages.error)(request, msg)      # noqa: E731
+    if action == "add_row":                                      # manual entry, the template's columns (owner, 2026-10-09)
+        from engines import price_template_service as pts
+        fields = {k: p.get(k, "").strip() for k in ("category", "brand", "model", "size", "terrain", "other", "unit", "supplier_code", "list_price", "effective_date")}
+        parsed = pts.one_row(cid, fields)
+        problems = [x.split(": ", 1)[-1] for x in parsed.get("problems", [])]
+        if problems or not parsed.get("rows"):
+            request.session["price_typed"] = fields
+            say(False, "Not saved: " + ("; ".join(problems) if problems else "fill the row."))
+            return redirect(_back(cid, "add"))
+        ok, msg, _ = pts.import_workbook(cid, parsed, "replace" if p.get("replace") == "1" else "skip")
+        if ok:
+            msg = f"{parsed['rows'][0]['name']}: " + msg
+        else:
+            request.session["price_typed"] = fields
+        say(ok, msg)
+        return redirect(_back(cid, "prices" if ok else "add"))
     if action == "add_price":
         item = p.get("item", "").strip()
         ok, msg = add_price(cid, item, p.get("unit", ""), p.get("price", "").replace(",", ""), _date(p.get("start"), manila_today()), p.get("code", ""),

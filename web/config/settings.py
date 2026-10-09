@@ -31,6 +31,9 @@ if Path(DB_PATH).name.lower() == LIVE_DB_FILENAME and os.environ.get("WEB_LIVE")
     raise ImproperlyConfigured(f"Refusing to open the LIVE database ({DB_PATH}) without WEB_LIVE=1.")
 os.environ["AP_DB_PATH"] = DB_PATH                         # the engines read AP_DB_PATH when first imported; core.apps re-points any imported earlier
 IS_SANDBOX = "TEST" in Path(DB_PATH).name.upper()          # the orange SANDBOX tag, as in Streamlit
+# no password and no 6-digit code on the laptop sandbox (owner, 2026-10-08: "turn off the authentication so it's not a hassle"): Sign in shows each person as
+# a button. Only with WEB_SANDBOX_NO_SIGNIN=1 (run_web_sandbox.bat) on a TEST database and never on the server (WEB_ALLOWED_HOSTS set) -- checked below.
+SANDBOX_NO_SIGNIN = IS_SANDBOX and os.environ.get("WEB_SANDBOX_NO_SIGNIN") == "1"
 DATABASES = {}                                             # Django keeps no tables: see above
 
 TIME_ZONE = "Asia/Manila"
@@ -56,6 +59,8 @@ SECRET_KEY = _secret_key()
 _SERVER_HOSTS = [h.strip() for h in os.environ.get("WEB_ALLOWED_HOSTS", "").split(",") if h.strip()]
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"] + _SERVER_HOSTS
 CSRF_TRUSTED_ORIGINS = [f"https://{h}" for h in _SERVER_HOSTS]
+if _SERVER_HOSTS:
+    SANDBOX_NO_SIGNIN = False                                # the server always asks for the password and the code
 
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -139,6 +144,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "core.views.page_frame",
             ],
+            "builtins": ["core.templatetags.slicks"],          # |dmy: dates shown mm/dd/yyyy everywhere (2026-10-09)
         },
     },
 ]

@@ -1,19 +1,21 @@
 {% extends "core/base.html" %}
 {% block title %}Home{% endblock %}
 {% block content %}
+<div class="home">
 <div class="welcome">Welcome, {{ me.name }}</div>
 {% if notice %}<div class="notice"><span class="ms">campaign</span> {{ notice }}</div>{% endif %}
 {% for r in rows %}
-<div class="home-sec" id="g-{{ r.key }}">{{ r.title }}<span>{{ r.hint }}</span></div>
-<hr class="home-line">
+<div class="home-sec" id="g-{{ r.key }}">{{ r.title }}{% if r.hint %}<span>{{ r.hint }}</span>{% endif %}</div>
 <div class="grid">
   {% for t in r.tiles %}
-  <a class="tile {{ t.level }}" href="{{ t.url }}">
+  <a class="tile {{ t.level }}{% if t.create %} create{% endif %}{% if t.figure|length > 4 %} long{% endif %}" href="{{ t.url }}">
     {% if t.later %}<span class="later" title="This screen is still in the Streamlit system">later</span>{% endif %}
     <div class="t">{{ t.title }}</div>
-    <div class="b"><span class="ms">{{ t.icon }}</span><div class="f">{% if t.figure %}<b>{{ t.figure }}</b>{% endif %}<span>{{ t.unit }}</span></div></div>
+    <div class="b"><span class="u">{% if not t.create %}{{ t.unit }}{% endif %}</span>
+      <span class="f"><span class="ms">{{ t.icon }}</span>{% if t.figure %}<b>{{ t.figure }}</b>{% endif %}</span></div>
   </a>
   {% endfor %}
 </div>
 {% endfor %}
+</div>
 {% endblock %}

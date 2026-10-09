@@ -61,6 +61,37 @@ def record_guarantee_check(creditor_id: int, check_number: str, face_amount: flo
     return True, f"Guarantee check {number} recorded: held by {holder[0]}.", gid
 
 
+def edit_guarantee_check(guarantee_id: int, face_amount: float | None, given_on: date | None, loan_note_id: int | None, note: str = "") -> tuple[bool, str]:
+    """Corrects a guarantee check (owner, 2026-10-09: "why i cannot edit?"): its amount, the date it was given, the loan note it guarantees and the note.
+    The check number and the lender stay (a different check is recorded as its own); one the bank has paid (Presented) is not changed. Audited, old and new."""
+    if face_amount is not None and float(face_amount) < 0:
+        return False, "The face amount can't be negative."
+    if given_on is not None and given_on > manila_today():
+        return False, "The date given can't be in the future."
+    with get_conn(DB_PATH) as conn:
+        row = conn.execute("""SELECT check_number, creditor_id, face_amount, given_on, loan_note_id, COALESCE(note, ''), status FROM guarantee_checks
+                              WHERE guarantee_id = ?""", (guarantee_id,)).fetchone()
+        if not row:
+            return False, "Guarantee check not found."
+        number, creditor_id, old_amt, old_given, old_ln, old_note, status = row
+        if status == "Presented":
+            return False, f"The bank already paid / received check {number}: it can't be changed. Look into the bank line."
+        if loan_note_id is not None:
+            ln = conn.execute("SELECT creditor_id FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,)).fetchone()
+            if not ln or ln[0] != creditor_id:
+                return False, "That loan note does not belong to this lender."
+        new = (None if face_amount in (None, "") else round(float(face_amount), 2), given_on.isoformat() if given_on else None, loan_note_id, (note or "").strip())
+        old = (old_amt, str(old_given)[:10] if old_given else None, old_ln, old_note)
+        if new == old:
+            return True, f"Check {number}: nothing changed."
+        conn.execute("UPDATE guarantee_checks SET face_amount = ?, given_on = ?, loan_note_id = ?, note = ? WHERE guarantee_id = ?",
+                     (new[0], new[1], new[2], new[3] or None, guarantee_id))
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values, new_values) VALUES (acting_user(), 'GUARANTEE_CHECK_EDITED', "
+                     "'guarantee_checks', ?, ?, ?)", (guarantee_id, f"amount {old[0]}, given {old[1]}, loan note {old[2]}, note {old[3]!r}",
+                                                       f"amount {new[0]}, given {new[1]}, loan note {new[2]}, note {new[3]!r}"))
+    return True, f"Guarantee check {number} updated."
+
+
 def return_guarantee_check(guarantee_id: int, returned_on: date, note: str = "") -> tuple[bool, str]:
     """The loan is settled and the check was taken back / cancelled."""
     if returned_on > manila_today():

@@ -57,6 +57,17 @@ def test_a_tick_is_refused_for_a_future_date_a_check_without_number_or_one_the_b
     assert "already cleared" in clearing.mark_cleared(cid)[1]
 
 
+def test_a_post_dated_check_cannot_be_ticked_cleared_before_its_date(db):
+    # owner, 2026-10-09: "future checks cannot be mark cleared"
+    sid, cid = _issued(db, day=TODAY + timedelta(days=3))
+    ok, msg = clearing.mark_cleared(cid)
+    assert not ok and "can't clear before its date" in msg and _status(db, sid) == "Unpaid"
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE checks_issued SET check_date = ? WHERE check_id = ?", (str(TODAY - timedelta(days=3)), cid))
+    assert not clearing.mark_cleared(cid, TODAY - timedelta(days=4))[0]        # cleared on a day before the check's own date
+    assert clearing.mark_cleared(cid, TODAY - timedelta(days=3))[0]
+
+
 def test_the_bank_statement_confirms_or_flags_a_tick(db):
     sid, cid = _issued(db)
     clearing.mark_cleared(cid, TODAY - timedelta(days=2))
@@ -81,3 +92,74 @@ def test_the_cutoff_marks_checks_before_the_first_statement_once(db):
     assert fetchone(db, "SELECT COUNT(*) FROM audit_logs WHERE user_action = 'CLEARING_CUTOFF'")[0] == 1
     assert fetchone(db, "SELECT manual_cleared_at FROM checks_issued WHERE check_id = ?", (new,))[0] is None      # inside the statement period: left for the owner
     assert clearing.check_ticks_against_bank() == 0                                                                 # a cut-off mark is not a tick to confirm
+
+
+def _loan_due(db, day, amount=20000.0):
+    from engines.bank_loan_service import add_bank_loan_installment, create_bank_loan
+    from conftest import make_creditor as mk
+    bank = mk(db, name="BDO", creditor_type="BANK_LOAN")
+    blid = create_bank_loan(bank, "L-9", "A", date(2026, 1, 1), date(2028, 1, 1), None, 500000.0, "ADA")
+    add_bank_loan_installment(blid, day, amount)
+    return fetchone(db, "SELECT installment_id FROM bank_loan_installments WHERE bank_loan_id = ?", (blid,))[0]
+
+
+def _owed_tracks():
+    from engines.reports_service import get_combined_ap_summary
+    df = get_combined_ap_summary()
+    return {str(r["track"]): float(r["outstanding"]) for _, r in df.iterrows()}
+
+
+def test_a_bank_loan_payment_stays_owed_past_its_date_until_ticked_or_on_the_bank(db):
+    # daily payables, owner 2026-10-09: "until the check is not cleared it will still be considered payable"
+    iid = _loan_due(db, TODAY - timedelta(days=4))
+    assert _owed_tracks()["Bank Loan"] == 20000.0
+    assert not clearing.mark_loan_cleared(iid, TODAY - timedelta(days=5))[0]           # before its due date
+    ok, msg = clearing.mark_loan_cleared(iid, TODAY, "auto-debit seen")
+    assert ok, msg
+    assert _owed_tracks()["Bank Loan"] == 0.0
+    assert clearing.unmark_loan_cleared(iid)[0] and _owed_tracks()["Bank Loan"] == 20000.0
+    _bank_lines(db, TODAY)
+    with sqlite3.connect(db) as conn:                                                  # the bank statement shows the debit
+        conn.execute("UPDATE bank_transactions SET matched_installment_id = ? WHERE line_key = 'k0'", (iid,))
+    assert _owed_tracks()["Bank Loan"] == 0.0
+
+
+def test_a_card_statement_stays_owed_past_its_due_date_until_its_payment_is_recorded(db):
+    from conftest import make_creditor as mk
+    issuer = mk(db, name="RCBC", creditor_type="CREDIT_CARD")
+    with sqlite3.connect(db) as conn:
+        card = conn.execute("INSERT INTO credit_cards (creditor_id, card_name, card_number_last4, credit_limit) VALUES (?, 'Gold', '1234', 1)", (issuer,)).lastrowid
+        csid = conn.execute("INSERT INTO cc_statements (card_id, due_date, total_amount_due, status) VALUES (?, ?, 3000, 'Unpaid')",
+                            (card, str(TODAY - timedelta(days=3)))).lastrowid
+    assert _owed_tracks()["Credit Card"] == 3000.0
+    ok, msg = clearing.pay_card(csid, TODAY)
+    assert ok, msg
+    assert fetchone(db, "SELECT status FROM cc_statements WHERE cc_statement_id = ?", (csid,))[0] == "Paid" and _owed_tracks()["Credit Card"] == 0.0
+
+
+def test_the_cutoff_also_marks_bank_loan_payments_before_the_first_statement(db):
+    old = _loan_due(db, TODAY - timedelta(days=40))
+    _bank_lines(db, TODAY - timedelta(days=20), TODAY - timedelta(days=1))
+    assert len(clearing.cutoff_preview()["loans_before"]) == 1
+    ok, msg = clearing.apply_cutoff()
+    assert ok, msg
+    assert fetchone(db, "SELECT cleared_note FROM bank_loan_installments WHERE installment_id = ?", (old,))[0] == clearing.CUTOFF_NOTE
+
+
+def test_the_next_soa_is_the_final_word_on_card_payments_recorded_daily(db):
+    # owner, 2026-10-09: payments to a card are confirmed by the SOA (the owner's way); co-owners record them day to day; a difference is flagged
+    from conftest import make_creditor as mk
+    from engines.card_rules import confirm_cc_payment_from_next_statement
+    issuer = mk(db, name="RCBC", creditor_type="CREDIT_CARD")
+    with sqlite3.connect(db) as conn:
+        card = conn.execute("INSERT INTO credit_cards (creditor_id, card_name, card_number_last4, credit_limit) VALUES (?, 'Gold', '1234', 1)", (issuer,)).lastrowid
+        a = conn.execute("INSERT INTO cc_statements (card_id, due_date, total_amount_due, status, paid_confirmed) VALUES (?, ?, 3000, 'Unpaid', 0)",
+                         (card, str(TODAY - timedelta(days=3)))).lastrowid
+        b = conn.execute("INSERT INTO cc_statements (card_id, due_date, total_amount_due, status, paid_confirmed) VALUES (?, ?, 3000, 'Unpaid', 0)",
+                         (card, str(TODAY - timedelta(days=2)))).lastrowid
+    assert clearing.pay_card(a, TODAY, amount=3000)[0] and clearing.pay_card(b, TODAY, amount=1000)[0]
+    assert confirm_cc_payment_from_next_statement(a, 0.0) == (3000.0, "Paid")                 # the SOA agrees: nothing to look at
+    assert fetchone(db, "SELECT COUNT(*) FROM review_flags WHERE kind = 'CC_PAYMENT_MISMATCH'")[0] == 0
+    assert confirm_cc_payment_from_next_statement(b, 500.0) == (2500.0, "Partially Paid")      # the SOA shows 2,500 paid, 1,000 was recorded
+    assert fetchone(db, "SELECT COUNT(*) FROM review_flags WHERE kind = 'CC_PAYMENT_MISMATCH' AND ref_id = ?", (b,))[0] == 1
+    assert fetchone(db, "SELECT amount_paid FROM cc_statements WHERE cc_statement_id = ?", (b,))[0] == 2500.0   # the SOA figure is kept

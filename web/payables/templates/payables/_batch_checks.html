@@ -1,0 +1,200 @@
+{% load humanize %}{% comment %}A batch's Checks tab (Phase 2 step 2, 2026-10-08): park -> write (Chrysanth or by hand) -> number -> release -> cleared. web/payables/batch_checks.py.{% endcomment %}
+<p class="note">One flow for every check: <b>Parked</b> → <b>Written</b> (a Chrysanth run file, or by hand) → numbered → <b>Released</b> (collected) → <b>Cleared</b> (the bank, or ticked on Pay suppliers → Daily payables).</p>
+
+{% if skipped %}{# the skipped-number pop-up #}
+<div class="overlay" role="dialog" aria-modal="true" aria-labelledby="skip_title"><div class="dialog">
+  {% for g in skipped %}
+  <h3 id="skip_title"><span class="ms" style="color:#b26a00">warning</span> Numbers skipped in {{ g.code }}</h3>
+  <p>These leaves of the booklet have no check: <b>{% for n in g.leaves %}{{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}</b>. What happened to them?</p>
+  <div class="actions" style="justify-content:flex-end">
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="chk_skip_later"><input type="hidden" name="booklet" value="{{ g.booklet }}">
+      <input type="hidden" name="code" value="{{ g.code }}"><input type="hidden" name="leaves" value="{% for n in g.leaves %}{{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+      <button class="btn ghost" type="submit">Check later</button></form>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="chk_skip_spoiled"><input type="hidden" name="leaves" value="{% for n in g.leaves %}{{ n }}{% if not forloop.last %},{% endif %}{% endfor %}">
+      <button class="btn" type="submit" autofocus>Log as spoiled</button></form>
+  </div>
+  {% endfor %}
+  <p class="hint" style="margin-top:8px">Check later puts a line on the Review list so it isn't forgotten. <a href="?tab=checks">Close</a></p>
+</div></div>
+{% endif %}
+
+{% if num_checks %}{# numbering panel: from a booklet (the next free leaves, as in the old screens), or typed #}
+<div class="warnbox" style="background:#f1f5fa;border-left-color:var(--blue)" id="numbering">
+  <b>{% if num_mode == "hand" %}Write by hand: number {{ num_checks|length }} check{{ num_checks|length|pluralize }}{% else %}Give {{ num_checks|length }} check{{ num_checks|length|pluralize }} their numbers{% endif %}</b>
+  {% if booklets %}
+  <form class="bar" method="get" style="margin-top:8px">
+    {% for k, v in request.GET.items %}{% if k != "bk" and k != "start" %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+    <div class="grow"><label for="bk">From booklet</label><select id="bk" name="bk" onchange="this.form.start.value='';this.form.submit()">
+      {% for b in booklets %}<option value="{{ b.id }}"{% if b.id == bk.id %} selected{% endif %}{% if not b.left %} disabled{% endif %}>{{ b.code }} · {{ b.start }}–{{ b.end }} · {% if b.left %}next free {{ b.first_free }}, {{ b.left }} left{% else %}used up{% endif %}</option>{% endfor %}</select></div>
+    <div><label for="start">Start at leaf</label><input id="start" class="inline-input" inputmode="numeric" name="start" value="{{ start|default_if_none:'' }}" style="width:9em"></div>
+    <button class="btn small ghost" type="submit">Show the numbers</button>
+  </form>
+  {% if plan_err %}<div class="msg error">{{ plan_err }}</div>{% endif %}
+  {% if plan %}
+  <table class="list" style="max-width:640px;margin-top:6px"><tr><th>#</th><th>Dated</th><th style="text-align:right">Amount</th><th>Check number</th></tr>
+    {% for c in plan %}<tr><td class="hint">{{ forloop.counter }}</td><td>{{ c.check_date|dmy }}</td><td class="num">{{ c.amount|floatformat:2|intcomma }}</td><td><b>{{ c.leaf }}</b></td></tr>{% endfor %}</table>
+  {% if skipped %}<p class="hint">Stepping over {{ skipped|length }} leaf/leaves already used or spoiled: {{ skipped|slice:":12"|join:", " }}{% if skipped|length > 12 %} …{% endif %}</p>{% endif %}
+  <form method="post" style="margin-top:6px" onsubmit="return confirm('Give these {{ plan|length }} check(s) the numbers {{ plan.0.leaf }} to {% with plan|last as l %}{{ l.leaf }}{% endwith %}? A number is final once given.');">{% csrf_token %}
+    <input type="hidden" name="action" value="{% if num_mode == 'hand' %}chk_booklet_hand{% else %}chk_booklet{% endif %}"><input type="hidden" name="bk" value="{{ bk.id }}">
+    <input type="hidden" name="start" value="{{ start }}"><input type="hidden" name="ids" value="{{ plan_ids }}">
+    <div class="actions"><button class="btn" type="submit"><span class="ms">format_list_numbered</span>{% if num_mode == "hand" %}Written by hand: number them{% else %}Give the numbers{% endif %} {{ plan.0.leaf }} – {% with plan|last as l %}{{ l.leaf }}{% endwith %}</button>
+      <a class="btn ghost" href="?tab=checks">Cancel</a></div>
+  </form>
+  {% endif %}
+  {% else %}<p class="hint">No active check booklet on file: add one on Bank and cash → Booklets, or type the numbers below.</p>{% endif %}
+  <details style="margin-top:8px"{% if not booklets %} open{% endif %}><summary class="hint" style="cursor:pointer">Or type the numbers (a check from another or an old booklet)</summary>
+  <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="{% if num_mode == 'hand' %}chk_hand{% else %}chk_number{% endif %}">
+    <table class="list" style="max-width:640px"><tr><th>Dated</th><th style="text-align:right">Amount</th><th>Check number</th></tr>
+      {% for c in num_checks %}<tr><td>{{ c.check_date|dmy }}</td><td class="num">{{ c.amount|floatformat:2|intcomma }}</td>
+        <td><input type="text" inputmode="numeric" name="num_{{ c.check_id }}" class="numbox" aria-label="Check number" required></td></tr>{% endfor %}</table>
+    <p class="hint">Type the first number: the rest fill in, one after another (change any of them).</p>
+    <div class="actions"><button class="btn small" type="submit"><span class="ms">edit_note</span>{% if num_mode == "hand" %}Save: written and numbered{% else %}Save the numbers{% endif %}</button></div>
+  </form></details>
+</div>
+<script>(function () { var boxes = document.querySelectorAll(".numbox"); if (!boxes.length) return;
+  boxes[0].addEventListener("input", function () { var v = boxes[0].value.trim(); if (!/^\d+$/.test(v)) return;
+    for (var i = 1; i < boxes.length; i++) { boxes[i].value = String(BigInt(v) + BigInt(i)).padStart(v.length, "0"); } }); })();</script>
+{% endif %}
+
+{% if edit_check %}
+<div class="warnbox" style="background:#f1f5fa;border-left-color:var(--blue)"><b>Change the parked check of {{ edit_check.check_date|dmy }}</b>
+  <form class="bar" method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="chk_edit"><input type="hidden" name="check_id" value="{{ edit_check.check_id }}">
+    <div><label for="e_date">Dated</label><input id="e_date" type="date" name="date" value="{{ edit_check.check_date|slice:':10' }}"></div>
+    <div><label for="e_amount">Amount</label><input id="e_amount" class="inline-input" inputmode="decimal" name="amount" value="{{ edit_check.amount|floatformat:2 }}"></div>
+    <button class="btn small" type="submit"><span class="ms">save</span>Save</button> <a class="btn small ghost" href="?tab=checks">Cancel</a></form></div>
+{% endif %}
+{% if void_check %}
+<div class="warnbox"><b>Void or replace check {{ void_check.check_number|default:"(no number)" }} of ₱{{ void_check.amount|floatformat:2|intcomma }} dated {{ void_check.check_date|dmy }}</b>
+  <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="check_id" value="{{ void_check.check_id }}">
+    <div class="bar"><div class="grow"><label for="v_reason">Why</label><input id="v_reason" type="text" name="reason" required placeholder="e.g. wrong amount written, damaged, lost"></div></div>
+    <div class="bar">
+      <div><label for="v_date">Replacement dated</label><input id="v_date" type="date" name="new_date" value="{{ void_check.check_date|slice:':10' }}"></div>
+      <div><label for="v_num">Its check number (if already written)</label><input id="v_num" type="text" inputmode="numeric" name="new_number" placeholder="blank = park it, write it later"></div>
+      <button class="btn small" type="submit" name="action" value="chk_replace" onclick="return confirm('Void this check and put the replacement in its place (same amount)?');"><span class="ms">swap_horiz</span>Void and replace</button>
+    </div>
+    <div class="actions"><button class="btn small danger" type="submit" name="action" value="chk_void" onclick="return confirm('Void this check without a replacement? It stays in the voided register.');"><span class="ms">block</span>Void only</button>
+      <a class="btn small ghost" href="?tab=checks">Cancel</a></div>
+  </form>
+  <p class="hint">The replacement is for the same amount and takes over what the old check paid. With a number it is written at once; without, it is parked so you can write it with Chrysanth or by hand.</p></div>
+{% endif %}
+
+<form method="post" id="chkform">{% csrf_token %}
+  <p class="hint" id="chk-pick">Tick: <a href="#" data-pick="all">all</a> · <a href="#" data-pick="Parked">all parked</a> · <a href="#" data-pick="Written">all written</a> ·
+    <a href="#" data-pick="none">none</a> · <b id="chk-count">0 ticked</b></p>
+  <div class="scroll-x"><table class="list"><tr><th><input type="checkbox" id="chk-all" aria-label="Tick every check that can be ticked"></th><th>Dated</th><th>Check no.</th><th style="text-align:right">Amount</th><th>Stage</th><th></th></tr>
+    {% for c in checks %}<tr>
+      <td>{% if c.stage == "Parked" or c.stage == "Written" and not c.released_date %}<input type="checkbox" name="tick_{{ c.check_id }}" value="1" aria-label="Tick this check" data-stage="{{ c.stage }}" data-numbered="{% if c.check_number %}1{% endif %}">{% endif %}</td>
+      <td>{{ c.check_date|dmy }}</td><td>{{ c.check_number|default:"—" }}</td><td class="num">{{ c.amount|floatformat:2|intcomma }}</td>
+      <td><span class="pill{% if c.stage == 'Parked' %} off{% elif c.stage == 'Released' %} warn{% endif %}">{{ c.stage }}{% if c.stage == "Written" and c.how %} · {{ c.how }}{% endif %}</span>
+        {% if c.stage == "Released" %}<span class="hint">{{ c.released_date|dmy }}{% if c.released_to %} · {{ c.released_to }}{% endif %} · waiting for the bank</span>{% endif %}
+        {% if c.stage == "Cleared" %}<span class="hint">{{ c.bank_cleared_date|default:c.manual_cleared_at|default:c.settled_outside_at|dmy }}</span>{% endif %}
+        {% if c.stage == "Cancelled" and c.cancel_reason %}<span class="hint">{{ c.cancel_reason|usdates }}</span>{% endif %}</td>
+      <td style="white-space:nowrap">
+        {% if c.stage == "Parked" and may_park and editable %}<a class="btn small ghost" href="?tab=checks&edit={{ c.check_id }}">Edit</a>{% endif %}
+        {% if c.stage == "Written" or c.stage == "Released" %}{% if may_void %}<a class="btn small ghost" href="?tab=checks&void={{ c.check_id }}">Void / replace</a>{% endif %}{% endif %}
+        {% if c.stage == "Released" and may_release %}<button class="btn small ghost" type="submit" form="unrel_{{ c.check_id }}">Undo release</button>{% endif %}
+      </td></tr>
+    {% empty %}<tr><td colspan="6" class="note">No checks on this batch yet.</td></tr>{% endfor %}</table></div>
+
+  {% if checks %}<div class="actions" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
+    {% if may_write and n_parked %}
+      <button class="btn small" type="submit" name="action" value="chk_chrysanth" onclick="return confirm('Make the Chrysanth run file for the ticked parked checks? They become Written.');"><span class="ms">print</span>Write with Chrysanth (run file)</button>
+      <button class="btn small ghost" type="submit" formmethod="get" name="hand" value="1"><span class="ms">edit</span>Write by hand…</button>
+    {% endif %}
+    {% if may_write and n_unnumbered %}<button class="btn small ghost" type="submit" formmethod="get" name="number" value="1"><span class="ms">pin</span>Give numbers…</button>{% endif %}
+    {% if may_park and n_parked %}<button class="btn small danger" type="submit" name="action" value="chk_delete" onclick="return confirm('Delete the ticked parked checks? Only checks with no number that aren\'t written can go.');"><span class="ms">delete</span>Delete parked</button>{% endif %}
+    {% if may_release and n_to_release %}<span style="flex:1"></span>
+      <div><label for="r_to">Collected by</label><input id="r_to" type="text" name="released_to" placeholder="e.g. Goodyear rider Jun"></div>
+      <div><label for="r_date">On</label><input id="r_date" type="date" name="released_date" value="{{ today|date:'Y-m-d' }}"></div>
+      <button class="btn small" type="submit" name="action" value="chk_release"><span class="ms">outbox</span>Release ticked</button>
+    {% endif %}
+  </div>
+  <input type="hidden" name="tab" value="checks">
+  <p class="hint">Tick checks, then choose. Parked checks can be written, or deleted while they have no number. Written checks with a number can be released.</p>{% endif %}
+</form>
+{% for c in checks %}{% if c.stage == "Released" %}<form id="unrel_{{ c.check_id }}" method="post" onsubmit="return confirm('Take back the release of this check?');">{% csrf_token %}
+  <input type="hidden" name="action" value="chk_unrelease"><input type="hidden" name="check_id" value="{{ c.check_id }}"></form>{% endif %}{% endfor %}
+
+{% if may_park and editable and remaining > 0.004 %}
+<div class="grp">Park checks</div>
+<form method="post" id="park-form" data-remaining="{{ remaining|floatformat:2 }}" data-day="{{ split_day|date:'Y-m-d' }}">{% csrf_token %}<input type="hidden" name="action" value="chk_park">
+  <p class="note">Still to cover: <b>₱{{ remaining|floatformat:2|intcomma }}</b>. One check, or split it over several dates.</p>
+  <div class="bar split-bar">
+    <div><label>How to split</label>
+      <span class="seg"><label><input type="radio" name="split" value="count" checked> By number of checks</label>
+        <label><input type="radio" name="split" value="invoice"{% if not open_invoices %} disabled{% endif %}> One check per invoice ({{ open_invoices|length }})</label></span></div>
+    <div id="split-n-box"><label for="split-n">Number of checks</label><input id="split-n" class="inline-input" type="number" min="1" max="50" value="1" style="width:6em"></div>
+    <button class="btn small ghost" type="button" id="split-go"><span class="ms">call_split</span>Split</button>
+  </div>
+  <p class="hint">By number: the balance is split evenly in whole pesos (the last check takes the centavos), all dated {{ split_day|date:"m/d/Y" }}. Per invoice: one check for each
+    unpaid invoice, on its due date, for what is left of it. Every date and amount stays editable.</p>
+  <div class="scroll-x"><table class="list" style="max-width:560px" id="park-rows"><tr><th>#</th><th>Dated</th><th>Amount</th></tr>
+    {% for i in park_rows %}<tr data-i="{{ i }}"{% if i > 6 %} hidden{% endif %}><td class="hint">{{ i }}</td>
+      <td><input type="date" name="d{{ i }}"{% if i == 1 %} value="{{ split_day|date:'Y-m-d' }}"{% endif %}></td>
+      <td><input class="inline-input num" style="text-align:right" inputmode="decimal" name="a{{ i }}"{% if i == 1 %} value="{{ remaining|floatformat:2 }}"{% endif %}></td></tr>{% endfor %}
+  </table></div>
+  <p><a href="#" id="park-add">+ Add a row</a> · <span id="park-sum" class="hint"></span></p>
+  <button class="btn small" type="submit"><span class="ms">add</span>Park these checks</button>
+</form>
+{{ open_invoices|json_script:"open-invoices" }}
+<script>
+(function () {
+  var f = document.getElementById("park-form"); if (!f) return;
+  var rows = [].slice.call(f.querySelectorAll("#park-rows tr[data-i]")), remaining = parseFloat(f.dataset.remaining) || 0;
+  var invoices = JSON.parse(document.getElementById("open-invoices").textContent || "[]");
+  var peso = function (v) { return v.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  var cell = function (r, k) { return r.querySelector('[name="' + k + r.dataset.i + '"]'); };
+  function sum() {
+    var t = 0; rows.forEach(function (r) { t += parseFloat(String(cell(r, "a").value).replace(/,/g, "")) || 0; });
+    t = Math.round(t * 100) / 100;
+    var left = Math.round((remaining - t) * 100) / 100;
+    var s = document.getElementById("park-sum");
+    s.textContent = "Total ₱" + peso(t) + " · still to cover ₱" + peso(left);
+    s.style.color = left < -0.004 ? "#b3261e" : "";
+  }
+  function fill(list) {               /* list of [date, amount] */
+    rows.forEach(function (r, k) { var x = list[k]; cell(r, "d").value = x ? x[0] : ""; cell(r, "a").value = x ? x[1].toFixed(2) : ""; r.hidden = k >= Math.max(6, list.length); });
+    sum();
+  }
+  function evenly(total, n) {         /* engines/statement_rules.split_remaining_evenly: whole pesos, the last takes the rest */
+    var base = Math.floor(total / n), out = [];
+    for (var k = 0; k < n - 1; k++) out.push(base);
+    out.push(Math.round((total - base * (n - 1)) * 100) / 100);
+    return out;
+  }
+  var nBox = document.getElementById("split-n-box");
+  f.querySelectorAll('input[name=split]').forEach(function (r) { r.addEventListener("change", function () { nBox.hidden = r.value === "invoice" && r.checked; }); });
+  document.getElementById("split-go").addEventListener("click", function () {
+    var mode = f.querySelector('input[name=split]:checked').value;
+    if (mode === "invoice") { fill(invoices.map(function (x) { return [x.due, x.remaining]; }).slice(0, rows.length)); return; }
+    var n = Math.max(1, Math.min(rows.length, parseInt(document.getElementById("split-n").value) || 1));
+    fill(evenly(remaining, n).map(function (a) { return [f.dataset.day, a]; }));
+  });
+  document.getElementById("park-add").addEventListener("click", function (e) {
+    e.preventDefault(); var next = rows.filter(function (r) { return r.hidden; })[0]; if (next) next.hidden = false;
+  });
+  f.addEventListener("input", sum); sum();
+})();
+</script>
+{% endif %}
+<script>
+/* tick all / all parked / all written (owner, 2026-10-09: "why no select all?") with a running count and total */
+(function () {
+  var f = document.getElementById("chkform"); if (!f) return;
+  var boxes = [].slice.call(f.querySelectorAll('input[type=checkbox][name^="tick_"]')), all = document.getElementById("chk-all"), count = document.getElementById("chk-count");
+  function amt(b) { var td = b.closest("tr").querySelector("td.num"); return td ? parseFloat(td.textContent.replace(/,/g, "")) || 0 : 0; }
+  function update() {
+    var n = 0, t = 0; boxes.forEach(function (b) { if (b.checked) { n++; t += amt(b); } });
+    count.textContent = n + " ticked" + (n ? " · ₱" + t.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2}) : "");
+    all.checked = n > 0 && n === boxes.length; all.indeterminate = n > 0 && n < boxes.length;
+  }
+  all.addEventListener("change", function () { boxes.forEach(function (b) { b.checked = all.checked; }); update(); });
+  document.getElementById("chk-pick").addEventListener("click", function (e) {
+    var k = e.target.dataset && e.target.dataset.pick; if (!k) return; e.preventDefault();
+    boxes.forEach(function (b) { b.checked = k === "all" || b.dataset.stage === k; }); update();
+  });
+  f.addEventListener("change", function (e) { if (e.target !== all) update(); });
+  if (!boxes.length) { all.disabled = true; document.getElementById("chk-pick").hidden = true; }
+  update();
+})();
+</script>

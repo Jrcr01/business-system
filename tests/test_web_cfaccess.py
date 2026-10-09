@@ -52,10 +52,7 @@ def test_the_servers_own_health_check_is_exempt_but_the_internet_is_not(web, acc
 
 def test_the_pass_email_must_be_the_account(web, access):
     r = web.post("/setup/", {"name": "Admin", "email": "admin@slicks.test", "password": PW, "password2": PW}, **_h(_pass()))      # the very first account also needs a pass
-    assert r.status_code == 302
-    web.get("/2fa/setup/", **_h(_pass()))
-    r = web.post("/2fa/setup/", {"code": code_for("admin@slicks.test")}, **_h(_pass()))
-    assert r.status_code == 302 and r["Location"] == "/"
+    assert r.status_code == 302 and r["Location"] == "/"                # with Access on, no 6-digit code (2026-10-09)
     ok = web.get("/", **_h(_pass("admin@slicks.test")))
     assert ok.status_code == 200
     other = web.get("/", **_h(_pass("someone.else@gmail.com")))
@@ -66,3 +63,16 @@ def test_the_pass_email_must_be_the_account(web, access):
 
 def test_not_configured_means_not_checked(web):
     assert web.get("/login/").status_code in (200, 302)
+
+
+def test_with_access_on_the_6_digit_code_is_not_asked_but_without_it_it_is(web, access):
+    # owner, 2026-10-09: "we can drop 6 digit code" -- Cloudflare Access (Google / email check, same email) is the second step instead
+    from tests.test_web_d0 import username_of
+    r = web.post("/setup/", {"name": "Admin", "email": "admin@slicks.test", "password": PW, "password2": PW}, **_h(_pass()))
+    assert r.status_code == 302 and r["Location"] == "/"                          # signed in: no code, no code set-up
+    assert web.get("/", **_h(_pass())).status_code == 200
+    web.get("/logout/", **_h(_pass()))
+    r = web.post("/login/", {"username": username_of("admin@slicks.test"), "password": PW}, **_h(_pass()))
+    assert r.status_code == 302 and r["Location"] == "/"
+    r = web.post("/login/", {"username": username_of("admin@slicks.test"), "password": "wrong-one-77"}, **_h(_pass()))
+    assert r.status_code != 302 or r["Location"] != "/"                           # the password is still checked

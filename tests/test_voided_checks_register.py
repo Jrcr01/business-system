@@ -85,7 +85,7 @@ def test_a_voided_check_the_bank_paid_anyway_is_flagged(db):
 
     row = voided_checks().iloc[0]
 
-    assert row["bank_paid_anyway"] == "Yes - bank cleared it 2026-12-07"
+    assert row["bank_paid_anyway"] == "Yes - bank cleared it 12/07/2026"
 
 
 def test_an_old_void_without_a_saved_date_takes_it_from_the_audit_log(db):
@@ -122,7 +122,7 @@ def test_deleting_a_loan_note_installment_is_audited(db):
     assert delete_loan_installment(installment_id)[0]
 
     action, entity_id, old = fetchone(db, "SELECT user_action, entity_id, old_values FROM audit_logs WHERE user_action = 'LOAN_INSTALLMENT_DELETED'")
-    assert entity_id == installment_id and "10,000.00" in old and "2026-02-01" in old
+    assert entity_id == installment_id and "10,000.00" in old and "02/01/2026" in old
 
 
 def test_deleting_a_bank_loan_installment_is_audited(db):
@@ -135,4 +135,4 @@ def test_deleting_a_bank_loan_installment_is_audited(db):
     assert delete_bank_loan_installment(installment_id)[0]
 
     action, entity_id, old = fetchone(db, "SELECT user_action, entity_id, old_values FROM audit_logs WHERE user_action = 'BANK_LOAN_INSTALLMENT_DELETED'")
-    assert entity_id == installment_id and "20,000.00" in old and str(future) in old
+    assert entity_id == installment_id and "20,000.00" in old and f"{future:%m/%d/%Y}" in old

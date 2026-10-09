@@ -1,6 +1,16 @@
 {% extends "core/base.html" %}{% load static %}
 {% block title %}Sign in{% endblock %}
 {% block content %}
+{% if sandbox_people %}
+<form class="card" method="post" action="/login/">{% csrf_token %}
+  <img src="{% static 'assets/slicks_logo.jpg' %}" alt="Slick's">
+  <h2>Sandbox: sign in as</h2>
+  <input type="hidden" name="next" value="{{ next }}">
+  <p class="note">The laptop sandbox has no password and no code. Pick who to be; sign out to switch. The live site always asks for both.</p>
+  {% for p in sandbox_people %}<button class="btn wide{% if p.role != 'admin' %} ghost{% endif %}" type="submit" name="uid" value="{{ p.user_id }}" style="margin-top:6px">
+    {{ p.name }} <span class="hint">({{ p.username|default:p.email }})</span></button>{% endfor %}
+</form>
+{% else %}
 <form class="card" method="post" action="/login/">{% csrf_token %}
   <img src="{% static 'assets/slicks_logo.jpg' %}" alt="Slick's">
   <h2>Sign in</h2>
@@ -10,4 +20,5 @@
   <button class="btn wide" type="submit">Sign in</button>
   <p class="note">Forgot your password? Ask the System admin to reset it.</p>
 </form>
+{% endif %}
 {% endblock %}

@@ -179,12 +179,12 @@ def test_users_change_one_person(web):
     assert fetchone(_db(), "SELECT is_active FROM app_users WHERE user_id = ?", (me,))[0] == 1         # never yourself
 
 
-def test_who_can_do_what(web):
+def test_who_can_do_what_is_gone(web):
+    # owner, 2026-10-09: "i do not need this" -- each person's page says what they may do
     _admin(web)
-    page = web.get("/settings/access/").content.decode()
-    assert "Releaser" in page and "System admin" in page and "View only" in page
     tabs = web.get("/settings/").content.decode()
-    assert 'href="/settings/users/"' in tabs and 'href="/settings/access/"' in tabs
+    assert 'href="/settings/users/"' in tabs and 'href="/settings/access/"' not in tabs
+    assert web.get("/settings/access/").status_code == 404
 
 
 def test_home_tiles_no_longer_say_later_for_d1_pages(web):

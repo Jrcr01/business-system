@@ -132,7 +132,7 @@ def test_bank_loan_interest_extraction(db):
 
     past = date(today.year - 1, today.month, 1)                     # a due date that has passed counts
     with sqlite3.connect(db) as conn:
-        conn.execute("UPDATE bank_loan_installments SET due_date = ? WHERE bank_loan_id = ?", (past.isoformat(), bank_loan_id))
+        conn.execute("UPDATE bank_loan_installments SET due_date = ?, cleared_at = ? WHERE bank_loan_id = ?", (past.isoformat(), past.isoformat(), bank_loan_id))   # paid = ticked (2026-10-09)
     summary = interest_service.get_monthly_interest_summary(past.year, past.month)
     assert summary["bank_loans"]["subtotal"] == 2500.0
     assert summary["bank_loans"]["count"] == 1
@@ -196,6 +196,8 @@ def test_unified_interest_total(db):
     bank_id = make_creditor(db, creditor_type="BANK_LOAN", name="Metrobank")
     bank_loan_id = create_bank_loan(bank_id, "BL-3", "ACCT-3", today, date(today.year + 5, today.month, today.day), None, 500000.0, "ADA")
     add_bank_loan_installment(bank_loan_id, today, 10500.0, interest_portion=2500.0)
+    with sqlite3.connect(db) as c2:                           # paid = ticked (or on the bank statement), not its date (2026-10-09)
+        c2.execute("UPDATE bank_loan_installments SET cleared_at = ? WHERE bank_loan_id = ?", (today.isoformat(), bank_loan_id))
 
     issuer_id = make_creditor(db, creditor_type="CREDIT_CARD", name="Amex")
     conn = sqlite3.connect(db)

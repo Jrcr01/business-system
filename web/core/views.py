@@ -21,6 +21,8 @@ def page_frame(request) -> dict:
         "role_label": ROLE_LABEL.get(user["role"], user["role"]) if user else "",
         "topbar": menu_for(user["role"]) if user else [],
         "is_sandbox": settings.IS_SANDBOX,
+        "may_search": bool(user) and __import__("engines.permissions", fromlist=["can"]).can(user["role"], "search.use"),
+        "search_q": request.GET.get("q", "") if request.path == "/search/" else "",
     }
 
 
@@ -36,6 +38,12 @@ def _sign_in(request, user: dict) -> None:
 def _half_signed_in(request, user: dict, nxt: str = "/"):
     """The password was right: next comes the code (or setting it up, the first time). Nothing else is open until then."""
     from engines.auth_service import totp_enabled_at
+    cf = getattr(request, "cf_email", None)
+    if cf and cf == str(user.get("email") or "").strip().lower():
+        # Cloudflare Access already checked this person (owner, 2026-10-09: "we can drop 6 digit code" -- once Access is on): its sign-in, for this very
+        # email, is the second step, so the code is not asked. Without Access (not set, or a different email) the code stays.
+        _sign_in(request, user)
+        return redirect(nxt or "/")
     request.session.cycle_key()
     request.session.pop("uid", None)
     request.session["pending"] = {"uid": int(user["user_id"]), "pw": password_stamp(int(user["user_id"])), "next": nxt}
@@ -85,6 +93,15 @@ def login(request):
     if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
         nxt = "/"
     username = ""
+    if settings.SANDBOX_NO_SIGNIN:                              # the laptop sandbox: pick a person, no password, no code
+        from engines.auth_service import list_users, get_user
+        if request.method == "POST" and request.POST.get("uid"):
+            user = get_user(int(request.POST["uid"]))
+            if user and user["is_active"]:
+                _sign_in(request, user)
+                return redirect(nxt)
+        people = [u for u in list_users().to_dict("records") if u["is_active"]]
+        return render(request, "core/login.html", {"sandbox_people": people, "next": nxt})
     if request.method == "POST":
         username = request.POST.get("username", "")
         ok, user, msg = authenticate(username, request.POST.get("password", ""), where="web")     # the username, never the email (owner, 2026-10-08)
@@ -173,23 +190,62 @@ def _tile_url(tile) -> str:
     return page_url(tile.page_id, query)
 
 
+# The "New ..." / "Import ..." cards (SAP Business One style Home, owner 2026-10-09): (group, title, icon, url, page id, needed action or None)
+CREATE_CARDS = [
+    ("buy", "New order", "note_add", "/purchase-orders/new/", "purchase-orders", None),
+    ("buy", "Import a price list", "upload_file", "/price-lists/", "price-lists", None),
+    ("pay", "New batch", "note_add", "/order-statements/", "order-statements", None),
+    ("bank", "Import bank statement", "upload_file", "/bank-cash/?tab=import", "bank-cash", None),
+    ("other", "New loan note", "note_add", "/lenders/?new=1#new", "lenders", "loans.use"),
+]
+MY_HOME = ["purchase-orders", "order-statements", "checks", "calendar", "review"]     # the everyday cards, first row
+MY_HOME_CREATE = ["New order", "New batch"]
+
+
 def home(request):
-    """The launchpad: a row of tiles per group, each with its live figure (engines/home_tiles.py, the same tiles and figures as Streamlit)."""
+    """The launchpad (SAP Business One style, owner 2026-10-09): a "My home" row of the everyday cards, then a row per section; each card its live figure
+    (engines/home_tiles.py), plus the "New ..." cards the person may use."""
     from engines.home_tiles import GROUPS, evaluate, layout
+    from engines.permissions import can
     user = request.slicks_user
+    mine = pages_for(user["role"])
     titles = {g.key: g for g in GROUPS}
-    rows = []
-    for key, tiles in layout(pages_for(user["role"])):
+    rows, by_id = [], {}
+    for key, tiles in layout(mine):
         cards = []
         for t in tiles:
             v = evaluate(t)
             icon = (t.icon or "").removeprefix(":material/").removesuffix(":") or PAGES[t.page_id].icon
-            cards.append({"title": t.title, "icon": icon, "url": _tile_url(t), "figure": v["figure"], "unit": v["unit"], "level": v["level"],
-                          "later": t.page_id not in BUILT})
+            card = {"title": t.title, "icon": icon, "url": _tile_url(t), "figure": v["figure"], "unit": v["unit"], "level": v["level"],
+                    "later": t.page_id not in BUILT}
+            cards.append(card)
+            by_id.setdefault(t.tid, card)
         rows.append({"key": key, "title": titles[key].title, "hint": titles[key].hint, "tiles": cards})
+    creates = [{"title": title, "icon": icon, "url": url, "create": True, "group": g} for g, title, icon, url, pid, needs in CREATE_CARDS
+               if pid in mine and pid in BUILT and (needs is None or can(user["role"], needs))]
+    for r in rows:
+        r["tiles"] += [c for c in creates if c["group"] == r["key"]]
+    top = [by_id[k] for k in MY_HOME if k in by_id] + [c for c in creates if c["title"] in MY_HOME_CREATE]
+    if top:
+        rows.insert(0, {"key": "mine", "title": "My home", "hint": "", "tiles": top})
     from engines.settings_registry import NOTICE_KEY
     from engines.settings_store import get_setting
     return render(request, "core/home.html", {"rows": rows, "page_id": "home", "notice": get_setting(NOTICE_KEY, "") or ""})
+
+
+RELATED_PAGE = {"po": "purchase-orders", "statement": "order-statements", "loan": "lenders"}
+
+
+def related(request, kind: str, doc_id: int):
+    """The relationship map of one document, for the pop-up its page's "Relationship map" button opens (SAP Business One style, owner 2026-10-09).
+    Worked out only when asked, so the pages stay fast; needs the right to that document's page."""
+    if kind not in RELATED_PAGE:
+        raise Http404
+    role = request.slicks_user["role"]
+    if RELATED_PAGE[kind] not in pages_for(role):
+        return HttpResponse("You don't have access to this document.", status=403)
+    from engines.doc_trail import trail_for
+    return render(request, "core/_related.html", {"related": trail_for(role, kind, int(doc_id))})
 
 
 def page(request, page_id: str):
@@ -203,6 +259,36 @@ def page(request, page_id: str):
     base = settings.STREAMLIT_URL
     return render(request, "core/later.html", {"page": p, "page_id": page_id, "stage_name": STAGE_NAME.get(p.stage, ""),
                                                "streamlit": f"{base.rstrip('/')}/{page_id}" if base else ""})
+
+
+def _search_url(row: dict) -> str:
+    """Where a search result opens in the main system (the engine still carries the old screens' page + state)."""
+    if row.get("url"):
+        return row["url"]
+    st, page = row.get("state") or {}, row.get("page", "")
+    if st.get("selected_statement_id"):
+        tab = {"Checks": "?tab=checks", "Invoices": ""}.get(st.get("os_subtab", ""), "")
+        return f"/order-statements/{st['selected_statement_id']}/{tab}"
+    if st.get("selected_loan_note_id"):
+        return f"/lenders/{st['selected_loan_note_id']}/" + ("?tab=checks" if st.get("ln_subtab") == "Checks" else "")
+    if st.get("selected_bank_loan_id"):
+        return f"/bank-loans/{st['selected_bank_loan_id']}/"
+    return f"/{page}/" if page else "/"
+
+
+def search(request):
+    """Search everything (owner, 2026-10-09: "how about search bar?"): the old screens' search -- checks, invoices, batches, loan notes, bank loans,
+    creditors, cards, spoiled checks -- by number, reference, name or an exact amount; each result opens its page here."""
+    from engines.permissions import can
+    if not can(request.slicks_user["role"], "search.use"):
+        return render(request, "core/not_allowed.html", {"page": PAGES["home"]}, status=403)
+    from engines.global_search_service import search_everything
+    q = (request.GET.get("q") or "").strip()
+    groups = search_everything(q, limit=25) if q else []
+    for g in groups:
+        for r in g["rows"]:
+            r["href"] = _search_url(r)
+    return render(request, "core/search.html", {"page_id": "home", "q": q, "groups": groups, "total": sum(g["total"] for g in groups)})
 
 
 def whoami(request):

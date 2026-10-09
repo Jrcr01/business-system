@@ -6,6 +6,8 @@ REM   * Delete the WEB_TEST file to start over. The Streamlit pilot (run_pilot_s
 cd /d "%~dp0"
 set "WEB_DB_PATH=%~dp0data\ap_disbursement_WEB_TEST.db"
 set WEB_DEBUG=1
+REM No password and no 6-digit code here (owner, 2026-10-08): Sign in shows each person as a button. The live server always asks for both.
+set WEB_SANDBOX_NO_SIGNIN=1
 set PYTHONIOENCODING=utf-8
 if not exist "%WEB_DB_PATH%" (
   echo Building a clean sandbox database...

@@ -23,7 +23,7 @@ COMPANY = "Slick's Tire Supply"
 
 def _d(v) -> str:
     try:
-        return datetime.strptime(str(v)[:10], "%Y-%m-%d").strftime("%a, %b %d")
+        return datetime.strptime(str(v)[:10], "%Y-%m-%d").strftime("%a %m/%d")
     except ValueError:
         return str(v)
 
@@ -33,7 +33,7 @@ def _band(report: dict) -> Table:
     title = ParagraphStyle("TTitle", parent=ss["Normal"], textColor=colors.white, fontSize=16, leading=19, fontName="Helvetica-Bold")
     sub = ParagraphStyle("TSub", parent=ss["Normal"], textColor=colors.white, fontSize=9, leading=12, alignment=2)
     t = Table([[Paragraph("TODAY'S PAYMENT REPORT", title),
-                Paragraph(f"{COMPANY}<br/>{report['today']:%A, %B %d, %Y}", sub)]],
+                Paragraph(f"{COMPANY}<br/>{report['today']:%A, %m/%d/%Y}", sub)]],
               colWidths=[CONTENT_WIDTH * 0.55, CONTENT_WIDTH * 0.45])
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), ACCENT), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                            ("LEFTPADDING", (0, 0), (-1, -1), 14), ("RIGHTPADDING", (0, 0), (-1, -1), 14),
@@ -77,7 +77,7 @@ def _build(report: dict, caps: dict) -> tuple[bytes, int]:
 
     # 3. next 7 days
     n7 = report["next7"]
-    story.append(Paragraph(f"Next 7 days (due today to {report['today'] + timedelta(days=7):%b %d}) — "
+    story.append(Paragraph(f"Next 7 days (due today to {report['today'] + timedelta(days=7):%m/%d}) — "
                            f"PHP {_money(report['next7_total'])}", sec))
     if n7.empty:
         story.append(Paragraph("Nothing due in the next 7 days.", note))
@@ -101,7 +101,7 @@ def _build(report: dict, caps: dict) -> tuple[bytes, int]:
                                     [CONTENT_WIDTH * f for f in (0.16, 0.32, 0.22, 0.13, 0.17)], right_cols=(4,)))
 
     story.append(Spacer(1, 8))
-    story.append(Paragraph(f"A Saturday/Sunday due date is paid the next banking day (Monday). Printed {manila_now():%b %d, %Y %I:%M %p}.", note))
+    story.append(Paragraph(f"A Saturday/Sunday due date is paid the next banking day (Monday). Printed {manila_now():%m/%d/%Y %I:%M %p}.", note))
 
     buf = io.BytesIO()
     pages = {"n": 0}

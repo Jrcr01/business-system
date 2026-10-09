@@ -94,8 +94,8 @@ def all_alerts(today: date | None = None) -> list[dict]:
         low = low_cash_ahead(today)
         if low:
             out.append({"key": "low_cash", "level": "error", "count": 1, "amount": low["lowest"],
-                        "message": f"Cash may drop under your buffer (PHP {low['buffer']:,.2f}) on {low['day']:%a, %b %d} — lowest forecast "
-                                   f"PHP {low['lowest']:,.2f} in the next {FORECAST_DAYS} days (from the bank balance of {low['as_of']:%b %d})."})
+                        "message": f"Cash may drop under your buffer (PHP {low['buffer']:,.2f}) on {low['day']:%a %m/%d} — lowest forecast "
+                                   f"PHP {low['lowest']:,.2f} in the next {FORECAST_DAYS} days (from the bank balance of {low['as_of']:%m/%d})."})
         big = large_debits()
         if not big.empty:
             out.append({"key": "large_debit", "level": "warning", "count": len(big), "amount": float(big["debit"].sum()),

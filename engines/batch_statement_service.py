@@ -11,7 +11,7 @@ from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 import os
-from engines.common import get_conn
+from engines.common import us_date, get_conn
 from engines.clock import manila_now
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -74,7 +74,7 @@ def _invoice_display_status(inv, cover) -> str:
     if amount - cleared <= 0.005:
         return "Paid"
     if amount - covered <= 0.005:
-        return f"Check issued \u00b7 {str(cover['last_check_date'])[:10]}"
+        return f"Check issued \u00b7 {us_date(cover['last_check_date'])}"
     return "Partly covered" if covered > 0.005 else "Unpaid"
 
 
@@ -190,7 +190,7 @@ def _info_panel(stmt, styles) -> Table:
         [Paragraph("STATEMENT REF", label_style), Paragraph("SUPPLIER", label_style),
          Paragraph("STATUS", label_style), Paragraph("GENERATED", label_style)],
         [Paragraph(stmt["statement_ref"], value_style), Paragraph(stmt["creditor_name"], value_style),
-         Paragraph(stmt["status"], value_style), Paragraph(manila_now().strftime("%Y-%m-%d %H:%M"), value_style)],
+         Paragraph(stmt["status"], value_style), Paragraph(manila_now().strftime("%m/%d/%Y %H:%M"), value_style)],
     ]
     panel = Table(rows, colWidths=[CONTENT_WIDTH * 0.3, CONTENT_WIDTH * 0.3, CONTENT_WIDTH * 0.18, CONTENT_WIDTH * 0.22])
     panel.setStyle(TableStyle([
@@ -226,7 +226,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     _add_section(story, "Invoices", styles)
     inv_rows = [["Sales Invoice", "Invoice Date", "Due Date", "Gross (PHP)", "Net (PHP)", "Status"]]
     for i in data["invoices"]:
-        inv_rows.append([i["doc_ref"] + (f" (DR {i['dr_no']})" if i.get("dr_no") else ""), i["invoice_date"], i["due_date"], _money(i["gross_amount"]), _money(i["amount"]), i["display_status"]])
+        inv_rows.append([i["doc_ref"] + (f" (DR {i['dr_no']})" if i.get("dr_no") else ""), us_date(i["invoice_date"]), us_date(i["due_date"]), _money(i["gross_amount"]), _money(i["amount"]), i["display_status"]])
     if len(inv_rows) == 1:
         inv_rows.append(["—", "—", "—", "—", "—", "—"])
     inv_table = Table(inv_rows, colWidths=[CONTENT_WIDTH * w for w in (0.15, 0.14, 0.14, 0.14, 0.14, 0.29)], repeatRows=1)
@@ -237,7 +237,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
         _add_section(story, "Credit Memos (applied pre-issuance)", styles)
         memo_rows = [["Memo Ref", "Date", "Amount (PHP)", "Reason"]]
         for m in data["memos"]:
-            memo_rows.append([m["memo_ref"], m["memo_date"], _money(m["amount"]), m["reason"] or ""])
+            memo_rows.append([m["memo_ref"], us_date(m["memo_date"]), _money(m["amount"]), m["reason"] or ""])
         memo_table = Table(memo_rows, colWidths=[CONTENT_WIDTH * w for w in (0.2, 0.17, 0.18, 0.45)], repeatRows=1)
         memo_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (2, 1), (2, -1), "RIGHT")]))
         story.append(memo_table)
@@ -264,7 +264,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     _add_section(story, "Checks", styles)
     chk_rows = [["Check Number", "Check Date", "Amount (PHP)", "Status"]]
     for c in data["checks"]:
-        chk_rows.append([c["check_number"] or "Pending", c["check_date"] or "—", _money(c["amount"]), c["status"]])
+        chk_rows.append([c["check_number"] or "Pending", us_date(c["check_date"], "—"), _money(c["amount"]), c["status"]])
     if len(chk_rows) == 1:
         chk_rows.append(["—", "—", "—", "—"])
     chk_table = Table(chk_rows, colWidths=[CONTENT_WIDTH * w for w in (0.3, 0.23, 0.22, 0.25)], repeatRows=1)
@@ -276,7 +276,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
         ledger = data["payment_ledger"]
         led_rows = [["Invoice", "Check Number", "Check Date", "Amount Applied (PHP)", "Balance (PHP)"]]
         for r in ledger:
-            led_rows.append([r["invoice"], r["check_number"], r["check_date"] or "—", _money(r["amount"]), _money(r["balance"])])
+            led_rows.append([r["invoice"], r["check_number"], us_date(r["check_date"], "—"), _money(r["amount"]), _money(r["balance"])])
         if len(led_rows) == 1:
             led_rows.append(["—", "—", "—", "—", "—"])
         led_table = Table(led_rows, colWidths=[CONTENT_WIDTH * w for w in (0.26, 0.22, 0.16, 0.18, 0.18)], repeatRows=1)
@@ -456,7 +456,7 @@ def _thermal_lines(data: dict) -> list[dict]:
     add(f"Ref: {stmt['statement_ref']}")
     add(f"Supplier: {stmt['creditor_name']}")
     add(f"Status: {stmt['status']}")
-    add(f"Generated: {manila_now().strftime('%Y-%m-%d %H:%M')}", gap_after=2)
+    add(f"Generated: {manila_now().strftime('%m/%d/%Y %H:%M')}", gap_after=2)
     add_divider()
 
     add("INVOICES", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION)
@@ -464,14 +464,14 @@ def _thermal_lines(data: dict) -> list[dict]:
         add("  (none)")
     for i in data["invoices"]:
         add(i["doc_ref"])
-        add(f"  Recv {i['invoice_date']}  Due {i['due_date']}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, color=GREY)
+        add(f"  Recv {us_date(i['invoice_date'])}  Due {us_date(i['due_date'])}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, color=GREY)
         add(f"  Net PHP {_money(i['amount'])}   [{i['display_status']}]", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
     add_divider()
 
     if data["memos"]:
         add("CREDIT MEMOS", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION)
         for m in data["memos"]:
-            add(f"{m['memo_ref']}  {m['memo_date']}")
+            add(f"{m['memo_ref']}  {us_date(m['memo_date'])}")
             add(f"  -PHP {_money(m['amount'])}  {m['reason'] or ''}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
         add_divider()
 
@@ -485,7 +485,7 @@ def _thermal_lines(data: dict) -> list[dict]:
         add("  (none)")
     for c in data["checks"]:
         add(f"Check #{c['check_number'] or 'Pending'}   [{c['status']}]")
-        add(f"  {c['check_date'] or '--'}   PHP {_money(c['amount'])}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
+        add(f"  {us_date(c['check_date'], '--')}   PHP {_money(c['amount'])}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
     add_divider("=")
     add("Metrobank Account 1 - Branch 399", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_SMALL, align="center")
     add("*** Nothing follows ***", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_SMALL, align="center", gap_after=6)

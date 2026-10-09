@@ -76,6 +76,13 @@ def dr_text(dr_no) -> str | None:
     return text or None
 
 
+def doc_reference(si: str | None, dr: str | None) -> str:
+    """An invoice's reference (owner, 2026-10-09: "suppliers do not provide sales invoice; it must have a document reference, either SI or DR"): the sales
+    invoice number when there is one, else "DR <number>"; '' when neither is given (refused by the callers). The DR number is also kept in dr_no."""
+    si, dr = " ".join((si or "").split()), dr_text(dr)
+    return si or (f"DR {dr}" if dr else "")
+
+
 def add_invoice(creditor_id: int, doc_ref: str, invoice_date: date, due_date: date, gross_amount: float, discount_rates: list, statement_id: int | None,
                 dr_no: str | None = None):
     """doc_ref = the supplier's SALES INVOICE number (owner, 2026-10-03); dr_no = the delivery receipt number that came with the goods, if any."""

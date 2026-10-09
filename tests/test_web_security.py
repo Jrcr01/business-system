@@ -1,3 +1,4 @@
+import sqlite3
 """Security and roles (owner, 2026-10-08): a password cannot repeat one of the person's last 5; the System admin switches off, per person, what they may not do,
 and every screen and engine guard obeys it at the person's next click."""
 from tests.conftest import fetchone, make_creditor
@@ -36,20 +37,19 @@ def test_switches_hide_pages_and_refuse_the_action(web, db):
     _admin(web)
     cid = make_creditor(db, "Goodyear Philippines")
     family = _sign_in_new("family@slicks.test", "owner")
-    assert family.get("/payables-due/").status_code == 200 and family.get("/order-statements/").status_code == 200
+    assert family.get("/calendar/").status_code == 200 and family.get("/order-statements/").status_code == 200
     uid = _uid("family@slicks.test")
     page = web.get(f"/settings/users/{uid}/").content.decode()
     assert "What Family may do" in page and "Pay suppliers" in page
-    on = {"action": "switches", "on": ["price.view", "price.write", "po.view", "po.create", "po.order", "po.cancel", "po.receive_goods", "committed.view", "po.receive",
-                                       "payables_due.view", "check.park", "check.issue", "check.void", "creditors.edit", "calendar.mark", "check.release", "bank.use",
-                                       "loans.use", "search.use", "reports.use", "health.view", "review.use", "po.ack_over_plan", "controls.view", "sales.use", "inventory.use", "more.use"]}
-    web.post(f"/settings/users/{uid}/", on)                                         # invoice.enter is left out: switched off
-    assert fetchone(_db(), "SELECT COUNT(*) FROM user_restrictions WHERE user_id = ?", (uid,))[0] == 1
+    from engines.permissions import SWITCH_LINES
+    keys = [k for _, lines in SWITCH_LINES for k, _, _, _ in lines]
+    web.post(f"/settings/users/{uid}/", {"action": "switches", "on": [k for k in keys if k != "invoices"]})     # "Match invoices, enter invoices and batches" off
+    assert {r[0] for r in sqlite3.connect(_db()).execute("SELECT action FROM user_restrictions WHERE user_id = ?", (uid,))} == {"po.receive", "invoice.enter"}
     assert family.get("/order-statements/").status_code == 403                      # the page, at the very next click
     assert family.post("/order-statements/new/", {"s": cid}).status_code == 403
     assert fetchone(_db(), "SELECT COUNT(*) FROM order_statements")[0] == 0
     assert "Order statements" not in family.get("/").content.decode().split("Pay suppliers")[1].split("</nav>")[0] or True
-    assert family.get("/payables-due/").status_code == 200                           # what was not switched off still works
+    assert family.get("/calendar/").status_code == 200                           # what was not switched off still works
     assert fetchone(_db(), "SELECT user_action FROM audit_logs WHERE entity_name = 'app_users' ORDER BY log_id DESC LIMIT 1")[0] == "USER_LIMITS_CHANGED"
 
 
@@ -79,3 +79,26 @@ def test_the_system_admin_cannot_be_limited_and_owners_cannot_change_switches(we
     uid = _uid("family@slicks.test")
     assert family.post(f"/settings/users/{uid}/", {"action": "switches", "on": []}).status_code == 403
     assert fetchone(_db(), "SELECT COUNT(*) FROM user_restrictions")[0] == 0
+
+
+
+def test_the_new_switches_presets_and_copying(web, db):
+    # owner, 2026-10-09: plain lines with the pages they open; "Mark payables paid" apart from Bank; cards apart from loans; presets; copy from another person
+    import engines.auth_service as au
+    _admin(web)
+    family = _sign_in_new("family@slicks.test", "owner")
+    _sign_in_new("cousin@slicks.test", "owner")
+    uid, cousin = _uid("family@slicks.test"), _uid("cousin@slicks.test")
+    with sqlite3.connect(_db()) as conn:                                             # the one-time carry-over: the new switches start as Bank / Loans
+        conn.execute("INSERT INTO user_restrictions (user_id, action) VALUES (?, 'bank.use'), (?, 'loans.use')", (cousin, cousin))
+    assert au.split_new_switches() == 2 and au.split_new_switches() == 0
+    assert {"payables.mark_paid", "cards.use"} <= au.get_restrictions(cousin)
+    page = web.get(f"/settings/users/{uid}/").content.decode()
+    assert "Daily operations" in page and "Copy from another person" in page and "Mark payables paid" in page and "Card statements (SOA)" in page
+    assert "Payables due" not in page and "Release" not in page.split("What Family may do")[1].split("Role")[0]
+    from engines.permissions import SWITCH_PRESETS
+    web.post(f"/settings/users/{uid}/", {"action": "switches", "on": sorted(SWITCH_PRESETS["daily"][1])})
+    off = au.get_restrictions(uid)
+    assert "bank.use" in off and "cards.use" in off and "payables.mark_paid" not in off and "loans.use" not in off
+    assert family.get("/checks/").status_code == 200 and family.get("/bank-cash/").status_code == 403 and family.get("/credit-cards/").status_code == 403
+    assert "Showing <b>Family</b>" in web.get(f"/settings/users/{cousin}/?copy={uid}").content.decode()

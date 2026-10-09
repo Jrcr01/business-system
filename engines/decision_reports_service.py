@@ -104,9 +104,9 @@ def cost_of_borrowing(today: date | None = None) -> dict:
                        FROM loan_notes n JOIN creditors cr ON cr.creditor_id = n.creditor_id LEFT JOIN loan_installments i ON i.loan_note_id = n.loan_note_id
                        WHERE n.status != 'Cancelled' GROUP BY n.loan_note_id""", (today, today))
     banks = _read("""SELECT 'Bank loan' AS source, cr.creditor_name AS name, b.loan_ref AS reference, NULL AS monthly_rate,
-                            COALESCE(SUM(CASE WHEN i.due_date < ? THEN i.interest_portion END), 0) AS interest_paid, COALESCE(SUM(CASE WHEN i.due_date >= ? THEN i.interest_portion END), 0) AS interest_to_pay
+                            COALESCE(SUM(CASE WHEN (i.cleared_at IS NOT NULL OR i.installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)) THEN i.interest_portion END), 0) AS interest_paid, COALESCE(SUM(CASE WHEN NOT (i.cleared_at IS NOT NULL OR i.installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)) THEN i.interest_portion END), 0) AS interest_to_pay
                      FROM bank_loans b JOIN creditors cr ON cr.creditor_id = b.creditor_id LEFT JOIN bank_loan_installments i ON i.bank_loan_id = b.bank_loan_id
-                     WHERE b.is_cancelled = 0 GROUP BY b.bank_loan_id""", (today, today))
+                     WHERE b.is_cancelled = 0 GROUP BY b.bank_loan_id""")             # a bank-loan payment is paid when it clears (2026-10-09), not by its date
     cards = _read("""SELECT 'Credit card' AS source, cr.creditor_name AS name, cc.card_name || ' ' || cc.card_number_last4 AS reference, NULL AS monthly_rate,
                             COALESCE(SUM(cs.interest_charged), 0) AS interest_paid, 0 AS interest_to_pay
                      FROM credit_cards cc JOIN creditors cr ON cr.creditor_id = cc.creditor_id LEFT JOIN cc_statements cs ON cs.card_id = cc.card_id AND cs.status != 'Cancelled'
@@ -145,9 +145,9 @@ def business_vs_family(today: date | None = None) -> dict:
     """Bank loans by whom they are for (a person or an affiliate), with amounts and interest -- how much of the debt is for the family or affiliates."""
     today = (today or manila_today()).isoformat()
     df = _read("""SELECT COALESCE(lb.name, 'Not set') AS for_whom, COALESCE(lb.beneficiary_type, '') AS type, COUNT(DISTINCT b.bank_loan_id) AS loans,
-                         COALESCE(SUM(CASE WHEN i.due_date >= ? THEN i.amount END), 0) AS still_to_pay, COALESCE(SUM(i.interest_portion), 0) AS interest
+                         COALESCE(SUM(CASE WHEN NOT (i.cleared_at IS NOT NULL OR i.installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)) THEN i.amount END), 0) AS still_to_pay, COALESCE(SUM(i.interest_portion), 0) AS interest
                   FROM bank_loans b LEFT JOIN loan_beneficiaries lb ON lb.beneficiary_id = b.beneficiary_id LEFT JOIN bank_loan_installments i ON i.bank_loan_id = b.bank_loan_id
-                  WHERE b.is_cancelled = 0 GROUP BY COALESCE(lb.name, 'Not set') ORDER BY still_to_pay DESC""", (today,))
+                  WHERE b.is_cancelled = 0 GROUP BY COALESCE(lb.name, 'Not set') ORDER BY still_to_pay DESC""")
     if df.empty:
         return {"table": df, "says": "No bank loans on file."}
     total = float(df["still_to_pay"].sum())

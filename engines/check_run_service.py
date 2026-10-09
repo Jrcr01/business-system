@@ -244,7 +244,7 @@ def generate_check_run_summary_pdf(check_ids: list[int]) -> bytes:
     title_style = ParagraphStyle("BandTitle", parent=styles["Normal"], textColor=colors.white, fontSize=16, leading=19, fontName="Helvetica-Bold")
     sub_style = ParagraphStyle("BandSub", parent=styles["Normal"], textColor=colors.white, fontSize=9, leading=12, alignment=2)
     band = Table(
-        [[Paragraph("Check Run Summary", title_style), Paragraph(manila_now().strftime("Printed %B %d, %Y %I:%M %p"), sub_style)]],
+        [[Paragraph("Check Run Summary", title_style), Paragraph(manila_now().strftime("Printed %m/%d/%Y %I:%M %p"), sub_style)]],
         colWidths=[CONTENT_WIDTH * 0.5, CONTENT_WIDTH * 0.5],
     )
     band.setStyle(TableStyle([
@@ -371,7 +371,7 @@ def chrysanth_export_problems(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]
     out = df.copy()
     out["_new_placeholder"] = False
     for idx, r in df.iterrows():
-        who = f"{r['payee_name']} {float(r['amount']):,.2f} ({str(r['check_date'])[:10]})"
+        who = f"{r['payee_name']} {float(r['amount']):,.2f} ({__import__('engines.common', fromlist=['us_date']).us_date(r['check_date'])})"
         number = "" if pd.isna(r["check_number"]) else str(r["check_number"]).strip()
         if number and (not number.isdigit() or len(number) > 18):
             notes.append(f"{who}: check number {number} must be digits only, at most 18 — left out.")

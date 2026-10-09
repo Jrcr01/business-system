@@ -18,6 +18,7 @@ import sqlite3
 from engines.validators import money_amount_error
 from datetime import date
 from engines.common import get_conn
+from engines.common import us_date
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -105,7 +106,13 @@ def _recompute_schedule(cur: sqlite3.Cursor, loan_note_id: int) -> None:
         (loan_note_id,),
     )
     (cleared_sum,) = cur.fetchone()
-    outstanding_uncleared = round(total_payable - cleared_sum, 2)
+    try:                                                     # bank adjustments (migration 053) count for a loan note as for a batch (2026-10-08 gap fix)
+        loan_adj, check_adj = cur.execute("""SELECT COALESCE(SUM(CASE WHEN kind = 'BATCH_BALANCE' THEN amount END), 0),
+                                                    COALESCE(SUM(CASE WHEN kind = 'CHECK_AMOUNT' THEN amount END), 0)
+                                             FROM bank_adjustments WHERE loan_note_id = ? AND reversed_at IS NULL""", (loan_note_id,)).fetchone()
+    except sqlite3.OperationalError:                         # a database without the adjustments table
+        loan_adj, check_adj = 0.0, 0.0
+    outstanding_uncleared = round(total_payable + float(loan_adj) - (cleared_sum + float(check_adj)), 2)
 
     cur.execute("SELECT status FROM loan_notes WHERE loan_note_id = ?", (loan_note_id,))
     (current_status,) = cur.fetchone()
@@ -282,6 +289,138 @@ def create_note_with_schedule(creditor_id: int, issue_date: date, principal: flo
     return True, f"Loan note {ref} created with {len(rows)} payments ({only} interest only, then {int(installments)} with principal).", lnid
 
 
+# --- payments on the dates you choose, interest by days (owner, 2026-10-08, Phase 7): interest = balance x monthly rate x days / 30, the days counted from the
+# loan date or the payment before. The interest stays a stored per-row value (a lender who counts a flat month can still have it typed over).
+
+def prorated_interest(balance: float, monthly_rate: float, days: int) -> float:
+    return round(float(balance) * float(monthly_rate or 0) / 100.0 * max(int(days), 0) / 30.0, 2)
+
+
+def prorated_rows(principal: float, monthly_rate: float, issue_date: date, payments: list[tuple]) -> list[dict]:
+    """payments: [(payment date, principal paid that day)] in any order. Returns the rows in date order: due_date, days, principal, interest, total, balance after.
+    Raises ValueError (plain words) for a payment on or before the loan date or the one before, more principal than is owed, or nothing at all."""
+    if not principal or float(principal) <= 0:
+        raise ValueError("Enter the principal.")
+    if monthly_rate is None or float(monthly_rate) < 0:
+        raise ValueError("Enter the interest per month (0 or more).")
+    pays = sorted(((d, round(float(p or 0), 2)) for d, p in payments if d), key=lambda x: x[0])
+    if not pays:
+        raise ValueError("Give at least one payment date.")
+    out, balance, prev = [], round(float(principal), 2), issue_date
+    for d, p in pays:
+        if d <= prev:
+            raise ValueError(f"The payment of {d:%m/%d/%Y} must come after {'the loan date' if prev == issue_date else prev.strftime('%m/%d/%Y')}.")
+        if p < 0 or p > balance + 0.005:
+            raise ValueError(f"The payment of {d:%m/%d/%Y} pays {p:,.2f} of principal, but only {balance:,.2f} is still owed.")
+        days = (d - prev).days
+        interest = prorated_interest(balance, monthly_rate, days)
+        balance = round(balance - p, 2)
+        out.append({"due_date": d, "days": days, "principal": p, "interest": interest, "total": round(p + interest, 2), "balance": balance})
+        prev = d
+    return out
+
+
+def create_note_with_payments(creditor_id: int, issue_date: date, principal: float, monthly_rate: float, payments: list[tuple],
+                              interest_override: dict | None = None) -> tuple[bool, str, int | None]:
+    """The loan note, its LN number and its payments on the chosen dates, as one step (no half-made note is left if anything fails).
+    interest_override: {payment date: interest typed over} for a lender who counts differently."""
+    from engines.loan_note_rules import cancel_loan_note, create_loan_note, promote_draft_loan_note
+    try:
+        rows = prorated_rows(principal, monthly_rate, issue_date, payments)
+    except ValueError as e:
+        return False, str(e), None
+    for r in rows:
+        if interest_override and r["due_date"] in interest_override and interest_override[r["due_date"]] is not None:
+            r["interest"] = round(float(interest_override[r["due_date"]]), 2)
+    ok, msg, lnid = create_loan_note(creditor_id, issue_date, principal, monthly_rate)
+    if not ok:
+        return False, msg, None
+    try:
+        ref = promote_draft_loan_note(lnid)
+        with _get_conn() as conn:
+            cur = conn.cursor()
+            for r in rows:
+                cur.execute("INSERT INTO loan_installments (loan_note_id, installment_no, due_date, principal, interest, outstanding_balance) VALUES (?, 0, ?, ?, ?, 0)",
+                            (lnid, str(r["due_date"]), r["principal"], r["interest"]))
+            _recompute_schedule(cur, lnid)
+            _assert_no_negative_balance(cur, lnid)
+            cur.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'LOAN_SCHEDULE_GENERATED', 'loan_notes', ?, ?)",
+                        (lnid, f"{len(rows)} payment(s) on chosen dates, interest by days (balance x {monthly_rate}% x days / 30)"))
+    except Exception as e:                                   # noqa: BLE001 -- no half-made note
+        cancel_loan_note(lnid)
+        return False, f"The loan note was not created: {e}. Nothing was kept; try again.", None
+    owed = rows[-1]["balance"]
+    return True, (f"Loan note {ref} created with {len(rows)} payment(s)." + (f" {owed:,.2f} of principal is not scheduled yet; add payments for it later." if owed > 0.005 else "")), lnid
+
+
+def change_installment_date(installment_id: int, new_date: date) -> tuple[bool, str]:
+    """Moves a payment to another date: its interest and the next payment's are worked out again by days (the balance x rate x days / 30). Refused once the payment
+    has a check (delete or void its check first), and for a date on or before the payment before / on or after the payment after."""
+    with _get_conn() as conn:
+        row = conn.execute("SELECT loan_note_id, status, due_date FROM loan_installments WHERE installment_id = ?", (installment_id,)).fetchone()
+        if not row:
+            return False, "Payment not found."
+        lnid, status, old = row
+        if status == "Active":
+            return False, "This payment already has its check: delete the parked check (or void it) first."
+        note = conn.execute("SELECT issue_date, principal_amount, monthly_interest_rate FROM loan_notes WHERE loan_note_id = ?", (lnid,)).fetchone()
+        rows = conn.execute("SELECT installment_id, due_date, principal, interest, status FROM loan_installments WHERE loan_note_id = ? ORDER BY due_date, installment_id",
+                            (lnid,)).fetchall()
+    ids = [r[0] for r in rows]
+    i = ids.index(installment_id)
+    before = date.fromisoformat(str(rows[i - 1][1])[:10]) if i > 0 else date.fromisoformat(str(note[0])[:10])
+    after = date.fromisoformat(str(rows[i + 1][1])[:10]) if i + 1 < len(rows) else None
+    if new_date <= before or (after and new_date >= after):
+        return False, f"The date must be after {before:%m/%d/%Y}" + (f" and before {after:%m/%d/%Y}" if after else "") + " (the payments around it)."
+    balance = float(note[1] or 0) - sum(float(r[2]) for r in rows[:i])
+    interest = prorated_interest(balance, note[2], (new_date - before).days)
+    try:
+        with _get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE loan_installments SET due_date = ?, interest = ? WHERE installment_id = ?", (str(new_date), interest, installment_id))
+            msg = f"Moved to {new_date:%m/%d/%Y}: interest {interest:,.2f}."
+            if after and rows[i + 1][4] != "Active":                 # the next payment's days changed too
+                nxt_bal = balance - float(rows[i][2])
+                nxt = prorated_interest(nxt_bal, note[2], (after - new_date).days)
+                cur.execute("UPDATE loan_installments SET interest = ? WHERE installment_id = ?", (nxt, rows[i + 1][0]))
+                msg += f" The next payment's interest is now {nxt:,.2f}."
+            _recompute_schedule(cur, lnid)
+            cur.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'LOAN_PAYMENT_MOVED', 'loan_installments', ?, ?)",
+                        (installment_id, f"payment moved {us_date(old)} -> {new_date}; interest by days {interest:,.2f}"))
+    except _ScheduleError as e:
+        return False, str(e)
+    return True, msg
+
+
+def delete_parked_loan_checks(loan_note_id: int, check_ids: list[int]) -> tuple[bool, str]:
+    """Deletes parked lender checks (no number, not written) as if never made: their payments are back to having no check. All or nothing; audited."""
+    from engines.permissions import require
+    ok, why = require("check.park")
+    if not ok:
+        return False, why
+    ids = [int(c) for c in check_ids or []]
+    if not ids:
+        return False, "Tick the parked checks to delete."
+    with _get_conn() as conn:
+        cur = conn.cursor()
+        found = []
+        for cid in ids:
+            r = cur.execute("SELECT loan_note_id, status, check_number, printed_at, amount, check_date FROM checks_issued WHERE check_id = ?", (cid,)).fetchone()
+            if not r or r[0] != loan_note_id:
+                return False, f"Check {cid} isn't part of this loan note."
+            if r[1] != "Active" or r[2] or r[3]:
+                return False, f"Check {r[2] or cid} is {'written' if r[2] or r[3] else r[1].lower()}: only parked checks can be deleted (void it instead)."
+            found.append((cid, r[4], str(r[5])[:10]))
+        for cid, amount, day in found:
+            unlink_installment_for_check(cur, cid)
+            cur.execute("DELETE FROM checks_issued WHERE check_id = ?", (cid,))
+            cur.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'CHECK_UNPARKED', 'checks_issued', ?, ?)",
+                        (cid, f"parked lender check {amount:,.2f} dated {day} removed from loan note {loan_note_id}"))
+        _recompute_schedule(cur, loan_note_id)
+        conn.commit()
+    return True, f"{len(found)} parked check(s) deleted; their payments have no check now."
+
+
 def issue_all_pdcs(loan_note_id: int) -> tuple[bool, str, int]:
     """Parks a post-dated check for every installment that has none yet, each for its scheduled amount on its due date (the same thing 'Issue PDC' does one by one).
     Stops at the first refusal and says which; the checks already parked stay. Returns (ok, message, how many were parked)."""
@@ -407,7 +546,7 @@ def delete_loan_installment(installment_id: int) -> tuple[bool, str]:
         cur.execute("DELETE FROM loan_installments WHERE installment_id = ?", (installment_id,))
         cur.execute(
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'LOAN_INSTALLMENT_DELETED', 'loan_installments', ?, ?)",
-            (installment_id, f"Loan note {loan_note_id}: installment due {str(due_date)[:10]} deleted (principal {principal:,.2f} + interest {interest:,.2f})"),
+            (installment_id, f"Loan note {loan_note_id}: installment due {us_date(due_date)} deleted (principal {principal:,.2f} + interest {interest:,.2f})"),
         )
         _recompute_schedule(cur, loan_note_id)
         conn.commit()

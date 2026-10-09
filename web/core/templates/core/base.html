@@ -7,7 +7,7 @@
 <link rel="icon" href="{% static 'assets/slicks_logo.jpg' %}">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
-<link rel="stylesheet" href="{% static 'core/slicks.css' %}">
+<link rel="stylesheet" href="{% static 'core/slicks.css' %}?v=2026-10-09l">
 </head>
 <body>
 {% if me %}
@@ -22,6 +22,9 @@
   </div>
   {% endfor %}
   <span class="tb-gap"></span>
+  {% if may_search %}<form class="tb-search" method="get" action="/search/" role="search">
+    <span class="ms">search</span><input type="search" name="q" value="{{ search_q }}" placeholder="Search a check, invoice, name or amount" aria-label="Search everything" minlength="2">
+  </form>{% endif %}
   {% if is_sandbox %}<span class="tb-tag">SANDBOX</span>{% endif %}
   <div class="tb-sec tb-user">
     <button type="button" class="tb-label"><span class="ms">person</span> {{ me.name }} &#9662;</button>
@@ -34,7 +37,7 @@
 </nav>
 {% endif %}
 <main>
-{% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
+{% for m in messages %}<div class="msg {{ m.tags }}">{{ m|usdates }}</div>{% endfor %}
 {% block content %}{% endblock %}
 </main>
 <script>
@@ -63,6 +66,74 @@ if (window.matchMedia("(hover: none)").matches) {
     if (!e.target.closest(".tb-sec")) document.querySelectorAll(".tb-sec.open").forEach(function (s) { s.classList.remove("open"); });
   });
 }
+</script>
+<dialog class="rmap-dlg" id="rmap-dlg" aria-labelledby="rmap-title">
+  <div class="rmap-head"><b id="rmap-title"><span class="ms">account_tree</span> Relationship map</b>
+    <button class="btn small ghost" type="button" data-close>Close</button></div>
+  <div class="rmap-body" id="rmap-body"></div>
+</dialog>
+<script>
+/* "Relationship map" buttons (SAP Business One style, 2026-10-09): the map is fetched when asked and shown in a pop-up. */
+(function () {
+  var dlg = document.getElementById("rmap-dlg"), body = document.getElementById("rmap-body");
+  if (!dlg) return;
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-rmap]");
+    if (!b) return;
+    body.innerHTML = '<p class="hint">Loading…</p>';
+    dlg.showModal();
+    fetch(b.getAttribute("data-rmap"), {credentials: "same-origin"})
+      .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
+      .then(function (html) { body.innerHTML = html; })
+      .catch(function () { body.innerHTML = '<p class="hint">The relationship map could not be loaded.</p>'; });
+  });
+  dlg.querySelector("[data-close]").addEventListener("click", function () { dlg.close(); });
+  dlg.addEventListener("click", function (e) { if (e.target === dlg) dlg.close(); });   /* a click outside the box */
+})();
+</script>
+<script>
+/* Dates are typed and shown mm/dd/yyyy everywhere (owner, 2026-10-09). The browser's own date box follows the computer's locale (mm/dd/yyyy here), so each one
+   gets a mm/dd/yyyy text box beside it, with the same calendar behind a button; the browser's box stays (hidden) and still sends yyyy-mm-dd, so nothing
+   changes for the server or for the page scripts that read or fill it. */
+(function () {
+  function dmy(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ""); return m ? m[2] + "/" + m[3] + "/" + m[1] : ""; }
+  function iso(text) {
+    var m = /^\s*(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}|\d{4})\s*$/.exec(text || ""); if (!m) return null;
+    var mo = +m[1], d = +m[2], y = +m[3]; if (y < 100) y += 2000;
+    var t = new Date(Date.UTC(y, mo - 1, d)); if (t.getUTCMonth() !== mo - 1 || t.getUTCDate() !== d) return null;
+    return y + "-" + String(mo).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+  }
+  function enhance(inp) {
+    if (inp.dataset.dmy) return; inp.dataset.dmy = "1";
+    var wrap = document.createElement("span"); wrap.className = "dmy-wrap";
+    var txt = document.createElement("input"); txt.type = "text"; txt.className = "dmy-text"; txt.placeholder = "mm/dd/yyyy"; txt.inputMode = "numeric"; txt.autocomplete = "off";
+    txt.setAttribute("aria-label", inp.getAttribute("aria-label") || (inp.labels && inp.labels[0] ? inp.labels[0].textContent.trim() : "Date") + " (mm/dd/yyyy)");
+    if (inp.required) txt.required = true; if (inp.disabled) txt.disabled = true;
+    var btn = document.createElement("button"); btn.type = "button"; btn.className = "dmy-btn"; btn.tabIndex = -1; btn.setAttribute("aria-label", "Open the calendar");
+    btn.innerHTML = '<span class="ms">calendar_month</span>';
+    inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(txt); wrap.appendChild(inp); wrap.appendChild(btn);
+    inp.classList.add("dmy-native"); inp.tabIndex = -1;
+    txt.value = dmy(inp.value);
+    function push() {
+      var v = txt.value.trim(); txt.setCustomValidity("");
+      if (!v) { if (inp.value) { inp.value = ""; fire(); } return; }
+      var i = iso(v);
+      if (!i) { txt.setCustomValidity("Type the date as mm/dd/yyyy"); return; }
+      if ((inp.min && i < inp.min) || (inp.max && i > inp.max)) { txt.setCustomValidity("Between " + (dmy(inp.min) || "…") + " and " + (dmy(inp.max) || "…")); return; }
+      txt.value = dmy(i); if (inp.value !== i) { inp.value = i; fire(); }
+    }
+    function fire() { inp.dispatchEvent(new Event("input", {bubbles: true})); inp.dispatchEvent(new Event("change", {bubbles: true})); }
+    txt.addEventListener("change", push); txt.addEventListener("blur", push);
+    txt.addEventListener("keydown", function (e) { if (e.key === "Enter") push(); });
+    inp.addEventListener("change", function () { txt.value = dmy(inp.value); txt.setCustomValidity(""); });
+    btn.addEventListener("click", function () { if (inp.showPicker) { try { inp.showPicker(); return; } catch (e) {} } inp.focus(); });
+    if (inp.form) inp.form.addEventListener("submit", function (e) { push(); if (!txt.checkValidity()) { e.preventDefault(); txt.reportValidity(); } }, true);
+    /* a page script may set the date itself (quick fill, split): keep the text in step */
+    setInterval(function () { if (document.activeElement !== txt && txt.value !== dmy(inp.value)) txt.value = dmy(inp.value); }, 400);
+  }
+  function all() { document.querySelectorAll('input[type=date]').forEach(enhance); }
+  all(); new MutationObserver(all).observe(document.body, {childList: true, subtree: true});
+})();
 </script>
 </body>
 </html>

@@ -15,7 +15,7 @@
 {% if waiting_by %}
 <div class="warnbox"><b>Sales invoices waiting for a batch</b>
   <div class="scroll-x"><table class="list" style="margin-top:6px"><tr><th>Supplier</th><th>Invoices</th><th>Total</th><th>First due</th><th></th></tr>
-    {% for w in waiting_by %}<tr><td>{{ w.supplier }}</td><td class="num">{{ w.n }}</td><td class="num">{{ w.total|floatformat:2|intcomma }}</td><td>{{ w.first_due }}</td>
+    {% for w in waiting_by %}<tr><td>{{ w.supplier }}</td><td class="num">{{ w.n }}</td><td class="num">{{ w.total|floatformat:2|intcomma }}</td><td>{{ w.first_due|dmy }}</td>
       <td><form method="post" action="/order-statements/new/">{% csrf_token %}<input type="hidden" name="s" value="{{ w.creditor_id }}">
         <button class="btn small" type="submit"><span class="ms">note_add</span>New batch for them</button></form></td></tr>{% endfor %}</table></div>
   <p class="hint" style="margin-bottom:0">A new batch (or an open one of the supplier's) lists its waiting invoices to tick. Not batched = not on an order statement yet.</p></div>
@@ -33,11 +33,11 @@
 <div class="scroll-x"><table class="list">
   <tr><th>Order statement</th><th>Supplier</th><th>Status</th><th>Gross</th><th>Credit memos</th><th>Net</th><th>Outstanding</th><th>Changed</th><th></th></tr>
   {% for r in rows %}<tr>
-    <td><a href="/order-statements/{{ r.statement_id }}/">{% if r.is_draft %}Draft · {{ r.created_at|slice:":10" }}{% else %}{{ r.statement_ref }}{% endif %}</a></td>
+    <td><a href="/order-statements/{{ r.statement_id }}/">{% if r.is_draft %}Draft · {{ r.created_at|dmy }}{% else %}{{ r.statement_ref }}{% endif %}</a></td>
     <td>{{ r.creditor_name }}</td>
     <td><span class="pill{% if r.stage == 'Draft' or r.stage == 'Cancelled' %} off{% elif r.stage == 'Parked' %} warn{% endif %}">{{ r.stage }}</span></td>
     <td class="num">{{ r.total_amount|floatformat:2|intcomma }}</td><td class="num">{% if r.credit_memo_total %}{{ r.credit_memo_total|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
-    <td class="num">{{ r.net_total|floatformat:2|intcomma }}</td><td class="num">{{ r.outstanding|floatformat:2|intcomma }}</td><td>{{ r.last_modified|slice:":10" }}</td>
+    <td class="num">{{ r.net_total|floatformat:2|intcomma }}</td><td class="num">{{ r.outstanding|floatformat:2|intcomma }}</td><td>{{ r.last_modified|dmy }}</td>
     <td>{% if r.is_locked and r.stage != "Cancelled" %}<span class="pill">Locked</span>{% endif %}{% if r.needs_reprint %} <span class="pill warn">Needs reprint</span>{% endif %}</td></tr>{% endfor %}
 </table></div>
 <p class="hint">{{ rows|length }} batch(es). Draft = no checks yet · Parked = checks parked, none printed · Issued = at least one check printed.</p>

@@ -14,6 +14,7 @@ import sqlite3
 from datetime import date, timedelta
 from engines.common import get_conn
 from engines.clock import manila_today
+from engines.common import us_date
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
@@ -103,7 +104,7 @@ def _checks(conn, today: date, out: list) -> None:
                r["amount"], who, tgt)
         if r["printed_at"] and not r["check_number"]:
             _f(out, g, "Printed but no check number", f"no_number|{r['check_id']}",
-               f"Printed {str(r['printed_at'])[:10]}, dated {cd}: assign the leaf number so the bank statement can match it.", r["amount"], who, tgt)
+               f"Printed {us_date(r['printed_at'])}, dated {cd}: assign the leaf number so the bank statement can match it.", r["amount"], who, tgt)
         if cd and cd < today - timedelta(days=stale_check_days()) and not r["bank_cleared_date"]:
             _f(out, g, "Stale check (over 6 months, not cleared)", f"stale|{r['check_id']}",
                f"Check {label} dated {cd} has not been cleared by the bank; a check goes stale six months after its date.", r["amount"], who, tgt)
@@ -147,7 +148,7 @@ def _bank_loan_dues(conn, today: date, out: list) -> None:
                               AND i.installment_id NOT IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)
                             ORDER BY i.due_date""", (str(last - timedelta(days=5)), str(last - timedelta(days=90)))):
         _f(out, "Bank vs our records", "Bank loan installment with no bank debit", f"loan_no_debit|{r['installment_id']}",
-           f"{r['creditor_name']} loan {r['loan_ref']}: the installment of {float(r['amount']):,.2f} due {r['due_date']} has no matching debit on the bank statement (imported up to {last:%b %d}).",
+           f"{r['creditor_name']} loan {r['loan_ref']}: the installment of {float(r['amount']):,.2f} due {r['due_date']} has no matching debit on the bank statement (imported up to {last:%m/%d}).",
            r["amount"], r["creditor_name"], ("bank-loans", {"selected_bank_loan_id": int(r["bank_loan_id"]), "bl_mode": "Browse bank loans"}))
 
 
