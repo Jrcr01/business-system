@@ -235,9 +235,14 @@ def unpay_card(payment_id: int) -> tuple[bool, str]:
         if not row:
             return False, "Card payment not found."
         conn.execute("DELETE FROM cc_payments WHERE payment_id = ?", (payment_id,))
-        _card_restate(conn, int(row[0]), -float(row[1]))
+        # owner, 2026-10-09: once the next SOA has confirmed the statement, its figures are the SOA's -- taking back a daily record only removes the record
+        soa = conn.execute("SELECT soa_confirmed_at FROM cc_statements WHERE cc_statement_id = ?", (int(row[0]),)).fetchone()[0]
+        if not soa:
+            _card_restate(conn, int(row[0]), -float(row[1]))
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'CC_PAYMENT_TAKEN_BACK', 'cc_statements', ?, ?)",
-                     (int(row[0]), f"payment of {float(row[1]):,.2f} on {us_date(row[2])} taken back"))
+                     (int(row[0]), f"payment of {float(row[1]):,.2f} on {us_date(row[2])} taken back" + ("; the statement keeps the SOA's figures" if soa else "")))
+    if soa:
+        return True, f"The record of {float(row[1]):,.2f} is removed. The statement keeps what the SOA shows as paid."
     return True, f"The card payment of {float(row[1]):,.2f} is taken back; that amount is owed again."
 
 

@@ -133,7 +133,7 @@ def confirm_cc_payment_from_next_statement(cc_statement_id: int, carried_over: f
         unpaid_next = round(carried_over, 2)
         status = "Paid" if unpaid_next <= 0.005 else ("Partially Paid" if paid > 0.005 else "Unpaid")
         conn.execute(
-            "UPDATE cc_statements SET amount_paid = ?, unpaid_balance_next = ?, status = ?, paid_confirmed = 1 WHERE cc_statement_id = ?",
+            "UPDATE cc_statements SET amount_paid = ?, unpaid_balance_next = ?, status = ?, paid_confirmed = 1, soa_confirmed_at = CURRENT_TIMESTAMP WHERE cc_statement_id = ?",
             (paid, unpaid_next, status, cc_statement_id),
         )
         conn.execute(

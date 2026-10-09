@@ -85,14 +85,18 @@ def _cash_rows(conn, start: date, end: date) -> pd.DataFrame:
         conn, params=(today, today, s, e)))
     # Card payments count on the date they were actually recorded; a statement with no recorded payment
     # falls back to its own amount_paid on its due date (the migrated statements, or a statement you confirmed).
+    # Once the next SOA confirmed a statement and its figure differs from the daily records, the SOA's amount counts (owner, 2026-10-09: the SOA is final).
+    daily_ok = """(cs.soa_confirmed_at IS NULL OR ABS(cs.amount_paid - (SELECT COALESCE(SUM(q.amount), 0) FROM cc_payments q
+                                                                      WHERE q.cc_statement_id = cs.cc_statement_id)) <= 0.005)"""
     parts.append(pd.read_sql_query(
-        """SELECT 'Credit Card' AS track, cr.creditor_name AS payee, p.payment_date AS date, p.amount AS paid, 0 AS scheduled
-           FROM cc_payments p JOIN credit_cards cc ON cc.card_id = p.card_id JOIN creditors cr ON cr.creditor_id = cc.creditor_id
-           WHERE p.payment_date BETWEEN ? AND ?""",
+        f"""SELECT 'Credit Card' AS track, cr.creditor_name AS payee, p.payment_date AS date, p.amount AS paid, 0 AS scheduled
+           FROM cc_payments p JOIN cc_statements cs ON cs.cc_statement_id = p.cc_statement_id
+           JOIN credit_cards cc ON cc.card_id = p.card_id JOIN creditors cr ON cr.creditor_id = cc.creditor_id
+           WHERE p.payment_date BETWEEN ? AND ? AND {daily_ok}""",
         conn, params=(s, e)))
     parts.append(pd.read_sql_query(
-        """SELECT 'Credit Card' AS track, cr.creditor_name AS payee, cs.due_date AS date,
-                  CASE WHEN EXISTS (SELECT 1 FROM cc_payments p WHERE p.cc_statement_id = cs.cc_statement_id) THEN 0 ELSE cs.amount_paid END AS paid,
+        f"""SELECT 'Credit Card' AS track, cr.creditor_name AS payee, cs.due_date AS date,
+                  CASE WHEN EXISTS (SELECT 1 FROM cc_payments p WHERE p.cc_statement_id = cs.cc_statement_id) AND {daily_ok} THEN 0 ELSE cs.amount_paid END AS paid,
                   CASE WHEN cs.due_date >= ? THEN MAX(cs.total_amount_due - cs.amount_paid, 0) ELSE 0 END AS scheduled
            FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id
            JOIN creditors cr ON cr.creditor_id = cc.creditor_id

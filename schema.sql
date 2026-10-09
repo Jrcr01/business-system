@@ -435,6 +435,7 @@ CREATE TABLE IF NOT EXISTS cc_statements (
     -- paid_confirmed (migration 041, 2026-09-21): 0 = the amount paid is not known yet -- it is confirmed by the
     -- NEXT statement's carried-over balance. Existing rows are 1 (their figures stand as entered).
     paid_confirmed INTEGER NOT NULL DEFAULT 1 CHECK(paid_confirmed IN (0, 1)),
+    soa_confirmed_at DATETIME,      -- migration 081: when the next SOA confirmed the amount paid; from then on the SOA figure is final
     status TEXT NOT NULL DEFAULT 'Unpaid' CHECK(status IN ('Unpaid', 'Partially Paid', 'Paid', 'Cancelled')),
     payment_method TEXT DEFAULT 'Cash / Online' CHECK(payment_method IN ('Cash / Online', 'Direct Debit', 'Check')),
     payment_date DATE,

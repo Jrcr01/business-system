@@ -163,3 +163,44 @@ def test_the_next_soa_is_the_final_word_on_card_payments_recorded_daily(db):
     assert confirm_cc_payment_from_next_statement(b, 500.0) == (2500.0, "Partially Paid")      # the SOA shows 2,500 paid, 1,000 was recorded
     assert fetchone(db, "SELECT COUNT(*) FROM review_flags WHERE kind = 'CC_PAYMENT_MISMATCH' AND ref_id = ?", (b,))[0] == 1
     assert fetchone(db, "SELECT amount_paid FROM cc_statements WHERE cc_statement_id = ?", (b,))[0] == 2500.0   # the SOA figure is kept
+
+
+def test_after_the_soa_taking_back_a_daily_record_keeps_the_soa_figures_and_reports_count_the_soa(db):
+    # owner, 2026-10-09: "what if my brother mark the credit card paid, but i corrected it thru entering SOA" -- the SOA stays final
+    from conftest import make_creditor as mk
+    from engines import account_statement
+    from engines.card_rules import confirm_cc_payment_from_next_statement
+    from engines.overview_report_service import _cash_rows
+    issuer = mk(db, name="PNB", creditor_type="CREDIT_CARD")
+    due = TODAY - timedelta(days=2)
+    with sqlite3.connect(db) as conn:
+        card = conn.execute("INSERT INTO credit_cards (creditor_id, card_name, card_number_last4, credit_limit) VALUES (?, 'Mastercard', '6819', 1)", (issuer,)).lastrowid
+        sid = conn.execute("INSERT INTO cc_statements (card_id, due_date, total_amount_due, status, paid_confirmed) VALUES (?, ?, 733600, 'Unpaid', 0)",
+                           (card, str(due))).lastrowid
+    assert clearing.pay_card(sid, TODAY)[0]                                                    # the brother: all 733,600 paid
+    assert confirm_cc_payment_from_next_statement(sid, 233600.0) == (500000.0, "Partially Paid")   # the SOA: only 500,000
+    assert fetchone(db, "SELECT soa_confirmed_at IS NOT NULL FROM cc_statements WHERE cc_statement_id = ?", (sid,))[0] == 1
+    with app.get_conn() as conn:
+        cash = _cash_rows(conn, due, TODAY)
+    assert cash[cash["track"] == "Credit Card"]["paid"].sum() == 500000.0                      # reports: the SOA's amount, not the daily record
+    soa_report = account_statement.ledger("card", card)
+    assert soa_report["payments"] == 500000.0 and soa_report["closing"] == 233600.0              # the statement of account: the SOA's figure too
+    pid = fetchone(db, "SELECT payment_id FROM cc_payments WHERE cc_statement_id = ?", (sid,))[0]
+    ok, msg = clearing.unpay_card(pid)
+    assert ok and "keeps what the SOA shows" in msg
+    row = fetchone(db, "SELECT amount_paid, unpaid_balance_next, status FROM cc_statements WHERE cc_statement_id = ?", (sid,))
+    assert row == (500000.0, 233600.0, "Partially Paid")                                       # untouched by the undo
+
+
+def test_before_the_soa_taking_back_a_daily_record_makes_it_owed_again(db):
+    from conftest import make_creditor as mk
+    issuer = mk(db, name="RCBC", creditor_type="CREDIT_CARD")
+    with sqlite3.connect(db) as conn:
+        card = conn.execute("INSERT INTO credit_cards (creditor_id, card_name, card_number_last4, credit_limit) VALUES (?, 'Gold', '5003', 1)", (issuer,)).lastrowid
+        sid = conn.execute("INSERT INTO cc_statements (card_id, due_date, total_amount_due, status, paid_confirmed) VALUES (?, ?, 3000, 'Unpaid', 0)",
+                           (card, str(TODAY - timedelta(days=1)))).lastrowid
+    assert clearing.pay_card(sid, TODAY, amount=1000)[0]
+    pid = fetchone(db, "SELECT payment_id FROM cc_payments WHERE cc_statement_id = ?", (sid,))[0]
+    ok, msg = clearing.unpay_card(pid)
+    assert ok and "owed again" in msg
+    assert fetchone(db, "SELECT amount_paid, status FROM cc_statements WHERE cc_statement_id = ?", (sid,)) == (0.0, "Unpaid")

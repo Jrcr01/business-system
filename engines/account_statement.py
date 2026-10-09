@@ -62,10 +62,10 @@ def _raw(kind: str, item_id: int) -> tuple[str, list[tuple], list[tuple]]:
                         LEFT JOIN cardholders ch ON ch.cardholder_id = cc.cardholder_id WHERE cc.card_id = ?""", (item_id,))
         name = (info[0][0] + (f" · {info[0][1]}" if info[0][1] else "")) if info else "?"
         stmts = _rows("""SELECT cc_statement_id, due_date, COALESCE(statement_month, ''), previous_balance, new_charges, interest_charged, total_amount_due,
-                                COALESCE(amount_paid, 0), payment_date
+                                COALESCE(amount_paid, 0), payment_date, soa_confirmed_at
                          FROM cc_statements WHERE card_id = ? AND status != 'Cancelled' ORDER BY due_date, cc_statement_id""", (item_id,))
         lines = []
-        for k, (sid, due, month, prev, new, fin, total, paid, pday) in enumerate(stmts):
+        for k, (sid, due, month, prev, new, fin, total, paid, pday, soa) in enumerate(stmts):
             fresh = float(new or 0) + float(fin or 0)
             if k == 0 and float(prev or 0) > 0:
                 lines.append((due, "Balance brought over", month, float(prev), 0.0))
@@ -73,6 +73,8 @@ def _raw(kind: str, item_id: int) -> tuple[str, list[tuple], list[tuple]]:
                 fresh = float(total or 0)                      # statements recorded with the total only
             lines.append((due, "Statement" + (f" {month}" if month else ""), month, fresh, 0.0))
             recorded = _rows("SELECT payment_date, amount FROM cc_payments WHERE cc_statement_id = ?", (sid,))
+            if soa and abs(sum(float(a) for _, a in recorded) - float(paid)) > 0.005:
+                recorded = []                                   # the SOA is final (owner, 2026-10-09): the daily records it contradicts are not counted
             for d, a in recorded:
                 lines.append((d, "Payment", month, 0.0, float(a)))
             rest = round(float(paid) - sum(float(a) for _, a in recorded), 2)
