@@ -371,8 +371,13 @@ def _stored_check(conn, bank_account_id: int, parsed: ParsedStatement) -> dict:
 
 
 def bank_dir() -> str:
-    """Where imported statement files are kept (outside the project and git): a 'bank' folder beside the Drive login folder / live DB."""
-    return os.path.join(os.path.dirname(db_location.drive_dir()), "bank")
+    """Where imported statement files are kept (outside the project and git): a 'bank' folder beside the Drive login folder / live DB.
+    Without a Drive set-up (no AP_DRIVE_DIR, no live-database pointer: the server), beside the database in use -- the home folder is
+    read-only for the server's program (2026-10-09: "Permission denied: '/home/slicks'")."""
+    if os.environ.get("AP_DRIVE_DIR") or os.path.exists(db_location.POINTER):
+        return os.path.join(os.path.dirname(db_location.drive_dir()), "bank")
+    import engines.db_engine as dbe
+    return os.path.join(os.path.dirname(os.path.abspath(dbe.DB_PATH)), "bank")
 
 
 def import_statement(data: bytes, filename: str, bank_account_id: int = 1, keep_copy: bool = True) -> dict:
