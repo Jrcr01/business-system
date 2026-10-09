@@ -4,7 +4,7 @@
 {% include "masters/_settings_tabs.html" %}
 <p class="note"><a href="/settings/users/">← Users</a></p>
 <h2 style="margin-top:0">{{ u.name }} <span class="pill{% if not u.is_active %} off{% endif %}">{% if u.is_active %}{{ role_label }}{% else %}Switched off{% endif %}</span></h2>
-<p class="note">Signs in as <b>{{ u.username|default:"—" }}</b> · {{ u.email }}</p>
+<p class="note">Signs in with <b>{{ u.email }}</b> · username {{ u.username|default:"—" }}</p>
 {% if shown %}
 <div class="msg success" style="max-width:760px"><span class="ms">key</span> New temporary password for <b>{{ shown.0 }}</b>: <code class="temp">{{ shown.1 }}</code>
   Give it to them now; it is shown only this once.</div>
@@ -15,11 +15,17 @@
   <input type="hidden" name="action" value="reset">
   <button class="btn small ghost" type="submit"><span class="ms">lock_reset</span>Give a new temporary password</button></form>
 
+<div class="grp">Email</div>
+<form class="bar" method="post"{% if u.user_id == me.user_id %} onsubmit="return confirm('Change your own email? Cloudflare must already let the new email in, or you will be signed out.');"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="email">
+  <div><input type="email" name="email" value="{{ u.email|default:'' }}" aria-label="Email" autocapitalize="none" spellcheck="false" required style="min-width:18em"></div>
+  <button class="btn small ghost" type="submit"><span class="ms">alternate_email</span>Change the email</button></form>
+<p class="hint">They sign in with this email. Use the same email as in Cloudflare Access (erp application, Include: Emails).</p>
+
 <div class="grp">Username</div>
 <form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="username">
   <div><input type="text" name="username" value="{{ u.username|default:'' }}" aria-label="Username" autocapitalize="none" spellcheck="false" required></div>
   <button class="btn small ghost" type="submit"><span class="ms">badge</span>Change the username</button></form>
-<p class="hint">3 to 30 characters: letters, digits, dot, dash or underscore. Their next sign-in uses the new one.</p>
+<p class="hint">Not used to sign in any more (people sign in with their email); kept as a short name in records. 3 to 30 characters: letters, digits, dot, dash or underscore.</p>
 
 <div class="grp">Sign-in code</div>
 {% if code_since %}<form class="bar" method="post" onsubmit="return confirm('Reset the sign-in code of {{ u.name|escapejs }}? Their authenticator app stops working for Slick\'s; they set up a new code at their next sign-in.');">{% csrf_token %}

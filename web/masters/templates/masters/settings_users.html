@@ -9,10 +9,10 @@
 <p class="note">Only the System admin sees this. People are switched off, never deleted. Every change is in the audit log.</p>
 <div class="scroll-x">
 <table class="list">
-  <tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Last signed in</th><th></th></tr>
+  <tr><th>Name</th><th>Email (sign-in)</th><th>Username</th><th>Role</th><th>Status</th><th>Last signed in</th><th></th></tr>
   {% for u in users %}
   <tr>
-    <td>{{ u.name }}</td><td><b>{{ u.username|default:"—" }}</b></td><td>{{ u.email }}</td><td>{{ u.role_label }}</td>
+    <td>{{ u.name }}</td><td><b>{{ u.email }}</b></td><td>{{ u.username|default:"—" }}</td><td>{{ u.role_label }}</td>
     <td>{% if not u.is_active %}<span class="pill off">Switched off</span>{% elif u.locked_until %}<span class="pill warn">Locked</span>{% elif u.must_change_password %}<span class="pill warn">Temporary password</span>{% else %}<span class="pill">Active</span>{% endif %}</td>
     <td>{{ u.last_login_at|dmy|default:"—" }}</td>
     <td>{% if u.user_id == me_id %}<span class="hint">you</span>{% endif %} <a href="/settings/users/{{ u.user_id }}/">Change</a></td>
@@ -23,10 +23,9 @@
 <div class="grp">Add a person</div>
 <form class="bar" method="post">{% csrf_token %}
   <div class="grow"><label for="name">Name</label><input id="name" type="text" name="name" required></div>
-  <div class="grow"><label for="username">Username (to sign in)</label><input id="username" type="text" name="username" autocapitalize="none" spellcheck="false" required pattern="[A-Za-z0-9][A-Za-z0-9._\-]{2,29}" title="3 to 30 characters: letters, digits, dot, dash or underscore"></div>
-  <div class="grow"><label for="email">Email (for records)</label><input id="email" type="email" name="email" required></div>
+  <div class="grow"><label for="email">Email (to sign in)</label><input id="email" type="email" name="email" autocapitalize="none" spellcheck="false" required></div>
   <div><label for="role">Role</label><select id="role" name="role">{% for r, label in roles %}<option value="{{ r }}"{% if r == "owner" %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
   <button class="btn small" type="submit"><span class="ms">person_add</span>Add</button>
 </form>
-<p class="hint">They sign in with the username, then their password, then the 6-digit code from their authenticator app.</p>
+<p class="hint">They sign in with this email and their password. Add the same email to Cloudflare Access (erp application, Include: Emails) so they can reach the sign-in page.</p>
 {% endblock %}

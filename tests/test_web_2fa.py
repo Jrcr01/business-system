@@ -157,3 +157,19 @@ def test_the_sandbox_switch_skips_sign_in_and_is_off_unless_set(web):
         assert "Sandbox: sign in as" in page and "Family" in page
         r = web.post("/login/", {"uid": fetchone_uid("family@slicks.test")})
         assert r["Location"] == "/" and web.get("/").status_code == 200                # no password, no code
+
+
+def test_the_admin_changes_a_persons_email_and_they_sign_in_with_the_new_one(web):
+    # owner, 2026-10-09: "how about change of email?"
+    _admin(web)
+    uid = _new()
+    r = web.post(f"/settings/users/{uid}/", {"action": "email", "email": "Family.New@Slicks.test "}, follow=True)
+    assert b"The email is now family.new@slicks.test" in r.content
+    assert fetchone(_db(), "SELECT email FROM app_users WHERE user_id = ?", (uid,))[0] == "family.new@slicks.test"
+    assert fetchone(_db(), "SELECT COUNT(*) FROM audit_logs WHERE user_action = 'USER_EMAIL_CHANGED'")[0] == 1
+    assert Client().post("/login/", {"email": "family@slicks.test", "password": PW}).status_code == 200      # the old one no longer works
+    assert Client().post("/login/", {"email": "family.new@slicks.test", "password": PW})["Location"] == "/2fa/setup/"
+    r = web.post(f"/settings/users/{uid}/", {"action": "email", "email": "admin@slicks.test"}, follow=True)
+    assert b"Another account already uses admin@slicks.test" in r.content
+    r = web.post(f"/settings/users/{uid}/", {"action": "email", "email": "not-an-email"}, follow=True)
+    assert b"Type a valid email address" in r.content

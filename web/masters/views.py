@@ -173,7 +173,7 @@ def settings_users(request):
     if request.method == "POST":
         ok, msg, uid, temp = au.create_user(request.POST.get("email", ""), request.POST.get("name", ""), request.POST.get("role", ""), request.POST.get("username", ""))
         if ok:
-            shown = (au.get_user(uid)["username"], temp)
+            shown = (au.get_user(uid)["email"], temp)
             messages.success(request, msg)
         else:
             messages.error(request, msg)
@@ -208,6 +208,8 @@ def settings_user(request, user_id: int):
         elif what == "switches" and u["role"] != "admin":
             from engines.permissions import denied_from_lines          # one line may stand for several actions (owner, 2026-10-09)
             ok, msg = au.set_restrictions(user_id, denied_from_lines(set(request.POST.getlist("on")), au.get_restrictions(user_id)))
+        elif what == "email":
+            ok, msg = au.set_email(user_id, request.POST.get("email", ""))
         elif what == "username":
             ok, msg = au.set_username(user_id, request.POST.get("username", ""))
         elif what == "reset_code":

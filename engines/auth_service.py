@@ -151,6 +151,29 @@ def set_username(user_id: int, username: str) -> tuple[bool, str]:
     return True, f"The username is now {username}."
 
 
+def set_email(user_id: int, email: str) -> tuple[bool, str]:
+    """The System admin changes a person's email (owner, 2026-10-09). The email is how they sign in to the main system and must equal their Cloudflare
+    Access email; their switches, password and history stay (they hang on the account, not the email). Past audit lines keep the old email."""
+    import re
+    _ok, _msg = require_permission("users.manage")
+    if not _ok:
+        return False, _msg
+    email = (email or "").strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        return False, "Type a valid email address."
+    with write_tx() as conn:
+        row = conn.execute("SELECT email FROM app_users WHERE user_id = ?", (user_id,)).fetchone()
+        if not row:
+            return False, "Account not found."
+        if (row[0] or "").strip().lower() == email:
+            return True, "The email is unchanged."
+        if conn.execute("SELECT 1 FROM app_users WHERE lower(trim(email)) = ? AND user_id != ?", (email, user_id)).fetchone():
+            return False, f"Another account already uses {email}."
+        conn.execute("UPDATE app_users SET email = ? WHERE user_id = ?", (email, user_id))
+        _audit(conn, "USER_EMAIL_CHANGED", user_id, f"{row[0]} -> {email}")
+    return True, f"The email is now {email}. Add it to Cloudflare Access (erp application, Include: Emails) so they can get in."
+
+
 def _audit(conn, action: str, user_id, text: str, who: str | None = None) -> None:
     if who is None:
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), ?, 'app_users', ?, ?)", (action, user_id, text))
