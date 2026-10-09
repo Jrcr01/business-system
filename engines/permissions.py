@@ -190,6 +190,20 @@ def allowed_pages(role: str | None, all_pages: set[str]) -> set[str]:
     return out
 
 
+def viewable_pages(role: str | None, all_pages: set[str]) -> set[str]:
+    """The pages this role may OPEN. Owners see every page except Set-up (owner, 2026-10-09: "since we are all owners ... view access to all modules");
+    what they may DO stays per their switches -- a page they may only see is read-only (masters.views.page_needed refuses its saves)."""
+    out = allowed_pages(role, all_pages)
+    if role == "owner":
+        out |= {p for p in all_pages if PAGE_ACTION.get(p) not in SYSTEM_ONLY and p != "more"}
+    return out
+
+
+def sees_search(role: str | None) -> bool:
+    """Search only reads, so every owner may use it (2026-10-09); other roles per their switch."""
+    return role == "owner" or can(role, "search.use")
+
+
 def filter_menu(menu: dict[str, list[str]], role: str | None) -> dict[str, list[str]]:
     """The menu sections cut down to the pages the role may open; a section left empty goes."""
     every = {pid for ids in menu.values() for pid in ids}
@@ -205,6 +219,8 @@ def may_search(role: str | None) -> bool:
 
 def hide_check_details(role: str | None) -> bool:
     """Check numbers, who collected a check and the like are for roles that handle checks."""
+    if role == "owner":                                  # owners see everything (2026-10-09: view access to all modules)
+        return False
     return level(role, "check.park") != Y or _switched_off("check.park")
 
 

@@ -114,4 +114,7 @@ def test_reconciliation_pdf_booklets_spoiled_and_the_bank_switch(web, db, monkey
     assert fetchone(_db(), "SELECT COUNT(*) FROM spoiled_checks")[0] == 2
     family = _sign_in_new("family@slicks.test", "owner")
     set_restrictions(fetchone_uid("family@slicks.test"), {"bank.use"})
-    assert family.get("/bank-cash/").status_code == 403
+    page = family.get("/bank-cash/")                                          # owners see every page (2026-10-09); the switch now means "may change"
+    assert page.status_code == 200 and "View only" in page.content.decode()
+    family.post("/bank-cash/", {"action": "spoiled", "numbers": "4498", "reason": "x"})
+    assert fetchone(_db(), "SELECT COUNT(*) FROM spoiled_checks")[0] == 2          # refused: nothing saved

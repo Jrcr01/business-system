@@ -45,8 +45,9 @@ def test_switches_hide_pages_and_refuse_the_action(web, db):
     keys = [k for _, lines in SWITCH_LINES for k, _, _, _ in lines]
     web.post(f"/settings/users/{uid}/", {"action": "switches", "on": [k for k in keys if k != "invoices"]})     # "Match invoices, enter invoices and batches" off
     assert {r[0] for r in sqlite3.connect(_db()).execute("SELECT action FROM user_restrictions WHERE user_id = ?", (uid,))} == {"po.receive", "invoice.enter"}
-    assert family.get("/order-statements/").status_code == 403                      # the page, at the very next click
-    assert family.post("/order-statements/new/", {"s": cid}).status_code == 403
+    page = family.get("/order-statements/")                                       # at the very next click: view only (owners see every module, 2026-10-09)
+    assert page.status_code == 200 and "View only" in page.content.decode()
+    assert family.post("/order-statements/new/", {"s": cid}).status_code in (302, 403)     # the save is refused
     assert fetchone(_db(), "SELECT COUNT(*) FROM order_statements")[0] == 0
     assert "Order statements" not in family.get("/").content.decode().split("Pay suppliers")[1].split("</nav>")[0] or True
     assert family.get("/calendar/").status_code == 200                           # what was not switched off still works
@@ -100,5 +101,7 @@ def test_the_new_switches_presets_and_copying(web, db):
     web.post(f"/settings/users/{uid}/", {"action": "switches", "on": sorted(SWITCH_PRESETS["daily"][1])})
     off = au.get_restrictions(uid)
     assert "bank.use" in off and "cards.use" in off and "payables.mark_paid" not in off and "loans.use" not in off
-    assert family.get("/checks/").status_code == 200 and family.get("/bank-cash/").status_code == 403 and family.get("/credit-cards/").status_code == 403
+    assert family.get("/checks/").status_code == 200 and "View only" not in family.get("/checks/").content.decode()
+    for url in ("/bank-cash/", "/credit-cards/"):                                     # switched off: view only (2026-10-09)
+        assert "View only" in family.get(url).content.decode(), url
     assert "Showing <b>Family</b>" in web.get(f"/settings/users/{cousin}/?copy={uid}").content.decode()

@@ -341,3 +341,7 @@ main:has(.login-wrap) > .msg { position: relative; z-index: 2; max-width: 380px;
   .login-card { margin: 0 auto; padding: 24px 22px 18px; }
   main:has(.login-wrap) > .msg { margin: 12px auto 0; }
 }
+
+/* View-only pages (owners, 2026-10-09): every form that saves is hidden; the server refuses saves anyway */
+main.view-only form[method=post], main.view-only form[method=POST] { display: none !important; }
+.msg.view-note { background: #eef2ff; color: #1e3a8a; display: flex; align-items: center; gap: 8px; }

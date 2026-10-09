@@ -21,7 +21,7 @@ def page_frame(request) -> dict:
         "role_label": ROLE_LABEL.get(user["role"], user["role"]) if user else "",
         "topbar": menu_for(user["role"]) if user else [],
         "is_sandbox": settings.IS_SANDBOX,
-        "may_search": bool(user) and __import__("engines.permissions", fromlist=["can"]).can(user["role"], "search.use"),
+        "may_search": bool(user) and __import__("engines.permissions", fromlist=["sees_search"]).sees_search(user["role"]),
         "search_q": request.GET.get("q", "") if request.path == "/search/" else "",
     }
 
@@ -289,7 +289,8 @@ def search(request):
     """Search everything (owner, 2026-10-09: "how about search bar?"): the old screens' search -- checks, invoices, batches, loan notes, bank loans,
     creditors, cards, spoiled checks -- by number, reference, name or an exact amount; each result opens its page here."""
     from engines.permissions import can
-    if not can(request.slicks_user["role"], "search.use"):
+    from engines.permissions import sees_search
+    if not sees_search(request.slicks_user["role"]):
         return render(request, "core/not_allowed.html", {"page": PAGES["home"]}, status=403)
     from engines.global_search_service import search_everything
     q = (request.GET.get("q") or "").strip()

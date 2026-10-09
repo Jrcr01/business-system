@@ -78,13 +78,20 @@ def installed_pages() -> set[str]:
 
 
 def pages_for(role: str | None) -> set[str]:
+    """The pages this person may open (owners: every page but Set-up, 2026-10-09)."""
+    from engines.permissions import viewable_pages
+    return viewable_pages(role, installed_pages())
+
+
+def doable_pages(role: str | None) -> set[str]:
+    """The pages this person may also change things on; a page in pages_for() but not here is view only."""
     from engines.permissions import allowed_pages
     return allowed_pages(role, installed_pages())
 
 
 def menu_for(role: str | None) -> list[dict]:
     """The top bar for this role: [{'title', 'url', 'items': [{'label', 'icon', 'url', 'page'}]}], sections left empty dropped. 'url' = the section's tiles on Home."""
-    from engines.permissions import can
+    from engines.permissions import PAGE_ACTION, can
     mine = pages_for(role)
     out = []
     for title, entries in MENU.items():
@@ -92,7 +99,7 @@ def menu_for(role: str | None) -> list[dict]:
         for e in entries:
             if isinstance(e, tuple):
                 label, icon, pid, query, needs = e
-                if pid in mine and (needs is None or can(role, needs)):
+                if pid in mine and (needs is None or needs == PAGE_ACTION.get(pid) or can(role, needs)):     # the page's own action: seeing it is enough
                     items.append({"label": label, "icon": icon, "url": page_url(pid, query), "page": pid})
             elif e in mine:
                 items.append({"label": PAGES[e].title, "icon": PAGES[e].icon, "url": page_url(e), "page": e})

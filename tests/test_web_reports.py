@@ -70,4 +70,5 @@ def test_the_reports_switch_hides_it(web, db):
     family = _sign_in_new("family@slicks.test", "owner")
     assert family.get("/reports/").status_code == 200
     assert set_restrictions(fetchone_uid("family@slicks.test"), {"reports.use"})[0]
-    assert family.get("/reports/").status_code == 403
+    page = family.get("/reports/")                                                  # owners see every module (2026-10-09): view only now
+    assert page.status_code == 200 and "View only" in page.content.decode()

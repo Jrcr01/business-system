@@ -15,15 +15,21 @@ TYPES = [("SUPPLIER", "Supplier"), ("LENDER", "Lender"), ("LESSOR", "Lessor (ren
 
 
 def page_needed(page_id: str, action: str | None = None):
-    """The page is open only to roles allowed it (and, when given, the action): others get the 'not for your role' page."""
+    """The page is open only to roles allowed it (and, when given, the action): others get the 'not for your role' page.
+    A page the person may only see (owners, 2026-10-09: view access to every module) is read-only: its forms are hidden and any save is refused here,
+    before the view runs -- many engines rely on the page check alone."""
     def deco(view):
         @wraps(view)
         def wrapper(request, *a, **k):
-            from core.menu import PAGES
+            from core.menu import PAGES, doable_pages
             from engines.permissions import can
             role = request.slicks_user["role"]
             if page_id not in pages_for(role) or (action and not can(role, action)):
                 return render(request, "core/not_allowed.html", {"page": PAGES[page_id]}, status=403)
+            request.view_only = page_id not in doable_pages(role)
+            if request.view_only and request.method == "POST":
+                messages.error(request, f"{PAGES[page_id].title} is view only for you. Ask the System admin to switch it on if you need to change things here.")
+                return redirect(request.get_full_path())
             return view(request, *a, **k)
         return wrapper
     return deco
