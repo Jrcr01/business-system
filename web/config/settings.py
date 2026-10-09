@@ -115,8 +115,9 @@ ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 STATIC_URL = "static/"
 STATIC_ROOT = Path(os.environ.get("WEB_STATIC_ROOT") or WEB_DIR / "staticfiles")
-# where the Streamlit screens are on the server (go-live side by side, 2026-10-03): a page not moved to Django yet links there; empty on the laptop
-STREAMLIT_URL = os.environ.get("WEB_STREAMLIT_URL", "")
+# the Streamlit screens (/more/) are retired (owner, 2026-10-09: the planner, their last page, dropped): nothing links there any more,
+# whatever WEB_STREAMLIT_URL says on the server
+STREAMLIT_URL = ""
 # Cloudflare Access (owner, 2026-10-08): the team name (yourteam.cloudflareaccess.com) and this application's audience tag; empty = not checked (laptop, tests)
 CF_ACCESS_TEAM = os.environ.get("WEB_CF_TEAM", "").strip()
 CF_ACCESS_AUD = os.environ.get("WEB_CF_AUD", "").strip()

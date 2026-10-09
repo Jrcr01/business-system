@@ -33,8 +33,8 @@ def username_of(email):
 
 
 def login(c, email, password=PW, nxt=None):
-    """Sign in the whole way: the person's username (owner, 2026-10-08: never the email), password, then the 6-digit code."""
-    r = c.post("/login/", {"username": username_of(email), "password": password, **({"next": nxt} if nxt else {})})
+    """Sign in the whole way: the person's email (owner, 2026-10-09), password, then the 6-digit code."""
+    r = c.post("/login/", {"email": email, "password": password, **({"next": nxt} if nxt else {})})
     return _code_step(c, r, email)
 
 
@@ -102,8 +102,8 @@ def test_wrong_password_and_the_way_back_to_the_page_asked_for(web):
     web.post("/logout/")
     r = web.get("/lenders/")
     assert r["Location"] == "/login/?next=/lenders/"
-    r = web.post("/login/", {"username": "admin", "password": "nope12345", "next": "/lenders/"})
-    assert r.status_code == 200 and b"Wrong username or password." in r.content
+    r = web.post("/login/", {"email": "admin@slicks.test", "password": "nope12345", "next": "/lenders/"})
+    assert r.status_code == 200 and b"Wrong email or password." in r.content
     r = login(web, "admin@slicks.test", nxt="/lenders/")
     assert r["Location"] == "/lenders/"
     web.post("/logout/")
@@ -158,12 +158,14 @@ def test_a_page_not_for_the_role_is_refused(web):
     assert web.get("/release/").status_code == 404 and web.get("/payment-run/").status_code == 404     # removed (2026-10-09)
 
 
-def test_a_page_still_in_streamlit_says_which_stage_brings_it(web):
+def test_the_planner_and_the_old_screens_are_gone(web):
+    # owner, 2026-10-09: "the only thing left in /more is the check planner? if yes drop it"
     _admin(web)
     from engines.settings_store import set_setting
-    set_setting("show_cash_forecast", "1")                     # the planner is the last page still in the old screens (2026-10-09); shown with the forecast
-    r = web.get("/planner/")
-    assert r.status_code == 200 and b"stage D4" in r.content and b"Streamlit" in r.content
+    set_setting("show_cash_forecast", "1")
+    assert web.get("/planner/").status_code == 404
+    home = web.get("/").content.decode()
+    assert "Check-date planner" not in home and 'href="/more/' not in home
 
 
 def test_home_shows_the_tiles_by_group_with_their_figures(web):
@@ -206,21 +208,3 @@ def test_forms_need_the_page_token(web_setup, db):
     assert r.status_code == 403
 
 
-def test_on_the_server_pages_not_moved_yet_open_in_the_streamlit_screens(web, settings=None):
-    """Go-live side by side (2026-10-03): with WEB_STREAMLIT_URL set, the menu, the Home tiles and the 'later' page go straight to the Streamlit screens
-    (same database); on the laptop (not set) they stay on the 'later' page."""
-    from django.conf import settings as dj
-    _admin(web)
-    old = dj.STREAMLIT_URL
-    try:
-        dj.STREAMLIT_URL = "/more/"
-        home = web.get("/").content.decode()
-        from engines.settings_store import set_setting
-        set_setting("show_cash_forecast", "1")
-        home = web.get("/").content.decode()
-        assert 'href="/more/planner"' in home and 'href="/purchase-orders/"' in home      # built pages stay in Django
-        later = web.get("/planner/").content.decode()
-        assert 'href="/more/planner"' in later and "same email and password" in later
-    finally:
-        dj.STREAMLIT_URL = old
-    assert 'href="/more/' not in web.get("/").content.decode()

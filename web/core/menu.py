@@ -23,7 +23,6 @@ PAGES: dict[str, Page] = {
     "order-statements": Page("Order statements", "description", "D3"),
     "calendar": Page("Calendar", "calendar_month", "D4"),      # replaces Payables due (owner, 2026-10-09)
     "checks": Page("Daily payables", "fact_check", "D4"),      # was "Checks and checkbook": the daily checklist of every track (owner, 2026-10-09)
-    "planner": Page("Check-date planner", "event_available", "D4"),
     "lenders": Page("Lenders", "handshake", "D6"),
     "bank-loans": Page("Bank loans", "account_balance", "D6"),
     "credit-cards": Page("Credit cards", "credit_card", "D7"),
@@ -43,7 +42,7 @@ MENU: dict[str, list] = {
     "Buy": ["price-lists", "purchase-orders", ("Receive goods", "inventory_2", "purchase-orders", "mode=receive", "po.receive_goods")],
     "Pay suppliers": [("Match invoices", "receipt_long", "purchase-orders", "mode=match", "po.receive"),
                       "order-statements", "checks", "calendar"],     # Payment run, Release checks and Add data removed (owner, 2026-10-09): its work is in the batch and Daily payables
-    "Bank": ["bank-cash", "planner"],
+    "Bank": ["bank-cash"],     # the Check-date planner dropped with /more/ (owner, 2026-10-09)
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records": ["reports"],
     "Analytics": [("Payables", "receipt_long", "analytics", "tab=payables", "reports.use"), ("Lenders", "handshake", "analytics", "tab=lenders", "reports.use"),

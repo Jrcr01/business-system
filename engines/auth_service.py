@@ -27,6 +27,7 @@ LOCK_MINUTES = 15
 _N, _R, _P = 2 ** 14, 8, 1
 _TEMP_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"       # no 0/O/1/l/I: it is read out or typed from paper
 WRONG = "Wrong username or password."
+WRONG_EMAIL = "Wrong email or password."
 
 
 # --- passwords ----------------------------------------------------------------------------------------------------------------------------------
@@ -227,20 +228,26 @@ def create_user(email: str, name: str, role: str, username: str = "") -> tuple[b
 MORE_BLOCKED = "Your account uses the main system only."
 
 
-def authenticate(email: str, password: str, where: str = "more") -> tuple[bool, dict | None, str]:
+def authenticate(email: str, password: str, where: str = "more", by_email: bool = False) -> tuple[bool, dict | None, str]:
     """Checks a sign-in. Returns (ok, user, message). `email` is what was typed: the username (Django: only the username; the old screens: the username
     or the email). A wrong name and a wrong password give the same words. Five wrong tries lock the account for 15 minutes.
     where = "more" (the old Streamlit screens, the default they call with) refuses a person whose "Old screens (/more/)" switch is off (owner, 2026-10-08).
+    by_email = True (Django, owner 2026-10-09): the account is found by its email only -- the email Cloudflare Access verified, or the one typed when
+    Access is not on; the username no longer signs in to the main system.
     where = "web" (Django) is only the first step: the wrong-tries count is cleared by the 6-digit code (verify_totp), not by the password alone."""
     login, now = (email or "").strip().lower(), manila_now()
     with write_tx() as conn:
         conn.row_factory = __import__("sqlite3").Row
-        row = conn.execute("SELECT * FROM app_users WHERE lower(username) = ?", (login,)).fetchone()     # the username (owner, 2026-10-08)
-        if row is None and where != "web":                                                              # the old screens' sign-in still says Email
+        if by_email:
+            row = conn.execute("SELECT * FROM app_users WHERE lower(trim(email)) = ?", (login,)).fetchone()
+        else:
+            row = conn.execute("SELECT * FROM app_users WHERE lower(username) = ?", (login,)).fetchone()     # the username (owner, 2026-10-08)
+        if row is None and where != "web" and not by_email:                                                              # the old screens' sign-in still says Email
             row = conn.execute("SELECT * FROM app_users WHERE email = ?", (login,)).fetchone()
         email = row["email"] if row is not None else login
+        wrong = WRONG_EMAIL if by_email else WRONG
         if row is None:
-            return False, None, WRONG
+            return False, None, wrong
         if not row["is_active"]:
             return False, None, "This account is switched off. Ask the owner."
         locked = row["locked_until"]
@@ -255,7 +262,7 @@ def authenticate(email: str, password: str, where: str = "more") -> tuple[bool, 
                 _audit(conn, "USER_LOCKED", row["user_id"], f"{email}: {MAX_TRIES} wrong tries, locked until {until}", who=email)
                 return False, None, f"Too many wrong tries. This account is locked for {LOCK_MINUTES} minutes."
             conn.execute("UPDATE app_users SET failed_attempts = ? WHERE user_id = ?", (tries, row["user_id"]))
-            return False, None, WRONG
+            return False, None, wrong
         if where == "web":
             return True, _public(row), ""
         from engines.permissions import denied_for

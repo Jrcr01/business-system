@@ -29,7 +29,7 @@ fi
 PREV="$(readlink -f "$APP/current" 2>/dev/null || true)"
 ln -sfn "$NEW" "$APP/current.tmp" && mv -Tf "$APP/current.tmp" "$APP/current"
 sudo /usr/bin/systemctl restart slicks-erp
-sudo /usr/bin/systemctl restart slicks-streamlit
+sudo /usr/bin/systemctl stop slicks-streamlit || true     # /more/ retired (2026-10-09)
 
 HOST="${WEB_ALLOWED_HOSTS%%,*}"
 code=000
@@ -43,7 +43,7 @@ if [ "$code" != 200 ]; then
   if [ -n "$PREV" ] && [ "$PREV" != "$NEW" ]; then
     ln -sfn "$PREV" "$APP/current.tmp" && mv -Tf "$APP/current.tmp" "$APP/current"
     sudo /usr/bin/systemctl restart slicks-erp
-    sudo /usr/bin/systemctl restart slicks-streamlit
+    sudo /usr/bin/systemctl stop slicks-streamlit || true     # /more/ retired (2026-10-09)
     echo "Switched back to the previous release: $(basename "$PREV")."
   fi
   exit 1

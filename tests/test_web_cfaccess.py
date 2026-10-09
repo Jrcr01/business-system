@@ -67,12 +67,17 @@ def test_not_configured_means_not_checked(web):
 
 def test_with_access_on_the_6_digit_code_is_not_asked_but_without_it_it_is(web, access):
     # owner, 2026-10-09: "we can drop 6 digit code" -- Cloudflare Access (Google / email check, same email) is the second step instead
-    from tests.test_web_d0 import username_of
     r = web.post("/setup/", {"name": "Admin", "email": "admin@slicks.test", "password": PW, "password2": PW}, **_h(_pass()))
     assert r.status_code == 302 and r["Location"] == "/"                          # signed in: no code, no code set-up
     assert web.get("/", **_h(_pass())).status_code == 200
     web.get("/logout/", **_h(_pass()))
-    r = web.post("/login/", {"username": username_of("admin@slicks.test"), "password": PW}, **_h(_pass()))
+    page = web.get("/login/", **_h(_pass())).content.decode()
+    assert "Verified by Cloudflare as <b>admin@slicks.test</b>" in page and 'type="email"' not in page    # only the password is typed (owner, 2026-10-09)
+    r = web.post("/login/", {"password": PW}, **_h(_pass()))
     assert r.status_code == 302 and r["Location"] == "/"
-    r = web.post("/login/", {"username": username_of("admin@slicks.test"), "password": "wrong-one-77"}, **_h(_pass()))
+    web.get("/logout/", **_h(_pass()))
+    r = web.post("/login/", {"email": "someone.else@x.test", "password": PW}, **_h(_pass()))
+    assert r.status_code == 302 and r["Location"] == "/"                          # the typed email is ignored: Cloudflare's is used
+    web.get("/logout/", **_h(_pass()))
+    r = web.post("/login/", {"password": "wrong-one-77"}, **_h(_pass()))
     assert r.status_code != 302 or r["Location"] != "/"                           # the password is still checked

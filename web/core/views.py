@@ -92,7 +92,7 @@ def login(request):
     nxt = request.GET.get("next") or request.POST.get("next") or "/"
     if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
         nxt = "/"
-    username = ""
+    email, cf = "", getattr(request, "cf_email", None)
     if settings.SANDBOX_NO_SIGNIN:                              # the laptop sandbox: pick a person, no password, no code
         from engines.auth_service import list_users, get_user
         if request.method == "POST" and request.POST.get("uid"):
@@ -103,12 +103,21 @@ def login(request):
         people = [u for u in list_users().to_dict("records") if u["is_active"]]
         return render(request, "core/login.html", {"sandbox_people": people, "next": nxt})
     if request.method == "POST":
-        username = request.POST.get("username", "")
-        ok, user, msg = authenticate(username, request.POST.get("password", ""), where="web")     # the username, never the email (owner, 2026-10-08)
+        # owner, 2026-10-09: the email, not the username -- the one Cloudflare Access verified (only the password is typed), else the one typed
+        email = cf or request.POST.get("email", "")
+        ok, user, msg = authenticate(email, request.POST.get("password", ""), where="web", by_email=True)
         if ok:
             return _half_signed_in(request, user, nxt)
+        if cf and not _has_account(cf):
+            msg = f"No account in the system uses {cf}. Ask the System admin."
         messages.error(request, msg)
-    return render(request, "core/login.html", {"username": username, "next": nxt})
+    return render(request, "core/login.html", {"email": email, "cf_email": cf, "next": nxt})
+
+
+def _has_account(email: str) -> bool:
+    from engines.common import get_conn
+    with get_conn() as conn:
+        return conn.execute("SELECT 1 FROM app_users WHERE lower(trim(email)) = ?", (email.strip().lower(),)).fetchone() is not None
 
 
 def code(request):
