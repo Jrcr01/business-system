@@ -264,6 +264,10 @@ def delete_cc_statement(cc_statement_id: int) -> tuple[bool, str]:
         card_id, due_date, total_amount_due = row
         if not _is_latest_cc_statement(cur, cc_statement_id, card_id):
             return False, "Only the most recent statement for a card can be deleted — a later statement already carried its balance forward."
+        paid = cur.execute("SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM cc_payments WHERE cc_statement_id = ?", (cc_statement_id,)).fetchone()
+        if paid[0]:                                             # owner, 2026-10-10: deleting such a statement crashed (the payment still points at it)
+            return False, (f"This statement has {paid[0]} payment(s) recorded on Daily payables ({php(paid[1])}). Take the payment back first "
+                           "(Daily payables → Ticked → Undo), then delete the statement.")
         cur.execute("DELETE FROM cc_statements WHERE cc_statement_id = ?", (cc_statement_id,))
         cur.execute(
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CC_STATEMENT_DELETED', 'cc_statements', ?, ?)",

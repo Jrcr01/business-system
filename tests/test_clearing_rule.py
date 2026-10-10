@@ -204,3 +204,21 @@ def test_before_the_soa_taking_back_a_daily_record_makes_it_owed_again(db):
     ok, msg = clearing.unpay_card(pid)
     assert ok and "owed again" in msg
     assert fetchone(db, "SELECT amount_paid, status FROM cc_statements WHERE cc_statement_id = ?", (sid,)) == (0.0, "Unpaid")
+
+
+def test_a_statement_with_a_recorded_payment_is_not_deleted_and_says_why(db):
+    # owner, 2026-10-10: "error occurred when i delete SOA" -- a Server Error; the daily payment still pointed at the statement
+    from conftest import make_creditor as mk
+    from engines.card_rules import delete_cc_statement
+    issuer = mk(db, name="RCBC", creditor_type="CREDIT_CARD")
+    with sqlite3.connect(db) as conn:
+        card = conn.execute("INSERT INTO credit_cards (creditor_id, card_name, card_number_last4, credit_limit) VALUES (?, 'World', '1240', 1)", (issuer,)).lastrowid
+        sid = conn.execute("INSERT INTO cc_statements (card_id, due_date, total_amount_due, status, paid_confirmed) VALUES (?, ?, 506400, 'Unpaid', 0)",
+                           (card, str(TODAY - timedelta(days=5)))).lastrowid
+    assert clearing.pay_card(sid, TODAY)[0]
+    ok, msg = delete_cc_statement(sid)
+    assert not ok and "Take the payment back first" in msg
+    assert fetchone(db, "SELECT COUNT(*) FROM cc_statements WHERE cc_statement_id = ?", (sid,))[0] == 1
+    pid = fetchone(db, "SELECT payment_id FROM cc_payments WHERE cc_statement_id = ?", (sid,))[0]
+    assert clearing.unpay_card(pid)[0]
+    assert delete_cc_statement(sid) == (True, "Statement deleted.")
