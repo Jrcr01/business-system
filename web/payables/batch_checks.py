@@ -45,12 +45,20 @@ def booklet_plan(request, num_checks: list[dict]) -> dict:
     leaf; the chosen one (?bk=, default the first with leaves left) and start leaf (?start=, default its first free one); the plan -- these checks, in
     the order shown, get the next free leaves (used or spoiled ones stepped over). Nothing is written here."""
     from engines.check_rules import PRIMARY_BANK_ACCOUNT_ID, get_available_booklet_numbers, get_booklets, plan_sequential_numbers
+    from engines.booklet_rules import holder_of
+    from engines.common import get_conn
     rows = get_booklets(PRIMARY_BANK_ACCOUNT_ID).to_dict("records")
+    with get_conn() as conn:                                     # whose booklet each one is (owner, 2026-10-09): the person's own comes first
+        people = {int(r[0]): (r[1] or r[2]) for r in conn.execute("SELECT user_id, name, email FROM app_users")}
+        me = conn.execute("SELECT user_id FROM app_users WHERE LOWER(email) = ?", (str(request.slicks_user["email"]).lower(),)).fetchone()
+    me = int(me[0]) if me else 0
     booklets = []
     for b in rows:
         free = get_available_booklet_numbers(PRIMARY_BANK_ACCOUNT_ID, b)
-        booklets.append({"id": int(b["booklet_id"]), "code": b.get("booklet_code") or f"Booklet #{b['booklet_id']}", "start": int(b["start_number"]),
-                         "end": int(b["end_number"]), "first_free": free[0] if free else None, "left": len(free)})
+        who = holder_of(b, people)
+        booklets.append({"id": int(b["booklet_id"]), "code": (b.get("booklet_code") or f"Booklet #{b['booklet_id']}") + (f" · {who}" if who else ""), "start": int(b["start_number"]),
+                         "end": int(b["end_number"]), "first_free": free[0] if free else None, "left": len(free), "mine": bool(me) and b.get("holder_user_id") == me})
+    booklets.sort(key=lambda b: not b["mine"])                   # stable: mine first, the rest in their order
     if not booklets or not num_checks:
         return {"booklets": booklets, "plan": [], "bk": None}
     want = request.GET.get("bk", "")

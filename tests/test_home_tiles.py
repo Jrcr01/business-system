@@ -23,7 +23,7 @@ def _menu_pages() -> set[str]:
 
 def test_every_tile_points_at_a_real_page_and_a_known_group():
     pages, groups = _menu_pages(), {g.key for g in GROUPS}
-    assert {t.page_id for t in TILES} <= pages | {"analytics", "calendar", "review"}      # Django-only pages (2026-10-09)
+    assert {t.page_id for t in TILES} <= pages | {"analytics", "calendar", "review", "booklets", "stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets"}      # Django-only pages (2026-10-09; Check booklets 2026-10-11)
     assert {t.group for t in TILES} <= groups
     assert pages - {"home"} <= {t.page_id for t in TILES}          # every menu page has a tile
 
@@ -129,18 +129,17 @@ def test_a_module_can_bring_its_own_actions(monkeypatch):
     from engines.home_tiles import act
     monkeypatch.setattr(home_tiles, "TILES", list(home_tiles.TILES))
     register_tile(Tile("sales", "pay", "Sales", actions=[act("New sale", sales_mode="New"), act("Day sheet", sales_mode="Day")]))
-    t = next(x for x in home_tiles.TILES if x.page_id == "sales")
+    t = next(x for x in home_tiles.TILES if x.page_id == "sales" and x.title == "Sales")
     assert t.has_panel and dict(t.actions[0].state) == {"sales_mode": "New"}
 
 
-def test_the_rows_follow_the_cycle_and_the_two_receiving_steps_have_tiles_of_their_own():
-    assert [g.key for g in GROUPS] == ["buy", "pay", "bank", "other", "records", "analytics", "system"]
+def test_the_rows_follow_the_cycle_and_receiving_has_a_tile_of_its_own():
+    assert [g.key for g in GROUPS] == ["buy", "stock", "sell", "pay", "bank", "other", "records", "analytics", "system"]     # the goods, then the money (2026-10-11)
     rows = dict(layout(_menu_pages()))
     assert [t.tid for t in rows["buy"]][:2] == ["price-lists", "purchase-orders"] and "receive-goods" in [t.tid for t in rows["buy"]]
-    assert "match-invoices" in [t.tid for t in rows["pay"]]
     by = {t.tid: t for t in TILES}
-    assert dict(by["receive-goods"].state) == {"po_mode": "Receive"} and dict(by["match-invoices"].state) == {"po_mode": "Match invoice"}
-    assert all(by[k].page_id == "purchase-orders" for k in ("receive-goods", "match-invoices"))
+    assert dict(by["receive-goods"].state) == {"po_mode": "Receive"} and by["receive-goods"].page_id == "purchase-orders"
+    assert "match-invoices" not in by            # goods never come without their DR or SI (owner, 2026-10-11): Receive records both, so no second card
 
 
 def test_each_role_sees_only_the_receiving_tiles_it_may_use(db):
@@ -149,9 +148,7 @@ def test_each_role_sees_only_the_receiving_tiles_it_may_use(db):
     for role in ("purchasing", "payables", "releaser"):
         with acting_as(f"{role}@example.com", role):
             seen[role] = {t.tid for _, ts in layout(_menu_pages()) for t in ts}
-    assert "receive-goods" in seen["purchasing"] and "match-invoices" not in seen["purchasing"]
-    assert {"receive-goods", "match-invoices"} <= seen["payables"]
-    assert "receive-goods" in seen["releaser"] and "match-invoices" not in seen["releaser"]
+    assert "receive-goods" in seen["purchasing"] and "receive-goods" in seen["payables"] and "receive-goods" in seen["releaser"]
 
 
 def test_the_new_tile_figures_count_orders_waiting_and_deliveries_without_an_invoice(db):
@@ -165,4 +162,3 @@ def test_the_new_tile_figures_count_orders_waiting_and_deliveries_without_an_inv
     line = int(get_po(po)["lines"].iloc[0]["line_id"])
     assert receive_goods(cid, [{"line_id": line, "qty": 2}])[0]
     assert evaluate(next(t for t in TILES if t.tid == "receive-goods"))["figure"] == "0"
-    assert evaluate(next(t for t in TILES if t.tid == "match-invoices"))["figure"] == "1"

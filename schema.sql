@@ -259,6 +259,10 @@ CREATE TABLE IF NOT EXISTS check_booklets (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     -- migration 056 (2026-10-01): the last leaf the person holding this booklet says they have used (from the photos the owner receives) -- see checkbook_service.unrecorded_leaves
     reported_up_to INTEGER,
+    -- migration 086 (2026-10-11): who holds the booklet -- a person with an account, or a typed name ("Mama") -- and since when
+    holder_user_id INTEGER,
+    holder_name TEXT,
+    held_since DATE,
     FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
     CHECK(end_number >= start_number),
     CHECK(next_available_number >= start_number)
@@ -912,7 +916,9 @@ CREATE TABLE IF NOT EXISTS items (
     avg_cost DECIMAL NOT NULL DEFAULT 0,                            -- weighted average of what was actually paid
     is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)), -- never deleted: a discontinued item is switched off
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by TEXT NOT NULL DEFAULT ''
+    created_by TEXT NOT NULL DEFAULT '',
+    oldest_dot TEXT,                                                -- migration 087: the oldest tire age on the rack, 'WWYY' (week, year), typed at receiving; a note, not lot accounting
+    last_counted_at DATE                                            -- migration 087: the day of the last approved count of this item
 );
 -- What each supplier calls an item (their own item code), so their code and our code point at the same thing.
 CREATE TABLE IF NOT EXISTS supplier_items (
@@ -973,6 +979,9 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     over_cash_plan INTEGER NOT NULL DEFAULT 0 CHECK(over_cash_plan IN (0, 1)),   -- set when the order was placed (or changed) and the cash on its pay date did not cover it
     cash_note TEXT,                                                              -- plain words for the owner: how far short, and when
     cash_ack_at DATETIME,                                                        -- the owner has seen it
+    request_no TEXT,                                                -- migration 084: 'RQ-0001', given when the draft is sent to the supplier (still DRAFT until they confirm)
+    requested_at DATETIME,                                          -- when it was sent; NULL = a plain draft
+    requested_by TEXT,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id)
 );
 CREATE INDEX IF NOT EXISTS idx_po_creditor_status ON purchase_orders (creditor_id, status);
@@ -993,6 +1002,8 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
     qty_invoiced REAL CHECK(qty_invoiced IS NULL OR qty_invoiced >= 0),   -- of the quantity received, how much the supplier's invoice has covered (NULL = all received, as before receiving was two steps)
     actual_unit_price REAL CHECK(actual_unit_price IS NULL OR actual_unit_price >= 0),
     actual_amount REAL CHECK(actual_amount IS NULL OR actual_amount >= 0),
+    qty_requested REAL,                                             -- migration 084: what was asked of the supplier, kept when the confirmed quantity is less
+    added_at_delivery INTEGER NOT NULL DEFAULT 0,                   -- migration 085: 1 = an item that came but was not on the agreed order (flagged for review)
     FOREIGN KEY (po_id) REFERENCES purchase_orders(po_id),
     FOREIGN KEY (price_id) REFERENCES supplier_price_list(price_id)
 );
@@ -1012,6 +1023,20 @@ CREATE TABLE IF NOT EXISTS po_receipts (
     FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_id)
 );
 CREATE INDEX IF NOT EXISTS idx_po_receipts_po ON po_receipts (po_id);
+
+-- migration 085 (owner, 2026-10-11): what came on each delivery (a DR or an SI), so an order filled by several DRs lists them, a document can be recorded
+-- for one DR, and a delivery recorded by mistake can be undone.
+CREATE TABLE IF NOT EXISTS po_receipt_lines (
+    receipt_line_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_id INTEGER NOT NULL REFERENCES po_receipts(receipt_id),
+    line_id INTEGER NOT NULL REFERENCES purchase_order_lines(line_id),
+    qty REAL NOT NULL CHECK(qty > 0),
+    unit_price REAL NOT NULL DEFAULT 0,          -- the price the goods were counted at: the order's net price, or the price on the SI / DR once recorded
+    amount REAL NOT NULL DEFAULT 0,
+    dot TEXT                                     -- migration 087: the tires' DOT week and year ('WWYY'), when it was typed at receiving
+);
+CREATE INDEX IF NOT EXISTS idx_po_receipt_lines_receipt ON po_receipt_lines (receipt_id);
+CREATE INDEX IF NOT EXISTS idx_po_receipt_lines_line ON po_receipt_lines (line_id);
 
 -- SIGN-IN (migration 066, 2026-10-02; B8 phase 1). The people who may use the AP app. The password is stored SCRAMBLED (scrypt + its own salt), never as typed.
 -- role: 'owner' (Payables: everything) or 'purchasing' (purchase orders and price lists). A person is switched off, never deleted. Phase 2 (hosting) adds Google 2-step
@@ -1142,7 +1167,9 @@ CREATE TABLE IF NOT EXISTS customers (
     email TEXT,
     is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    created_by TEXT
+    created_by TEXT,
+    is_affiliate INTEGER NOT NULL DEFAULT 0 CHECK(is_affiliate IN (0, 1)),      -- migration 087: a relative's business we lend tires to and borrow from
+    credit_allowed INTEGER NOT NULL DEFAULT 0 CHECK(credit_allowed IN (0, 1))   -- migration 087: may buy on charge; set by the System admin only (no peso limit: alerts instead)
 );
 CREATE TABLE IF NOT EXISTS item_prices (
     price_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1153,4 +1180,155 @@ CREATE TABLE IF NOT EXISTS item_prices (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     created_by TEXT,
     UNIQUE (item_id, effective_date)
+);
+
+
+-- =====================================================================================================================================================
+-- THE REVENUE CYCLE, STAGE A (migration 087; owner, 2026-10-11: "i am planning to start the revenue cycle ... with inventory management with CRM").
+-- "Sell, and the stock moves": a sale is ONE document that takes the stock and records the cash or the receivable in the same step -- the mirror of a
+-- DR on the buying side. Nothing here is ever deleted: a mistake is corrected by a new row (a void, a return, an approved count, an adjustment).
+-- =====================================================================================================================================================
+
+-- A barcode that means an item: our own label carries the item's code, so this table holds the MAKERS' barcodes, learned the first time one is scanned.
+CREATE TABLE IF NOT EXISTS item_barcodes (
+    barcode TEXT PRIMARY KEY,
+    item_id INTEGER NOT NULL REFERENCES items(id),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT
+);
+
+-- A stock count (CT-0001): a blind sheet -- the counter never sees what the system expects. Stock changes only when the System admin approves a difference.
+CREATE TABLE IF NOT EXISTS stock_counts (
+    count_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    count_no TEXT NOT NULL UNIQUE,
+    scope TEXT NOT NULL,                                            -- in words: "Tires · Westlake", "Not counted in 90 days"
+    status TEXT NOT NULL DEFAULT 'COUNTING' CHECK(status IN ('COUNTING', 'WAITING', 'CLOSED', 'CANCELLED')),
+    counted_by TEXT,                                                -- the employee who counted (a typed name: they have no sign-in)
+    started_by TEXT,
+    started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    finished_by TEXT,
+    finished_at DATETIME,
+    closed_at DATETIME
+);
+CREATE TABLE IF NOT EXISTS stock_count_lines (
+    line_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    count_id INTEGER NOT NULL REFERENCES stock_counts(count_id),
+    item_id INTEGER NOT NULL REFERENCES items(id),
+    counted REAL,                                                   -- NULL = not typed yet
+    note TEXT,
+    expected REAL,                                                  -- what the system had when the count was finished (frozen then)
+    unit_cost REAL,
+    decision TEXT CHECK(decision IS NULL OR decision IN ('APPROVED', 'RECOUNT', 'MATCHED')),
+    reason TEXT,
+    decided_by TEXT,
+    decided_at DATETIME,
+    UNIQUE (count_id, item_id)
+);
+
+-- Lending to and borrowing from the relatives' businesses (AL-0001 / AB-0001): stock moves without a sale or a purchase, and stays on the affiliate's
+-- balance until it is settled -- returned, paid for (at our cost), or set off against what the other side holds.
+CREATE TABLE IF NOT EXISTS affiliate_moves (
+    move_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    move_no TEXT NOT NULL UNIQUE,
+    customer_id INTEGER NOT NULL REFERENCES customers(customer_id),
+    direction TEXT NOT NULL CHECK(direction IN ('LEND', 'BORROW')),
+    move_date DATE NOT NULL,
+    taken_by TEXT,
+    note TEXT,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS affiliate_move_lines (
+    line_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    move_id INTEGER NOT NULL REFERENCES affiliate_moves(move_id),
+    item_id INTEGER NOT NULL REFERENCES items(id),
+    qty REAL NOT NULL CHECK(qty > 0),
+    unit_cost REAL NOT NULL DEFAULT 0,
+    qty_settled REAL NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS affiliate_settlements (
+    settle_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    line_id INTEGER NOT NULL REFERENCES affiliate_move_lines(line_id),
+    how TEXT NOT NULL CHECK(how IN ('RETURN', 'PAY', 'OFFSET')),
+    qty REAL NOT NULL CHECK(qty > 0),
+    settled_on DATE NOT NULL,
+    ref TEXT,                                                       -- the SI no. of the sale it became, or how a borrow was paid
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Sales invoice booklets (SB-0001): the paper booklet stays the invoice; the system records each number once, so a skipped or repeated number is seen.
+CREATE TABLE IF NOT EXISTS si_booklets (
+    booklet_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    start_no INTEGER NOT NULL,
+    end_no INTEGER NOT NULL,
+    holder TEXT,
+    status TEXT NOT NULL DEFAULT 'IN_USE' CHECK(status IN ('IN_USE', 'WAITING', 'FINISHED')),
+    registered_by TEXT,
+    registered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CHECK(end_no >= start_no)
+);
+CREATE TABLE IF NOT EXISTS si_cancelled (                           -- a spoiled leaf: the number is accounted for, with why
+    si_no INTEGER PRIMARY KEY,
+    reason TEXT NOT NULL,
+    cancelled_by TEXT,
+    cancelled_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- A sale. status RELEASED = the goods left and the invoice is not written yet (release_no RL-0001, no si_no); SAVED = invoiced; VOID = cancelled (kept).
+CREATE TABLE IF NOT EXISTS sales (
+    sale_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    si_no INTEGER UNIQUE,
+    release_no TEXT UNIQUE,
+    sale_date DATE NOT NULL,
+    customer_id INTEGER REFERENCES customers(customer_id),          -- NULL = a walk-in
+    customer_name TEXT,                                             -- what was written for a walk-in, if anything
+    status TEXT NOT NULL DEFAULT 'SAVED' CHECK(status IN ('RELEASED', 'SAVED', 'VOID')),
+    total REAL NOT NULL DEFAULT 0,
+    cost_total REAL NOT NULL DEFAULT 0,
+    typed_late INTEGER NOT NULL DEFAULT 0 CHECK(typed_late IN (0, 1)),
+    below_cost_reason TEXT,
+    no_stock_out INTEGER NOT NULL DEFAULT 0 CHECK(no_stock_out IN (0, 1)),   -- 1 = an affiliate paying for tires already lent: the stock left with the lend
+    void_reason TEXT,
+    voided_by TEXT,
+    voided_at DATETIME,
+    released_at DATETIME,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sales_date ON sales (sale_date);
+CREATE TABLE IF NOT EXISTS sale_lines (
+    line_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id INTEGER NOT NULL REFERENCES sales(sale_id),
+    item_id INTEGER REFERENCES items(id),                           -- NULL = a service (sold, never stocked)
+    description TEXT NOT NULL,
+    qty REAL NOT NULL CHECK(qty > 0),
+    unit_price REAL NOT NULL DEFAULT 0 CHECK(unit_price >= 0),
+    amount REAL NOT NULL DEFAULT 0,
+    unit_cost REAL NOT NULL DEFAULT 0,                              -- the item's average cost when it was sold
+    qty_returned REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_sale_lines_sale ON sale_lines (sale_id);
+CREATE TABLE IF NOT EXISTS sale_payments (                          -- how it was paid, one row per way; CHARGE = on credit (the receivable, Stage B)
+    payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id INTEGER NOT NULL REFERENCES sales(sale_id),
+    method TEXT NOT NULL CHECK(method IN ('CASH', 'CHECK', 'TRANSFER', 'CARD', 'CHARGE')),
+    amount REAL NOT NULL CHECK(amount > 0),
+    bank TEXT,
+    check_no TEXT,
+    check_date DATE,
+    reference TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sale_payments_sale ON sale_payments (sale_id);
+CREATE TABLE IF NOT EXISTS sale_returns (                           -- one item taken back: the invoice stays, the item returns to stock, the amount goes down
+    return_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id INTEGER NOT NULL REFERENCES sales(sale_id),
+    line_id INTEGER NOT NULL REFERENCES sale_lines(line_id),
+    qty REAL NOT NULL CHECK(qty > 0),
+    amount REAL NOT NULL DEFAULT 0,
+    reason TEXT NOT NULL,
+    returned_on DATE NOT NULL,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

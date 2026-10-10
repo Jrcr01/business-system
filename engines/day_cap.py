@@ -56,47 +56,68 @@ def _bank_day(d: date) -> date:
 
 
 def card_reserve_rows(start: date, end: date) -> pd.DataFrame:
-    """For each active card with statements on file, a reserve on its usual due day for every month after its latest statement, up to `end`:
-    the average of its last 3 statements. Shown as an estimate; the real SOA replaces it once entered (its month then has a statement)."""
+    """For each active card with statements on file, a reserve for every statement month after its latest statement, up to `end` (shown as an
+    estimate; the real SOA replaces it once entered). Owner, 2026-10-11:
+      * the DAY = that month's statement date (the card's statement day) + the card's average gap from statement date to due date over its last 3
+        statements, on a bank day. A card with no statement day keeps its most usual due day of the month.
+      * the AMOUNT = the average of its last 3 statements' OWN charges -- "dont be the bloated amount (those unpaid)": new_charges when filled in,
+        else the total less the unpaid balance carried in from the statement before."""
+    from engines.cc_dates import statement_date_for
     from engines.settings_registry import int_value
     if not int_value(RESERVE_KEY):
         return pd.DataFrame(columns=COLS)
     with get_conn() as conn:
         rows = pd.read_sql_query(
-            """SELECT cs.card_id, cs.due_date, cs.total_amount_due, cc.card_name || ' - ' || cc.card_number_last4 AS card, cr.creditor_name AS bank
+            """SELECT cs.card_id, cs.due_date, cs.total_amount_due, cs.new_charges, cs.unpaid_balance_next, cc.statement_day,
+                      cc.card_name || ' - ' || cc.card_number_last4 AS card, cr.creditor_name AS bank
                FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id JOIN creditors cr ON cr.creditor_id = cc.creditor_id
                WHERE cs.status != 'Cancelled' AND COALESCE(cc.is_active, 1) = 1 ORDER BY cs.card_id, cs.due_date""", conn)
     out = []
     for card_id, g in rows.groupby("card_id"):
+        g = g.assign(carried=g["unpaid_balance_next"].shift(1).fillna(0.0))                 # the unpaid balance the statement before pushed into this one
+        own = g["new_charges"].where(g["new_charges"] > 0.004, (g["total_amount_due"] - g["carried"]).clip(lower=0.0))
         last3 = g.tail(3)
-        amount = round(float(last3["total_amount_due"].mean()), 2)
+        amount = round(float(own.tail(3).mean()), 2)
         if amount <= 0.004:
             continue
-        due_day = int(pd.to_datetime(last3["due_date"]).dt.day.mode().max())
-        latest = pd.to_datetime(g["due_date"]).max().date()
+        dues = [date.fromisoformat(str(x)[:10]) for x in last3["due_date"]]
+        sd = last3["statement_day"].iloc[-1]
+        sd = int(sd) if pd.notna(sd) and int(sd) > 0 else 0
+        label = f"Card reserve (estimate) · {last3['card'].iloc[-1]} · avg of {len(last3)} statement{'s' if len(last3) != 1 else ''}"
+        if sd:
+            gap = round(sum((d - statement_date_for(d, sd)).days for d in dues) / len(dues))
+            latest = statement_date_for(max(date.fromisoformat(str(x)[:10]) for x in g["due_date"]), sd)
+            label += f", {gap} days after the statement day ({sd})"
+        else:
+            due_day = int(pd.to_datetime(last3["due_date"]).dt.day.mode().max())
+            latest = max(date.fromisoformat(str(x)[:10]) for x in g["due_date"])
         y, m = latest.year, latest.month
         while True:
             m += 1
             if m > 12:
                 y, m = y + 1, 1
-            d = _bank_day(date(y, m, min(due_day, _cal.monthrange(y, m)[1])))
+            if sd:
+                d = _bank_day(date(y, m, min(sd, _cal.monthrange(y, m)[1])) + timedelta(days=gap))
+            else:
+                d = _bank_day(date(y, m, min(due_day, _cal.monthrange(y, m)[1])))
             if d > end:
                 break
             if d >= start:
-                out.append((d, last3["bank"].iloc[-1], "Credit cards", f"Card reserve (estimate) · {last3['card'].iloc[-1]}", amount))
+                out.append((d, last3["bank"].iloc[-1], "Credit cards", label, amount))
     return pd.DataFrame(out, columns=COLS)
 
 
-def loads(start: date, end: date, exclude_po_id: int | None = None) -> pd.DataFrame:
+def loads(start: date, end: date, exclude_po_id: int | None = None, requests: bool = False) -> pd.DataFrame:
     """Everything that goes out per day between start and end: the order day check's list (checks, SIs with no check, open POs, bank loans, cards
-    paid from Metrobank) plus cards paid outside Metrobank and the card reserve. Columns: day, payee, kind, reference, amount."""
+    paid from Metrobank) plus cards paid outside Metrobank and the card reserve. Columns: day, payee, kind, reference, amount.
+    `requests` (the order screens only; owner, 2026-10-11): also the requests waiting for a supplier's answer, as tentative rows."""
     from engines.cash_insights_service import split_card_rows
     from engines.po_rules import _committed_rows
     from engines.reports_service import get_payment_schedule_all_tracks
     from engines.settings_registry import int_value
-    base = _committed_rows(end, exclude_po_id)
+    base = _committed_rows(end, exclude_po_id, requests=requests)
     if not int_value(SCOPE_KEY):                              # suppliers only (Settings): supplier checks, SIs with no check, open orders
-        base = base[base["kind"].isin(["Supplier checks", "Purchase orders"])] if not base.empty else base
+        base = base[base["kind"].isin(["Supplier checks", "Purchase orders", "Order requests"])] if not base.empty else base
         if base.empty:
             return pd.DataFrame(columns=COLS)
         base = base.assign(day=pd.to_datetime(base["day"]).dt.date)
@@ -118,8 +139,8 @@ def loads(start: date, end: date, exclude_po_id: int | None = None) -> pd.DataFr
     return df[(df["day"] >= start) & (df["day"] <= end)].reset_index(drop=True)
 
 
-def day_totals(start: date, end: date, exclude_po_id: int | None = None) -> dict:
-    df = loads(start, end, exclude_po_id)
+def day_totals(start: date, end: date, exclude_po_id: int | None = None, requests: bool = False) -> dict:
+    df = loads(start, end, exclude_po_id, requests)
     return {} if df.empty else {d: float(v) for d, v in df.groupby("day")["amount"].sum().items()}
 
 

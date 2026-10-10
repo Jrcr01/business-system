@@ -1,0 +1,35 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Sales {{ d.day|date:"m/d/Y" }}{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">today</span> Sales · {{ d.day|date:"l m/d/Y" }}</h2>
+<div class="actions" style="margin-bottom:10px">
+  <a class="btn small ghost" href="/sales/"><span class="ms">point_of_sale</span>New sale</a>
+  <a class="btn small ghost" href="?view=day&amp;d={{ prev|date:'Y-m-d' }}"><span class="ms">chevron_left</span>{{ prev|date:"m/d" }}</a>
+  {% if next %}<a class="btn small ghost" href="?view=day&amp;d={{ next|date:'Y-m-d' }}">{{ next|date:"m/d" }}<span class="ms">chevron_right</span></a>{% endif %}
+  {% if not is_today %}<a class="btn small ghost" href="?view=day">Today</a>{% endif %}
+</div>
+{% if skipped %}<div class="warnbox"><b>{{ skipped|length }} number{{ skipped|length|pluralize }} skipped:</b> {% for n in skipped %}{{ n|stringformat:"06d" }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+  <a href="/sales/">Type it</a>, or <a href="/si-booklets/">cancel the leaf with a reason</a>.</div>{% endif %}
+<div class="facts"><div><span>Invoices</span><b>{{ d.invoices }}</b></div><div><span>Pieces</span><b>{{ d.pieces|floatformat:"-2" }}</b></div>
+  <div><span>Sales</span><b>₱{{ d.sales|floatformat:2|intcomma }}</b></div><div><span>Profit</span><b class="{% if d.profit < 0 %}neg{% else %}pos{% endif %}">₱{{ d.profit|floatformat:2|intcomma }}</b></div>
+  <div><span>Below cost</span><b{% if d.below %} class="neg"{% endif %}>{{ d.below }}</b></div><div><span>Typed late</span><b>{{ d.late }}</b></div></div>
+{% if d.rows %}
+<div class="scroll-x"><table class="list">
+  <tr><th style="text-align:right">Qty</th><th>Item</th><th style="text-align:right">Profit</th><th>Customer (if charge)</th><th>SI no.</th><th style="text-align:right">Amount</th><th>How paid</th><th></th></tr>
+  {% for r in d.rows %}<tr>
+    <td class="num">{{ r.qty|floatformat:"-2" }}</td><td>{% if r.service %}<i>Service:</i> {% endif %}{{ r.item }}</td>
+    <td class="num {% if r.profit < 0 %}neg{% else %}pos{% endif %}">{{ r.profit|floatformat:2|intcomma }}</td><td>{{ r.customer }}</td>
+    <td><a href="/sales/{{ r.sale_id }}/">{{ r.ref }}</a></td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td><td>{{ r.paid }}</td>
+    <td>{% if r.below %}<span class="pill warn">Below cost</span>{% endif %}{% if r.late %} <span class="pill off">typed late</span>{% endif %}{% if r.returned %} <span class="pill off">{{ r.returned|floatformat:"-2" }} returned</span>{% endif %}</td></tr>{% endfor %}
+  <tr><td class="num"><b>{{ d.pieces|floatformat:"-2" }}</b></td><td><b>Total for the day</b></td><td class="num"><b>{{ d.profit|floatformat:2|intcomma }}</b></td><td></td><td></td>
+    <td class="num"><b>{{ d.sales|floatformat:2|intcomma }}</b></td><td></td><td></td></tr>
+</table></div>
+{% else %}<p class="note">No sale typed for this day yet.</p>{% endif %}
+{% if d.voided %}<p class="note">Voided: {% for v in d.voided %}<a href="/sales/{{ v.sale_id }}/">{{ v.ref }}</a> (₱{{ v.total|floatformat:2|intcomma }}: {{ v.reason }}){% if not forloop.last %}; {% endif %}{% endfor %}</p>{% endif %}
+<div class="grp">The day's money</div>
+<div class="facts"><div><span>Cash</span><b>₱{{ d.money.CASH|floatformat:2|intcomma }}</b></div><div><span>Checks dated today or earlier</span><b>₱{{ d.money.CHECK_TODAY|floatformat:2|intcomma }}</b></div>
+  <div><span>Post-dated checks</span><b>₱{{ d.money.CHECK_LATER|floatformat:2|intcomma }}</b></div><div><span>Transfer / GCash / Maya</span><b>₱{{ d.money.TRANSFER|floatformat:2|intcomma }}</b></div>
+  <div><span>Card</span><b>₱{{ d.money.CARD|floatformat:2|intcomma }}</b></div><div><span>Charge (on credit)</span><b>₱{{ d.money.CHARGE|floatformat:2|intcomma }}</b></div></div>
+<p class="hint">The first four columns are the notebook's, in its order; the system adds the SI number, the amount and how it was paid. A service has no cost, so its amount counts as profit.
+  Matching the day's cash and checks against the bank's deposits comes with collections (stage B).</p>
+{% endblock %}

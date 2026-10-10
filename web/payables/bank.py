@@ -108,7 +108,9 @@ def bank(request):
             r = recon_statement(pick)
             if r:
                 ctx.update({"pick": pick, "r": r, "outstanding": r["outstanding"].to_dict("records"), "bank_items": r["bank_items"].to_dict("records")})
-    elif tab == "booklets":
+    elif tab == "booklets":                                      # the booklets have their own page now (owner, 2026-10-11)
+        return redirect("/booklets/" + ("?voided=1#voided" if request.GET.get("voided") else ""))
+    elif tab == "booklets_old":
         from engines.check_rules import get_booklets
         from engines.checkbook_service import unrecorded_alerts
         gaps = {int(a["booklet_id"]): a for a in unrecorded_alerts().to_dict("records")}

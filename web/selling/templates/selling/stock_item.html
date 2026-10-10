@@ -1,0 +1,59 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}{{ it.code }} · {{ it.name }}{% endblock %}
+{% block content %}
+<p class="note"><a href="/stock/">← Items and stock</a></p>
+<h2>{{ it.code }} · {{ it.name }} <span class="pill">{{ type }}</span>
+  {% if it.negative %}<span class="pill warn">Below zero</span>{% elif it.low %}<span class="pill warn">Low</span>{% endif %}{% if it.old %} <span class="pill warn">Old stock</span>{% endif %}</h2>
+<div class="facts"><div><span>On hand</span><b{% if it.negative %} class="neg"{% endif %}>{{ it.on_hand|floatformat:"-2" }}</b></div>
+  <div><span>Average cost</span><b>₱{{ it.avg_cost|floatformat:2|intcomma }}</b></div><div><span>Value</span><b>₱{{ it.value|floatformat:2|intcomma }}</b></div>
+  <div><span>Oldest DOT</span><b>{{ it.dot|default:"—" }}</b></div><div><span>Low at</span><b>{{ it.reorder_level }}</b></div>
+  <div><span>Last counted</span><b>{{ it.last_counted_at|default:"never"|dmy }}</b></div></div>
+
+<div class="grp">Everything that happened to it</div>
+{% if ledger %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Date</th><th>What</th><th>Document</th><th>Who</th><th style="text-align:right">In</th><th style="text-align:right">Out</th><th style="text-align:right">Cost</th><th style="text-align:right">On hand after</th></tr>
+  {% for m in ledger %}<tr>
+    <td>{{ m.date|dmy }}</td><td>{{ m.what }}</td>
+    <td>{% if m.url %}<a href="{{ m.url }}">{{ m.document }}</a>{% else %}{{ m.document }}{% endif %}{% if m.note %}<div class="hint">{{ m.note }}</div>{% endif %}</td>
+    <td>{{ m.who }}</td><td class="num">{% if m.qty_in %}{{ m.qty_in|floatformat:"-2" }}{% endif %}</td><td class="num">{% if m.qty_out %}{{ m.qty_out|floatformat:"-2" }}{% endif %}</td>
+    <td class="num">{{ m.cost|floatformat:2|intcomma }}</td><td class="num">{{ m.after|floatformat:"-2" }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="note">Nothing has moved yet: not received, not sold, not counted.</p>{% endif %}
+<p class="hint">Nothing here can be edited or deleted. A mistake is corrected by a new line: an undone delivery, a voided sale, a count, an adjustment.</p>
+
+<div class="grp">Labels</div>
+<form class="bar" method="get" action="/stock/labels/" target="_blank">
+  <input type="hidden" name="item" value="{{ it.id }}">
+  <div><label for="n">How many</label><input id="n" type="text" inputmode="numeric" name="n" value="{% if it.on_hand > 0 %}{{ it.on_hand|floatformat:0 }}{% else %}1{% endif %}" style="width:90px"></div>
+  <div><label for="size">Label size</label><select id="size" name="size">{% for k, label in sizes %}<option value="{{ k }}"{% if k == size %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <button class="btn small" type="submit"><span class="ms">print</span>Print labels (PDF)</button>
+</form>
+<p class="hint">One label per piece; every piece of this item carries the same code ({{ it.code }}). No price is printed. Tread labels or hang tags: paper does not hold on rubber.</p>
+
+<div class="grp">The maker's barcode</div>
+{% if barcodes %}<p class="note">Known for this item: {% for b in barcodes %}<span class="pill off">{{ b }}</span> {% endfor %}</p>{% endif %}
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="barcode">
+  <div class="grow"><label for="barcode">Scan the barcode printed on the item</label><input id="barcode" type="text" name="barcode" autocomplete="off" placeholder="click here, then scan"></div>
+  <button class="btn small ghost" type="submit"><span class="ms">add_link</span>This barcode is this item</button>
+</form>
+<p class="hint">Once learned, a scan of the maker's barcode means this item everywhere, so a new tire needs no label of ours.</p>
+
+<div class="grp">Low stock</div>
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="level">
+  <div><label for="level">Show as Low at or below</label><input id="level" type="text" inputmode="numeric" name="level" value="{{ it.reorder_level }}" style="width:90px"></div>
+  <button class="btn small ghost" type="submit"><span class="ms">save</span>Save</button>
+</form>
+
+{% if may_adjust %}
+<details class="manual" style="margin-top:14px"><summary>Correct the quantity (System admin only)</summary>
+<form class="bar" method="post" style="margin-top:8px" onsubmit="return confirm('Set what is on hand for {{ it.name|escapejs }}? The difference is recorded with your reason.');">{% csrf_token %}
+  <input type="hidden" name="action" value="adjust">
+  <div><label for="counted">Really on hand</label><input id="counted" type="text" inputmode="decimal" name="counted" style="width:110px" required></div>
+  <div class="grow"><label for="reason">Why</label><input id="reason" type="text" name="reason" required placeholder="e.g. found damaged and scrapped"></div>
+  <button class="btn small danger" type="submit"><span class="ms">tune</span>Adjust</button>
+</form>
+<p class="hint">For one item, outside a count. It adds a line above and goes on the Review list. For several items, start a stock count.</p>
+</details>
+{% endif %}
+{% endblock %}

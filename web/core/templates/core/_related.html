@@ -1,19 +1,27 @@
 {% load humanize %}{% if related %}
+  {% if summary %}<p class="rsum"><span class="ms">flag</span> {{ summary }}</p>{% endif %}
   <div class="rmap">
   {% for col in related %}
     <div class="rcol">
       <div class="rstep"><span class="ring{% if col.done %} done{% elif col.has %} part{% endif %}"><span class="ms">{{ col.icon }}</span></span>
         {% if not forloop.last %}<span class="rline"><span class="ms">keyboard_double_arrow_right</span></span>{% endif %}</div>
-      <div class="rlbl">{{ col.label }}</div>
-      {% for d in col.docs %}
-      {% if d.url and not d.me %}<a class="rdoc{% if d.off %} off{% endif %}" href="{{ d.url }}">{% else %}<div class="rdoc{% if d.me %} me{% endif %}{% if d.off %} off{% endif %}">{% endif %}
-        <b>{{ d.title }}</b>
-        <span class="st{% if d.done %} ok{% endif %}"><span class="ms">{% if d.done %}check_circle{% else %}keyboard_double_arrow_right{% endif %}</span>{{ d.status }}</span>
-        <span class="kv">Amount: ₱{{ d.amount|floatformat:2|intcomma }}</span>
-        {% if d.date %}<span class="kv">{{ d.date_label }}: {{ d.date|dmy }}</span>{% endif %}
-      {% if d.url and not d.me %}</a>{% else %}</div>{% endif %}
-      {% empty %}<div class="rdoc none">none yet</div>{% endfor %}
-      {% if col.more %}<div class="hint">and {{ col.more }} more</div>{% endif %}
+      <div class="rlbl">{{ col.label }}<span class="rtot">{% if col.count %}{{ col.count }} · ₱{{ col.total|floatformat:2|intcomma }}{% else %}—{% endif %}</span></div>
+      {% if col.grouped %}
+        {% if col.me_doc %}{% with d=col.me_doc %}{% include "core/_related_doc.html" %}{% endwith %}{% endif %}
+        <details class="rgroup"><summary class="rdoc sum">
+          <b>{{ col.count }} {{ col.name }}{{ col.count|pluralize }}</b>
+          <span class="kv">₱{{ col.total|floatformat:2|intcomma }}</span>
+          <span class="st{% if col.done %} ok{% endif %}"><span class="ms">{% if col.done %}check_circle{% else %}keyboard_double_arrow_right{% endif %}</span>{{ col.done_count }} done{% if col.late %} · {{ col.late }} overdue{% endif %}</span>
+          {% if col.earliest %}<span class="kv">Earliest {{ col.date_label|lower }}: {{ col.earliest|dmy }}</span>{% endif %}
+          <span class="hint">click to open the list</span></summary>
+          <div class="rlist">{% for d in col.rest %}{% include "core/_related_doc.html" %}{% endfor %}
+            {% if col.more %}<div class="hint">and {{ col.more }} more</div>{% endif %}</div>
+        </details>
+      {% else %}
+        {% for d in col.docs %}{% include "core/_related_doc.html" %}
+        {% empty %}<div class="rdoc none{% if col.empty_note != 'none yet' %} allowed{% endif %}">{{ col.empty_note }}</div>{% endfor %}
+        {% if col.more %}<div class="hint">and {{ col.more }} more</div>{% endif %}
+      {% endif %}
     </div>
   {% endfor %}
   </div>

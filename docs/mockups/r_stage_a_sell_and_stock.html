@@ -1,0 +1,752 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Stage A mock-ups: Sell, and the stock moves</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+/* Slick's look (the Streamlit system's design, redrawn for Django, stage D0). Colours: the shop sign's yellow and blue. */
+:root { --navy: #0f2a4a; --navy-hover: #1b3f6b; --blue: #0B4F8A; --blue-dark: #0a2c4d; --yellow: #F3E03B; --red: #C62828; --ink: #1c2733; --muted: #4b5563;
+        --line: #e5e7eb; --bg: #ffffff; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: var(--bg); font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; font-weight: normal; font-style: normal; line-height: 1; display: inline-block; vertical-align: middle;
+      font-size: 20px; -webkit-font-smoothing: antialiased; font-variation-settings: 'FILL' 0;
+      width: 1em; height: 1em; overflow: hidden; white-space: nowrap; flex: 0 0 auto; }      /* a fixed square: the layout holds while the icon font is still loading */
+a { color: var(--blue); }
+main { max-width: 1680px; margin: 0 auto; padding: 14px 24px 40px; }        /* wide screens use their width (owner, 2026-10-04: tiles looked small) */
+h2 { color: var(--blue); margin: 6px 0 14px; }
+
+/* ---- the top bar: one drop-down per section, opened by resting the mouse on it (or a tap on a phone) ---- */
+.topbar { display: flex; align-items: center; flex-wrap: wrap; background: var(--navy); border-radius: 8px; padding: 0 8px; position: sticky; top: 0; z-index: 1000;
+          min-height: 46px; margin: 8px 16px 0; }
+.topbar .logo { display: flex; align-items: center; padding: 6px 12px 6px 2px; }
+.topbar .logo img { height: 34px; border-radius: 5px; display: block; }
+.tb-sec { position: relative; }
+.tb-sec > .tb-label { display: block; color: #fff; padding: 13px 10px; cursor: pointer; white-space: nowrap; background: none; border: none; font: inherit; font-size: .88rem;
+                      text-decoration: none; }
+.tb-sec:hover > .tb-label, .tb-sec:focus-within > .tb-label, .tb-sec.on > .tb-label { background: var(--navy-hover); }
+.tb-menu { display: none; position: absolute; top: 100%; left: 0; min-width: 250px; background: #fff; border-radius: 0 0 8px 8px; padding: 6px 0;
+           box-shadow: 0 10px 24px rgba(0,0,0,.28); z-index: 1001; }
+.tb-sec:hover .tb-menu, .tb-sec:focus-within .tb-menu, .tb-sec.open .tb-menu { display: block; }
+.tb-menu a, .tb-menu button { display: flex; gap: 10px; align-items: center; color: var(--ink); text-decoration: none; padding: 8px 14px; width: 100%; background: none;
+                              border: none; font: inherit; font-size: .95rem; cursor: pointer; text-align: left; }
+.tb-menu a:hover, .tb-menu button:hover { background: #eef3fa; }
+.tb-menu .later { margin-left: auto; font-size: .72rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
+.tb-gap { flex: 1 1 auto; }
+.tb-tag { background: #FFA500; color: #000; font-weight: 700; font-size: .72rem; padding: 3px 8px; border-radius: 4px; margin-right: 8px; white-space: nowrap; }
+.tb-user .tb-menu { left: auto; right: 0; }
+.tb-user .who { padding: 8px 14px 10px; border-bottom: 1px solid var(--line); margin-bottom: 4px; color: var(--muted); font-size: .85rem; }
+.tb-user .who b { color: var(--ink); display: block; font-size: .95rem; }
+@media (max-width: 800px) { .tb-sec > .tb-label { padding: 13px 7px; font-size: .8rem; } .topbar { margin: 6px 8px 0; } main { padding: 12px 10px 30px; } }
+
+/* ---- messages ---- */
+.msg { border-radius: 6px; padding: 10px 14px; margin: 0 0 12px; }
+.msg.error { background: #fdecea; color: #7f1d1d; }
+.msg.success { background: #e7f6ee; color: #14532d; }
+.msg.info, .msg.warning { background: #fff7e0; color: #713f12; }
+
+/* ---- Home ---- */
+.welcome { font-size: 1.25rem; font-weight: 600; color: #111827; margin: 6px 0 0 4px; }
+.home-sec { color: #1f2937; font-size: 1.1rem; margin: 20px 0 10px 2px; scroll-margin-top: var(--tb-h, 70px); font-weight: 600; }
+.home-sec span { color: #6b7280; font-size: .82rem; margin-left: 10px; font-weight: 400; }
+/* SAP Business One style cards (owner, 2026-10-09): white cards on a light grey page; the figure big beside its icon, the words in the corner */
+body:has(main .home) { background: #f2f4f7; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; margin-bottom: 4px; }
+.tile { position: relative; background: #fff; border: 1px solid #e3e7ed; border-radius: 12px; height: 140px; text-decoration: none; color: var(--ink);
+        padding: 12px 14px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;
+        box-shadow: 0 1px 2px rgba(16,24,40,.06); transition: box-shadow .12s ease, border-color .12s ease; }
+.tile:hover { border-color: #b9c6d8; box-shadow: 0 4px 12px rgba(16,24,40,.12); }
+.tile.alert { border-color: #f1b7b7; }
+.tile .t { font-size: .95rem; line-height: 1.25; font-weight: 600; padding-right: 40px; }      /* clear of the 'later' tag */
+.tile .b { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+.tile .u { font-size: .8rem; color: var(--muted); line-height: 1.2; }
+.tile .f { display: flex; align-items: center; gap: 6px; }
+.tile .f .ms { font-size: 30px; color: #5b6b80; }
+.tile .f b { font-size: 2rem; font-weight: 400; line-height: 1; color: #1f2937; }
+.tile.ok .f b { color: var(--ok); } .tile.warn .f b { color: var(--warn); } .tile.alert .f b { color: var(--red); }
+.tile.create .f .ms { color: var(--blue); }
+.tile .later { position: absolute; top: 10px; right: 10px; font-size: .68rem; background: #f3f4f6; border-radius: 999px; padding: 1px 7px; color: var(--muted); }
+
+/* ---- forms (sign in, set-up, password) ---- */
+.card { max-width: 420px; margin: 40px auto; border: 1px solid var(--line); border-radius: 10px; padding: 24px 26px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+.card img { height: 54px; border-radius: 6px; display: block; margin-bottom: 12px; }
+.card h2 { margin-top: 0; }
+label { display: block; font-size: .88rem; color: var(--muted); margin: 12px 0 4px; }
+input[type=text], input[type=email], input[type=password] { width: 100%; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+input:focus { outline: 2px solid var(--blue); border-color: var(--blue); }
+.btn { display: inline-block; background: var(--blue); color: #fff; border: 1px solid var(--blue); border-radius: 6px; padding: 9px 16px; font: inherit; cursor: pointer;
+       text-decoration: none; margin-top: 16px; }
+.btn:hover { background: var(--blue-dark); }
+.btn.wide { width: 100%; }
+.note { color: var(--muted); font-size: .88rem; }
+button.link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+.later-box { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 22px; max-width: 720px; }
+
+/* ---- lists, forms and tabs (stage D1) ---- */
+.notice { background: var(--yellow); color: #111827; border-radius: 6px; padding: 8px 14px; margin: 10px 0 0; }
+table.list { width: 100%; border-collapse: collapse; font-size: .92rem; }
+table.list th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 2px solid var(--line); padding: 7px 8px; white-space: nowrap; }
+table.list td { border-bottom: 1px solid #eef0f3; padding: 7px 8px; vertical-align: top; }
+table.list tr:hover td { background: #f8fafc; }
+table.list td.num { text-align: right; }
+.scroll-x { overflow-x: auto; }
+.pill { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 1px 8px; background: #eef3fa; color: var(--blue); white-space: nowrap; }
+.pill.off { background: var(--soft); color: #6b7280; }
+.pill.warn { background: #fff7e0; color: var(--warn); }
+.bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+.bar .grow { flex: 1 1 220px; }
+.bar label.inline { margin: 0 0 9px; color: var(--ink); display: flex; gap: 6px; align-items: center; }
+select, textarea { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: #fff; }
+.bar input[type=text], .bar input[type=email], .bar select { width: 100%; }
+.btn.ghost { background: #fff; color: var(--blue); }
+.btn.ghost:hover { background: #eef3fa; }
+.btn.danger { background: #fff; color: var(--red); border-color: var(--red); }
+.btn.small { padding: 6px 12px; margin-top: 0; font-size: .9rem; }
+.btn .ms { margin-right: 4px; }
+.formgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 16px; max-width: 900px; }
+.formgrid input, .formgrid select { width: 100%; }
+.hint { color: #6b7280; font-size: .8rem; margin-top: 3px; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.actions form { margin: 0; }
+.tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--line); margin-bottom: 14px; flex-wrap: wrap; }
+.tabs a { padding: 8px 14px; text-decoration: none; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.tabs a.on { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; }
+.grp { color: var(--blue); font-weight: 700; margin: 18px 0 4px; }
+.numrow { display: grid; grid-template-columns: 3fr 1.2fr 1fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f2f5; scroll-margin-top: var(--tb-h, 70px); }
+.numrow .lbl b { display: block; font-weight: 600; } .numrow .lbl span { color: #6b7280; font-size: .8rem; }
+.numrow input { padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; font: inherit; }
+.numrow form { display: contents; }
+.yes { color: var(--ok); font-weight: 600; } .no { color: #9ca3af; } .view, .own { color: var(--warn); }
+code.temp { font-size: 1.05rem; background: #fff; border: 1px dashed var(--ok); padding: 2px 8px; border-radius: 4px; }
+@media (max-width: 700px) { .numrow { grid-template-columns: 1fr 1fr; } .numrow .lbl { grid-column: 1 / -1; } }
+
+/* ---- stage D2 ---- */
+.warnbox { background: #fff4e5; border-left: 4px solid #C26A00; border-radius: 4px; padding: 10px 14px; margin: 10px 0; }
+.chg-up { color: var(--warn); font-weight: 600; } .chg-down { color: var(--ok); font-weight: 600; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; margin: 6px 0 10px; }
+.seg a { padding: 6px 14px; text-decoration: none; color: var(--muted); font-size: .9rem; } .seg a.on { background: var(--blue); color: #fff; }
+input[type=date], input[type=file] { padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: #fff; }
+.bar input[type=file] { width: 100%; }
+.facts { display: flex; gap: 22px; flex-wrap: wrap; margin: 6px 0 12px; }
+.facts div span { display: block; color: #6b7280; font-size: .78rem; }
+.facts div b { font-size: 1.05rem; }
+.stages { display: flex; margin: 10px 0 8px; flex-wrap: wrap; }
+.stages div { flex: 1 1 110px; border-top: 4px solid #cbd5e1; padding: 6px 6px 0 0; font-size: .85rem; }
+.stages div.done { border-top-color: var(--ok); } .stages div.now { border-top-color: #C26A00; font-weight: 700; } .stages div.late { border-top-color: var(--red); }
+.stages div span { display: block; color: #6b7280; font-size: .75rem; font-weight: 400; }
+.inline-input { padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 5px; width: 100px; font: inherit; }
+.bars { display: flex; align-items: flex-end; gap: 4px; height: 150px; border-bottom: 1px solid #cbd5e1; padding: 0 2px; margin-top: 8px; }
+.bars .b { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; min-width: 6px; }
+.bars .fill { background: #9FB3D1; border-radius: 3px 3px 0 0; } .bars .fill.mine { background: #C26A00; } .bars .fill.light { background: #2E7D32; }
+.bars .add { background: #F2B880; border-radius: 3px 3px 0 0; }
+/* the month calendar of committed payables and the "Confirm order anyway" dialog (owner, 2026-10-08) */
+.calhead { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; max-width: 760px; margin: 6px 0; }
+.calnav { display: inline-flex; align-items: center; gap: 8px; } .calnav .btn .ms { margin: 0; }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; max-width: 760px; }
+.cal .h { text-align: center; color: var(--muted); font-size: .8rem; }
+.cal .d { display: flex; flex-direction: column; align-items: flex-start; min-height: 54px; padding: 4px 6px; border: 1px solid #d6dde6; border-radius: 6px; background: #fff;
+  font: inherit; font-size: .78rem; color: var(--ink); text-align: left; overflow: hidden; }
+.cal button.d { cursor: pointer; } .cal button.d:hover { border-color: var(--blue); background: #eef3fa; }
+.cal .d .n { color: var(--muted); } .cal .d .amt { font-weight: 700; font-size: .85rem; margin-top: 2px; } .cal .d .lbl { font-size: .7rem; color: var(--muted); }
+.cal .d.near { background: #fff4e5; border-color: #f0b46a; } .cal .d.near .amt { color: #8a4b00; }
+.cal .d.over { background: #fdecea; border-color: #e8a19b; } .cal .d.over .amt { color: #b3261e; }
+.cal .d.closed { background: #f1f3f6; color: #8a94a3; } .cal .d.out { opacity: .45; }
+.cal .d.pick { outline: 2px solid var(--blue); outline-offset: 1px; }
+.callegend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .78rem; color: var(--muted); margin: 8px 0 0; }
+.callegend .sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; border: 1px solid #d6dde6; }
+.callegend .sw.over { background: #fdecea; border-color: #e8a19b; } .callegend .sw.near { background: #fff4e5; border-color: #f0b46a; }
+.callegend .sw.closed { background: #f1f3f6; } .callegend .sw.pick { outline: 2px solid var(--blue); }
+.overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+.dialog { background: #fff; border-radius: 10px; padding: 18px 20px; max-width: 480px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+.dialog h3 { margin: 0 0 8px; display: flex; align-items: center; gap: 6px; }
+.dialog table.kv { width: 100%; margin: 6px 0 10px; } .dialog table.kv td { padding: 3px 0; } .dialog table.kv td:first-child { color: var(--muted); }
+.dialog .tip { background: #f1f5fa; border-radius: 6px; padding: 8px 10px; font-size: .9rem; }
+.dialog .actions { display: flex; flex-wrap: wrap; gap: 8px; } .dialog .actions form { margin: 0; }
+table.list tr.subhead td { background: #f1f5fa; }
+.picktable tr.on td { background: #eef3fa; } .picktable tr.hi td { outline: 1px solid var(--blue); outline-offset: -1px; }
+.tickform { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .tickform input[type=date] { width: 140px; } .tickform input[type=text] { width: 200px; }
+details.manual summary { cursor: pointer; color: var(--blue); margin: 10px 0 4px; }
+.btn.warn { background: #C26A00; border-color: #C26A00; } .btn.warn:hover { background: #9a5400; }
+.barlabels { display: flex; gap: 4px; padding: 0 2px; } .barlabels span { flex: 1; text-align: center; font-size: .62rem; color: #4b5563; overflow: hidden; min-width: 6px; }
+.weekbtns { display: flex; gap: 6px; flex-wrap: wrap; } .weekbtns form { margin: 0; } .weekbtns .btn { line-height: 1.2; }
+.btn[disabled] { opacity: .75; cursor: default; }
+.enter-default { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+details > summary { margin: 4px 0; }
+
+/* ---- stage D3 ---- */
+.steps { display: flex; gap: 14px; flex-wrap: wrap; margin: 6px 0 10px; font-size: .9rem; }
+.steps .done { color: var(--ok); } .steps .part { color: #C26A00; } .steps .wait { color: #9ca3af; }
+.kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.kinds a { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; text-decoration: none; color: var(--ink); }
+.kinds a:hover { background: #f8fafc; border-color: #cbd5e1; }
+.kinds a b { display: block; margin-top: 4px; } .kinds a .hint { display: block; }
+
+/* ---- Relationship map (Phase 8, as SAP Business One's, owner 2026-10-09): step rings on top (green = done, half = started, grey = none yet), the cards under them ---- */
+.related { border: 1px solid #e3e7ed; border-radius: 12px; padding: 10px 14px; margin: 12px 0; background: #fff; }
+.related summary { cursor: pointer; font-weight: 600; color: #1f2937; }
+.rmap { display: flex; align-items: flex-start; overflow-x: auto; padding: 14px 0 6px; }
+.rcol { min-width: 190px; flex: 0 0 190px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.rstep { position: relative; width: 100%; display: flex; justify-content: center; }
+.ring { width: 54px; height: 54px; border-radius: 50%; border: 3px solid #c8ced6; display: flex; align-items: center; justify-content: center; background: #fff; z-index: 1; color: #8a96a6; }
+.ring .ms { font-size: 26px; }
+.ring.done { border-color: #5b9a4c; color: #3f7a33; }
+.ring.part { border-color: #5b9a4c; border-right-color: #c8ced6; border-bottom-color: #c8ced6; color: #3f7a33; }
+.rline { position: absolute; left: calc(50% + 30px); right: calc(-50% + 30px); top: 50%; border-top: 1px solid #b8c0cb; display: flex; justify-content: center; }
+.rline .ms { margin-top: -11px; background: #fff; color: #8a96a6; font-size: 20px; }
+.rlbl { font-size: .8rem; color: #374151; margin-bottom: 2px; }
+.rdoc { position: relative; width: 162px; border: 1px solid #b9c2ce; border-radius: 8px; padding: 9px 11px 10px; text-decoration: none; color: var(--ink);
+        font-size: .8rem; line-height: 1.35; display: flex; flex-direction: column; gap: 5px; background: #fff; }
+.rdoc::before { content: ""; position: absolute; top: -1px; left: -1px; border-style: solid; border-width: 0 0 12px 12px;
+                border-color: transparent transparent #8a96a6 transparent; border-top-left-radius: 8px; }
+a.rdoc:hover { border-color: var(--blue); box-shadow: 0 2px 8px rgba(16,24,40,.12); }
+.rdoc b { font-weight: 600; font-size: .85rem; overflow-wrap: anywhere; }
+.rdoc .st { display: flex; align-items: center; gap: 4px; color: #6b7280; }
+.rdoc .st .ms { font-size: 16px; }
+.rdoc .st.ok { color: #3f7a33; }
+.rdoc .kv { color: #4b5563; }
+.rdoc.me { border: 2px solid var(--blue); background: #f2f7fd; }
+.rdoc.off { opacity: .55; }
+.rdoc.off b { text-decoration: line-through; }
+.rdoc.none { border-style: dashed; color: var(--muted); align-items: center; }
+.rdoc.none::before { display: none; }
+
+.rmap-dlg { width: min(1180px, 92vw); max-height: 86vh; border: none; border-radius: 12px; padding: 0; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+.rmap-dlg::backdrop { background: rgba(15, 23, 42, .45); }
+.rmap-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #e3e7ed; }
+.rmap-head b { display: flex; align-items: center; gap: 6px; color: #1f2937; }
+.rmap-body { padding: 4px 16px 16px; overflow: auto; max-height: calc(86vh - 60px); }
+
+/* ---- Analytics (Phase 8, owner 2026-10-09) ---- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin: 10px 0 14px; }
+.kpi { background: #fff; border: 1px solid #e3e7ed; border-radius: 12px; padding: 12px 14px; text-decoration: none; color: var(--ink); display: flex; flex-direction: column; gap: 6px; }
+.kpi:hover { border-color: #b9c6d8; }
+.kpi span { font-size: .82rem; color: var(--muted); } .kpi b { font-size: 1.6rem; font-weight: 500; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; }
+.chart { background: #fff; border: 1px solid #e3e7ed; border-radius: 12px; padding: 12px 14px; }
+.chart .ct { font-weight: 600; margin-bottom: 8px; color: #1f2937; }
+.hbar { display: grid; grid-template-columns: 170px 1fr 120px; align-items: center; gap: 8px; font-size: .85rem; margin: 5px 0; }
+.hbar .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hbar .track { background: #eef1f5; border-radius: 3px; height: 14px; overflow: hidden; } .hbar .fill { display: block; height: 100%; background: var(--blue); border-radius: 3px; }
+.hbar .v { text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .charts { grid-template-columns: 1fr; } .hbar { grid-template-columns: 110px 1fr 90px; } }
+
+/* ---- Daily payables checklist (owner, 2026-10-09) ---- */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
+.chip { font-size: .85rem; padding: 5px 12px; border: 1px solid #cbd5e1; border-radius: 999px; text-decoration: none; color: var(--ink); background: #fff; }
+.chip b { font-weight: 600; margin-left: 4px; } .chip.on { background: #e8f0fa; border-color: var(--blue); color: var(--blue); }
+#dp-search { margin-left: auto; width: 260px; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+table.dp tr.dp-day td { background: #f3f5f8; padding-top: 9px; padding-bottom: 7px; }
+table.dp tr.dp-day.overdue td { background: #fff4e5; } table.dp tr.dp-day.today td { background: #e8f0fa; }
+table.dp tr.sel td { background: #eef6ee; }
+table.dp input[type=checkbox] { width: 17px; height: 17px; cursor: pointer; } table.dp input[type=checkbox]:disabled { cursor: not-allowed; }
+table.dp .kind { font-size: .72rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; margin-left: 4px; white-space: nowrap; }
+.dp-bar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: #fff; border: 1px solid #d6dde7; border-radius: 12px;
+          padding: 10px 14px; margin-top: 10px; box-shadow: 0 -4px 14px rgba(16,24,40,.08); z-index: 5; }
+.dp-bar label { margin: 0; } .dp-bar input[type=date] { padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+.dp-bar input[type=text] { padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+@media (max-width: 700px) { #dp-search { margin-left: 0; width: 100%; } }
+
+/* ---- fixes (owner, 2026-10-09): a long figure on a Home card; the card search beside the card picker ---- */
+.tile .b { flex-wrap: nowrap; }
+.tile .u { flex: 1 1 auto; min-width: 0; }
+.tile .f { flex: 0 0 auto; }
+.tile.long .f b { font-size: 1.45rem; }
+.tile.long .f .ms { font-size: 22px; }
+.pick-row { display: flex; gap: 8px; align-items: stretch; }
+.pick-row select { flex: 1 1 auto; min-width: 0; }
+.card-find { width: 9.5em; flex: 0 0 auto; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: #fff; }
+.card-find:focus { outline: 2px solid var(--blue); border-color: var(--blue); }
+
+/* ---- dates typed and shown dd/mm/yyyy (owner, 2026-10-09): a text box + the calendar button; the browser's own date box is hidden behind it ---- */
+.dmy-wrap { position: relative; display: inline-flex; align-items: stretch; }
+.dmy-text { width: 8.6em; padding: 8px 32px 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: #fff; font-variant-numeric: tabular-nums; }
+.dmy-text:focus { outline: 2px solid var(--blue); border-color: var(--blue); }
+.dmy-text:invalid:not(:placeholder-shown) { border-color: var(--red); }
+.dmy-native { position: absolute; left: 0; bottom: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
+.dmy-btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: none; background: none; cursor: pointer; padding: 2px; color: #5b6b80; line-height: 0; }
+.dmy-btn .ms { font-size: 20px; }
+
+/* ---- Reports: the report cards (owner, 2026-10-09) ---- */
+.rep-cards { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-bottom: 14px; }
+.rep-cards .tile { height: 96px; }
+.rep-cards .tile.on { border: 2px solid var(--blue); background: #f2f7fd; }
+
+/* ---- Calendar (owner, 2026-10-09; replaces Payables due) ---- */
+.cal-head { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 1.1rem; }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.cal .dn { font-size: .8rem; color: var(--muted); text-align: center; }
+.cal .cell { display: flex; flex-direction: column; gap: 2px; min-height: 84px; padding: 6px 8px; border: 1px solid #e3e7ed; border-radius: 10px; background: #fff;
+             text-decoration: none; color: var(--ink); font-size: .8rem; position: relative; }
+.cal .cell:hover { border-color: #b9c6d8; }
+.cal .cell .dd { color: var(--muted); font-weight: 600; }
+.cal .cell b { font-size: .95rem; font-weight: 600; margin-top: auto; }
+.cal .cell .cnt { color: var(--muted); font-size: .72rem; }
+.cal .cell .mk { position: absolute; top: 6px; right: 6px; font-size: .66rem; color: var(--red); }
+.cal .cell.off { background: #f3f4f6; }
+.cal .cell.paid { background: #e7f6ee; border-color: #b7e0c8; } .cal .cell.paid b { color: var(--ok); }
+.cal .cell.due { background: #fff4e5; border-color: #f5d5a8; } .cal .cell.due b { color: var(--warn); }
+.cal .cell.out { opacity: .4; }
+.cal .cell.today .dd { color: #fff; background: var(--blue); border-radius: 999px; padding: 0 6px; align-self: flex-start; }
+.cal .cell.pick { outline: 2px solid var(--blue); }
+.cal-key { padding: 0 6px; border-radius: 4px; } .cal-key.paid { background: #e7f6ee; } .cal-key.due { background: #fff4e5; } .cal-key.off { background: #f3f4f6; }
+@media (max-width: 700px) { .cal .cell { min-height: 60px; padding: 4px; } .cal .cell b { font-size: .75rem; } .cal .cell .cnt { display: none; } }
+
+/* ---- a person's switches (owner, 2026-10-09): one line each, an on/off switch, the pages it opens ---- */
+.sw-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 12px; font-size: .9rem; }
+.sw-copy { margin-left: auto; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+.sw-sec { background: #fff; border: 1px solid #e3e7ed; border-radius: 12px; padding: 8px 14px; margin-bottom: 10px; max-width: 900px; }
+.sw-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+.sw-head span { font-size: .8rem; }
+.sw-line { display: grid !important; grid-template-columns: 44px 1fr auto; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid #eef1f5; margin: 0 !important;
+           color: var(--ink) !important; font-size: .95rem; cursor: pointer; }
+.sw-pages { color: var(--muted); font-size: .8rem; text-align: right; }
+input.sw { appearance: none; -webkit-appearance: none; width: 36px; height: 20px; border-radius: 999px; background: #cbd5e1; position: relative; cursor: pointer; margin: 0;
+           transition: background .15s; flex: 0 0 auto; }
+input.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s;
+                  box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+input.sw:checked { background: #1d9e75; } input.sw:checked::after { left: 18px; }
+input.sw:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* ---- the search box in the top bar (owner, 2026-10-09) ---- */
+.tb-search { display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,.12); border-radius: 6px; padding: 0 8px; margin-right: 10px; }
+.tb-search .ms { color: #cfd8e3; font-size: 18px; }
+.tb-search input { background: transparent; border: none; color: #fff; font: inherit; font-size: .85rem; width: 230px; padding: 7px 2px; outline: none; }
+.tb-search input::placeholder { color: #b7c3d1; }
+.tb-search:focus-within { background: rgba(255,255,255,.22); }
+@media (max-width: 900px) { .tb-search input { width: 120px; } }
+.search-hits { list-style: none; padding: 0; margin: 4px 0 10px; }
+.search-hits li { padding: 6px 2px; border-bottom: 1px solid #eef1f5; }
+.search-hits a { text-decoration: none; }
+.search-hits a:hover { text-decoration: underline; }
+
+/* Sign-in page over the shop photo (owner, 2026-10-09): a dark band on the left carries the box, so the shop's sign stays in view */
+.login-bg { position: fixed; inset: 0; z-index: 0; background: #0f172a 70% center / cover no-repeat; }
+.login-bg::after { content: ""; position: absolute; inset: 0;
+                   background: linear-gradient(90deg, rgba(10,18,36,.82) 0%, rgba(10,18,36,.55) 30%, rgba(10,18,36,.08) 55%, rgba(10,18,36,0) 100%); }
+.login-wrap { position: relative; z-index: 1; min-height: calc(100vh - 40px); display: flex; align-items: center; padding: 0 0 0 6vw; }
+.login-card { width: 100%; max-width: 380px; background: #fff; border-radius: 14px; padding: 30px 32px 22px; box-shadow: 0 24px 60px rgba(0,0,0,.40); }
+.login-card h2 { margin: 18px 0 14px; font-size: 1.45rem; color: #0f172a; }
+.login-card label { font-weight: 600; color: #334155; }
+.login-card input[type=email], .login-card input[type=password] { padding: 11px 12px; border-radius: 8px; }
+.login-card .btn.wide { margin-top: 18px; padding: 12px; border-radius: 8px; font-weight: 700; }
+.login-brand { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0; }
+.login-brand img { height: 46px; width: 46px; object-fit: cover; border-radius: 8px; }
+.login-brand b { display: block; font-size: 1.05rem; color: #0f172a; }
+.login-brand span { font-size: .85rem; color: #64748b; }
+.login-who { display: flex; align-items: center; gap: 6px; background: #ecfdf5; color: #065f46; border-radius: 8px; padding: 9px 11px; font-size: .9rem; }
+.login-who .ms { font-size: 19px; }
+.login-help { font-size: .88rem; color: #64748b; margin: 14px 0 0; }
+.login-foot { display: flex; align-items: center; gap: 6px; margin: 16px 0 0; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: .8rem; color: #94a3b8; }
+.login-foot .ms { font-size: 16px; }
+main:has(.login-wrap) > .msg { position: relative; z-index: 2; max-width: 380px; margin: 16px 0 0 6vw; }
+@media (max-width: 760px) {
+  .login-bg { background-position: 78% center; }
+  .login-bg::after { background: linear-gradient(180deg, rgba(10,18,36,0) 0%, rgba(10,18,36,.35) 40%, rgba(10,18,36,.85) 100%); }
+  .login-wrap { padding: 0 16px; align-items: flex-end; min-height: calc(100vh - 32px); padding-bottom: 24px; }
+  .login-card { margin: 0 auto; padding: 24px 22px 18px; }
+  main:has(.login-wrap) > .msg { margin: 12px auto 0; }
+}
+
+/* View-only pages (owners, 2026-10-09): every form that saves is hidden; the server refuses saves anyway */
+main.view-only form[method=post], main.view-only form[method=POST] { display: none !important; }
+.msg.view-note { background: #eef2ff; color: #1e3a8a; display: flex; align-items: center; gap: 8px; }
+
+/* What a person sees and does (owner, 2026-10-09): a row per page, Hidden / See / See and do */
+.acc-row { display: grid; grid-template-columns: 1fr 70px 70px 90px; align-items: center; gap: 6px; padding: 7px 0; border-top: 1px solid #eef1f5; }
+.acc-row > label, .acc-row > span:not(.acc-label) { text-align: center; margin: 0 !important; }
+.acc-head { border-top: 0; font-size: .8rem; color: var(--muted); }
+.acc-head b { color: var(--ink, #0f172a); font-size: .95rem; }
+.acc-row input[type=radio] { width: 18px; height: 18px; accent-color: var(--blue); cursor: pointer; }
+.acc-na { color: var(--muted); }
+.acc-extras { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 0 0 8px 18px; font-size: .88rem; }
+.acc-extras label { display: inline-flex !important; align-items: center; gap: 5px; margin: 0 !important; }
+.acc-extras input:disabled + * , .acc-extras label:has(input:disabled) { color: #a0aab8; }
+.acc-page.is-hidden .acc-label { color: #a0aab8; text-decoration: line-through; }
+@media (max-width: 600px) { .acc-row { grid-template-columns: 1fr 52px 52px 64px; font-size: .9rem; } }
+
+/* What's new on Home, once per person (2026-10-09) */
+.whats-new { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 10px 16px; margin: 10px 0 14px; max-width: 900px; }
+.wn-head { display: flex; align-items: center; gap: 8px; }
+.wn-head form { margin: 0 0 0 auto; }
+.wn-item ul { margin: 4px 0 6px 18px; padding: 0; }
+.wn-item li { margin: 2px 0; }
+.page-notice { margin: 0 0 10px; }
+
+/* The daily payment limit on the Calendar (owner, 2026-10-09): planned out per day against the target and the ceiling */
+.cal .cell .plan { display: block; font-size: .72rem; margin-top: 2px; padding: 1px 4px; border-radius: 4px; background: #ecfdf5; color: #065f46; }
+.plan.lvl-near, .cap-key.near { background: #fef3c7; color: #92400e; }
+.plan.lvl-over, .cap-key.over { background: #fee2e2; color: #991b1b; font-weight: 600; }
+.cap-key { padding: 1px 6px; border-radius: 4px; }
+b.plan { padding: 1px 6px; border-radius: 4px; }
+tr.est td { color: #6b7280; }
+.over-confirm ul { margin: 6px 0 8px 18px; }
+
+/* A request sent to a supplier and not confirmed yet (owner, 2026-10-11): tentative, like the card reserve. */
+table.list tr.tentative td { color: #6b7280; font-style: italic; }
+
+/* The item picker's searchable drop-down (owner, 2026-10-11: "add drop down not pure search"). */
+.pk-combo { position: relative; }
+.pk-drop { position: absolute; left: 0; right: 0; top: 100%; z-index: 30; max-height: 320px; overflow-y: auto; background: #fff; border: 1px solid #c9d1dc;
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(15, 23, 42, .16); margin-top: 2px; }
+.pk-opt { display: flex; justify-content: space-between; gap: 12px; padding: 7px 10px; cursor: pointer; font-size: 14px; }
+.pk-opt .p { color: #6b7280; white-space: nowrap; }
+.pk-opt.hi, .pk-opt:hover { background: #eef2f7; }
+.pk-opt.on .n { font-weight: 600; }
+.pk-opt.on .p { color: #1b7f3b; }
+.pk-none { padding: 8px 10px; color: #6b7280; font-size: 13px; }
+
+/* Receive: one card per delivery whose document is not recorded yet (owner, 2026-10-11). */
+.dr-card { border: 1px solid #d7dde6; border-radius: 10px; padding: 10px 12px; margin: 8px 0 12px; background: #fbfcfe; }
+
+/* Relationship map (owner, 2026-10-11): the line on top, totals under each step, long steps as one card that opens, due-date colours. */
+.rsum { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; padding: 8px 12px; background: #f2f7fd; border: 1px solid #cfe0f3; border-radius: 8px; color: #1f2937; font-weight: 600; }
+.rsum .ms { font-size: 18px; color: var(--blue); }
+.rlbl .rtot { display: block; font-weight: 400; font-size: .78rem; color: #6b7280; }
+.rgroup { width: 162px; }
+.rgroup > summary { list-style: none; cursor: pointer; background: #f8fafc; }
+.rgroup > summary::-webkit-details-marker { display: none; }
+.rgroup[open] > summary { border-color: var(--blue); }
+.rgroup .rlist { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; max-height: 340px; overflow-y: auto; padding-right: 2px; }
+.rgroup .rlist .rdoc { width: auto; }
+.rdoc .st.late { color: #b3261e; font-weight: 600; }
+.rdoc .st.soon { color: #b26a00; font-weight: 600; }
+.rdoc .st.quiet { color: #6b7280; }
+.rdoc.none.allowed { border-style: solid; background: #f3f4f6; color: #6b7280; }
+
+/* ---- mock-up only ---- */
+.mock-note { background:#fff7e0; border-left:4px solid #F3E03B; padding:10px 14px; margin:10px 0 18px; border-radius:4px; font-size:.92rem; }
+.mock-note li { margin:3px 0; }
+.screen { border:2px solid #cbd5e1; border-radius:10px; margin:26px 0 34px; overflow:hidden; }
+.screen > .cap { background:#e2e8f0; padding:6px 12px; font-weight:700; font-size:.85rem; color:#334155; }
+.screen > .body { padding:14px 16px 18px; }
+.ask { background:#eef6ff; border-left:4px solid #0B4F8A; padding:8px 14px; margin:14px 0 0; border-radius:4px; font-size:.92rem; }
+.ask b { color:#0B4F8A; }
+.toc a { display:inline-block; margin:2px 10px 2px 0; }
+.phone { width:372px; max-width:100%; border:10px solid #1f2937; border-radius:28px; padding:10px 10px 16px; margin:0 auto; background:#fff; }
+.two { display:grid; grid-template-columns:1fr 1fr; gap:18px; } @media (max-width:900px){ .two { grid-template-columns:1fr; } }
+.fakebar { height:38px; background:repeating-linear-gradient(90deg,#000 0 2px,#fff 2px 3px,#000 3px 6px,#fff 6px 8px,#000 8px 9px,#fff 9px 12px,#000 12px 15px,#fff 15px 16px); }
+.fakeqr { width:54px; height:54px; background:
+  conic-gradient(#000 25%,#fff 0 50%,#000 0 75%,#fff 0) 0 0/12px 12px, #fff; border:3px solid #000; }
+.label { border:1px dashed #94a3b8; border-radius:6px; padding:8px 10px; display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; background:#fff; }
+.label .n { font-weight:700; font-size:.92rem; line-height:1.2; } .label .c { font-size:.78rem; color:#374151; letter-spacing:.06em; }
+.labels { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; } @media (max-width:900px){ .labels { grid-template-columns:1fr; } }
+.scanbox { border:2px dashed #0B4F8A; border-radius:8px; padding:8px 12px; display:flex; gap:10px; align-items:center; background:#f5f9ff; margin:8px 0; }
+.scanbox input { flex:1; }
+.menu-preview { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; margin-top:10px; }
+.menu-preview > div { border:1px solid #e5e7eb; border-radius:8px; padding:8px 12px; }
+.menu-preview b { color:#0B4F8A; } .menu-preview div div { padding:3px 0; font-size:.95rem; }
+.new { background:#F3E03B; color:#000; font-size:.7rem; font-weight:700; padding:1px 6px; border-radius:999px; margin-left:6px; }
+.neg { color:#b3261e; font-weight:700; } .pos { color:#0b6e4f; font-weight:700; }
+.dlg { border:1px solid #cbd5e1; border-radius:12px; padding:14px 16px; box-shadow:0 8px 24px rgba(15,23,42,.16); max-width:560px; background:#fff; }
+.payrow { display:grid; grid-template-columns:150px 140px 1fr auto; gap:8px; align-items:end; margin:6px 0; } @media (max-width:700px){ .payrow { grid-template-columns:1fr 1fr; } }
+</style></head><body>
+<main>
+<h2><span class="ms" style="font-size:28px">draw</span> Stage A mock-ups: Sell, and the stock moves</h2>
+<p class="note">Drawings only, with made-up figures. Nothing here is built. Read each screen, then answer the blue questions. I build only after your <b>go</b>.</p>
+<div class="mock-note"><b>What Stage A covers</b>
+  <ul>
+    <li><b>Stock:</b> the stock list, an item's history, counts you approve, labels and scanning, lending to and borrowing from the relatives' businesses.</li>
+    <li><b>Sell:</b> sales invoice booklets, the counter sale on the PC and on the phone, goods released before the invoice, voids and returns, the day sheet.</li>
+    <li><b>The rule in every screen:</b> the system flags, it does not block. A sale is never refused.</li>
+    <li><b>Not in Stage A:</b> collections, customer checks, statements, cash in by day (Stage B); quotations, fleet prices, the customer page (Stage C).</li>
+  </ul>
+  <div class="toc"><b>Screens:</b>
+    <a href="#s1">1 Menu</a><a href="#s2">2 Stock list</a><a href="#s3">3 One item</a><a href="#s4">4 Count</a><a href="#s5">5 Count differences</a><a href="#s6">6 Labels and scanning</a>
+    <a href="#s7">7 Affiliates</a><a href="#s8">8 SI booklets</a><a href="#s9">9 Counter sale</a><a href="#s10">10 Sale on the phone</a><a href="#s11">11 Released, invoice later</a>
+    <a href="#s12">12 Void and return</a><a href="#s13">13 Day sheet</a></div>
+</div>
+
+<!-- 1 ------------------------------------------------------------------------------------------------------------------------>
+<div class="screen" id="s1"><div class="cap">1 · The top menu: two new sections</div><div class="body">
+  <p class="note">Two sections are added between Buy and Pay suppliers. Everything else stays where it is.</p>
+  <div class="menu-preview">
+    <div><b>Buy</b><div>Price lists</div><div>Purchase orders</div><div>Receive</div></div>
+    <div><b>Stock</b><span class="new">NEW</span><div>Items and stock</div><div>Stock counts</div><div>Affiliates</div><div>Old stock</div></div>
+    <div><b>Sell</b><span class="new">NEW</span><div>Counter sale</div><div>Sales today (day sheet)</div><div>Released, not invoiced</div><div>Customers</div><div>Invoice booklets</div></div>
+    <div><b>Pay suppliers</b><div>Order statements</div><div>Daily payables</div><div>Calendar</div></div>
+  </div>
+  <p class="hint" style="margin-top:10px">Home gets a row of cards for each: Stock (items low, counts waiting for approval, lent out) and Sell (sold today, released and not invoiced, skipped SI numbers).
+    Each page is a row on a person's see-and-do page, so you choose who sees and who may change it.</p>
+</div></div>
+
+<!-- 2 ------------------------------------------------------------------------------------------------------------------------>
+<div class="screen" id="s2"><div class="cap">2 · Stock → Items and stock</div><div class="body">
+  <h2><span class="ms" style="font-size:28px">inventory_2</span> Items and stock</h2>
+  <div class="facts"><div><span>Items</span><b>412</b></div><div><span>Pieces on hand</span><b>1,836</b></div><div><span>Stock value at cost</span><b>₱9,412,650.00</b></div>
+    <div><span>Low stock</span><b style="color:#9a3412">37</b></div><div><span>Below zero</span><b class="neg">3</b></div><div><span>Older than 3 years</span><b style="color:#9a3412">58 pcs</b></div></div>
+  <div class="scanbox"><span class="ms">barcode_scanner</span><input type="text" placeholder="Scan a label, or type a size, brand or pattern (e.g. 2055516 westlake)"><span class="hint">A scan opens that item.</span></div>
+  <div class="seg"><a class="on">All</a><a>Tires</a><a>Battery</a><a>Mags</a><a>Rims</a><a>Low stock (37)</a><a>Below zero (3)</a><a>Not counted in 90 days</a></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Code</th><th>Item</th><th>On hand</th><th>Avg cost</th><th>Value</th><th>Last in</th><th>Last out</th><th>Oldest DOT</th><th>Last counted</th><th></th></tr>
+    <tr><td>TR-0142</td><td><a>Westlake 205/55R16 SA37</a></td><td class="num">12</td><td class="num">2,840.00</td><td class="num">34,080.00</td><td>10/09/2026</td><td>10/11/2026</td><td>24/2025</td><td>09/30/2026</td><td></td></tr>
+    <tr><td>TR-0088</td><td><a>Apollo 8.25-16 AMAR DELUXE 16PR Rib</a></td><td class="num">2</td><td class="num">7,310.25</td><td class="num">14,620.50</td><td>10/11/2026</td><td>10/10/2026</td><td>31/2026</td><td>09/30/2026</td><td><span class="pill warn">Low</span></td></tr>
+    <tr><td>TR-0201</td><td><a>Jianxin 10.00R20 JX239 18PR Rib</a></td><td class="num neg">−1</td><td class="num">13,988.75</td><td class="num neg">−13,988.75</td><td>09/18/2026</td><td>10/11/2026</td><td>—</td><td>08/15/2026</td><td><span class="pill warn">Below zero</span></td></tr>
+    <tr><td>BA-0017</td><td><a>Motolite Champion LM NS60</a></td><td class="num">9</td><td class="num">3,310.00</td><td class="num">29,790.00</td><td>10/05/2026</td><td>10/11/2026</td><td>—</td><td>never</td><td></td></tr>
+    <tr><td>TR-0033</td><td><a>Sunny 265/70R17 SN3606 A/T</a></td><td class="num">4</td><td class="num">5,150.00</td><td class="num">20,600.00</td><td>02/14/2023</td><td>06/02/2026</td><td>49/2022</td><td>09/30/2026</td><td><span class="pill warn">Old stock</span></td></tr>
+  </table></div>
+  <div class="actions"><a class="btn small ghost"><span class="ms">download</span>Excel</a><a class="btn small ghost"><span class="ms">fact_check</span>Start a count</a>
+    <a class="btn small ghost"><span class="ms">shopping_cart</span>Order the low-stock items</a></div>
+  <p class="hint">"Order the low-stock items" opens New order for one supplier with those items already chosen. Cost and value show only to people you allow to see cost.</p>
+  <div class="ask"><b>Decided 10/11:</b> a low-stock level per item, set on the item's page ("Low at"). It starts at 2.</div>
+</div></div>
+
+<!-- 3 ------------------------------------------------------------------------------------------------------------------------>
+<div class="screen" id="s3"><div class="cap">3 · One item: everything that happened to it</div><div class="body">
+  <p class="note"><a>← Items and stock</a></p>
+  <h2>TR-0142 · Westlake 205/55R16 SA37 <span class="pill">Tire</span></h2>
+  <div class="facts"><div><span>On hand</span><b>12</b></div><div><span>Average cost</span><b>₱2,840.00</b></div><div><span>Value</span><b>₱34,080.00</b></div>
+    <div><span>Oldest DOT</span><b>24/2025</b></div><div><span>Low at</span><b>2</b></div><div><span>Last counted</span><b>09/30/2026 (12, matched)</b></div></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Date</th><th>What</th><th>Document</th><th>Who</th><th>In</th><th>Out</th><th>Cost</th><th>On hand after</th></tr>
+    <tr><td>10/11/2026</td><td>Sold</td><td><a>SI 004512</a> · Walk-in</td><td>Julian</td><td></td><td class="num">2</td><td class="num">2,840.00</td><td class="num">12</td></tr>
+    <tr><td>10/10/2026</td><td>Lent to an affiliate</td><td><a>AL-0007</a> · Tita Baby Tire Center</td><td>Julian</td><td></td><td class="num">4</td><td class="num">2,840.00</td><td class="num">14</td></tr>
+    <tr><td>10/09/2026</td><td>Received</td><td><a>DR 101</a> · 2026 - PO 0004 · New Century</td><td>Jeane</td><td class="num">8</td><td></td><td class="num">2,810.00</td><td class="num">18</td></tr>
+    <tr><td>10/02/2026</td><td>Returned by a customer</td><td><a>SI 004466</a> · credit note</td><td>Julian</td><td class="num">1</td><td></td><td class="num">2,860.00</td><td class="num">10</td></tr>
+    <tr><td>09/30/2026</td><td>Counted</td><td><a>CT-0003</a> · counted 9, expected 10</td><td>JRCR approved: "one found damaged, scrapped"</td><td></td><td class="num">1</td><td class="num">2,860.00</td><td class="num">9</td></tr>
+  </table></div>
+  <div class="actions"><a class="btn small ghost"><span class="ms">print</span>Print labels</a><a class="btn small ghost"><span class="ms">tune</span>Adjust (owner only, with a reason)</a></div>
+  <p class="hint">Nothing here can be edited or deleted. A mistake is corrected by a new line (an adjustment, an undo of a delivery, a void of a sale).</p>
+</div></div>
+
+<!-- 4 ------------------------------------------------------------------------------------------------------------------------>
+<div class="screen" id="s4"><div class="cap">4 · Stock → Stock counts → a count in progress (the person counting)</div><div class="body">
+  <h2><span class="ms" style="font-size:28px">fact_check</span> Count CT-0004 · Tires · Westlake <span class="pill off">Counting</span></h2>
+  <p class="note">Count what is on the rack and type it. The system does <b>not</b> show how many it expects, so the count is honest. 14 items in this count; 9 typed so far.</p>
+  <div class="scanbox"><span class="ms">barcode_scanner</span><input type="text" placeholder="Scan each tire on the rack: every scan adds 1 to its item"><span class="hint">Or type the quantities below.</span></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Code</th><th>Item</th><th>Counted</th><th>Note</th></tr>
+    <tr><td>TR-0140</td><td>Westlake 185/65R15 RP18</td><td><input class="inline-input" style="width:80px" value="6"></td><td><input class="inline-input" style="width:260px"></td></tr>
+    <tr><td>TR-0141</td><td>Westlake 195/65R15 RP18</td><td><input class="inline-input" style="width:80px" value="10"></td><td><input class="inline-input" style="width:260px"></td></tr>
+    <tr><td>TR-0142</td><td>Westlake 205/55R16 SA37</td><td><input class="inline-input" style="width:80px" value="11"></td><td><input class="inline-input" style="width:260px" value="1 with a cut sidewall, set aside"></td></tr>
+    <tr><td>TR-0143</td><td>Westlake 265/65R17 SL369 A/T</td><td><input class="inline-input" style="width:80px" placeholder="not yet"></td><td><input class="inline-input" style="width:260px"></td></tr>
+  </table></div>
+  <div class="bar"><div class="grow"><label>Counted by</label><input type="text" value="Rico (helper)"></div><a class="btn small ghost"><span class="ms">print</span>Print a blank count sheet</a></div>
+  <div class="actions"><a class="btn small ghost"><span class="ms">save</span>Save and continue later</a><a class="btn"><span class="ms">send</span>Finish the count</a></div>
+  <p class="hint">A count can be for one brand, one size, one type, or the items not counted in 90 days. Selling goes on while you count: sales made during the count are taken into account when the difference is worked out.</p>
+  <div class="ask"><b>Decided 10/11:</b> an employee counts, with no sign-in of their own. The count sheet is printed blank (items only, no expected quantity, no cost) or opened on a signed-in person's screen; the employee's name is typed as "Counted by", and the signed-in person who types it in is recorded too.</div>
+</div></div>
+
+<!-- 5 ------------------------------------------------------------------------------------------------------------------------>
+<div class="screen" id="s5"><div class="cap">5 · The count, finished: differences for the owner to approve</div><div class="body">
+  <h2>Count CT-0004 · Tires · Westlake <span class="pill warn">Waiting for approval</span></h2>
+  <div class="facts"><div><span>Items counted</span><b>14</b></div><div><span>Matched</span><b>11</b></div><div><span>Short</span><b class="neg">2 items · 3 pcs · ₱8,540.00</b></div><div><span>Over</span><b class="pos">1 item · 1 pc · ₱5,150.00</b></div></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Item</th><th>Expected</th><th>Counted</th><th>Difference</th><th>Value</th><th>Counter's note</th><th>Your reason</th><th></th></tr>
+    <tr><td>Westlake 205/55R16 SA37</td><td class="num">12</td><td class="num">11</td><td class="num neg">−1</td><td class="num neg">−2,840.00</td><td>1 with a cut sidewall, set aside</td><td><input class="inline-input" style="width:220px" value="damaged, scrapped"></td>
+      <td><a class="btn small">Approve</a> <a class="btn small ghost">Count again</a></td></tr>
+    <tr><td>Westlake 195/65R15 RP18</td><td class="num">12</td><td class="num">10</td><td class="num neg">−2</td><td class="num neg">−5,700.00</td><td></td><td><input class="inline-input" style="width:220px" placeholder="why?"></td>
+      <td><a class="btn small">Approve</a> <a class="btn small ghost">Count again</a></td></tr>
+    <tr><td>Westlake 265/65R17 SL369 A/T</td><td class="num">3</td><td class="num">4</td><td class="num pos">+1</td><td class="num pos">+5,150.00</td><td></td><td><input class="inline-input" style="width:220px" placeholder="why?"></td>
+      <td><a class="btn small">Approve</a> <a class="btn small ghost">Count again</a></td></tr>
+  </table></div>
+  <p class="hint">Stock changes only when you approve a line, with your reason. "Count again" sends that item back to the counter. Hints the system gives for a short item: "2 lent to Tita Baby on AL-0007 and not returned",
+    "1 released on RL-0012, not invoiced". Every approved difference is on the Review list and in the shrinkage report.</p>
+</div></div>
+
+<!-- 6 ------------------------------------------------------------------------------------------------------------------------>
+<div class="screen" id="s6"><div class="cap">6 · Labels and scanning</div><div class="body">
+  <div class="two">
+    <div>
+      <div class="grp" style="margin-top:0">Print labels for a delivery (on the order's page, after Receive)</div>
+      <p class="note">DR 101 · New Century · 3 items, 14 pieces → 14 labels. One label per piece; every piece of the same item carries the same code.</p>
+      <div class="labels">
+        <div class="label"><div><div class="n">Westlake 205/55R16 SA37</div><div class="fakebar" style="margin:6px 0"></div><div class="c">TR-0142 · DOT 31/2026</div></div><div class="fakeqr"></div></div>
+        <div class="label"><div><div class="n">Westlake 205/55R16 SA37</div><div class="fakebar" style="margin:6px 0"></div><div class="c">TR-0142 · DOT 31/2026</div></div><div class="fakeqr"></div></div>
+        <div class="label"><div><div class="n">Apollo 8.25-16 AMAR DELUXE Rib</div><div class="fakebar" style="margin:6px 0"></div><div class="c">TR-0088 · DOT 30/2026</div></div><div class="fakeqr"></div></div>
+      </div>
+      <div class="actions"><a class="btn small"><span class="ms">picture_as_pdf</span>Download the label sheet (PDF)</a>
+        <span class="hint">Label size: <b>50 × 30 mm</b> · sheet of 24 · or one per page for a label printer</span></div>
+      <p class="hint">No price is printed on the label: the price is agreed at the counter. Paper stickers don't hold on rubber; use tread labels or a hang tag.</p>
+    </div>
+    <div>
+      <div class="grp" style="margin-top:0">The scan box (same on Receive, Counter sale, Lend / Borrow and counts)</div>
+      <div class="scanbox"><span class="ms">barcode_scanner</span><input type="text" value="6927116112345"><a class="btn small ghost"><span class="ms">photo_camera</span>Camera</a></div>
+      <div class="dlg">
+        <p style="margin:0 0 6px"><b>The system does not know this barcode yet.</b></p>
+        <p class="note" style="margin:0 0 8px">It looks like the maker's own barcode. Which item is it? You answer once; after that this barcode is that item.</p>
+        <div class="bar"><div class="grow"><label>Item</label><input type="text" value="Westlake 205/55R16 SA37"></div><a class="btn small">It is this item</a></div>
+      </div>
+      <p class="hint" style="margin-top:10px">Any scanner works, wired or wireless: it types the code into the box like a keyboard. The <b>Camera</b> button scans with the phone, no app.
+        One scan adds one piece. A wrong scan is removed with the row's Remove button.</p>
+    </div>
+  </div>
+  <div class="ask"><b>Decided 10/11:</b> labels for everything (tires, batteries, mags, rims). <b>Size not decided:</b> so the size is chosen when printing (50 × 30, 60 × 40, 100 × 50 mm, or a sheet of 24), and can change any time.</div>
+</div></div>
+
+<!-- 7 ------------------------------------------------------------------------------------------------------------------------>
+<div class="screen" id="s7"><div class="cap">7 · Stock → Affiliates: lending to and borrowing from the relatives' businesses</div><div class="body">
+  <h2><span class="ms" style="font-size:28px">handshake</span> Affiliates</h2>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Affiliate</th><th>They hold of ours</th><th>We hold of theirs</th><th>Net</th><th>Oldest open</th><th></th></tr>
+    <tr><td><a>Tita Baby Tire Center</a></td><td class="num">6 pcs · ₱19,400.00</td><td class="num">2 pcs · ₱9,800.00</td><td class="num pos">they owe 4 pcs · ₱9,600.00</td><td>38 days <span class="pill warn">Long open</span></td>
+      <td><a class="btn small ghost">Lend</a> <a class="btn small ghost">Borrow</a> <a class="btn small ghost">Settle</a></td></tr>
+    <tr><td><a>Tito Boy Auto Supply</a></td><td class="num">0</td><td class="num">4 pcs · ₱27,000.00</td><td class="num neg">we owe 4 pcs · ₱27,000.00</td><td>6 days</td>
+      <td><a class="btn small ghost">Lend</a> <a class="btn small ghost">Borrow</a> <a class="btn small ghost">Settle</a></td></tr>
+  </table></div>
+  <div class="two" style="margin-top:14px">
+    <div>
+      <div class="grp" style="margin-top:0">Lend AL-0008 · Tita Baby Tire Center</div>
+      <div class="scanbox"><span class="ms">barcode_scanner</span><input type="text" placeholder="Scan or search the tires going out"></div>
+      <table class="list"><tr><th>Item</th><th>Qty</th><th>Cost</th><th>Amount</th></tr>
+        <tr><td>Westlake 205/55R16 SA37</td><td class="num">2</td><td class="num">2,840.00</td><td class="num">5,680.00</td></tr></table>
+      <div class="bar" style="margin-top:8px"><div><label>Date</label><input type="date" value="2026-10-11"></div><div class="grow"><label>Taken by</label><input type="text" placeholder="who came for them"></div>
+        <a class="btn small"><span class="ms">outbound</span>Record the lend</a></div>
+      <p class="hint">Stock goes out. It is not a sale: no SI number, no money. It stays on their balance until settled.</p>
+    </div>
+    <div>
+      <div class="grp" style="margin-top:0">Settle · Tita Baby Tire Center</div>
+      <table class="list"><tr><th></th><th>Open</th><th>Item</th><th>Qty</th></tr>
+        <tr><td><input type="checkbox" checked></td><td>AL-0007 · 09/03</td><td>Westlake 205/55R16 SA37</td><td class="num">4</td></tr>
+        <tr><td><input type="checkbox"></td><td>AL-0008 · 10/11</td><td>Westlake 205/55R16 SA37</td><td class="num">2</td></tr></table>
+      <div class="seg" style="margin-top:8px"><a class="on">They returned them</a><a>They pay for them</a><a>Offset against what we borrowed</a></div>
+      <p class="hint"><b>Returned:</b> stock comes back in. <b>They pay:</b> it becomes a sale to them (an SI number is asked). <b>Offset:</b> it is set against tires we borrowed from them.
+        For tires <b>we</b> borrowed, the same three: we return them, we pay (a payable to them), or offset.</p>
+    </div>
+  </div>
+  <div class="ask"><b>Decided 10/11:</b> an affiliate pays at our cost. An open lend is flagged after 30 days (a Settings number).</div>
+</div></div>
+
+<!-- 8 ------------------------------------------------------------------------------------------------------------------------>
+<div class="screen" id="s8"><div class="cap">8 · Sell → Invoice booklets</div><div class="body">
+  <h2><span class="ms" style="font-size:28px">receipt_long</span> Sales invoice booklets</h2>
+  <p class="note">The paper booklet stays the invoice. The system records each number once, so a missing or repeated number is seen the next morning.</p>
+  <div class="warnbox"><b>1 number skipped:</b> SI 004509 was not typed, and 004510 to 004512 were. <a>Type it now</a> · <a>It was spoiled: cancel it with a reason</a></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Booklet</th><th>Numbers</th><th>Holder</th><th>Status</th><th>Used</th><th>Cancelled</th><th>Unused</th><th>Next</th><th></th></tr>
+    <tr><td>SB-0031</td><td>004501–004550</td><td>Julian</td><td><span class="pill">In use</span></td><td class="num">11</td><td class="num">0</td><td class="num">39</td><td>004513</td><td><a class="btn small ghost">Numbers</a> <a class="btn small ghost">Cancel a leaf</a></td></tr>
+    <tr><td>SB-0030</td><td>004451–004500</td><td>Julian</td><td><span class="pill off">Finished</span></td><td class="num">48</td><td class="num">2</td><td class="num">0</td><td>—</td><td><a class="btn small ghost">Numbers</a></td></tr>
+  </table></div>
+  <div class="actions"><a class="btn small"><span class="ms">add</span>Register a booklet</a></div>
+  <p class="hint">Built on the check booklets page: a range, a holder, one in use, gaps flagged. A number may be used out of order; it is flagged, never refused.</p>
+  <div class="ask"><b>Decided 10/11:</b> one booklet in use at a time.</div>
+</div></div>
+
+<!-- 9 ------------------------------------------------------------------------------------------------------------------------>
+<div class="screen" id="s9"><div class="cap">9 · Sell → Counter sale (PC)</div><div class="body">
+  <h2><span class="ms" style="font-size:28px">point_of_sale</span> Counter sale</h2>
+  <div class="formgrid">
+    <div><label>SI no.</label><input type="text" value="004513"><div class="hint">The next unused number. Change it if you wrote another.</div></div>
+    <div><label>Date</label><input type="date" value="2026-10-11"></div>
+    <div style="grid-column:span 2"><label>Customer</label><input type="text" value="Walk-in" placeholder="Walk-in, or type a name"><div class="hint">Type a name to find a customer, or leave Walk-in.</div></div>
+  </div>
+  <div class="scanbox"><span class="ms">barcode_scanner</span><input type="text" placeholder="Scan a tire, or click here and type: 2055516 westlake"><a class="btn small ghost"><span class="ms">photo_camera</span>Camera</a></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Item</th><th>On hand</th><th>Oldest DOT</th><th>Qty</th><th>Price each</th><th>Amount</th><th>Cost</th><th>Profit</th><th></th></tr>
+    <tr><td>Westlake 205/55R16 SA37</td><td class="num">12</td><td>24/2025</td><td><input class="inline-input" style="width:60px" value="4"></td><td><input class="inline-input" style="width:100px" value="3,600.00"></td>
+      <td class="num">14,400.00</td><td class="num">2,840.00</td><td class="num pos">3,040.00</td><td><a class="btn small ghost">Remove</a></td></tr>
+    <tr><td>Jianxin 10.00R20 JX239 18PR Rib</td><td class="num neg">0</td><td>—</td><td><input class="inline-input" style="width:60px" value="1"></td><td><input class="inline-input" style="width:100px" value="13,500.00"></td>
+      <td class="num">13,500.00</td><td class="num">13,988.75</td><td class="num neg">−488.75</td><td><a class="btn small ghost">Remove</a></td></tr>
+    <tr><td><i>Service:</i> <input class="inline-input" style="width:240px" value="Mounting and balancing, 4 wheels"></td><td></td><td></td><td class="num">1</td><td><input class="inline-input" style="width:100px" value="600.00"></td>
+      <td class="num">600.00</td><td></td><td></td><td><a class="btn small ghost">Remove</a></td></tr>
+    <tr><td colspan="5" class="num"><b>Total</b></td><td class="num"><b>28,500.00</b></td><td></td><td class="num pos"><b>2,551.25</b></td><td></td></tr>
+  </table></div>
+  <div class="actions"><a class="btn small ghost"><span class="ms">add</span>Add a service line</a></div>
+  <div class="warnbox"><b>Two things to note. You can still save.</b>
+    <div>· Jianxin 10.00R20: sold <b>below cost</b> by ₱488.75. Why? <input class="inline-input" style="width:300px" placeholder="e.g. loyal customer, old stock"></div>
+    <div>· Jianxin 10.00R20: the system shows <b>none on hand</b>. Stock will read −1 until it is counted or received.</div></div>
+  <div class="grp">How it is paid</div>
+  <div class="payrow"><div><label>How</label><select><option>Cash</option></select></div><div><label>Amount</label><input type="text" value="8,500.00"></div><div></div><a class="btn small ghost">Remove</a></div>
+  <div class="payrow"><div><label>How</label><select><option>Check</option></select></div><div><label>Amount</label><input type="text" value="20,000.00"></div>
+    <div class="bar" style="margin:0"><div><label>Bank</label><input type="text" value="BDO"></div><div><label>Check no.</label><input type="text" value="0048812"></div><div><label>Check date</label><input type="date" value="2026-10-25"></div></div>
+    <a class="btn small ghost">Remove</a></div>
+  <div class="actions"><a class="btn small ghost"><span class="ms">add</span>Add another way</a>
+    <span class="hint">Cash · Check · Transfer / GCash / Maya (reference no.) · Card (approval code) · <b>Charge</b> (on credit)</span></div>
+  <div class="facts"><div><span>Total</span><b>₱28,500.00</b></div><div><span>Paid now</span><b>₱8,500.00</b></div><div><span>Check dated 10/25</span><b>₱20,000.00</b></div><div><span>Still to pay</span><b>₱0.00</b></div></div>
+  <div class="actions"><a class="btn"><span class="ms">save</span>Save the sale</a><a class="btn ghost"><span class="ms">local_shipping</span>Release now, invoice later</a></div>
+  <p class="hint">Saving takes the stock out the same minute. Cost and profit show only to people you allow. A <b>Charge</b> to a customer without "credit allowed" is saved and flagged for you.
+    A sale typed for an earlier date is saved and marked "typed late".</p>
+  <div class="ask"><b>Decided 10/11:</b> the seller sees cost and profit. A post-dated check makes the sale paid; the check waits on "customer checks to deposit", and if it bounces the invoice is owed again.</div>
+</div></div>
+
+<!-- 10 ----------------------------------------------------------------------------------------------------------------------->
+<div class="screen" id="s10"><div class="cap">10 · The same sale on a phone</div><div class="body">
+  <div class="two">
+    <div class="phone">
+      <div style="background:#0f2a4a;color:#fff;border-radius:8px;padding:8px 10px;font-weight:700;margin-bottom:8px">Counter sale · SI 004513</div>
+      <label>Customer</label><input type="text" value="Walk-in">
+      <div class="actions" style="margin:8px 0"><a class="btn" style="flex:1;justify-content:center"><span class="ms">photo_camera</span>Scan a tire</a></div>
+      <input type="text" placeholder="or type: 2055516 westlake">
+      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;margin-top:8px">
+        <b>Westlake 205/55R16 SA37</b><div class="hint">12 on hand · DOT 24/2025</div>
+        <div class="bar" style="margin:6px 0 0"><div><label>Qty</label><input type="text" value="4" style="width:70px"></div><div class="grow"><label>Price each</label><input type="text" value="3,600.00"></div></div>
+        <div class="hint" style="margin-top:4px">₱14,400.00 · profit ₱3,040.00</div>
+      </div>
+      <div class="facts" style="margin-top:8px"><div><span>Total</span><b>₱14,400.00</b></div></div>
+      <label>How paid</label><select><option>Cash</option><option>Check</option><option>Transfer / GCash / Maya</option><option>Card</option><option>Charge</option></select>
+      <div class="actions" style="margin-top:10px"><a class="btn" style="flex:1;justify-content:center"><span class="ms">save</span>Save the sale</a></div>
+    </div>
+    <div>
+      <p class="note"><b>The phone screen is the same sale, one item per card.</b></p>
+      <ul>
+        <li><b>Scan a tire</b> opens the camera; each scan adds one piece.</li>
+        <li>Big buttons, one column, no sideways scrolling.</li>
+        <li>The same flags as on the PC appear above Save.</li>
+        <li>If the signal drops, the page keeps what was typed and says so; it saves when the signal is back. It never saves twice.</li>
+      </ul>
+      <div class="ask"><b>Not decided yet (10/11).</b> So the PC sale is built first. The phone gets stock look-up, counts and lend / borrow in Stage A; this phone sale screen waits for your decision.</div>
+    </div>
+  </div>
+</div></div>
+
+<!-- 11 ----------------------------------------------------------------------------------------------------------------------->
+<div class="screen" id="s11"><div class="cap">11 · Sell → Released, not invoiced</div><div class="body">
+  <h2><span class="ms" style="font-size:28px">local_shipping</span> Released, not invoiced yet</h2>
+  <p class="note">Goods that left before the invoice was written. They are already out of stock. Each must be invoiced the same day.</p>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Release</th><th>When</th><th>Customer</th><th>Items</th><th>Released by</th><th></th><th></th></tr>
+    <tr><td>RL-0013</td><td>today 2:40 PM</td><td>RJM Trucking</td><td>4 × Apollo 8.25-16 AMAR DELUXE Rib</td><td>Julian</td><td></td><td><a class="btn small">Write the invoice</a> <a class="btn small ghost">They came back: cancel</a></td></tr>
+    <tr><td>RL-0012</td><td>10/10/2026 4:15 PM</td><td>Walk-in · "Mang Tony"</td><td>1 × Motolite Champion LM NS60</td><td>Julian</td><td><span class="pill warn">Since yesterday</span></td>
+      <td><a class="btn small">Write the invoice</a> <a class="btn small ghost">They came back: cancel</a></td></tr>
+  </table></div>
+  <p class="hint">"Write the invoice" opens the counter sale already filled in; you add the SI number, the price and how it was paid. One still open the next morning is on Home and on the Review list.</p>
+</div></div>
+
+<!-- 12 ----------------------------------------------------------------------------------------------------------------------->
+<div class="screen" id="s12"><div class="cap">12 · A saved sale: void it, or take back one item</div><div class="body">
+  <p class="note"><a>← Sales today</a></p>
+  <h2>SI 004466 · RJM Trucking <span class="pill">Charge</span> <span class="pill off">₱34,200.00 owed</span></h2>
+  <table class="list"><tr><th>Item</th><th>Qty</th><th>Price</th><th>Amount</th><th>Returned</th></tr>
+    <tr><td>Westlake 205/55R16 SA37</td><td class="num">4</td><td class="num">3,600.00</td><td class="num">14,400.00</td><td class="num">1</td></tr>
+    <tr><td>Apollo 8.25-16 AMAR DELUXE 16PR Rib</td><td class="num">2</td><td class="num">9,900.00</td><td class="num">19,800.00</td><td></td></tr></table>
+  <div class="two" style="margin-top:12px">
+    <div class="dlg"><b>Return an item</b>
+      <p class="hint" style="margin:4px 0 8px">The invoice stays. The item goes back to stock and the amount owed goes down by a credit note.</p>
+      <div class="bar"><div class="grow"><label>Item</label><select><option>Westlake 205/55R16 SA37</option></select></div><div><label>Qty</label><input type="text" value="1" style="width:70px"></div></div>
+      <label>Why</label><input type="text" value="wrong size for the customer's rim">
+      <div class="actions"><a class="btn small">Record the return</a></div></div>
+    <div class="dlg"><b>Void the whole invoice</b>
+      <p class="hint" style="margin:4px 0 8px">All items go back to stock and the invoice shows as Cancelled. The paper copies are kept, as BIR requires.</p>
+      <label>Why</label><input type="text" placeholder="e.g. written for the wrong customer">
+      <div class="actions"><a class="btn small danger">Void the invoice</a></div>
+      <p class="hint">The seller voids it with a reason. It goes on the Review list for the System admin to look at afterwards: flagged, not blocked.</p></div>
+  </div>
+  <div class="ask"><b>Decided 10/11:</b> the seller voids, you review afterwards.</div>
+</div></div>
+
+<!-- 13 ----------------------------------------------------------------------------------------------------------------------->
+<div class="screen" id="s13"><div class="cap">13 · Sell → Sales today (the day sheet, in the notebook's order)</div><div class="body">
+  <h2><span class="ms" style="font-size:28px">today</span> Sales · Sunday 10/11/2026</h2>
+  <div class="facts"><div><span>Invoices</span><b>12</b></div><div><span>Pieces</span><b>31</b></div><div><span>Sales</span><b>₱212,450.00</b></div><div><span>Profit</span><b class="pos">₱27,980.00</b></div>
+    <div><span>Below cost</span><b class="neg">1</b></div><div><span>Typed late</span><b>0</b></div></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Qty</th><th>Item</th><th>Profit</th><th>Customer (if charge)</th><th>SI no.</th><th>Amount</th><th>How paid</th><th></th></tr>
+    <tr><td class="num">4</td><td>Westlake 205/55R16 SA37</td><td class="num pos">3,040.00</td><td></td><td><a>004513</a></td><td class="num">14,400.00</td><td>Cash + check 10/25</td><td></td></tr>
+    <tr><td class="num">1</td><td>Jianxin 10.00R20 JX239 18PR Rib</td><td class="num neg">−488.75</td><td></td><td><a>004513</a></td><td class="num">13,500.00</td><td>Cash + check 10/25</td><td><span class="pill warn">Below cost</span></td></tr>
+    <tr><td class="num">2</td><td>Apollo 8.25-16 AMAR DELUXE 16PR Rib</td><td class="num pos">5,179.50</td><td>RJM Trucking</td><td><a>004512</a></td><td class="num">19,800.00</td><td>Charge</td><td></td></tr>
+    <tr><td class="num">1</td><td>Motolite Champion LM NS60</td><td class="num pos">690.00</td><td></td><td><a>004511</a></td><td class="num">4,000.00</td><td>GCash</td><td></td></tr>
+  </table></div>
+  <div class="grp">The day's money</div>
+  <div class="facts"><div><span>Cash</span><b>₱96,300.00</b></div><div><span>Checks dated today</span><b>₱18,000.00</b></div><div><span>Post-dated checks</span><b>₱42,000.00</b></div>
+    <div><span>Transfer / GCash / Maya</span><b>₱21,950.00</b></div><div><span>Card</span><b>₱0.00</b></div><div><span>Charge (on credit)</span><b>₱34,200.00</b></div></div>
+  <div class="actions"><a class="btn small ghost"><span class="ms">chevron_left</span>Yesterday</a><a class="btn small ghost"><span class="ms">download</span>Excel</a><a class="btn small ghost"><span class="ms">print</span>Print</a></div>
+  <p class="hint">The first four columns are the notebook's, in its order. The system adds the SI number and how it was paid. During the parallel run, this page's totals are compared with the notebook every day.
+    Matching the day's cash and checks against the bank's deposits comes in Stage B.</p>
+</div></div>
+
+<div class="mock-note"><b>Still open</b>
+  <ol>
+    <li>Label size: chosen at printing until you settle on one.</li>
+    <li>Sales on the phone: decided later; the PC sale is built first.</li>
+  </ol>
+  Anything you want moved, renamed or removed on any screen, say the screen number.
+</div>
+</main></body></html>

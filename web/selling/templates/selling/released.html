@@ -1,0 +1,18 @@
+{% extends "core/base.html" %}
+{% block title %}Released, not invoiced{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">local_shipping</span> Released, not invoiced yet</h2>
+<div class="actions" style="margin-bottom:10px">
+  <a class="btn small ghost" href="/sales/"><span class="ms">point_of_sale</span>New sale</a><a class="btn small ghost" href="/sales/?view=day"><span class="ms">today</span>Sales today</a></div>
+<p class="note">Goods that left before the invoice was written. They are already out of stock. Each must be invoiced the same day.</p>
+{% if rows %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Release</th><th>When</th><th>Customer</th><th>Items</th><th>Released by</th><th></th><th></th></tr>
+  {% for r in rows %}<tr><td><a href="/sales/{{ r.sale_id }}/">{{ r.release_no }}</a></td><td>{{ r.day|dmy }}</td><td>{{ r.customer }}</td><td>{{ r.items }}</td><td>{{ r.by }}</td>
+    <td>{% if r.old %}<span class="pill warn">Not invoiced the same day</span>{% endif %}</td>
+    <td><a class="btn small" href="/sales/{{ r.sale_id }}/"><span class="ms">receipt_long</span>Write the invoice</a></td></tr>{% endfor %}
+</table></div>
+<p class="hint">"Write the invoice" opens the release: you type the SI number, the prices and how it was paid. If the goods came back, cancel the release there.
+  One still open the next day is on the Review list.</p>
+{% else %}<p class="note"><span class="ms">task_alt</span> Nothing is out without its invoice.</p>{% endif %}
+{% endblock %}

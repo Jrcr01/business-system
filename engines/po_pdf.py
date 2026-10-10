@@ -1,5 +1,6 @@
 """The purchase order the supplier receives (stage B2). It carries the order only: items, prices, delivery date and terms. Nothing about our cash or
-forecast ever goes on it. A draft has no permanent number yet, so it has no PDF: order it first (engines/po_rules.order_po)."""
+forecast ever goes on it. A plain draft has no PDF. A draft SENT to the supplier (owner, 2026-10-11) has the ORDER REQUEST: the same sheet under its
+request number, saying it is not yet a purchase order; the PURCHASE ORDER exists once the supplier confirmed (engines/po_rules.confirm_request)."""
 from __future__ import annotations
 
 import io
@@ -46,9 +47,16 @@ def _may_send(po_id: int) -> bool:
     return require("po.order", row[0] if row else None)[0]
 
 
-def build_po_pdf(po_id: int) -> bytes | None:
+def build_po_pdf(po_id: int, request: bool = False) -> bytes | None:
+    """The purchase order; with request=True the order request of a draft that was sent to the supplier. None when the order is not at that step."""
+    from engines.po_rules import is_request
     po = get_po(po_id)
-    if po is None or po["header"]["status"] in ("DRAFT", "CANCELLED") or str(po["header"]["po_no"]).startswith("DRAFT-"):
+    if po is None:
+        return None
+    if request:
+        if not is_request(po["header"]):
+            return None
+    elif po["header"]["status"] in ("DRAFT", "CANCELLED") or str(po["header"]["po_no"]).startswith("DRAFT-"):
         return None
     if not _may_send(po_id):                                # the supplier PDF IS the order being sent: same permission as ordering
         return None
@@ -62,12 +70,12 @@ def build_po_pdf(po_id: int) -> bytes | None:
     cell = ParagraphStyle("cell", parent=styles["Normal"], fontSize=9, leading=11)
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=0.55 * inch, bottomMargin=0.6 * inch,
-                            title=f"Purchase order {h['po_no']}")
+                            title=f"Order request {h['request_no']}" if request else f"Purchase order {h['po_no']}")
     width = LETTER[0] - 2 * MARGIN
     story: list = []
 
     head = Table([[Paragraph(f"<font size=15 color='#1f3a5f'><b>{escape(COMPANY)}</b></font>", styles["Normal"]),
-                   Paragraph("<font size=16 color='#1f3a5f'><b>PURCHASE ORDER</b></font>", ParagraphStyle("r", parent=styles["Normal"], alignment=2))]],
+                   Paragraph(f"<font size=16 color='#1f3a5f'><b>{'ORDER REQUEST' if request else 'PURCHASE ORDER'}</b></font>", ParagraphStyle("r", parent=styles["Normal"], alignment=2))]],
                  colWidths=[width * 0.55, width * 0.45])
     head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, 0), 1.2, ACCENT), ("BOTTOMPADDING", (0, 0), (-1, 0), 8)]))
     story += [head, Spacer(1, 10)]
@@ -79,7 +87,8 @@ def build_po_pdf(po_id: int) -> bytes | None:
         sup_lines.append(f"Tel: {escape(str(sup[1]))}")
     if sup[2]:
         sup_lines.append(f"TIN: {escape(str(sup[2]))}")
-    meta = [["PO no.", h["po_no"]], ["Order date", _day(h["order_date"])], ["Expected delivery", _day(h["expected_delivery_date"])],
+    meta = [["Request no.", h["request_no"]] if request else ["PO no.", h["po_no"]], ["Date", _day(h["order_date"])] if request else ["Order date", _day(h["order_date"])],
+            ["Delivery wanted" if request else "Expected delivery", _day(h["expected_delivery_date"])],
             ["Payment terms", _terms_text(h["terms_snapshot"])]]
     top = Table([[[Paragraph("TO", small)] + [Paragraph(t, body) for t in sup_lines],
                   Table([[Paragraph(f"<font color='#6b7280'>{k}</font>", cell), Paragraph(f"<b>{escape(str(v))}</b>", cell)] for k, v in meta], colWidths=[1.25 * inch, 2.0 * inch])]],
@@ -114,9 +123,12 @@ def build_po_pdf(po_id: int) -> bytes | None:
 
     if h.get("notes"):
         story += [Paragraph("NOTES", small), Paragraph(escape(str(h["notes"])), body), Spacer(1, 10)]
-    story += [Paragraph("Prices are per your current price list. Please quote this PO number on your delivery receipt and invoice.", small), Spacer(1, 34)]
+    if request:
+        story += [Paragraph("<b>Not yet a purchase order.</b> Please confirm which items and quantities are available, and the delivery date. "
+                            "Our purchase order follows your confirmation.", body), Spacer(1, 6)]
+    story += [Paragraph("Prices are per your current price list." + ("" if request else " Please quote this PO number on your delivery receipt and invoice."), small), Spacer(1, 34)]
 
-    sign = Table([["Prepared by", "Approved by", "Received by supplier"], ["", "", ""]], colWidths=[width / 3] * 3, rowHeights=[14, 26])
+    sign = Table([["Prepared by", "", "Confirmed by supplier"] if request else ["Prepared by", "Approved by", "Received by supplier"], ["", "", ""]], colWidths=[width / 3] * 3, rowHeights=[14, 26])
     sign.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 8.5), ("TEXTCOLOR", (0, 0), (-1, 0), GREY), ("LINEABOVE", (0, 0), (-1, 0), 0.6, colors.black),
                               ("LEFTPADDING", (0, 0), (-1, -1), 2)]))
     story.append(sign)

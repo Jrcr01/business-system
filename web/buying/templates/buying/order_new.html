@@ -1,4 +1,4 @@
-{% extends "core/base.html" %}
+{% extends "core/base.html" %}{% load humanize %}
 {% block title %}New order{% endblock %}
 {% block content %}
 {% with page_kind="new" %}{% include "buying/_po_head.html" %}{% endwith %}
@@ -6,18 +6,23 @@
 <div class="later-box"><p>No supplier has a price list yet. Orders are made only from a supplier's price list: upload its prices on <a href="/price-lists/">Price lists</a> first
   (a new supplier is added under <a href="/creditors/new/">Set-up → Creditors</a>).</p></div>
 {% else %}
-<p class="note">Choose the supplier and the dates, and tick the items with their quantities. That saves the draft; you can add more on the next screen.</p>
-<form method="get" action="/purchase-orders/new/" class="bar">
-  <div class="grow"><label for="s">Supplier</label><select id="s" name="s" onchange="this.form.submit()">{% for id, name in suppliers %}<option value="{{ id }}"{% if id == cid %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+<p class="note">Choose the supplier and the dates, check the day it falls due, then search for the items. The order starts as a draft, is sent to the supplier,
+  and becomes a purchase order when they confirm the items are available.</p>
+<form method="get" action="/purchase-orders/new/" class="formgrid">
+  <div style="grid-column:span 2"><label for="s">Supplier</label><select id="s" name="s" onchange="this.form.submit()">{% for id, name in suppliers %}<option value="{{ id }}"{% if id == cid %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+  <div><label for="order_date">Order date</label><input id="order_date" type="date" name="order_date" value="{{ order_day|date:'Y-m-d' }}" onchange="this.form.delivery.value='';this.form.submit()"></div>
+  <div><label for="delivery">Expected delivery</label><input id="delivery" type="date" name="delivery" value="{{ delivery|date:'Y-m-d' }}" onchange="this.form.submit()">
+    <div class="hint">Order date + the supplier's usual delivery days. The payment falls due after this, by the supplier's terms.</div></div>
 </form>
+<div class="facts" style="margin-top:8px"><div><span>Estimated total</span><b>₱0.00</b></div>
+  <div><span>Payment falls due</span><b>{% if pay %}{{ pay|date:"D m/d/Y" }}{% else %}needs a delivery date{% endif %}</b></div></div>
+
+{% for id, name in suppliers %}{% if id == cid %}{% with supplier_name=name %}{% include "buying/_order_calendar.html" %}{% endwith %}{% endif %}{% endfor %}
+
 <form method="post" action="/purchase-orders/new/">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="start">
-  <div class="formgrid">
-    <div><label for="order_date">Order date</label><input id="order_date" type="date" name="order_date" value="{{ order_day|date:'Y-m-d' }}"></div>
-    <div><label for="delivery">Expected delivery</label><input id="delivery" type="date" name="delivery" value="{{ delivery|date:'Y-m-d' }}">
-      <div class="hint">Order date + the supplier's usual delivery days. The payment falls due after this, by the supplier's terms.</div></div>
-  </div>
-  <div class="grp">Items</div>
-  {% include "buying/_item_picker.html" %}
+  <input type="hidden" name="order_date" value="{{ order_day|date:'Y-m-d' }}"><input type="hidden" name="delivery" value="{{ delivery|date:'Y-m-d' }}">
+  <div class="grp">Add items</div>
+  {% with submit_label="Add to the order" %}{% include "buying/_item_picker.html" %}{% endwith %}
   <details class="manual"><summary>Not on the price list? Type an item by hand</summary>
   <div class="formgrid">
     <div style="grid-column:span 2"><label for="item">Item</label><input id="item" type="text" name="item" list="item_names" placeholder="Type the item" value="{{ v.item|default:'' }}"></div>
@@ -27,10 +32,12 @@
     <div><label for="chain">Discount %</label><input id="chain" type="text" name="chain" value="{{ v.chain|default:'' }}" placeholder="5, 5 · blank = usual · 0 = none"></div>
   </div>
   <p class="hint" id="hint"></p>
+  <button class="btn small" type="submit"><span class="ms">add</span>Add to the order</button>
   <datalist id="item_names">{% for n in names %}<option value="{{ n }}">{% endfor %}</datalist>
   </details>
+  <div class="grp">Items on this order</div>
+  <p class="note">None yet. The first item you add saves the draft.</p>
   <label for="notes">Notes for the supplier (optional)</label><textarea id="notes" name="notes" rows="2" style="width:100%;max-width:900px">{{ v.notes|default:'' }}</textarea>
-  <div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save the draft and add items</button></div>
 </form>
 {% with prefix="" %}{% include "buying/_item_hint.html" %}{% endwith %}
 {% endif %}

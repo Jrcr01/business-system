@@ -22,7 +22,15 @@ SOD_RULES = {                           # kind: what it means in words
 }
 KINDS = {**SOD_RULES, "PRICE_OVER_PO": "Invoice price well above the order", "NEW_PAYEE": "New supplier or lender", "PO_HIGH_DAY": "Order placed on a high-payables day",
          "CLEARED_NOT_ON_BANK": "Ticked cleared, but not on the bank statement", "CHECK_NUMBER_SKIPPED": "Check numbers skipped in a booklet",
-         "CC_PAYMENT_MISMATCH": "Card payments recorded daily differ from the SOA"}
+         "CC_PAYMENT_MISMATCH": "Card payments recorded daily differ from the SOA",
+         "PO_MORE_THAN_ONE_DR": "Order kept open for another DR", "PO_RECEIVED_MORE": "More received than ordered",
+         "PO_ITEM_ADDED_AT_DELIVERY": "An item came that was not on the order", "PO_RECEIPT_UNDONE": "A delivery was undone",
+         # the revenue cycle, stage A (owner, 2026-10-11): flags, never blocks
+         "STOCK_NEGATIVE": "Stock reads below zero", "STOCK_ADJUSTED": "Stock corrected outside a count", "COUNT_DIFFERENCE": "A count differed from the system",
+         "AFFILIATE_LONG_OPEN": "Lent or borrowed tires open a long time", "SALE_BELOW_COST": "Sold below cost", "SALE_NO_CREDIT": "Charged to a customer without credit allowed",
+         "SI_SKIPPED": "A sales invoice number was skipped", "SALE_TYPED_LATE": "A sale typed after its date", "SALE_VOIDED": "A sales invoice was voided",
+         "SALE_RETURN": "An item was returned by a customer", "RELEASE_OPEN": "Goods released and not invoiced the same day",
+         "BOOKLET_SEQUENCE_GAP": "Check numbers in no booklet"}
 PRICE_OVER_PCT = 10.0                   # an invoice price this far above the order's net price is flagged
 
 

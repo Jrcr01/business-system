@@ -1,5 +1,6 @@
-"""Purchase orders, step C (owner, 2026-10-08): "Order it" over the daily limit opens a "Confirm order anyway" dialog (no approval step); the month calendar of
-committed payables, where clicking a day sets the delivery date so the order falls due that day."""
+"""Purchase orders, step C (owner, 2026-10-08): over the daily limit a dialog asks first (no approval step); the month calendar of committed payables,
+where clicking a day sets the delivery date so the order falls due that day. Owner, 2026-10-11: the dialog shows when the draft is SENT to the supplier
+(the earliest point to change the date) and again when the supplier confirms; the Review line is written only when it becomes a purchase order."""
 from datetime import date, timedelta
 
 from engines.clock import manila_today
@@ -13,8 +14,16 @@ def _db():
     return d.DB_PATH
 
 
-def _order(web, po_id, **extra):
-    return web.post(f"/purchase-orders/{po_id}/edit/", {"action": "order", "stamp": _stamp(po_id), "order_date": "2026-10-01", "delivery": "2026-10-08", "notes": "", **extra})
+def _send(web, po_id, **extra):
+    return web.post(f"/purchase-orders/{po_id}/edit/", {"action": "request", "stamp": _stamp(po_id), "order_date": "2026-10-01", "delivery": "2026-10-08", "notes": "", **extra})
+
+
+def _confirm(web, po_id, **extra):
+    return web.post(f"/purchase-orders/{po_id}/confirm/", {"stamp": _stamp(po_id), "delivery": "2026-10-08", **extra})
+
+
+def _sent(po_id):
+    return fetchone(_db(), "SELECT requested_at IS NOT NULL FROM purchase_orders WHERE po_id = ?", (po_id,))[0] == 1
 
 
 def _status(po_id):
@@ -29,12 +38,16 @@ def test_over_the_limit_order_it_asks_first_and_confirm_orders_it_with_a_review_
     _admin(web)
     web.post("/settings/", {"action": "save", "key": "po_daily_payables_limit", "value": "5000"})
     po_id = _start(web, _supplier_with_price(web, db))                         # 10,000 on one day, over 5,000
-    r = _order(web, po_id)
+    r = _send(web, po_id)
     assert r["Location"] == f"/purchase-orders/{po_id}/edit/?confirm=1"
-    assert _status(po_id) == "DRAFT" and _flags() == 0                       # nothing ordered yet
+    assert _status(po_id) == "DRAFT" and not _sent(po_id) and _flags() == 0  # nothing sent yet
     page = web.get(r["Location"]).content.decode()
-    assert "Over your daily limit" in page and "Confirm order anyway" in page and "Change the date" in page
-    r = _order(web, po_id, confirm_over="1")
+    assert "Over your daily limit" in page and "Send to supplier anyway" in page and "Change the date" in page
+    r = _send(web, po_id, confirm_over="1")
+    assert r["Location"] == f"/purchase-orders/{po_id}/" and _status(po_id) == "DRAFT" and _sent(po_id) and _flags() == 0   # a request: no review line yet
+    page = _confirm(web, po_id).content.decode()                              # the supplier confirmed: asked once more
+    assert "Over your daily limit" in page and "Confirm order anyway" in page and _status(po_id) == "DRAFT"
+    r = _confirm(web, po_id, confirm_over="1")
     assert r["Location"] == f"/purchase-orders/{po_id}/" and _status(po_id) == "ORDERED" and _flags() == 1
 
 
@@ -42,15 +55,16 @@ def test_order_it_from_the_order_page_asks_first_too(web, db):
     _admin(web)
     web.post("/settings/", {"action": "save", "key": "po_daily_payables_limit", "value": "5000"})
     po_id = _start(web, _supplier_with_price(web, db))
-    assert web.post(f"/purchase-orders/{po_id}/", {"action": "order"})["Location"] == f"/purchase-orders/{po_id}/edit/?confirm=1"
-    assert _status(po_id) == "DRAFT"
+    assert web.post(f"/purchase-orders/{po_id}/", {"action": "request"})["Location"] == f"/purchase-orders/{po_id}/edit/?confirm=1"
+    assert _status(po_id) == "DRAFT" and not _sent(po_id)
 
 
 def test_within_the_limit_no_dialog(web, db):
     _admin(web)
     web.post("/settings/", {"action": "save", "key": "po_daily_payables_limit", "value": "50000"})
     po_id = _start(web, _supplier_with_price(web, db))
-    assert _order(web, po_id)["Location"] == f"/purchase-orders/{po_id}/" and _status(po_id) == "ORDERED" and _flags() == 0
+    assert _send(web, po_id)["Location"] == f"/purchase-orders/{po_id}/" and _sent(po_id)
+    assert _confirm(web, po_id)["Location"] == f"/purchase-orders/{po_id}/" and _status(po_id) == "ORDERED" and _flags() == 0
     assert "Over your daily limit" not in web.get(f"/purchase-orders/{po_id}/edit/?confirm=1").content.decode()
 
 

@@ -5,16 +5,16 @@
 {% if done %}
 <h2>Split into {{ done|length }} draft orders · {{ po.supplier }}</h2>
 {% if over_ids %}<div class="warnbox over-confirm"><b>{{ over_ids|length }} part{{ over_ids|length|pluralize }} would put {% if over_ids|length == 1 %}its{% else %}their{% endif %} pay day over the daily limit.</b>
-  <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="order_all"><input type="hidden" name="confirm_over" value="1">
-    <button class="btn small" type="submit">Order all parts anyway</button></form> <span class="hint">Noted on the Review list.</span></div>{% endif %}
+  <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="send_all"><input type="hidden" name="confirm_over" value="1">
+    <button class="btn small" type="submit">Send all parts anyway</button></form> <span class="hint">You are asked again when the supplier confirms each part.</span></div>{% endif %}
 <div class="scroll-x"><table class="list"><tr><th>Part</th><th>Order</th><th>Delivery</th><th>Pay day</th><th style="text-align:right">Amount</th><th style="text-align:right">Day's payables</th><th></th></tr>
   {% for r in done %}<tr><td>{{ forloop.counter }}</td><td><a href="/purchase-orders/{{ r.po_id }}/edit/">{{ r.ref }}</a> <span class="pill off">{{ r.status|title }}</span></td>
     <td>{{ r.delivery|dmy }}</td><td>{{ r.pay|date:"m/d/Y" }}</td><td class="num">{{ r.total|floatformat:2|intcomma }}</td>
     <td class="num"><span class="plan lvl-{{ r.level }}">{{ r.day_total|floatformat:2|intcomma }}</span></td><td class="hint">{{ r.notes|default:"" }}</td></tr>{% endfor %}
 </table></div>
-<form method="post" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="action" value="order_all">
-  <button class="btn" type="submit"><span class="ms">send</span>Order all parts</button>
-  <span class="hint">Each part gets its own PO number. Or open a part to change or order it on its own.</span></form>
+<form method="post" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="action" value="send_all">
+  <button class="btn" type="submit"><span class="ms">send</span>Send all parts to the supplier</button>
+  <span class="hint">Each part gets its own request number, and its own PO number when the supplier confirms it. Or open a part to change or send it on its own.</span></form>
 {% else %}
 <h2>Split into parts · {{ po.supplier }}</h2>
 <p class="note">The order (₱{{ total|floatformat:2|intcomma }}) becomes separate draft orders, each with its own number, delivery and pay day, so no pay day goes over

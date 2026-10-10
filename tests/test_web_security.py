@@ -93,8 +93,8 @@ def test_the_new_switches_presets_and_copying(web, db):
     uid, cousin = _uid("family@slicks.test"), _uid("cousin@slicks.test")
     with sqlite3.connect(_db()) as conn:                                             # the one-time carry-over: the new switches start as Bank / Loans
         conn.execute("INSERT INTO user_restrictions (user_id, action) VALUES (?, 'bank.use'), (?, 'loans.use')", (cousin, cousin))
-    assert au.split_new_switches() == 3 and au.split_new_switches() == 0
-    assert {"payables.mark_paid", "cards.use", "bankloans.use"} <= au.get_restrictions(cousin)
+    assert au.split_new_switches() == 4 and au.split_new_switches() == 0             # + Check booklets, which starts as Bank and cash (2026-10-11)
+    assert {"payables.mark_paid", "cards.use", "bankloans.use", "booklets.use"} <= au.get_restrictions(cousin)
     page = web.get(f"/settings/users/{uid}/").content.decode()
     assert "Daily operations" in page and "Copy from another person" in page and "Daily payables (mark paid)" in page and "Credit cards" in page
     daily = ACCESS_PRESETS["daily"][1]

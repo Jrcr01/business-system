@@ -86,7 +86,8 @@ def test_the_split_page_saves_and_orders_all_parts(web, db):
                                                    "d_0": d1.isoformat(), "d_1": d2.isoformat()})
     assert r.status_code == 302 and "parts=" in r["Location"]
     done = web.get(r["Location"]).content.decode()
-    assert "Order all parts" in done
-    web.post(r["Location"], {"action": "order_all", "confirm_over": "1"})
+    assert "Send all parts to the supplier" in done
+    web.post(r["Location"], {"action": "send_all", "confirm_over": "1"})
     ids = [int(x) for x in r["Location"].split("parts=")[1].split(",")]
-    assert all(get_po(i)["header"]["status"] == "ORDERED" for i in ids)
+    heads = [get_po(i)["header"] for i in ids]                                 # each part is its own request; a PO only when the supplier confirms it
+    assert all(h["status"] == "DRAFT" and h["requested_at"] for h in heads) and sorted(h["request_no"] for h in heads) == ["RQ-0001", "RQ-0002"]

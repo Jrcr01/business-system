@@ -32,7 +32,7 @@ def test_my_todo_shows_a_role_only_its_own_steps(db):
     with acting_as("clerk@example.com", "payables"):
         assert receive_goods(cid, [{"line_id": line, "qty": 2}])[0]
     clerk = my_todo.items("payables")
-    assert any("waiting for the supplier's invoice" in i["text"] and i["state"] == {"po_mode": "Match invoice"} for i in clerk)
+    assert any("the SI or DR not recorded yet" in i["text"] and i["state"] == {"po_mode": "Match invoice"} for i in clerk)
     assert not any("delivery" in i["text"] and "late" in i["text"] for i in clerk)               # the order is received: nothing late is left waiting
 
 

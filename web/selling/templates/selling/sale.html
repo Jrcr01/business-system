@@ -1,0 +1,65 @@
+{% extends "core/base.html" %}
+{% block title %}Counter sale{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">point_of_sale</span> Counter sale</h2>
+<div class="actions" style="margin-bottom:10px">
+  <a class="btn small" href="/sales/"><span class="ms">point_of_sale</span>New sale</a>
+  <a class="btn small ghost" href="/sales/?view=day"><span class="ms">today</span>Sales today</a>
+  <a class="btn small ghost" href="/sales/?view=released"><span class="ms">local_shipping</span>Released, not invoiced{% if open_releases %} ({{ open_releases }}){% endif %}</a>
+</div>
+{% if no_booklet %}<div class="warnbox"><b>No invoice booklet is in use.</b> <a href="/si-booklets/">Register the booklet</a> so the next number is offered and skipped numbers are seen.
+  You can still type a number.</div>{% endif %}
+{% if skipped %}<div class="warnbox"><b>{{ skipped|length }} number{{ skipped|length|pluralize }} skipped:</b> {% for n in skipped %}{{ n|stringformat:"06d" }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+  The first one is offered below. If a leaf was spoiled, <a href="/si-booklets/">cancel it with a reason</a>.</div>{% endif %}
+<form method="post" id="sale_form">{% csrf_token %}
+  <div class="formgrid">
+    <div><label for="si_no">SI no.</label><input id="si_no" type="text" inputmode="numeric" name="si_no" value="{{ si_no }}" required>
+      <div class="hint">The next unused number of the booklet. Change it if you wrote another.</div></div>
+    <div><label for="sale_date">Date</label><input id="sale_date" type="date" name="sale_date" value="{{ sale_date }}" max="{{ today|date:'Y-m-d' }}"></div>
+    <div style="grid-column:span 2"><label for="customer">Customer</label><input id="customer" type="text" name="customer" value="{{ customer }}" list="cust_names" placeholder="Walk-in" autocomplete="off">
+      <datalist id="cust_names">{% for n in names %}<option value="{{ n }}">{% endfor %}</datalist>
+      <div class="hint">Leave empty for a walk-in, or type a name. A name on the <a href="/customers/">Customers</a> list is that customer.</div></div>
+  </div>
+  {% with scan_mode="sale" %}{% include "selling/_scan_lines.html" %}{% endwith %}
+  <details class="manual"{% for s in services %}{% if s.description %} open{% endif %}{% endfor %}><summary>Add a service (mounting, balancing, labor): sold, not stocked</summary>
+    {% for s in services %}<div class="bar" style="margin:6px 0">
+      <div class="grow"><input type="text" name="svc_desc_{{ s.k }}" value="{{ s.description }}" placeholder="what was done" aria-label="Service {{ forloop.counter }}"></div>
+      <div><input class="svc-a" type="text" inputmode="decimal" name="svc_amt_{{ s.k }}" value="{{ s.amount }}" placeholder="amount" style="width:140px" aria-label="Amount of service {{ forloop.counter }}"></div></div>{% endfor %}
+  </details>
+  <div class="warnbox" id="sale_warn" hidden><b>To note. You can still save.</b><div id="sale_warn_list"></div>
+    <div id="below_wrap" hidden style="margin-top:6px"><label for="below_reason">Why below cost?</label><input id="below_reason" type="text" name="below_reason" value="{{ below_reason }}" placeholder="e.g. loyal customer, old stock" style="width:100%;max-width:520px"></div></div>
+  <div class="grp">How it is paid</div>
+  {% include "selling/_pay_rows.html" %}
+  <label for="note">For a release only: a note (optional)</label><input id="note" type="text" name="note" style="width:100%;max-width:520px" placeholder="e.g. to be installed first">
+  <div class="actions">
+    <button class="btn" type="submit" name="action" value="save"><span class="ms">save</span>Save the sale</button>
+    <button class="btn ghost" type="submit" name="action" value="release" formnovalidate onclick="return confirm('Release these goods now and write the invoice later today?');"><span class="ms">local_shipping</span>Release now, invoice later</button>
+  </div>
+</form>
+<p class="hint">Saving takes the stock out the same minute and records how it was paid. Nothing is refused for being below cost, above stock or on charge: it is saved and noted for review.
+  A sale dated before today is marked "typed late".</p>
+<script>
+(function () {
+  var box = document.getElementById("scanlines"), warn = document.getElementById("sale_warn"), list = document.getElementById("sale_warn_list"), below = document.getElementById("below_wrap");
+  var itemsTotal = 0, peso = function (n) { return n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  var num = function (t) { var n = parseFloat(String(t).replace(/,/g, "")); return isNaN(n) ? 0 : n; };
+  function total() {
+    var svc = [].slice.call(document.querySelectorAll(".svc-a")).reduce(function (s, el) { return s + num(el.value); }, 0);
+    if (window.slicksPayTotal) window.slicksPayTotal(itemsTotal + svc);
+  }
+  box.addEventListener("lines", function (e) {
+    itemsTotal = e.detail.total; total();
+    var notes = [], isBelow = false;
+    e.detail.lines.forEach(function (l) {
+      var price = num(l.price);
+      if (l.price !== "" && price < l.it.cost) { isBelow = true; notes.push(l.it.name + ": below cost by ₱" + peso((l.it.cost - price) * l.qty) + "."); }
+      if (l.qty > l.it.on_hand) notes.push(l.it.name + ": the system shows " + l.it.on_hand + " on hand; stock will read " + (l.it.on_hand - l.qty) + " until it is counted or received.");
+    });
+    list.innerHTML = ""; notes.forEach(function (t) { var d = document.createElement("div"); d.textContent = "· " + t; list.appendChild(d); });
+    warn.hidden = !notes.length; below.hidden = !isBelow;
+  });
+  [].slice.call(document.querySelectorAll(".svc-a")).forEach(function (el) { el.addEventListener("input", total); });
+  total();
+})();
+</script>
+{% endblock %}

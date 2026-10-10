@@ -4,5 +4,6 @@ urlpatterns = [                            # the built stages first: core's last
     path("", include("masters.urls")),     # D1
     path("", include("buying.urls")),      # D2
     path("", include("payables.urls")),    # D3
+    path("", include("selling.urls")),     # the revenue cycle, stage A
     path("", include("core.urls")),
 ]

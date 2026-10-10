@@ -1,0 +1,36 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Customers{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">group</span> Customers</h2>
+<p class="note">A walk-in needs no record. Add a customer who buys on charge, a fleet or a dealer, or a relative's business (an affiliate).</p>
+<form class="bar" method="get"><div class="grow"><label for="q">Find a customer</label><input id="q" type="text" name="q" value="{{ q }}"></div>
+  <button class="btn small ghost" type="submit"><span class="ms">search</span>Find</button></form>
+{% if rows %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Customer</th><th>Kind</th><th>Terms</th><th>Contact</th><th style="text-align:right">Sold to date</th><th style="text-align:right">On charge</th><th>Last sale</th><th>Charge</th><th></th></tr>
+  {% for c in rows %}<tr>
+    <td>{{ c.name }}{% if c.is_affiliate %} <span class="pill off">Affiliate</span>{% endif %}</td><td>{{ c.type_label }}</td><td>{{ c.terms }}</td>
+    <td>{{ c.contact_person }}{% if c.contact_number %} · {{ c.contact_number }}{% endif %}</td>
+    <td class="num">{{ c.sold|floatformat:2|intcomma }}</td><td class="num">{{ c.charged|floatformat:2|intcomma }}</td><td>{{ c.last_sale|default:"—"|dmy }}</td>
+    <td>{% if c.credit_allowed %}<span class="pill">Credit allowed</span>{% else %}<span class="pill off">Not allowed</span>{% endif %}
+      {% if may_credit %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="credit"><input type="hidden" name="customer_id" value="{{ c.customer_id }}">
+        <input type="hidden" name="on" value="{% if c.credit_allowed %}0{% else %}1{% endif %}"><button class="btn small ghost" type="submit">{% if c.credit_allowed %}Stop{% else %}Allow{% endif %}</button></form>{% endif %}</td>
+    <td><a class="btn small ghost" href="?edit={{ c.customer_id }}#form">Change</a>{% if c.is_affiliate %} <a class="btn small ghost" href="/affiliates/{{ c.customer_id }}/">Lend / borrow</a>{% endif %}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="note">No customer yet.</p>{% endif %}
+<p class="hint">"Credit allowed" is the System admin's decision alone, with no peso limit. A charge sale to a customer without it is still saved, and noted for review.
+  "On charge" is what was sold on credit; collections against it come with stage B.</p>
+
+<div class="grp" id="form">{% if edit %}Change {{ edit.name }}{% else %}Add a customer{% endif %}</div>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="save">{% if edit %}<input type="hidden" name="customer_id" value="{{ edit.customer_id }}">{% endif %}
+  <div class="formgrid">
+    <div style="grid-column:span 2"><label for="name">Name</label><input id="name" type="text" name="name" value="{{ edit.name|default:'' }}" required></div>
+    <div><label for="type">Kind</label><select id="type" name="type">{% for k, label in types %}<option value="{{ k }}"{% if edit and edit.type == k %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div><label for="terms">Terms (days)</label><input id="terms" type="text" name="terms" value="{{ edit.terms|default:'' }}" placeholder="e.g. 30"></div>
+    <div><label for="contact_person">Contact person</label><input id="contact_person" type="text" name="contact_person" value="{{ edit.contact_person|default:'' }}"></div>
+    <div><label for="contact_number">Contact number</label><input id="contact_number" type="text" name="contact_number" value="{{ edit.contact_number|default:'' }}"></div>
+  </div>
+  <label style="display:flex;gap:6px;color:#1c2733;margin-top:8px"><input type="checkbox" name="is_affiliate" value="1"{% if edit and edit.is_affiliate %} checked{% endif %}> An affiliate: a relative's business we lend tires to and borrow from</label>
+  <div class="actions"><button class="btn small" type="submit"><span class="ms">save</span>{% if edit %}Save{% else %}Add the customer{% endif %}</button>{% if edit %}<a class="btn small ghost" href="/customers/">Cancel</a>{% endif %}</div>
+</form>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}{{ h.request_no }}: the supplier's answer{% endblock %}
+{% block content %}
+<p class="note"><a href="/purchase-orders/{{ h.po_id }}/">← Request {{ h.request_no }}</a></p>
+<h2>The supplier's answer · {{ h.request_no }} · {{ po.supplier }}</h2>
+<p class="note">Type what the supplier can deliver on each line. <b>0 drops the line.</b> Only what is available becomes the purchase order; what was asked is kept on record.</p>
+<form method="post" id="answer">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}">
+  <div class="formgrid">
+    <div><label for="delivery">Delivery date they promised</label><input id="delivery" type="date" name="delivery" value="{{ delivery|date:'Y-m-d' }}" required></div>
+    <div><label>Payment falls due</label><input type="text" value="{% if pay %}{{ pay|date:'D m/d/Y' }}{% endif %}" disabled></div>
+  </div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Item</th><th>Unit</th><th>Asked</th><th>Available</th><th>Net price</th><th>Amount</th></tr>
+    {% for r in rows %}<tr>
+      <td>{{ r.item_name }}</td><td>{{ r.unit|default:"" }}</td><td class="num">{{ r.qty|floatformat:"-2" }}</td>
+      <td><input class="inline-input avail" style="width:80px" inputmode="decimal" name="avail_{{ r.line_id }}" value="{{ r.avail|floatformat:'-2' }}" data-price="{{ r.est_unit_price }}" data-asked="{{ r.qty }}" aria-label="Available of {{ r.item_name }}"></td>
+      <td class="num">{{ r.est_unit_price|floatformat:2|intcomma }}</td><td class="num amt">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}
+    <tr><td colspan="5" class="num"><b>Confirmed total</b> <span class="hint">(asked ₱{{ asked|floatformat:2|intcomma }})</span></td><td class="num"><b id="tot">{{ total|floatformat:2|intcomma }}</b></td></tr>
+  </table></div>
+  <div class="actions">
+    <button class="btn" type="submit"><span class="ms">task_alt</span>Confirm as purchase order</button>
+    <a class="btn ghost" href="/purchase-orders/{{ h.po_id }}/">Not yet</a>
+  </div>
+  <p class="hint">It gets its PO number now, and counts on the calendar and in what we will owe from here on. If nothing is available, put 0 on every line: the request is cancelled.</p>
+
+  {% if guard %}
+  <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="over_title"><div class="dialog">
+    <h3 id="over_title"><span class="ms" style="color:#b26a00">warning</span> Over your daily limit</h3>
+    <p>This order ({{ po.supplier }}, ₱{{ total|floatformat:2|intcomma }}) falls due on <b>{{ guard.pay_date|date:"D m/d" }}</b>.</p>
+    <table class="kv"><tr><td>Already due that day</td><td class="num">₱{{ guard.already|floatformat:2|intcomma }}</td></tr>
+      <tr><td>With this order</td><td class="num" style="color:#b3261e;font-weight:700">₱{{ guard.with_order|floatformat:2|intcomma }}</td></tr>
+      <tr><td>Your daily limit</td><td class="num">₱{{ guard.limit|floatformat:2|intcomma }}</td></tr></table>
+    {% if guard.suggestion %}<p class="tip">Nearest day that fits: deliver <b>{{ guard.suggestion.delivery_date|date:"D m/d" }}</b> → due <b>{{ guard.suggestion.pay_date|date:"D m/d" }}</b></p>{% endif %}
+    <div class="actions" style="justify-content:flex-end">
+      <a class="btn ghost" href="/purchase-orders/{{ h.po_id }}/confirm/">Change the date</a>
+      <button class="btn warn" type="submit" name="confirm_over" value="1" autofocus>Confirm order anyway</button>
+    </div>
+    <p class="hint" style="margin-top:8px">Confirming orders it and adds a line to the Review list (no approval needed).</p>
+  </div></div>
+  {% endif %}
+</form>
+<script>
+(function () {
+  var boxes = document.querySelectorAll("#answer .avail"), tot = document.getElementById("tot");
+  var peso = function (n) { return n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  function sum() {
+    var t = 0;
+    boxes.forEach(function (b) {
+      var n = parseFloat(b.value.replace(/,/g, "")); if (!(n >= 0)) n = 0;
+      var a = Math.round(n * parseFloat(b.dataset.price) * 100) / 100; t += a;
+      b.closest("tr").querySelector(".amt").textContent = peso(a);
+      b.closest("tr").style.opacity = n === 0 ? .5 : 1;
+    });
+    tot.textContent = peso(t);
+  }
+  boxes.forEach(function (b) { b.addEventListener("input", sum); });
+})();
+</script>
+{% endblock %}

@@ -2,6 +2,29 @@
 Newest first. Each entry: (id, date, title, [lines]). The id only has to be new and sort after the earlier ones (date + letter)."""
 
 NOTES = [
+    ("2026-10-13a", "10/13/2026", "New: Stock and Sell", [
+        "Stock, Items and stock: what is on hand, at what cost, and everything that happened to each item. Stock goes up when goods are received and down when they are sold or lent. It is never typed over.",
+        "Labels and scanning: print labels for a delivery (one per piece) and scan them at the counter, on a count, or when lending. A maker's barcode is learned the first time it is scanned.",
+        "Stock counts: count one type or one brand at a time. The sheet does not show what the system expects. Stock changes only when the System admin approves a difference, with a reason.",
+        "Affiliates: lend tires to, or borrow them from, the relatives' businesses. It stays on their balance until it is returned, paid for at cost, or set off.",
+        "Sell, Counter sale: type each sale when it happens. The SI number from the booklet, the customer, the items (scan or search), the price agreed, and how it was paid, one or several ways.",
+        "Nothing is refused for being below cost, above stock or on charge. It is saved and noted on the Review list.",
+        "Released, not invoiced: goods that left before their invoice. Write the invoice the same day.",
+        "Sales today: the day's sales in the notebook's order, with the day's money by how it was paid.",
+    ]),
+    ("2026-10-12a", "10/12/2026", "Purchase orders: ask the supplier first", [
+        "New order: choose the supplier and the dates, and the payables calendar shows straight away. Click a day to make the order fall due that day.",
+        "Items: click the item box and the supplier's list drops down; type a size, a brand or a pattern to narrow it, click an item to choose it, then set its quantity.",
+        "A draft is now sent to the supplier first: \"Send to supplier\" gives it a request number (RQ-0001) and an Order request PDF to send them.",
+        "When the supplier answers, press \"Supplier confirmed\" and type what is available on each line (0 drops the line). Only then does it become a purchase order with a PO number.",
+        "A request still waiting for the supplier shows on the order calendar as not confirmed, so the day does not look free.",
+        "Receive goods and Match invoice are now one page, Receive: tick what arrived and type the SI no. or the DR no. (at least one). Either one records the goods and what we owe together; a DR alone is enough when the supplier gives no SI.",
+        "An order should come on one DR or SI. If part of it has not arrived you are asked: the rest will not come, or keep it open for another DR. Settings has a switch to allow several DRs per order.",
+        "Each order's page lists its deliveries with what came on each. A delivery typed wrongly can be undone there while it has no check; an SI that comes later for a DR is added to the same payable.",
+        "More pieces than ordered, or an item that was not on the order, can be received after you confirm it was agreed; both are noted on the Review list.",
+        "The \"Going out\" tab is gone from Purchase orders: the same totals are on the order calendar and on Payables, Calendar.",
+        "Card reserve: the estimate now sits on the card's statement day plus its usual number of days to the due date, and leaves out unpaid balances carried over.",
+    ]),
     ("2026-10-10a", "10/10/2026", "Payables, the daily limit and price lists", [
         "Every recorded SI now counts as owed on its due date, even before a check is parked. The Schedule of payments, Calendar and Home show the full amount.",
         "Daily limit: ₱350,000 target, ₱400,000 ceiling. The Calendar shows each day's planned amount in green, amber or red. Parking or moving a check, or placing an order, onto a day over ₱400,000 asks you to confirm.",

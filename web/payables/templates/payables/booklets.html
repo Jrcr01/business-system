@@ -1,0 +1,135 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Check booklets{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">menu_book</span> Check booklets</h2>
+<p class="note">Every check number belongs to one booklet. A booklet's code is given by the system, in the order the booklets are added, so a missing booklet shows.
+  Here: who holds each booklet, what is used and open, and the numbers still to account for.</p>
+
+{% if alerts %}<div class="warnbox"><b><span class="ms">warning</span> {{ alerts|length }} booklet{{ alerts|length|pluralize }} need{{ alerts|length|pluralize:"s," }} a look:</b>
+  {% for b in alerts %}<span style="margin-right:12px">{{ b.code }}: {% if b.skipped %}{{ b.skipped }} skipped number{{ b.skipped|pluralize }}{% endif %}{% if b.skipped and b.duplicates %}, {% endif %}{% if b.duplicates %}{{ b.duplicates }} duplicate{{ b.duplicates|pluralize }}{% endif %}
+    <a href="?audit={{ b.booklet_id }}#audit">Audit</a></span>{% endfor %}</div>
+{% elif rows %}<div class="msg success">All booklets accounted for: no skipped number, no duplicate.</div>{% endif %}
+
+<div class="actions" style="justify-content:space-between;margin:10px 0">
+  <div class="seg" style="margin:0"><a href="?{% if show_all %}show=all{% endif %}"{% if not mine %} class="on"{% endif %}>All</a><a href="?mine=1{% if show_all %}&amp;show=all{% endif %}"{% if mine %} class="on"{% endif %}>Mine{% if n_mine %} ({{ n_mine }}){% endif %}</a></div>
+  <div class="seg" style="margin:0"><a href="?{% if mine %}mine=1{% endif %}"{% if not show_all %} class="on"{% endif %}>Active and exhausted</a><a href="?show=all{% if mine %}&amp;mine=1{% endif %}"{% if show_all %} class="on"{% endif %}>All, with archived</a></div>
+</div>
+
+{% if rows %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Booklet</th><th>Holder</th><th>Check numbers</th><th>Received</th><th>Status</th><th style="text-align:right">Used</th><th style="text-align:right">Spoiled</th><th style="text-align:right">Open</th>
+    <th>Next free</th><th>Up to no.</th><th>To account for</th><th></th></tr>
+  {% for b in rows %}
+  {% if b.gap_before %}<tr class="tentative"><td colspan="12"><span class="ms" style="font-size:16px;color:#b26a00">warning</span> {{ b.gap_before.0 }}–{{ b.gap_before.1 }} are in no booklet</td></tr>{% endif %}
+  <tr{% if b.status == "Archived" %} class="tentative"{% endif %}>
+    <td><b>{{ b.code }}</b></td>
+    <td>{% if b.holder %}{{ b.holder }}{% if b.is_mine %} <span class="pill">me</span>{% endif %}{% else %}<span class="hint">nobody yet</span>{% endif %}</td>
+    <td>{{ b.start_number }}–{{ b.end_number }} <span class="hint">({{ b.leaves }})</span></td>
+    <td>{{ b.date_received|dmy }}</td>
+    <td><span class="pill{% if b.status != 'Active' %} off{% endif %}">{{ b.status }}</span></td>
+    <td class="num">{{ b.used }}</td><td class="num">{{ b.spoiled }}</td><td class="num">{{ b.open }}</td>
+    <td>{{ b.next_free|default:"—" }}</td>
+    <td>{% if request.view_only or b.status == "Archived" %}{{ b.reported_up_to|default:"—" }}{% else %}
+      <form method="post" style="display:flex;gap:4px">{% csrf_token %}<input type="hidden" name="action" value="up_to"><input type="hidden" name="booklet_id" value="{{ b.booklet_id }}">
+        <input class="inline-input" style="width:104px" inputmode="numeric" name="number" value="{{ b.reported_up_to|default:'' }}" placeholder="last used" aria-label="{{ b.code }} is used up to no.">
+        <button class="btn small ghost" type="submit" title="Save the last number used">✓</button></form>{% endif %}</td>
+    <td>{% if b.unrecorded %}<span class="pill warn" title="{{ b.unrecorded_text }}">{{ b.unrecorded }} used, not recorded</span>{% endif %}
+      {% if b.skipped or b.duplicates %}<span class="pill warn">{{ b.skipped }} skipped{% if b.duplicates %}, {{ b.duplicates }} duplicate{{ b.duplicates|pluralize }}{% endif %}</span>{% endif %}
+      {% if not b.unrecorded and not b.skipped and not b.duplicates %}<span class="hint">✓</span>{% endif %}</td>
+    <td style="white-space:nowrap"><a class="btn small ghost" href="?audit={{ b.booklet_id }}{% if show_all %}&amp;show=all{% endif %}#audit">Audit</a>
+      {% if not request.view_only %}<a class="btn small ghost" href="?edit={{ b.booklet_id }}{% if show_all %}&amp;show=all{% endif %}#edit">Change</a>{% endif %}</td>
+  </tr>
+  {% if b.unrecorded %}<tr><td></td><td colspan="11" class="hint">{% if b.holder %}{{ b.holder }}'s {% endif %}{{ b.code }}: {{ b.unrecorded }} lea{{ b.unrecorded|pluralize:"f,ves" }} used but not recorded: <b>{{ b.unrecorded_text }}</b>. Record the check, or log the leaf as spoiled.</td></tr>{% endif %}
+  {% endfor %}
+</table></div>
+<p class="hint">Used = a check is recorded under the number. To account for = numbers at or below the last one used with no check, no spoiled entry and not on a bank statement.
+  "Up to no." is the last number the holder says they have used.</p>
+{% else %}<p class="note">{% if mine %}You hold no booklet.{% else %}No booklet registered yet.{% endif %}</p>{% endif %}
+
+{% if edit and not request.view_only %}
+<div class="grp" id="edit">Change {{ edit.code }}</div>
+<form method="post" class="formgrid">{% csrf_token %}<input type="hidden" name="action" value="edit"><input type="hidden" name="booklet_id" value="{{ edit.booklet_id }}">{% if show_all %}<input type="hidden" name="show" value="all">{% endif %}
+  <div><label>Code</label><input type="text" value="{{ edit.code }}" disabled><div class="hint">Given by the system: it never changes.</div></div>
+  <div><label for="e_start">First number</label><input id="e_start" type="text" inputmode="numeric" name="start" value="{{ edit.start_number }}" required></div>
+  <div><label for="e_end">Last number</label><input id="e_end" type="text" inputmode="numeric" name="end" value="{{ edit.end_number }}" required>
+    <div class="hint">The range can change only around the leaves already used.</div></div>
+  <div><label for="e_rec">Received</label><input id="e_rec" type="date" name="received" value="{{ edit.date_received|slice:':10' }}"></div>
+  <div><label for="e_status">Status</label><select id="e_status" name="status">{% for s in statuses %}<option{% if s == edit.status %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    <div class="hint">Archived = retired stock: it leaves the number picker.</div></div>
+  <div style="align-self:end"><button class="btn small" type="submit"><span class="ms">save</span>Save</button> <a class="btn small ghost" href="/booklets/{% if show_all %}?show=all{% endif %}">Close</a></div>
+</form>
+<form method="post" class="bar" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="action" value="hand_over"><input type="hidden" name="booklet_id" value="{{ edit.booklet_id }}">{% if show_all %}<input type="hidden" name="show" value="all">{% endif %}
+  <div><label for="h_who">Hand over to</label><select id="h_who" name="holder" onchange="document.getElementById('h_name').style.display=this.value==='other'?'':'none'">
+    <option value="">Nobody</option>{% for id, name in people %}<option value="{{ id }}"{% if id == edit.holder_user_id %} selected{% endif %}>{{ name }}{% if id == me %} (me){% endif %}</option>{% endfor %}
+    <option value="other"{% if edit.holder and not edit.holder_user_id %} selected{% endif %}>Someone without an account…</option></select></div>
+  <div id="h_name"{% if not edit.holder or edit.holder_user_id %} style="display:none"{% endif %}><label for="h_n">Their name</label><input id="h_n" type="text" name="holder_name" value="{% if not edit.holder_user_id %}{{ edit.holder }}{% endif %}" placeholder="e.g. Mama"></div>
+  <button class="btn small ghost" type="submit"><span class="ms">swap_horiz</span>Hand over</button>
+  <span class="hint">Now with {{ edit.holder|default:"nobody" }}{% if edit.held_since %} since {{ edit.held_since|dmy }}{% endif %}. Each handover is kept in the history.</span>
+</form>
+<div class="actions" style="margin-top:10px">
+  {% if edit.status == "Archived" %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="unarchive"><input type="hidden" name="booklet_id" value="{{ edit.booklet_id }}"><input type="hidden" name="show" value="all">
+    <button class="btn small ghost" type="submit"><span class="ms">unarchive</span>Bring back from the archive</button></form>
+  {% else %}<form method="post" onsubmit="return confirm('Archive {{ edit.code }}? It leaves the number picker; its record stays.');">{% csrf_token %}<input type="hidden" name="action" value="archive"><input type="hidden" name="booklet_id" value="{{ edit.booklet_id }}">
+    <button class="btn small ghost" type="submit"><span class="ms">archive</span>Archive</button></form>{% endif %}
+  <form method="post" onsubmit="return confirm('Delete {{ edit.code }}? Only a booklet with no leaf used can be deleted.');">{% csrf_token %}<input type="hidden" name="action" value="delete"><input type="hidden" name="booklet_id" value="{{ edit.booklet_id }}">
+    <button class="btn small danger" type="submit"><span class="ms">delete</span>Delete</button></form>
+  <span class="hint">Delete works only while no leaf is used ({{ edit.used }} used, {{ edit.spoiled }} spoiled). Otherwise archive it.</span>
+</div>
+{% endif %}
+
+{% if audit %}
+<div class="grp" id="audit">Gap audit · {{ audit.code }}</div>
+<div class="facts"><div><span>Leaves</span><b>{{ audit.total }}</b></div><div><span>Skipped numbers</span><b{% if audit.skipped_n %} style="color:#b3261e"{% endif %}>{{ audit.skipped_n }}</b></div>
+  <div><span>Duplicates</span><b{% if audit.dup_n %} style="color:#b3261e"{% endif %}>{{ audit.dup_n }}</b></div><div><span>Spoiled</span><b>{{ audit.spoiled_n }}</b></div></div>
+{% if audit.skipped_n %}
+<p><b>Skipped:</b> {{ audit.skipped }}. A skipped number is below a number already used, with no check and no spoiled entry.
+  {% for n in audit.skipped_list|slice:":8" %}<a href="/search/?q={{ n }}" title="Search everything for {{ n }}">find {{ n }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+{% if not request.view_only %}<form method="post" class="bar">{% csrf_token %}<input type="hidden" name="action" value="spoiled"><input type="hidden" name="booklet_id" value="{{ audit.booklet_id }}">
+  <div class="grow"><label for="a_num">Log as spoiled (numbers, separated by commas)</label><input id="a_num" type="text" name="numbers" value="{{ audit.skipped_csv }}" required></div>
+  <div class="grow"><label for="a_why">Why</label><input id="a_why" type="text" name="reason" placeholder="e.g. torn, wrong payee written"></div>
+  <button class="btn small" type="submit"><span class="ms">block</span>Log as spoiled</button></form>
+<p class="hint">Take out the numbers that were really issued: record their checks instead.</p>{% endif %}
+{% endif %}
+{% if audit.dups %}<p><b>Duplicates:</b> {{ audit.dups|join:", " }}: the same leaf is recorded twice (as a check under two spellings, or as a check and as spoiled).</p>{% endif %}
+{% if not audit.skipped_n and not audit.dup_n %}<div class="msg success">Every leaf up to the last one used is accounted for.</div>{% endif %}
+<details style="margin-top:8px"><summary style="cursor:pointer"><b>Leaf by leaf</b> <a href="/booklets/{{ audit.booklet_id }}/audit.xlsx" style="margin-left:10px">Download (Excel)</a></summary>
+  <div class="scroll-x" style="max-height:420px;overflow-y:auto"><table class="list"><tr><th>Check number</th><th>State</th><th style="text-align:right">Amount</th><th>Note</th></tr>
+    {% for l in audit.leaves %}<tr><td>{{ l.check_number }}</td><td>{% if "CRITICAL" in l.state %}<span class="pill warn">{{ l.state }}</span>{% else %}{{ l.state }}{% endif %}</td>
+      <td class="num">{% if l.amount %}{{ l.amount|floatformat:2|intcomma }}{% endif %}</td><td>{{ l.note }}</td></tr>{% endfor %}</table></div></details>
+{% endif %}
+
+{% if not request.view_only %}
+<div class="grp">Add a booklet</div>
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="add">
+  <div><label>Code</label><input type="text" value="will be {{ next_code }}" disabled style="width:130px"></div>
+  <div><label for="b_start">First number</label><input id="b_start" type="text" inputmode="numeric" name="start" value="{{ suggest.start }}" required></div>
+  <div><label for="b_end">Last number</label><input id="b_end" type="text" inputmode="numeric" name="end" value="{{ suggest.end }}" required></div>
+  <div><label for="b_rec">Received</label><input id="b_rec" type="date" name="received" value="{{ today|date:'Y-m-d' }}"></div>
+  <div><label for="b_who">Held by</label><select id="b_who" name="holder" onchange="document.getElementById('b_name').style.display=this.value==='other'?'':'none'">
+    <option value="">Nobody yet</option>{% for id, name in people %}<option value="{{ id }}">{{ name }}{% if id == me %} (me){% endif %}</option>{% endfor %}<option value="other">Someone without an account…</option></select></div>
+  <div id="b_name" style="display:none"><label for="b_n">Their name</label><input id="b_n" type="text" name="holder_name" placeholder="e.g. Mama"></div>
+  <button class="btn small" type="submit"><span class="ms">add</span>Add the booklet</button></form>
+<p class="hint">The first number usually follows the last booklet. If it does not, you are asked first, and the numbers in between go on the Review list.</p>
+
+<div class="grp">Log spoiled leaves</div>
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="spoiled">
+  <div class="grow"><label for="s_num">Check number(s), separated by commas</label><input id="s_num" type="text" name="numbers" required placeholder="e.g. 4496, 4497"></div>
+  <div class="grow"><label for="s_reason">Why</label><input id="s_reason" type="text" name="reason" placeholder="e.g. torn, wrong payee written"></div>
+  <button class="btn small" type="submit"><span class="ms">block</span>Log as spoiled</button></form>
+{% endif %}
+
+<p style="margin-top:12px"><a href="?voided=1#voided">Show the voided register (latest 30)</a></p>
+{% if voided %}<div class="scroll-x" id="voided"><table class="list"><tr>{% for k in voided.0.keys %}<th>{{ k }}</th>{% endfor %}</tr>
+  {% for v in voided %}<tr>{% for x in v.values %}<td>{{ x|default:"" }}</td>{% endfor %}</tr>{% endfor %}</table></div>{% endif %}
+
+{% if ask %}{# the range does not follow the booklet before it: nothing is saved yet #}
+<div class="overlay" role="dialog" aria-modal="true" aria-labelledby="gap_title"><div class="dialog">
+  <h3 id="gap_title"><span class="ms" style="color:#b26a00">warning</span> Numbers in no booklet</h3>
+  <p>Check numbers <b>{{ ask.gap.0 }}–{{ ask.gap.1 }}</b> are in no booklet: this one does not follow the booklet before it.</p>
+  <p class="hint">Is a booklet missing, or is the first number mistyped? If the supplier of checkbooks skipped these numbers, add it anyway: it is noted on the Review list.</p>
+  <form method="post">{% csrf_token %}{% for k, v in ask.carry %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}<input type="hidden" name="confirm_gap" value="1">
+    <div class="actions" style="justify-content:flex-end"><a class="btn ghost" href="/booklets/">Go back and change it</a>
+      <button class="btn warn" type="submit" autofocus>{{ ask.what }}</button></div></form>
+</div></div>
+{% endif %}
+{% endblock %}

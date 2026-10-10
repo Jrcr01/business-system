@@ -1,0 +1,34 @@
+{% extends "core/base.html" %}
+{% block title %}Invoice booklets{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">receipt_long</span> Sales invoice booklets</h2>
+<p class="note">The paper booklet stays the invoice. The system records each number once, so a missing or repeated number is seen. One booklet is in use at a time.</p>
+{% if skipped %}<div class="warnbox"><b>{{ skipped|length }} number{{ skipped|length|pluralize }} skipped:</b> {% for n in skipped %}{{ n|stringformat:"06d" }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+  A later number is typed and {% if skipped|length == 1 %}this one is{% else %}these are{% endif %} not. <a href="/sales/">Type the sale</a>, or cancel the leaf below if it was spoiled.</div>{% endif %}
+{% if rows %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Booklet</th><th>Numbers</th><th>Holder</th><th>Status</th><th style="text-align:right">Used</th><th style="text-align:right">Cancelled</th><th style="text-align:right">Unused</th><th>Next</th><th></th></tr>
+  {% for b in rows %}<tr><td>{{ b.code }}</td><td>{{ b.start_no|stringformat:"06d" }}–{{ b.end_no|stringformat:"06d" }}</td><td>{{ b.holder|default:"—" }}</td>
+    <td><span class="pill{% if b.status != 'IN_USE' %} off{% endif %}">{{ b.status_label }}</span></td>
+    <td class="num">{{ b.used }}</td><td class="num">{{ b.cancelled }}</td><td class="num">{{ b.unused }}</td><td>{% if b.next %}{{ b.next|stringformat:"06d" }}{% else %}—{% endif %}</td>
+    <td>{% if b.status == "WAITING" %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="use"><input type="hidden" name="booklet_id" value="{{ b.booklet_id }}">
+      <button class="btn small ghost" type="submit">Use this booklet now</button></form>{% endif %}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="note">No booklet registered yet. Register the one on the counter so the next number is offered on each sale.</p>{% endif %}
+
+<div class="grp">Register a booklet</div>
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="register">
+  <div><label for="start">First number</label><input id="start" type="text" inputmode="numeric" name="start" value="{{ suggest_start }}" required style="width:130px"></div>
+  <div><label for="end">Last number</label><input id="end" type="text" inputmode="numeric" name="end" value="{{ suggest_end }}" required style="width:130px"></div>
+  <div class="grow"><label for="holder">Holder</label><input id="holder" type="text" name="holder" placeholder="who keeps it"></div>
+  <button class="btn small" type="submit"><span class="ms">add</span>Register</button>
+</form>
+
+<div class="grp">Cancel a spoiled leaf</div>
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="cancel_leaf">
+  <div><label for="si_no">SI no.</label><input id="si_no" type="text" inputmode="numeric" name="si_no" required style="width:130px"></div>
+  <div class="grow"><label for="reason">Why</label><input id="reason" type="text" name="reason" required placeholder="e.g. torn, wrong entry"></div>
+  <button class="btn small ghost" type="submit"><span class="ms">block</span>Cancel the leaf</button>
+</form>
+<p class="hint">The number is then accounted for. Keep all the paper copies of a cancelled invoice, as BIR requires. A number may be used out of order: it is flagged, never refused.</p>
+{% endblock %}

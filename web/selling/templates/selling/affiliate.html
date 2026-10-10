@@ -1,0 +1,75 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}{{ who.name }}{% endblock %}
+{% block content %}
+<p class="note"><a href="/affiliates/">← Affiliates</a></p>
+<h2><span class="ms" style="font-size:28px">handshake</span> {{ who.name }} <span class="pill off">Affiliate</span>{% if bal.long_open %} <span class="pill warn">Long open</span>{% endif %}</h2>
+<div class="facts"><div><span>They hold of ours</span><b>{{ bal.lent_pcs|floatformat:"-2" }} pcs · ₱{{ bal.lent_value|floatformat:2|intcomma }}</b></div>
+  <div><span>We hold of theirs</span><b>{{ bal.borrowed_pcs|floatformat:"-2" }} pcs · ₱{{ bal.borrowed_value|floatformat:2|intcomma }}</b></div>
+  <div><span>Net</span><b class="{% if bal.net > 0 %}pos{% elif bal.net < 0 %}neg{% endif %}">{% if bal.net > 0 %}they owe ₱{{ bal.net|floatformat:2|intcomma }}{% elif bal.net < 0 %}we owe ₱{{ bal.net|floatformat:2|intcomma|cut:"-" }}{% else %}even{% endif %}</b></div></div>
+<div class="actions" style="margin-bottom:6px">
+  <a class="btn small{% if do != 'lend' %} ghost{% endif %}" href="?do=lend"><span class="ms">outbound</span>Lend to them</a>
+  <a class="btn small{% if do != 'borrow' %} ghost{% endif %}" href="?do=borrow"><span class="ms">call_received</span>Borrow from them</a>
+</div>
+
+{% if do %}
+<div class="grp" style="margin-top:6px">{% if do == "lend" %}Lend: our tires go out to {{ who.name }}{% else %}Borrow: their tires come in from {{ who.name }}{% endif %}</div>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="{{ do }}">
+  {% include "selling/_scan_lines.html" %}
+  <div class="bar" style="margin-top:8px">
+    <div><label for="move_date">Date</label><input id="move_date" type="date" name="move_date" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></div>
+    <div class="grow"><label for="taken_by">{% if do == "lend" %}Taken by{% else %}Brought by{% endif %}</label><input id="taken_by" type="text" name="taken_by" placeholder="who came for them"></div>
+    <div class="grow"><label for="note">Note (optional)</label><input id="note" type="text" name="note"></div>
+    <button class="btn small" type="submit"><span class="ms">save</span>{% if do == "lend" %}Record the lend{% else %}Record the borrow{% endif %}</button>
+  </div>
+  <p class="hint">{% if do == "lend" %}Stock goes out at our cost. It is not a sale: no SI number, no money.{% else %}Stock comes in at the cost you type (our average cost when left as it is). It is not a purchase.{% endif %}
+    It stays on the balance until it is settled.</p>
+</form>
+{% endif %}
+
+<div class="grp" id="settle">Open, to settle</div>
+{% if lines %}
+<form method="post" id="settle_form">{% csrf_token %}<input type="hidden" name="action" value="settle">
+  <div class="scroll-x"><table class="list">
+    <tr><th></th><th>Document</th><th>Date</th><th></th><th>Item</th><th style="text-align:right">Open</th><th>Qty to settle</th><th style="text-align:right">Cost</th><th style="text-align:right">Value</th><th>Days</th></tr>
+    {% for x in lines %}<tr>
+      <td><input type="checkbox" name="pick_{{ x.line_id }}" value="1" aria-label="Settle {{ x.item }}"></td><td>{{ x.move_no }}</td><td>{{ x.date|dmy }}</td>
+      <td>{% if x.direction == "LEND" %}<span class="pill">they hold</span>{% else %}<span class="pill off">we hold</span>{% endif %}</td><td>{{ x.item }}</td>
+      <td class="num">{{ x.open|floatformat:"-2" }}</td><td><input class="inline-input" style="width:80px" inputmode="decimal" name="qty_{{ x.line_id }}" value="{{ x.open|floatformat:'-2' }}" aria-label="Qty of {{ x.item }}"></td>
+      <td class="num">{{ x.unit_cost|floatformat:2|intcomma }}</td><td class="num">{{ x.value|floatformat:2|intcomma }}</td><td>{{ x.days }}{% if x.days > days %} <span class="pill warn">long</span>{% endif %}</td></tr>{% endfor %}
+  </table></div>
+  <div class="bar" style="margin-top:8px"><div><label for="how">How is it settled?</label><select id="how" name="how">
+    <option value="RETURN">Returned (the tires go back)</option><option value="PAY">Paid for</option><option value="OFFSET">Set off: ours against theirs</option></select></div></div>
+  <div id="pay_lend" hidden>
+    <p class="hint">Tires of ours that they pay for become a sale to them at our cost. Write the sales invoice, then type its number and how they paid.</p>
+    <div class="bar"><div><label for="si_no">SI no.</label><input id="si_no" type="text" inputmode="numeric" name="si_no" value="{{ si_no }}" style="width:130px"></div></div>
+    {% include "selling/_pay_rows.html" %}
+    <div class="bar"><div class="grow"><label for="ref">If we are paying them for tires of theirs: how we paid</label><input id="ref" type="text" name="ref" placeholder="e.g. cash 10/11, or check 0048812"></div></div>
+  </div>
+  <div class="actions"><button class="btn small" type="submit"><span class="ms">task_alt</span>Settle what is ticked</button></div>
+  <p class="hint"><b>Returned:</b> their return puts our tires back in stock; our return takes theirs out. <b>Paid for:</b> at cost. <b>Set off:</b> tick both sides; the system says what is still owed.</p>
+</form>
+<script>
+(function () {
+  var how = document.getElementById("how"), box = document.getElementById("pay_lend"), form = document.getElementById("settle_form");
+  function total() {
+    var t = 0;
+    [].slice.call(form.querySelectorAll("tr")).forEach(function (tr) {
+      var cb = tr.querySelector("input[type=checkbox]"); if (!cb || !cb.checked || !tr.querySelector(".pill") || tr.querySelector(".pill.off")) return;
+      t += (parseFloat(tr.querySelector(".inline-input").value.replace(/,/g, "")) || 0) * (parseFloat(tr.children[7].textContent.replace(/,/g, "")) || 0);
+    });
+    if (window.slicksPayTotal) window.slicksPayTotal(t);
+  }
+  function shape() { box.hidden = how.value !== "PAY"; total(); }
+  how.addEventListener("change", shape); form.addEventListener("input", total); form.addEventListener("change", total); shape();
+})();
+</script>
+{% else %}<p class="note"><span class="ms">task_alt</span> Nothing is open with {{ who.name }}.</p>{% endif %}
+
+<div class="grp">History</div>
+{% if history %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Date</th><th>What</th><th>Document</th><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Value</th></tr>
+  {% for h in history %}<tr><td>{{ h.date|dmy }}</td><td>{{ h.what }}</td><td>{{ h.ref }}</td><td>{{ h.item }}</td><td class="num">{{ h.qty|floatformat:"-2" }}</td><td class="num">{{ h.value|floatformat:2|intcomma }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="note">Nothing lent or borrowed yet.</p>{% endif %}
+{% endblock %}

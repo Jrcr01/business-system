@@ -1,5 +1,7 @@
 """Stage D2b (Purchase orders, docs/mockups/d2_buying.html screens 4-8, approved 2026-10-03): the orders and where each stands, one order with its trail to the bank,
 a new order saved as it is built (with the payables bars and the daily-limit warning), Receive goods, and Match invoice into a payables batch.
+Owner, 2026-10-11: the calendar is on the first screen, items are found by searching, and a draft is SENT to the supplier (a request) and becomes a
+purchase order only when they confirm what is available (order_confirm).
 The rules are in engines/po_rules.py (and disbursement_trail_service, cash_insights_service); these views draw the forms and pass on what was typed."""
 from __future__ import annotations
 
@@ -13,7 +15,7 @@ from buying.views import _date, _suppliers
 from masters.views import page_needed
 
 PO_STATUS = {"DRAFT": "Draft", "ORDERED": "Ordered", "PARTIAL": "Partly received", "RECEIVED": "Received", "CANCELLED": "Cancelled"}
-SCOPES = [("open", "Open (draft, ordered, partly received)"), ("DRAFT", "Draft"), ("ORDERED", "Ordered"), ("PARTIAL", "Partly received"), ("RECEIVED", "Received"),
+SCOPES = [("open", "Open (draft, sent, ordered, partly received)"), ("DRAFT", "Draft"), ("SENT", "Sent to supplier"), ("ORDERED", "Ordered"), ("PARTIAL", "Partly received"), ("RECEIVED", "Received"),
           ("CANCELLED", "Cancelled"), ("all", "All")]
 
 
@@ -25,11 +27,25 @@ def _can(request, action: str, created_by: str | None = None) -> bool:
 
 def _head(request) -> dict:
     """What the buttons above every purchase-order screen need: which of New order, Receive goods and Match invoice this person may use."""
-    return {"may_create": _can(request, "po.create", request.slicks_user["email"]), "may_receive": _can(request, "po.receive_goods"), "may_match": _can(request, "po.receive")}
+    return {"may_create": _can(request, "po.create", request.slicks_user["email"]), "may_receive": _may_receive(request)}
+
+
+def _may_receive(request) -> bool:
+    """Receiving always records the payable (owner, 2026-10-11): one switch, whichever of the two older ones the person has."""
+    return _can(request, "po.receive_goods") or _can(request, "po.receive")
 
 
 def _say(request, ok: bool, msg: str) -> None:
     (messages.success if ok else messages.error)(request, msg)
+
+
+def _manila_day(stamp) -> date | None:
+    """The Manila date of a time the database stamped (CURRENT_TIMESTAMP is UTC: a request sent at 2 AM here must not read as yesterday)."""
+    from datetime import datetime
+    try:
+        return (datetime.fromisoformat(str(stamp)[:19]) + timedelta(hours=8)).date()
+    except (TypeError, ValueError):
+        return None
 
 
 def _num(text, default=None):
@@ -53,10 +69,10 @@ def orders(request):
         _say(request, *acknowledge_over_plan(int(request.POST.get("po_id", 0))))
         return redirect("/purchase-orders/")
     tab = request.GET.get("tab", "orders")
+    if tab not in ("orders", "pipeline", "diffs"):               # "Going out" was removed (owner, 2026-10-11): the order calendar and Payables > Calendar show it
+        tab = "orders"
     ctx = {"page_id": "purchase-orders", "tab": tab, **_head(request)}
-    if tab == "out":
-        ctx.update(_going_out(request))
-    elif tab == "pipeline":
+    if tab == "pipeline":
         from engines.disbursement_trail_service import pipeline
         only_open = request.GET.get("all") != "1"
         ctx.update({"only_open": only_open, "pipe": pipeline(only_open=only_open).to_dict("records")})
@@ -70,37 +86,24 @@ def orders(request):
         scope, sup = request.GET.get("show", "open"), request.GET.get("s", "")
         everyone = list_pos()
         names = sorted(dict(zip(everyone["creditor_id"], everyone["supplier"])).items(), key=lambda x: str(x[1]).lower())
-        status = scope if scope in PO_STATUS else None
+        status = "DRAFT" if scope == "SENT" else (scope if scope in PO_STATUS else None)
         df = list_pos(status=status, creditor_id=int(sup) if sup.isdigit() else None)
         if scope == "open":
             df = df[df["status"].isin(["DRAFT", "ORDERED", "PARTIAL"])]
+        elif scope in ("DRAFT", "SENT"):                         # a sent request is still a draft underneath
+            df = df[df["requested_at"].notna() == (scope == "SENT")]
+        from engines.clock import manila_today
+        today = manila_today()
         rows = df.to_dict("records")
         for r in rows:
-            r["status_label"] = PO_STATUS.get(r["status"], r["status"])
             r["is_draft"] = r["status"] == "DRAFT"
+            r["is_sent"] = r["is_draft"] and isinstance(r["requested_at"], str) and bool(r["requested_at"])
+            r["status_label"] = "Sent to supplier" if r["is_sent"] else PO_STATUS.get(r["status"], r["status"])
+            r["waiting"] = (today - _manila_day(r["requested_at"])).days if r["is_sent"] else None
         over = orders_over_plan().to_dict("records")
         ctx.update({"rows": rows, "scope": scope, "scopes": SCOPES, "sup": sup, "names": names, "total": float(df["total"].sum()) if not df.empty else 0.0,
                     "late": int(df["delivery_overdue"].sum()) if not df.empty else 0, "over": over, "may_ack": _can(request, "po.ack_over_plan")})
     return render(request, "buying/orders.html", ctx)
-
-
-def _going_out(request) -> dict:
-    """What is going out, simply: the total per day (or per week) from today, checks, loan and card dues and open orders all counted."""
-    import pandas as pd
-
-    from engines.cash_insights_service import scheduled_outflows
-    from engines.clock import manila_today
-    today = manila_today()
-    out = scheduled_outflows(today, today + timedelta(days=120), include_pos=True)
-    weekly = request.GET.get("by") == "week"
-    if out.empty:
-        return {"weekly": weekly, "out": []}
-    day = pd.to_datetime(out["day"]).dt.date
-    if weekly:
-        table = out.assign(day=day.map(lambda d: d - timedelta(days=d.weekday()))).groupby("day", as_index=False)["amount"].sum()
-    else:
-        table = out.assign(day=day).groupby("day", as_index=False)["amount"].sum()
-    return {"weekly": weekly, "out": table.sort_values("day").to_dict("records")}
 
 
 # --- one order ----------------------------------------------------------------------------------------------------------------------------------------
@@ -116,16 +119,24 @@ def _po_or_404(po_id: int) -> dict:
 @page_needed("purchase-orders")
 def order(request, po_id: int):
     from engines.permissions import hide_check_details
-    from engines.po_rules import cancel_po, close_short, order_po
+    from engines.po_rules import cancel_po, close_short, is_request, request_po, unsend_request
     po = _po_or_404(po_id)
     h = po["header"]
     owner_of = h.get("created_by")
     if request.method == "POST":
         what = request.POST.get("action")
-        if what == "order":
+        if what == "request":                                    # Send to supplier (owner, 2026-10-11): a PO only once they confirm
             if _can(request, "po.create", owner_of) and _over_limit(po_id):
-                return redirect(f"/purchase-orders/{po_id}/edit/?confirm=1")      # the "Confirm order anyway" dialog first
-            ok, msg = order_po(po_id)
+                return redirect(f"/purchase-orders/{po_id}/edit/?confirm=1")      # the "over your daily limit" dialog first
+            ok, msg = request_po(po_id)
+        elif what == "unsend":
+            ok, msg = unsend_request(po_id)
+        elif what == "undo_delivery":                            # a delivery recorded wrongly: back to "still to come" (owner, 2026-10-11)
+            from engines.po_rules import undo_receipt
+            ok, msg = undo_receipt(int(request.POST.get("receipt_id") or 0), request.POST.get("reason", ""))
+        elif what == "add_si":                                   # the SI came later for goods that came on a DR: the same payable
+            from engines.po_rules import add_si_to_receipt
+            ok, msg = add_si_to_receipt(int(request.POST.get("receipt_id") or 0), request.POST.get("si", ""))
         elif what == "cancel":
             ok, msg = cancel_po(po_id, request.POST.get("reason", ""))
         elif what == "close_short":
@@ -143,14 +154,26 @@ def order(request, po_id: int):
             trail = {"stages": tr["stages"], "current": next((s for s in tr["stages"] if s["key"] == tr["current"]), None),
                      "dates": tr["dates"].to_dict("records"), "invoices": tr["invoices"].to_dict("records"),
                      "checks": [] if hide_check_details(request.slicks_user["role"]) else tr["checks"].to_dict("records")}
-    ctx = {"page_id": "purchase-orders", "po": po, "h": h, "lines": po["lines"].to_dict("records"), "status_label": PO_STATUS.get(status, status), "trail": trail,
-           "may_order": status == "DRAFT" and _can(request, "po.order", owner_of),
+    sent = is_request(h)
+    ctx = {"page_id": "purchase-orders", "po": po, "h": h, "lines": po["lines"].to_dict("records"), "trail": trail, "sent": sent,
+           "status_label": "Sent to supplier" if sent else PO_STATUS.get(status, status), "sent_on": _manila_day(h.get("requested_at")) if sent else None,
+           "may_send": status == "DRAFT" and not sent and _can(request, "po.order", owner_of),
+           "may_confirm": sent and _can(request, "po.order", owner_of),
            "may_pdf": status in ("ORDERED", "PARTIAL", "RECEIVED"),
            "may_receive": status in ("ORDERED", "PARTIAL") and _can(request, "po.receive_goods"),
            "may_match": status in ("ORDERED", "PARTIAL", "RECEIVED") and _can(request, "po.receive"),
            "may_change": status in ("DRAFT", "ORDERED") and _can(request, "po.create", owner_of) and not _has_receipt(po_id),
            "may_cancel": status in ("DRAFT", "ORDERED") and _can(request, "po.cancel", owner_of) and not _has_receipt(po_id),
            "may_close": status == "PARTIAL" and _can(request, "po.cancel", owner_of)}
+    if status not in ("DRAFT", "CANCELLED"):
+        from engines.po_rules import deliveries
+        ctx["deliveries"] = deliveries(po_id)
+        ctx["may_inv"] = ctx["may_undo"] = _may_receive(request)
+        ctx["open_to_receive"] = ((status in ("ORDERED", "PARTIAL") and ctx["may_inv"])
+                                  or (ctx["may_inv"] and any(d["invoice_id"] is None and d["lines"] for d in ctx["deliveries"])))
+        if status in ("ORDERED", "PARTIAL"):
+            left = [(max(float(ln["qty"]) - float(ln["qty_received"]), 0.0), float(ln["est_unit_price"])) for ln in ctx["lines"]]
+            ctx["to_come"] = {"pcs": sum(q for q, _ in left), "amount": sum(q * pr for q, pr in left)}
     return render(request, "buying/order.html", ctx)
 
 
@@ -172,6 +195,66 @@ def order_pdf(request, po_id: int):
     resp = HttpResponse(data, content_type="application/pdf")
     resp["Content-Disposition"] = f'attachment; filename="{po["header"]["po_no"].replace(" ", "_")}.pdf"'
     return resp
+
+
+@page_needed("purchase-orders")
+def request_pdf(request, po_id: int):
+    """The order request the supplier gets while the order is still a draft: "not yet a purchase order, please confirm availability"."""
+    from engines.po_pdf import build_po_pdf
+    po = _po_or_404(po_id)
+    data = build_po_pdf(po_id, request=True)
+    if not data:
+        raise Http404
+    resp = HttpResponse(data, content_type="application/pdf")
+    resp["Content-Disposition"] = f'attachment; filename="Order_request_{po["header"]["request_no"]}.pdf"'
+    return resp
+
+
+@page_needed("purchase-orders")
+def order_confirm(request, po_id: int):
+    """The supplier answered (owner, 2026-10-11): the available quantity per line (0 drops the line) and the delivery date they promised; what is
+    available becomes the purchase order. Over the daily limit: the confirm dialog first."""
+    from engines.po_rules import CHANGED, confirm_request, day_guard, expected_pay_date, is_request, po_stamp
+    po = _po_or_404(po_id)
+    h = po["header"]
+    if not is_request(h) or not _can(request, "po.order", h.get("created_by")):
+        _say(request, False, "Only a request sent to the supplier can be confirmed.")
+        return redirect(f"/purchase-orders/{po_id}/")
+    cid = int(h["creditor_id"])
+    lines = po["lines"].to_dict("records")
+    delivery = _date(h["expected_delivery_date"])
+    avail = {int(ln["line_id"]): float(ln["qty"]) for ln in lines}
+    guard = None
+    if request.method == "POST":
+        p = request.POST
+        delivery = _date(p.get("delivery")) or delivery
+        bad = None
+        for ln in lines:
+            raw = (p.get(f"avail_{ln['line_id']}") or "").strip()
+            n = _num(raw) if raw else float(ln["qty"])
+            if n is None:
+                bad = f"{ln['item_name']}: '{raw}' is not a quantity."
+            else:
+                avail[int(ln["line_id"])] = n
+        if bad:
+            _say(request, False, bad)
+        else:
+            total = sum(avail[int(ln["line_id"])] * float(ln["est_unit_price"]) for ln in lines)
+            g = day_guard(cid, delivery, total, po_id)
+            if g["over"] and not p.get("confirm_over"):
+                guard = g                                         # "Confirm order anyway" (no approval step; it goes on the Review list)
+            else:
+                ok, msg = confirm_request(po_id, avail, delivery, p.get("stamp"))
+                if not ok and msg == CHANGED:
+                    _say(request, False, "Someone else changed this request after you opened it. Nothing was saved; this is their version.")
+                    return redirect(f"/purchase-orders/{po_id}/confirm/")
+                _say(request, ok, msg)
+                if ok:
+                    return redirect(f"/purchase-orders/{po_id}/")
+    rows = [{**ln, "avail": avail[int(ln["line_id"])], "amount": round(avail[int(ln["line_id"])] * float(ln["est_unit_price"]), 2)} for ln in lines]
+    return render(request, "buying/order_confirm.html", {"page_id": "purchase-orders", "po": po, "h": h, "rows": rows, "delivery": delivery, "guard": guard,
+                                                         "total": sum(r["amount"] for r in rows), "asked": po["total"], "pay": expected_pay_date(cid, delivery),
+                                                         "stamp": po_stamp(po_id)})
 
 
 # --- making and changing an order (saved as it is built) ----------------------------------------------------------------------------------------------
@@ -198,9 +281,12 @@ def _saved_lines(po: dict) -> list[dict]:
 
 @page_needed("purchase-orders")
 def order_new(request):
-    """Step 1: the supplier, the dates and the first item make the draft (an order is never saved without an item)."""
+    """The first screen (owner, 2026-10-11): supplier and dates, the payables calendar straight away (before anything is saved), then the search.
+    Adding the first item saves the draft (an order is never saved without an item) and carries on in the same layout."""
+    from urllib.parse import urlencode
+
     from engines.clock import manila_today
-    from engines.po_rules import default_delivery, save_po
+    from engines.po_rules import default_delivery, delivery_for_day, save_po
     if not _can(request, "po.create", request.slicks_user["email"]):
         from core.menu import PAGES
         return render(request, "core/not_allowed.html", {"page": PAGES["purchase-orders"]}, status=403)
@@ -214,16 +300,25 @@ def order_new(request):
             return redirect("/purchase-orders/new/")
     order_day = _date(p.get("order_date"), manila_today())
     delivery = _date(p.get("delivery")) or (default_delivery(cid, order_day) if cid else order_day + timedelta(days=7))
+    if request.method == "GET" and p.get("day") and cid:         # a day clicked on the calendar: the delivery date that makes the order fall due then
+        d = delivery_for_day(cid, _date(p.get("day")), order_day)
+        if d is None:
+            _say(request, False, "No delivery date makes the order fall due that day (it is before the order could be paid, or not a bank day).")
+        else:
+            delivery = d
     if request.method == "POST" and p.get("action") == "start":
         line = _line_from_form(p)
         lines = _picked(p) + ([line] if line["item_name"] else [])           # the ticked items, and/or one typed by hand
         ok, msg, po_id = save_po(None, cid, order_day, delivery, lines, p.get("notes", ""))
         if ok:
-            _say(request, True, "Draft saved. Add the other items below.")
+            _say(request, True, "Draft saved.")
             return redirect(f"/purchase-orders/{po_id}/edit/")
-        _say(request, False, msg)
-    return render(request, "buying/order_new.html", {"page_id": "purchase-orders", **_head(request), "suppliers": suppliers, "cid": cid, "order_day": order_day, "delivery": delivery,
-                                                     "names": _names(cid), "v": p})
+        _say(request, False, "Search for an item and give it a quantity first." if msg == "Add at least one item." else msg)
+    ctx = {"page_id": "purchase-orders", **_head(request), "suppliers": suppliers, "cid": cid, "order_day": order_day, "delivery": delivery, "names": _names(cid), "v": p,
+           "qs": urlencode({"s": cid, "order_date": order_day.isoformat(), "delivery": delivery.isoformat()}) + "&", "total": 0.0}
+    if cid:
+        ctx.update(_calendar_ctx(request, cid, delivery, 0.0, None))
+    return render(request, "buying/order_new.html", ctx)
 
 
 def _picked(p) -> list[dict]:
@@ -234,7 +329,8 @@ def _picked(p) -> list[dict]:
             n = key.removeprefix("pick_name_")
             name, qty = p.get(key, "").strip(), _num(p.get(f"pick_qty_{n}"), 0)
             if name and qty > 0:
-                out.append(_line_from_form({"item": name, "qty": qty, "unit": p.get(f"pick_unit_{n}", ""), "list_price": "", "chain": ""}))
+                out.append({**_line_from_form({"item": name, "qty": qty, "unit": p.get(f"pick_unit_{n}", ""), "list_price": "", "chain": ""}),
+                            "actual": _num(p.get(f"pick_price_{n}"))})        # the price on the document, where the picker asks for one (Receive)
     return out
 
 
@@ -255,7 +351,7 @@ def _names(cid: int) -> list[str]:
 
 @page_needed("purchase-orders")
 def order_edit(request, po_id: int):
-    from engines.po_rules import CHANGED, delivery_for_week, po_stamp, save_po
+    from engines.po_rules import CHANGED, delivery_for_week, is_request, po_stamp, save_po
     po = _po_or_404(po_id)
     h = po["header"]
     cid = int(h["creditor_id"])
@@ -307,7 +403,10 @@ def order_edit(request, po_id: int):
                 _say(request, False, "No delivery date makes the order fall due that day (it is before the order could be paid, or not a bank day).")
                 return redirect(f"/purchase-orders/{po_id}/edit/?view=month&m={p.get('m', '')}#payables")
             delivery = d
-        elif what not in ("dates", "order"):
+        elif what == "order":                                    # no shortcut (owner, 2026-10-11): a PO only once the supplier confirmed
+            _say(request, False, "Send this draft to the supplier first. It becomes a purchase order when they confirm the items are available.")
+            return redirect(f"/purchase-orders/{po_id}/edit/")
+        elif what not in ("dates", "request"):
             _say(request, False, "Unknown action.")
             return redirect(f"/purchase-orders/{po_id}/edit/")
         ok, msg, _ = save_po(po_id, cid, order_day, delivery, lines, notes, expected_stamp=p.get("stamp", ""))
@@ -317,11 +416,14 @@ def order_edit(request, po_id: int):
         if not ok:
             _say(request, False, msg)
             return redirect(f"/purchase-orders/{po_id}/edit/")
-        if what == "order":
+        if what == "request":
+            if h["status"] != "DRAFT" or is_request(h):
+                _say(request, False, "Only a draft not sent yet is sent to the supplier.")
+                return redirect(f"/purchase-orders/{po_id}/")
             if not p.get("confirm_over") and _over_limit(po_id):
-                return redirect(f"/purchase-orders/{po_id}/edit/?confirm=1")      # the "Confirm order anyway" dialog first
-            from engines.po_rules import order_po
-            ok, msg = order_po(po_id)
+                return redirect(f"/purchase-orders/{po_id}/edit/?confirm=1")      # the "over your daily limit" dialog first: the earliest point to change the date
+            from engines.po_rules import request_po
+            ok, msg = request_po(po_id)
             _say(request, ok, msg)
             return redirect(f"/purchase-orders/{po_id}/" if ok else f"/purchase-orders/{po_id}/edit/")
         if what == "pay_day":
@@ -340,22 +442,32 @@ def _over_limit(po_id: int) -> bool:
 
 def _edit_ctx(request, po: dict, stamp: str) -> dict:
     from engines.discount_rules import chain_label
-    from engines.permissions import hide_check_details
-    from engines.po_rules import day_guard, days_strip, expected_pay_date, week_schedule, weeks_strip
-    from engines.settings_registry import forecast_shown
+    from engines.po_rules import is_request
     h = po["header"]
     po_id, cid, total = int(h["po_id"]), int(h["creditor_id"]), float(po["total"])
-    delivery = h["expected_delivery_date"]
     lines = []
     for ln in po["lines"].to_dict("records"):
         lp = ln["list_price"] if ln["list_price"] == ln["list_price"] and ln["list_price"] is not None else ln["est_unit_price"]
         chain = ln["discount_chain"] if isinstance(ln["discount_chain"], str) else ""
         lines.append({**ln, "list_shown": lp, "chain_shown": chain if chain else "0", "chain_label": chain_label(chain) or "none",
                       "unit": ln["unit"] if isinstance(ln["unit"], str) else ""})
+    sent = is_request(h)
+    ctx = {"po": po, "h": h, "lines": lines, "stamp": stamp, "total": total, "names": _names(cid), "sent": sent, "qs": "", "cid": cid,
+           "may_send": h["status"] == "DRAFT" and not sent and _can(request, "po.order", h.get("created_by"))}
+    ctx.update(_calendar_ctx(request, cid, h["expected_delivery_date"], total, po_id))
+    ctx["confirm"] = request.GET.get("confirm") == "1" and bool(ctx.get("guard")) and ctx["guard"]["over"] and ctx["may_send"]
+    return ctx
+
+
+def _calendar_ctx(request, cid: int, delivery, total: float, po_id: int | None) -> dict:
+    """The payables on the day an order would fall due: the month calendar (or the daily / weekly bars), the daily-limit warning and the week's list.
+    Works before the order is saved (po_id None, total 0): the calendar is the first thing on the screen (owner, 2026-10-11)."""
+    from engines.permissions import hide_check_details
+    from engines.po_rules import day_guard, days_strip, expected_pay_date, week_schedule, weeks_strip
+    from engines.settings_registry import forecast_shown
     pay = expected_pay_date(cid, delivery)
-    ctx = {"po": po, "h": h, "lines": lines, "stamp": stamp, "total": total, "pay": pay, "names": _names(cid), "may_order": h["status"] == "DRAFT" and _can(request, "po.order", h.get("created_by"))}
     if pay is None:
-        return ctx
+        return {"pay": None}
     guard = day_guard(cid, delivery, total, po_id)
     view = request.GET.get("view", "month")
     cal = None
@@ -376,15 +488,12 @@ def _edit_ctx(request, po: dict, stamp: str) -> dict:
     weeks = [{"week": r.week_start, "label": f"{r.week_start:%m/%d}", "total": float(r.total), "selected": bool(r.selected), "lightest": bool(r.lightest)}
              for r in weeks_strip(pay, exclude_po_id=po_id).itertuples()]
     sched = week_schedule(pay, exclude_po_id=po_id)
-    show_ref = not hide_check_details(request.slicks_user["role"])
     cash = None
     if forecast_shown() and total > 0:
         from engines.po_rules import cash_check
         cash = cash_check(cid, total, delivery, exclude_po_id=po_id)
-    ctx.update({"guard": guard, "view": view, "bars": bars, "weeks": weeks, "sched": sched, "sched_rows": sched["rows"].to_dict("records") if sched else [],
-                "show_ref": show_ref, "cash": cash, "cal": cal,
-                "confirm": request.GET.get("confirm") == "1" and guard["over"] and ctx["may_order"]})
-    return ctx
+    return {"pay": pay, "guard": guard, "view": view, "bars": bars, "weeks": weeks, "sched": sched, "sched_rows": sched["rows"].to_dict("records") if sched else [],
+            "show_ref": not hide_check_details(request.slicks_user["role"]), "cash": cash, "cal": cal}
 
 
 @page_needed("purchase-orders")
@@ -424,100 +533,205 @@ def _picks(p, lines: list[dict], with_price: bool) -> list[dict]:
     for ln in lines:
         lid = int(ln["line_id"])
         if p.get(f"pick_{lid}") == "1":
-            pk = {"line_id": lid, "qty": _num(p.get(f"qty_{lid}"), 0)}
+            pk = {"line_id": lid, "qty": _num(p.get(f"qty_{lid}"), 0), "dot": p.get(f"dot_{lid}", "")}      # the tires' DOT, when typed (stage A)
             if with_price:
                 pk["actual_unit_price"] = _num(p.get(f"price_{lid}"), -1)
             out.append(pk)
     return out
 
 
-def _match(request, cid: int, lines: list[dict], goods_received: bool):
-    """Saves an invoice for the ticked lines into the chosen batch (a new one when asked)."""
+def _match(request, cid: int, lines: list[dict] | None, goods_received: bool, picks: list[dict] | None = None, allow_more: bool = False,
+           receipt_id: int | None = None, dr: str | None = None):
+    """Saves the payable for the ticked lines (the SI, or the DR when that is all the supplier gives) into the chosen batch -- a new one when asked.
+    `picks` given: those lines instead of the ticked ones. `receipt_id` + `dr`: the document of a delivery recorded earlier."""
     from engines.po_rules import receive_into_batch
-    from engines.statement_rules import create_order_statement
+    from engines.statement_rules import create_order_statement, doc_reference
     p = request.POST
-    picks = _picks(p, lines, True)
+    picks = _picks(p, lines, True) if picks is None else picks
     if not picks:
-        return False, "Tick at least one line the invoice covers."
-    from engines.statement_rules import doc_reference
-    ref = doc_reference(p.get("doc"), p.get("dr"))
+        return False, "Tick at least one line."
+    dr = p.get("dr", "") if dr is None else dr
+    ref = doc_reference(p.get("doc"), dr)
     if not ref:
-        return False, "Enter the document reference: the supplier's SI no. or DR no."
-    batch = p.get("batch", "")
+        return False, "Type the SI no. or the DR no.: at least one."
+    batch = p.get("batch", "") if _can(request, "invoice.enter") else ""       # which batch is the payables side's choice; otherwise it waits for one
     sid = int(batch) if batch.isdigit() else (create_order_statement(cid) if batch == "new" else None)      # None: waits for a batch (owner, 2026-10-03)
     override = _num(p.get("override"))
     ok, msg, _ = receive_into_batch(cid, sid, ref, _date(p.get("inv_date")), picks, update_prices=p.get("update_prices") == "1",
-                                    gross_override=override if override and override > 0 else None, goods_received=goods_received, dr_no=p.get("dr", "").strip() or None)
+                                    gross_override=override if override and override > 0 else None, goods_received=goods_received, dr_no=dr.strip() or None,
+                                    allow_more=allow_more, receipt_id=receipt_id)
     return ok, msg
+
+
+def _waiting_suppliers(with_invoices: bool) -> list[tuple[int, str]]:
+    """Only the suppliers with something to receive: an ordered PO with goods still to come, or (for a person who records invoices) goods received
+    on a DR and waiting for their SI."""
+    from engines.common import get_conn
+    waiting_si = "OR l.qty_received - COALESCE(l.qty_invoiced, l.qty_received) > 0.0000001" if with_invoices else ""
+    with get_conn() as conn:
+        rows = conn.execute(f"""SELECT DISTINCT c.creditor_id, c.creditor_name FROM purchase_orders p JOIN purchase_order_lines l ON l.po_id = p.po_id
+                                JOIN creditors c ON c.creditor_id = p.creditor_id
+                                WHERE (p.status IN ('ORDERED', 'PARTIAL') AND l.qty - l.qty_received > 0.0000001) {waiting_si}
+                                ORDER BY c.creditor_name COLLATE NOCASE""").fetchall()
+    return [(int(r[0]), r[1]) for r in rows]
+
+
+def _arrive(request, cid: int, coming: list[dict], may_goods: bool, may_inv: bool):
+    """A delivery typed on Receive (owner, 2026-10-11): the SI no. or the DR no. -- either one records the goods AND the payable ("our suppliers dont give
+    SI just DR then that only binds us"). Returns (ok, message, ask): `ask` is a question to put first, nothing saved yet --
+      * more than ordered: "agreed with the supplier?";
+      * part of the order has not come while Settings says one DR per order: the rest will not come, or keep it open for another DR."""
+    from engines.po_rules import add_line_at_delivery, close_short, flag_delivery, many_drs, remove_added_line
+    p = request.POST
+    si, dr = p.get("doc", "").strip(), p.get("dr", "").strip()
+    picks = _picks(p, coming, True)
+    extras = _picked(p)                                          # items that came but were not on the order (the drop-down)
+    po = int(p.get("po")) if p.get("po", "").isdigit() else None
+    if not picks and not extras:
+        return False, "Tick what arrived.", None
+    if not si and not dr:
+        return False, "Type the SI no. or the DR no.: at least one.", None
+    if not (may_inv or may_goods):
+        return False, "Receiving is switched off for you.", None
+    if extras and po is None:
+        return False, "Choose the purchase order first, then add the item that was not on it.", None
+    by_line = {int(ln["line_id"]): ln for ln in coming}
+    got = {int(pk["line_id"]): float(pk["qty"] or 0) for pk in picks}
+    more = [(by_line[i], q) for i, q in got.items() if q > float(by_line[i]["remaining"]) + 1e-6]
+    touched = {int(by_line[i]["po_id"]) for i in got} | ({po} if extras else set())
+    rest = {}
+    for ln in coming:
+        left = max(float(ln["remaining"]) - got.get(int(ln["line_id"]), 0.0), 0.0)
+        if int(ln["po_id"]) in touched and left > 1e-6:
+            pcs, amt, no = rest.get(int(ln["po_id"]), (0.0, 0.0, ln["po_no"]))
+            rest[int(ln["po_id"])] = (pcs + left, amt + left * float(ln["est_unit_price"]), no)
+    one_dr = not many_drs()
+    choice = p.get("rest", "")
+    if (more and p.get("confirm_more") != "1") or (rest and one_dr and choice not in ("close", "open")):
+        return False, "", {"more": [f"{ln['item_name']}: {q:g} typed, {float(ln['remaining']):g} still to come on {ln['po_no']} ({q - float(ln['remaining']):g} more than ordered)" for ln, q in more],
+                           "rest": [f"{no}: {pcs:g} pc(s) have not arrived (₱{amt:,.2f})" for pcs, amt, no in rest.values()] if one_dr else [],
+                           "carry": [(k, v) for k, v in p.items() if k not in ("csrfmiddlewaretoken", "rest", "confirm_more")]}
+    added = []
+    for ex in extras:
+        ok, msg, line_id, price = add_line_at_delivery(po, ex["item_name"], ex["qty"], ex["unit"])
+        if not ok:
+            for a in added:
+                remove_added_line(a[0])
+            return False, msg, None
+        added.append((line_id, ex["item_name"], ex["qty"]))
+        picks.append({"line_id": line_id, "qty": ex["qty"], "actual_unit_price": ex["actual"] if ex.get("actual") and ex["actual"] > 0 else price})
+    for pk in picks:                                             # a price left empty = the order's price
+        if pk.get("actual_unit_price") is None or pk["actual_unit_price"] < 0:
+            pk["actual_unit_price"] = float(by_line[int(pk["line_id"])]["est_unit_price"]) if int(pk["line_id"]) in by_line else pk.get("actual_unit_price")
+    ok, msg = _match(request, cid, None, False, picks=picks, allow_more=bool(more))      # the document that binds us, SI or DR: goods and payable in ONE step, always
+    if not ok:
+        for a in added:
+            remove_added_line(a[0])
+        return False, msg, None
+    ref = si or f"DR {dr}"
+    for ln, q in more:
+        flag_delivery(int(ln["po_id"]), "PO_RECEIVED_MORE", f"{q:g} x {ln['item_name']} received on {ref} against {float(ln['remaining']):g} still to come (agreed with the supplier)")
+    for _, name, q in added:
+        flag_delivery(po, "PO_ITEM_ADDED_AT_DELIVERY", f"{q:g} x {name} came on {ref} and was not on the order")
+    notes = []
+    for po_id, (pcs, amt, no) in rest.items():
+        if not one_dr:
+            continue
+        if choice == "close":
+            ok2, msg2 = close_short(po_id, f"the rest will not come (said when {ref} was recorded)", receiving=True)
+            notes.append(msg2)
+        else:
+            flag_delivery(po_id, "PO_MORE_THAN_ONE_DR", f"{pcs:g} pc(s) (₱{amt:,.2f}) still to come after {ref}; kept open for another DR")
+            notes.append(f"{no} stays open for another DR.")
+    return True, " ".join([msg] + notes), None
 
 
 @page_needed("purchase-orders")
 def receive(request):
-    """A delivery arrived: tick what came. A person who may also match invoices can do both at once when the invoice came with the goods."""
+    """ONE page for what arrives (owner, 2026-10-11: "receive goods and match invoice can be combined"; "the important is either DR or SI is recorded"):
+      * a delivery -- tick what came and type the SI no. and / or the DR no. (at least one): the goods are received and the payable is recorded under
+        that reference, at the price charged. A person who may only receive records the goods on the DR, and Payables records the document;
+      * deliveries recorded that way, whose document is not recorded yet -- one form per DR, with what came on it.
+    The two switches stay separate: receiving goods (po.receive_goods) and recording payables (po.receive)."""
     from engines.clock import manila_today
-    from engines.po_rules import receivable_lines, receive_goods
-    if not _can(request, "po.receive_goods"):
+    from engines.po_rules import invoiceable_lines, many_drs, pending_receipts, receivable_lines, receive_goods
+    may_goods = may_inv = _may_receive(request)                 # one switch (owner, 2026-10-11: "receiving always records the payable")
+    if not may_inv:
         from core.menu import PAGES
         return render(request, "core/not_allowed.html", {"page": PAGES["purchase-orders"]}, status=403)
-    suppliers = _suppliers()
+    suppliers = _waiting_suppliers(may_inv)                     # owner, 2026-10-11: "limit only those PO need to receive"
     cid = _supplier_pick(request, suppliers)
-    both = request.GET.get("both") == "1" and _can(request, "po.receive")
-    lines = receivable_lines(cid).to_dict("records") if cid else []
+    coming = receivable_lines(cid).to_dict("records") if cid else []
+    waiting = invoiceable_lines(cid).to_dict("records") if cid and may_inv else []
+    pending = pending_receipts(cid) if cid and may_inv else []
+    ask = None
     if request.method == "POST":
         p = request.POST
-        if p.get("action") == "both":
-            ok, msg = _match(request, cid, lines, goods_received=False)
+        what = p.get("action")
+        if what == "document":                                   # the document of a delivery recorded earlier
+            rec = next((r for r in pending if str(r["receipt_id"]) == p.get("receipt_id", "")), None)
+            if not rec:
+                ok, msg = False, "That delivery already has its document, or recording documents is switched off for you."
+            else:
+                picks = [{"line_id": ln["line_id"], "qty": ln["qty"], "actual_unit_price": _num(p.get(f"price_{ln['line_id']}"), ln["est_unit_price"])} for ln in rec["lines"]]
+                ok, msg = _match(request, cid, None, True, picks=picks, receipt_id=rec["receipt_id"], dr=rec["ref"])
+        elif what == "match":                                    # an invoice typed against goods already in (the older form)
+            ok, msg = _match(request, cid, waiting, goods_received=True) if may_inv else (False, "Recording invoices is switched off for you.")
+        elif what == "goods":                                    # the older goods-only form (kept for links and scripts that still post it)
+            ok, msg = (receive_goods(cid, _picks(p, coming, False), _date(p.get("received"), manila_today()), p.get("ref", ""), p.get("kind", "delivery receipt"))[:2]
+                       if may_goods else (False, "Receiving goods is switched off for you."))
         else:
-            picks = _picks(p, lines, False)
-            ok, msg, _ = receive_goods(cid, picks, _date(p.get("received"), manila_today()), p.get("ref", ""), p.get("kind", "delivery receipt"))
-        _say(request, ok, msg)
-        return redirect(f"/purchase-orders/receive/?s={cid}" + ("&both=1" if p.get("action") == "both" and not ok else ""))
-    pre = request.GET.get("po", "")
-    for ln in lines:
-        ln["checked"] = str(ln["po_id"]) == pre
-    return render(request, "buying/receive.html", {"page_id": "purchase-orders", **_head(request), "suppliers": suppliers, "cid": cid, "lines": lines, "both": both,
-                                                   "may_both": _can(request, "po.receive"), "today": manila_today(), "batches": _batches(cid) if both else []})
+            ok, msg, ask = _arrive(request, cid, coming, may_goods, may_inv)
+        if ask is None:
+            _say(request, ok, msg)
+            po = p.get("po", "")
+            return redirect(f"/purchase-orders/receive/?s={cid}" + (f"&po={po}" if po and not ok else ""))
+    src = request.POST if request.method == "POST" else request.GET
+    pre, pre_batch = src.get("po", ""), request.GET.get("batch", "")
+    in_pending = {}
+    for r in pending:
+        for ln in r["lines"]:
+            in_pending[ln["line_id"]] = in_pending.get(ln["line_id"], 0.0) + ln["qty"]
+    for ln in waiting:                                           # what no listed delivery accounts for (recorded before deliveries kept their items)
+        ln["remaining"] = float(ln["remaining"]) - in_pending.get(int(ln["line_id"]), 0.0)
+    waiting = [ln for ln in waiting if ln["remaining"] > 1e-6]
+    orders_ = sorted({(int(ln["po_id"]), ln["po_no"]) for ln in coming + waiting} | {(r["po_id"], r["po_no"]) for r in pending}, key=lambda x: x[1])
+    if not pre and len(orders_) == 1 and request.method == "GET" and "po" not in request.GET:
+        pre = str(orders_[0][0])                                 # one order waiting: it is the one that arrived
+    if pre.isdigit() and int(pre) in dict(orders_):              # one order chosen: only its lines, already ticked
+        coming, waiting = [ln for ln in coming if int(ln["po_id"]) == int(pre)], [ln for ln in waiting if int(ln["po_id"]) == int(pre)]
+        pending = [r for r in pending if r["po_id"] == int(pre)]
+    else:
+        pre = ""
+    for ln in coming:
+        ln["checked"] = bool(pre)
+    for ln in waiting:
+        ln["checked"] = bool(pre)
+    return render(request, "buying/receive.html", {"page_id": "purchase-orders", **_head(request), "suppliers": suppliers, "cid": cid, "coming": coming, "waiting": waiting,
+                                                   "pending": pending, "may_goods": may_goods, "may_inv": may_inv, "today": manila_today(),
+                                                   "may_batch": _can(request, "invoice.enter"), "batches": _batches(cid) if _can(request, "invoice.enter") else [],
+                                                   "orders": orders_, "pre": pre, "pre_batch": pre_batch, "came_with": "", "ask": ask, "many": many_drs()})
 
 
 @page_needed("purchase-orders")
 def match(request):
-    """The supplier's invoice arrived: match it to the goods received and put it in a payables batch at the price actually charged."""
-    from engines.clock import manila_today
-    from engines.po_rules import invoiceable_lines, receivable_lines
-    if not _can(request, "po.receive"):
-        from core.menu import PAGES
-        return render(request, "core/not_allowed.html", {"page": PAGES["purchase-orders"]}, status=403)
-    suppliers = _suppliers()
-    cid = _supplier_pick(request, suppliers)
-    waiting = invoiceable_lines(cid).to_dict("records") if cid else []
-    unreceived = receivable_lines(cid).to_dict("records") if cid else []
+    """Match invoice was its own page until 2026-10-11; it is part of Receive now. Old links land there; a form still posted here is handled there."""
     if request.method == "POST":
-        goods_received = request.POST.get("action") == "match"
-        ok, msg = _match(request, cid, waiting if goods_received else unreceived, goods_received)
-        _say(request, ok, msg)
-        return redirect(f"/purchase-orders/match/?s={cid}")
-    pre = request.GET.get("po", "")
-    refs = [str(r["received_ref"]) for r in waiting if r.get("received_ref") and not str(r["received_ref"]).startswith("DR ")]
-    came_with = refs[0] if len(set(refs)) == 1 else ""
-    for ln in waiting:
-        ln["checked"] = str(ln["po_id"]) == pre or (bool(came_with) and str(ln.get("received_ref")) == came_with)
-    for ln in unreceived:
-        ln["checked"] = str(ln["po_id"]) == pre and not waiting
-    pre_batch = request.GET.get("batch", "")                   # opened from a batch's "From a purchase order": that batch is chosen
-    return render(request, "buying/match.html", {"page_id": "purchase-orders", **_head(request), "suppliers": suppliers, "cid": cid, "waiting": waiting, "unreceived": unreceived,
-                                                 "came_with": came_with, "today": manila_today(), "batches": _batches(cid), "pre_batch": pre_batch})
+        return receive(request)
+    q = request.GET.urlencode()
+    return redirect("/purchase-orders/receive/" + (f"?{q}" if q else ""))
 
 
 @page_needed("purchase-orders")
 def order_split(request, po_id: int):
     """Split a draft order into parts (owner, 2026-10-10: "suggest a partition of purchase order"): the suggestion (?n= parts) side by side, editable
     quantities and delivery dates, Recalculate (pay days and day loads, nothing saved), Save the parts; then the parts with "Order all parts"."""
-    from engines.po_rules import CHANGED, SPLIT_MAX, get_po, order_po, po_stamp, save_split, split_days, suggest_split
+    from engines.po_rules import CHANGED, SPLIT_MAX, get_po, po_stamp, request_po, save_split, split_days, suggest_split
     po = _po_or_404(po_id)
     h = po["header"]
     done = [int(x) for x in request.GET.get("parts", "").split(",") if x.isdigit()]
     if done:                                                   # after saving: the parts, and Order all parts
-        if request.method == "POST" and request.POST.get("action") == "order_all":
+        if request.method == "POST" and request.POST.get("action") == "send_all":
             if not _can(request, "po.order", h.get("created_by")):
                 _say(request, False, "Ordering is switched off for you.")
                 return redirect(request.get_full_path())
@@ -525,22 +739,18 @@ def order_split(request, po_id: int):
             if over and not request.POST.get("confirm_over"):
                 request.session["split_over"] = over
                 return redirect(request.get_full_path())
-            msgs = []
-            for i in done:
-                ok, msg = order_po(i)
-                msgs.append(msg)
-                if ok and i in over:
-                    from engines.po_rules import note_high_day
-                    note_high_day(i)
-            _say(request, True, " ".join(msgs))
-            return redirect("/purchase-orders/")
+            results = [request_po(i) for i in done]              # each part is its own request; each becomes a PO when the supplier confirms it
+            sent = sum(1 for ok, _ in results if ok)
+            problems = [msg for ok, msg in results if not ok]
+            _say(request, not problems, f"{sent} part(s) sent to the supplier. Download each order request from its page." + (" " + " ".join(problems) if problems else ""))
+            return redirect("/purchase-orders/?show=SENT")
         rows = []
         for i in done:
             p = get_po(i)
             if p:
                 ph = p["header"]
                 info = split_days(int(ph["creditor_id"]), i, [{"delivery": ph["expected_delivery_date"], "amount": p["total"]}])[0] if ph["expected_delivery_date"] else {}
-                rows.append({"po_id": i, "ref": ph["po_no"], "status": ph["status"], "total": p["total"], "delivery": ph["expected_delivery_date"],
+                rows.append({"po_id": i, "ref": ph.get("request_no") or ph["po_no"], "status": ph["status"], "total": p["total"], "delivery": ph["expected_delivery_date"],
                              "notes": ph["notes"], **info})
         return render(request, "buying/order_split.html", {"page_id": "purchase-orders", "po": po, "h": h, "done": rows, "parts_q": request.GET.get("parts"),
                                                            "over_ids": request.session.pop("split_over", None), **_head(request)})

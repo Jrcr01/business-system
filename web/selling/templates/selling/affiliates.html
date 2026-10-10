@@ -1,0 +1,28 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Affiliates{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">handshake</span> Affiliates</h2>
+<p class="note">The relatives' businesses we lend tires to and borrow from. A lend takes stock out without a sale; a borrow brings stock in without a purchase.
+  Each stays on the balance until it is returned, paid for (at cost) or set off.</p>
+{% if rows %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Affiliate</th><th style="text-align:right">They hold of ours</th><th style="text-align:right">We hold of theirs</th><th style="text-align:right">Net</th><th>Oldest open</th><th></th></tr>
+  {% for b in rows %}<tr>
+    <td><a href="/affiliates/{{ b.customer_id }}/">{{ b.name }}</a></td>
+    <td class="num">{% if b.lent_pcs %}{{ b.lent_pcs|floatformat:"-2" }} pcs · ₱{{ b.lent_value|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num">{% if b.borrowed_pcs %}{{ b.borrowed_pcs|floatformat:"-2" }} pcs · ₱{{ b.borrowed_value|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num {% if b.net > 0 %}pos{% elif b.net < 0 %}neg{% endif %}">{% if b.net > 0 %}they owe ₱{{ b.net|floatformat:2|intcomma }}{% elif b.net < 0 %}we owe ₱{{ b.net|floatformat:2|intcomma|cut:"-" }}{% else %}even{% endif %}</td>
+    <td>{% if b.oldest_days is not None %}{{ b.oldest_days }} day{{ b.oldest_days|pluralize }}{% if b.long_open %} <span class="pill warn">Long open</span>{% endif %}{% else %}—{% endif %}</td>
+    <td><a class="btn small ghost" href="/affiliates/{{ b.customer_id }}/?do=lend">Lend</a> <a class="btn small ghost" href="/affiliates/{{ b.customer_id }}/?do=borrow">Borrow</a>
+      <a class="btn small ghost" href="/affiliates/{{ b.customer_id }}/#settle">Settle</a></td></tr>{% endfor %}
+</table></div>
+<p class="hint">Something open for more than {{ days }} days goes on the Review list (a Settings number). Nothing is blocked.</p>
+{% else %}<p class="note">No affiliate yet. Add the first one below.</p>{% endif %}
+<div class="grp">Add an affiliate</div>
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="add">
+  <div class="grow"><label for="name">Name of the business</label><input id="name" type="text" name="name" required></div>
+  <div><label for="contact_person">Contact person</label><input id="contact_person" type="text" name="contact_person"></div>
+  <div><label for="contact_number">Contact number</label><input id="contact_number" type="text" name="contact_number"></div>
+  <button class="btn small" type="submit"><span class="ms">add</span>Add</button>
+</form>
+{% endblock %}

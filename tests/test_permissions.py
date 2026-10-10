@@ -74,7 +74,7 @@ def test_the_matrix_rows_the_owner_asked_for():
 
 
 def test_a_family_owner_does_every_business_action_but_no_system_action():
-    system = {"carveout.use", "users.manage", "audit.view", "settings.edit", "health.fix"}
+    system = {"carveout.use", "users.manage", "audit.view", "settings.edit", "health.fix", "inventory.approve"}      # + approving stock counts (2026-10-11)
     assert perm.SYSTEM_ONLY == system
     for action in ACTIONS:
         assert can("owner", action) == (action not in system), action

@@ -109,7 +109,8 @@ def test_reconciliation_pdf_booklets_spoiled_and_the_bank_switch(web, db, monkey
     pdf = web.get(f"/bank-cash/recon/{imp}.pdf")
     assert pdf.status_code == 200 and pdf.content[:4] == b"%PDF"
     web.post("/bank-cash/", {"action": "new_booklet", "code": "B-4451", "start": "4451", "end": "4500", "received": "2026-10-01"})
-    assert "B-4451" in web.get("/bank-cash/?tab=booklets").content.decode()
+    assert web.get("/bank-cash/?tab=booklets")["Location"] == "/booklets/"       # the booklets have their own page (owner, 2026-10-11)
+    assert "B-4451" in web.get("/booklets/").content.decode()
     web.post("/bank-cash/", {"action": "spoiled", "numbers": "4496, 4497", "reason": "torn"})
     assert fetchone(_db(), "SELECT COUNT(*) FROM spoiled_checks")[0] == 2
     family = _sign_in_new("family@slicks.test", "owner")

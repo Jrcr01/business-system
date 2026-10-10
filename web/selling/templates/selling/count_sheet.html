@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{{ c.count_no }} count sheet</title>
+<style>
+body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; margin: 14mm; color: #000; }
+h1 { font-size: 16px; margin: 0 0 4px; } p { margin: 2px 0 10px; }
+table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #555; padding: 5px 6px; text-align: left; }
+th { background: #eee; } td.box { width: 22mm; } td.note { width: 55mm; } .foot { margin-top: 14px; display: flex; gap: 30mm; }
+@media print { .noprint { display: none; } }
+</style></head><body>
+<p class="noprint"><button onclick="window.print()">Print</button></p>
+<h1>Stock count {{ c.count_no }} · {{ c.scope }}</h1>
+<p>Count what is on the rack and write the number. Leave the box empty if you did not count the item.</p>
+<table><tr><th style="width:22mm">Code</th><th>Item</th><th>Counted</th><th>Note</th></tr>
+{% for r in sheet %}<tr><td>{{ r.code }}</td><td>{{ r.name }}</td><td class="box"></td><td class="note"></td></tr>{% endfor %}
+</table>
+<div class="foot"><div>Counted by: ______________________</div><div>Date: ______________</div><div>Signature: ______________________</div></div>
+</body></html>

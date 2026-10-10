@@ -1,0 +1,51 @@
+{% extends "core/base.html" %}
+{% block title %}{{ c.count_no }}{% endblock %}
+{% block content %}
+<p class="note"><a href="/stock-counts/">← Stock counts</a></p>
+<h2><span class="ms" style="font-size:28px">fact_check</span> Count {{ c.count_no }} · {{ c.scope }} <span class="pill off">Counting</span></h2>
+<p class="note">Count what is on the rack and type it. The system does <b>not</b> show how many it expects, so the count is honest.
+  {{ sheet|length }} item{{ sheet|length|pluralize }} on this sheet; <b id="ct_done">{{ c.typed }}</b> typed so far. Leave an item empty if it was not counted.</p>
+<div class="scanbox"><span class="ms">barcode_scanner</span>
+  <input type="text" id="ct_scan" autocomplete="off" placeholder="Scan each piece on the rack: every scan adds 1 to its item" aria-label="Scan">
+  <span class="hint" id="ct_msg">Or type the quantities below.</span></div>
+<form method="post" id="ct_form">{% csrf_token %}
+  <div class="scroll-x"><table class="list">
+    <tr><th>Code</th><th>Item</th><th>Counted</th><th>Note</th></tr>
+    {% for r in sheet %}<tr data-codes="{{ r.codes|join:'|' }}">
+      <td>{{ r.code }}</td><td>{{ r.name }}</td>
+      <td><input class="inline-input ct-q" style="width:90px" inputmode="decimal" name="c_{{ r.line_id }}" value="{% if r.counted is not None %}{{ r.counted|floatformat:'-2' }}{% endif %}" placeholder="not yet" aria-label="Counted of {{ r.name }}"></td>
+      <td><input class="inline-input" style="width:280px" name="n_{{ r.line_id }}" value="{{ r.note }}" aria-label="Note for {{ r.name }}"></td></tr>{% endfor %}
+  </table></div>
+  <div class="bar" style="margin-top:10px">
+    <div class="grow"><label for="counted_by">Counted by</label><input id="counted_by" type="text" name="counted_by" value="{{ c.counted_by|default:'' }}" placeholder="the name of the person who counted"></div>
+    <a class="btn small ghost" href="?print=1" target="_blank"><span class="ms">print</span>Print a blank count sheet</a>
+  </div>
+  <div class="actions">
+    <button class="btn small ghost" type="submit" name="action" value="save"><span class="ms">save</span>Save and continue later</button>
+    <button class="btn" type="submit" name="action" value="finish" onclick="return confirm('Finish the count? Items left empty will not be part of it.');"><span class="ms">send</span>Finish the count</button>
+  </div>
+</form>
+<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Cancel this count</summary>
+  <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="cancel">
+    <button class="btn small danger" type="submit">Cancel the count</button> <span class="hint">Nothing about stock changes.</span></form></details>
+<script>
+(function () {
+  var scan = document.getElementById("ct_scan"), msg = document.getElementById("ct_msg"), done = document.getElementById("ct_done");
+  var rows = [].slice.call(document.querySelectorAll("#ct_form tr[data-codes]"));
+  function tally() { done.textContent = rows.filter(function (r) { return r.querySelector(".ct-q").value.trim() !== ""; }).length; }
+  rows.forEach(function (r) { r.querySelector(".ct-q").addEventListener("input", tally); });
+  scan.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    var code = scan.value.trim().toUpperCase(); scan.value = "";
+    if (!code) return;
+    var row = rows.filter(function (r) { return r.dataset.codes.toUpperCase().split("|").indexOf(code) >= 0; })[0];
+    if (!row) { msg.textContent = code + " is not on this sheet."; msg.style.color = "#b3261e"; return; }
+    var box = row.querySelector(".ct-q"), n = parseFloat(box.value.replace(/,/g, "")) || 0;
+    box.value = n + 1; tally();
+    msg.textContent = row.children[1].textContent + ": " + (n + 1); msg.style.color = "";
+    row.scrollIntoView({block: "nearest"});
+  });
+})();
+</script>
+{% endblock %}

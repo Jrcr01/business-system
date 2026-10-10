@@ -419,11 +419,24 @@ def split_new_switches() -> int:
     from engines.settings_store import get_setting, set_setting
     n = 0
     for flag, pairs in (("switches_split_2026_10_09", (("bank.use", "payables.mark_paid"), ("loans.use", "cards.use"))),
-                        ("switches_split_bankloans_2026_10_09", (("loans.use", "bankloans.use"),))):
+                        ("switches_split_bankloans_2026_10_09", (("loans.use", "bankloans.use"),)),
+                        ("switches_split_booklets_2026_10_11", (("bank.use", "booklets.use"),))):         # Check booklets starts as Bank and cash
         if str(get_setting(flag, "0")) == "1":
             continue
         n += _split(pairs)
         set_setting(flag, "1")
+    if str(get_setting("switches_receive_one_2026_10_11", "0")) != "1":      # "receive goods" and "record the SI or DR" became one switch (owner, 2026-10-11)
+        with get_conn() as conn:
+            got = {}
+            for uid, action in conn.execute("SELECT user_id, action FROM user_restrictions WHERE action IN ('po.receive_goods', 'po.receive')"):
+                got.setdefault(uid, set()).add(action)
+            for uid, denied in got.items():
+                if len(denied) == 1:                             # one was on: both are on now (the person could receive, or could record the document)
+                    conn.execute("DELETE FROM user_restrictions WHERE user_id = ? AND action IN ('po.receive_goods', 'po.receive')", (uid,))
+                    conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'USER_ACCESS_CHANGED', 'app_users', ?, ?)",
+                                 (uid, "Receiving is one switch now (it always records the payable): this person had one of the two, so it is on."))
+            conn.commit()
+        set_setting("switches_receive_one_2026_10_11", "1")
     return n
 
 

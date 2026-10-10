@@ -53,6 +53,14 @@ NUMBERS = [
     ("po_daily_limit_scope", "Daily payment limit", "What the daily limit counts (1 = everything that goes out, 0 = suppliers only)", 1, 0, 1, 0, "",
      "1: checks, SIs with no check, open orders, lender checks, bank loans, cards and the card reserve (owner, 2026-10-10). 0: only the supplier side -- supplier "
      "checks, SIs with no check yet and open orders. With everything counted, most days pass ₱400,000 on loans and cards alone."),
+    ("po_many_drs", "Purchasing", "More than one DR per order (1 = yes, 0 = no)", 0, 0, 1, 0, "",
+     "0 (owner, 2026-10-11: \"since we have now a PO we can ask them to give 1 dr or si per PO\"): an order should come on ONE delivery receipt or sales invoice. "
+     "A delivery that leaves part of the order asks first: the rest will not come (the order is closed), or keep it open for another DR (noted on the Review list). "
+     "1: an order may be filled by several DRs with no question. Either way nothing is blocked, and every DR is its own payable."),
+    ("stock_old_years", "Stock", "A tire this old (by its DOT) is old stock", 3, 1, 15, 0, "years",
+     "Tires at or above this age show as Old stock, to be sold first. The age comes from the DOT week and year typed when the tires are received."),
+    ("affiliate_open_days", "Stock", "Flag tires lent or borrowed and still open after", 30, 1, 365, 0, "days",
+     "A lend to (or a borrow from) a relative's business that is not returned, paid or set off after this many days goes on the Review list. Nothing is blocked."),
     ("card_reserve_on", "Daily payment limit", "Reserve room for card dues before their SOA arrives (1 = yes, 0 = no)", 1, 0, 1, 0, "",
      "A card's SOA comes about a month before its due date. Until then, its usual due day carries an estimate -- the average of its last 3 statements -- "
      "shown as \"Card reserve (estimate)\", so the day is not filled by orders or checks."),

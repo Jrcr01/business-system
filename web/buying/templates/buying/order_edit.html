@@ -1,8 +1,10 @@
 {% extends "core/base.html" %}{% load humanize %}
-{% block title %}{% if h.status == "DRAFT" %}Draft order{% else %}{{ h.po_no }}{% endif %}{% endblock %}
+{% block title %}{% if sent %}{{ h.request_no }}{% elif h.status == "DRAFT" %}Draft order{% else %}{{ h.po_no }}{% endif %}{% endblock %}
 {% block content %}
-<p class="note"><a href="/purchase-orders/{{ h.po_id }}/">← {% if h.status == "DRAFT" %}Draft order{% else %}{{ h.po_no }}{% endif %}</a></p>
-<h2>{% if h.status == "DRAFT" %}Draft order{% else %}Changing {{ h.po_no }}{% endif %} · {{ po.supplier }} <span class="pill off">{% if h.status == "DRAFT" %}Draft, saved{% else %}Ordered{% endif %}</span></h2>
+<p class="note"><a href="/purchase-orders/{{ h.po_id }}/">← {% if sent %}{{ h.request_no }}{% elif h.status == "DRAFT" %}Draft order{% else %}{{ h.po_no }}{% endif %}</a></p>
+<h2>{% if sent %}Request {{ h.request_no }}{% elif h.status == "DRAFT" %}Draft order{% else %}Changing {{ h.po_no }}{% endif %} · {{ po.supplier }}
+  <span class="pill off">{% if sent %}Sent to supplier{% elif h.status == "DRAFT" %}Draft, saved{% else %}Ordered{% endif %}</span></h2>
+{% if sent %}<p class="note">This request is with the supplier. If you change it, download the order request again and send them the new one.</p>{% endif %}
 
 <form method="post">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="dates">
   <div class="formgrid">
@@ -12,31 +14,15 @@
     <div style="align-self:end"><button class="btn small ghost" type="submit"><span class="ms">event</span>Save the dates</button></div>
   </div>
 </form>
+<div class="facts" style="margin-top:8px"><div><span>Estimated total</span><b>₱{{ total|floatformat:2|intcomma }}</b></div>
+  <div><span>Payment falls due</span><b>{% if pay %}{{ pay|date:"D m/d/Y" }}{% else %}needs a delivery date{% endif %}</b></div></div>
 
-<div class="grp">Items on this order</div>
-<form method="post" id="lines">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}">
-  <input type="hidden" name="delivery" value="{{ h.expected_delivery_date|default:''|slice:':10' }}">
-  <button type="submit" name="action" value="update" class="enter-default" tabindex="-1" aria-hidden="true">Save</button>{# Enter in a box = save the changes, never Remove #}
-  <div class="scroll-x"><table class="list">
-    <tr><th>Item</th><th>Unit</th><th>Qty</th><th>List price</th><th>Discount %</th><th>Net</th><th>Amount</th><th></th></tr>
-    {% for ln in lines %}<tr>
-      <td>{{ ln.item_name }}</td>
-      <td><input class="inline-input" style="width:60px" name="unit_{{ forloop.counter0 }}" value="{{ ln.unit }}" aria-label="Unit"></td>
-      <td><input class="inline-input" style="width:70px" inputmode="decimal" name="qty_{{ forloop.counter0 }}" value="{{ ln.qty|floatformat:'-2' }}" aria-label="Qty"></td>
-      <td><input class="inline-input" inputmode="decimal" name="list_price_{{ forloop.counter0 }}" value="{{ ln.list_shown|floatformat:2 }}" aria-label="List price"></td>
-      <td><input class="inline-input" name="chain_{{ forloop.counter0 }}" value="{{ ln.chain_shown }}" aria-label="Discount"></td>
-      <td class="num">{{ ln.est_unit_price|floatformat:2|intcomma }}</td><td class="num">{{ ln.est_amount|floatformat:2|intcomma }}</td>
-      <td><button class="btn small ghost" type="submit" name="remove" value="{{ forloop.counter0 }}" onclick="return confirm('Remove {{ ln.item_name|escapejs }} from the order?');">Remove</button></td></tr>
-    {% endfor %}
-  </table></div>
-  <div class="actions"><button class="btn small ghost" type="submit" name="action" value="update"><span class="ms">refresh</span>Save the changes above</button>
-    <span class="hint">Discount: 5, 5 = less 5%, less 5% · 0 = none.</span></div>
-</form>
+{% with supplier_name=po.supplier %}{% include "buying/_order_calendar.html" %}{% endwith %}
 
 <form method="post" style="margin-top:14px">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="add_many">
   <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="delivery" value="{{ h.expected_delivery_date|default:''|slice:':10' }}">
   <div class="grp" style="margin-top:0">Add items</div>
-  {% with cid=h.creditor_id submit_label="Add to the order" %}{% include "buying/_item_picker.html" %}{% endwith %}
+  {% with submit_label="Add to the order" %}{% include "buying/_item_picker.html" %}{% endwith %}
 </form>
 
 <details class="manual"><summary>Not on the price list? Type an item by hand</summary>
@@ -54,73 +40,42 @@
   <datalist id="item_names">{% for n in names %}<option value="{{ n }}">{% endfor %}</datalist>
 </form>
 </details>
-{% with prefix="new_" cid=h.creditor_id %}{% include "buying/_item_hint.html" %}{% endwith %}
+{% with prefix="new_" %}{% include "buying/_item_hint.html" %}{% endwith %}
 
-<div class="facts" style="margin-top:16px"><div><span>Estimated total</span><b>₱{{ total|floatformat:2|intcomma }}</b></div>
-  <div><span>Payment falls due</span><b>{% if pay %}{{ pay|date:"D m/d/Y" }}{% else %}needs a delivery date{% endif %}</b></div></div>
-
-<div class="grp" id="payables">Payables when this order falls due</div>
-{% if not pay %}<p class="note">Pick the expected delivery date to see the payables for that day.</p>
-{% else %}
-  {% if guard.on and guard.over %}
-  <div class="warnbox"><b>High payables on {{ guard.pay_date|date:"D m/d" }}.</b> ₱{{ guard.already|floatformat:2|intcomma }} is already due that day; with this order it would be ₱{{ guard.with_order|floatformat:2|intcomma }},
-    over your daily limit of ₱{{ guard.limit|floatformat:2|intcomma }}. You can still order it: it will be noted on the Review list.
-    {% if guard.suggestion %}<form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="use_delivery">
-      <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="use" value="{{ guard.suggestion.delivery_date|date:'Y-m-d' }}">
-      <button class="btn small" type="submit"><span class="ms">event_repeat</span>Deliver on {{ guard.suggestion.delivery_date|date:"m/d" }} instead: falls due {{ guard.suggestion.pay_date|date:"D m/d" }}, that day would be ₱{{ guard.suggestion.with_order|floatformat:2|intcomma }}</button></form>
-    {% else %}<p class="hint">No delivery day in the next three weeks keeps that day within the limit; the order alone may be above it. Consider splitting it into two orders on different days.</p>{% endif %}
-  </div>
-  {% endif %}
-  {% if cash %}{% if cash.known %}{% if cash.ok %}<div class="msg success">Fits the cash plan.</div>{% else %}<div class="warnbox">Over the cash plan: when this falls due the balance would drop ₱{{ cash.shortfall|floatformat:2|intcomma }} under the buffer. You can still order it; the owner is told.</div>{% endif %}{% else %}<p class="note">{{ cash.message }}</p>{% endif %}{% endif %}
-  <div class="seg"><a href="?view=month#payables"{% if view == "month" %} class="on"{% endif %}>Month</a><a href="?view=daily#payables"{% if view == "daily" %} class="on"{% endif %}>Daily</a><a href="?view=weekly#payables"{% if view == "weekly" %} class="on"{% endif %}>Weekly</a></div>
-  {% if cal %}
-  <div class="calhead"><b>Payables by pay day</b>{% if cal.limit %} <span class="note">· limit ₱{{ cal.limit|floatformat:0|intcomma }}/day</span>{% endif %}
-    <span class="calnav"><a class="btn small ghost" href="?view=month&m={{ cal.prev|date:'Y-m-d' }}#payables" aria-label="Previous month"><span class="ms">chevron_left</span></a>
-    <b>{{ cal.month|date:"F Y" }}</b>
-    <a class="btn small ghost" href="?view=month&m={{ cal.next|date:'Y-m-d' }}#payables" aria-label="Next month"><span class="ms">chevron_right</span></a></span></div>
-  <form method="post" class="cal">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="pay_day">
-    <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="m" value="{{ cal.month|date:'Y-m-d' }}">
-    <span class="h">Mon</span><span class="h">Tue</span><span class="h">Wed</span><span class="h">Thu</span><span class="h">Fri</span><span class="h">Sat</span><span class="h">Sun</span>
-    {% for week in cal.weeks %}{% for c in week %}{% if c.closed or c.past or not c.in_month %}<span class="d{% if c.closed %} closed{% endif %}{% if not c.in_month %} out{% endif %}{% if c.selected %} pick{% endif %}"
-        title="{{ c.day|date:'D m/d' }}{% if c.label %}: {{ c.label }}{% endif %}{% if c.total %} · ₱{{ c.total|floatformat:2|intcomma }}: {{ c.payees }}{% endif %}"><span class="n">{{ c.day|date:"j" }}</span>
-        {% if c.label %}<span class="lbl">{{ c.label }}</span>{% elif c.total %}<span class="amt">₱{{ c.total|floatformat:0|intcomma }}</span>{% endif %}</span>
-      {% else %}<button type="submit" name="day" value="{{ c.day|date:'Y-m-d' }}" class="d {{ c.level }}{% if c.selected %} pick{% endif %}"
-        title="{{ c.day|date:'D m/d' }}{% if c.total %} · ₱{{ c.total|floatformat:2|intcomma }}: {{ c.payees }}{% else %}: nothing due yet{% endif %} — click to make the order fall due this day"><span class="n">{{ c.day|date:"j" }}</span>
-        {% if c.label %}<span class="lbl">{{ c.label }}</span>{% endif %}<span class="amt">{% if c.total %}₱{{ c.total|floatformat:0|intcomma }}{% else %}—{% endif %}</span></button>{% endif %}{% endfor %}{% endfor %}
-  </form>
-  <p class="callegend"><span><i class="sw over"></i>Over limit</span><span><i class="sw near"></i>Above 80%</span><span><i class="sw closed"></i>Weekend, holiday or marked day</span><span><i class="sw pick"></i>This order's pay day</span></p>
-  <p class="hint">Click a day: the delivery date is set so the order falls due that day (by {{ po.supplier }}'s terms). Hold the mouse on a day for who is paid.</p>
-  {% else %}
-  <div class="bars">{% for b in bars %}<div class="b" title="{{ b.label }}: ₱{{ b.total|floatformat:2|intcomma }} already due{% if b.mine %}, + ₱{{ b.mine|floatformat:2|intcomma }} this order{% endif %}">
-    {% if b.mine %}<div class="add" style="height:{{ b.h_mine }}%"></div>{% endif %}<div class="fill{% if b.selected %} mine{% elif b.lightest %} light{% endif %}" style="height:{{ b.h }}%"></div></div>{% endfor %}</div>
-  <div class="barlabels">{% for b in bars %}<span{% if b.selected %} style="font-weight:700"{% endif %}>{{ b.label }}{% if b.lightest %} ★{% endif %}</span>{% endfor %}</div>
-  <p class="hint">Each bar is what is already due that day (checks, loan and card dues, other orders); light orange on top is this order. ★ = the lightest {% if view == "weekly" %}week{% else %}weekday{% endif %}.
-    Hold the mouse on a bar for its amount.</p>
-  {% endif %}
-  <div class="grp" style="margin-top:8px">Move the order to another week</div>
-  <div class="weekbtns">{% for w in weeks %}<form method="post">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="week">
-    <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="week" value="{{ w.week|date:'Y-m-d' }}">
-    <button class="btn small{% if not w.selected %} ghost{% endif %}" type="submit"{% if w.selected %} disabled{% endif %} title="{% if w.selected %}The order's week{% else %}Moves the delivery date so the order falls due that week{% endif %}">{{ w.label }}<br>₱{{ w.total|floatformat:0|intcomma }}{% if w.lightest %} ★{% endif %}</button></form>{% endfor %}</div>
-  {% if sched %}
-  <p style="margin-top:12px"><b>The week of {{ sched.week_start|date:"m/d" }} to {{ sched.week_end|date:"m/d" }}: ₱{{ sched.total|floatformat:2|intcomma }} already committed.</b>
-    {% if total %}This order adds ₱{{ total|floatformat:2|intcomma }}.{% endif %}</p>
-  {% if sched_rows %}<div class="scroll-x"><table class="list"><tr><th>Day</th><th>Pay to</th><th>What</th>{% if show_ref %}<th>Reference</th>{% endif %}<th>Amount</th></tr>
-    {% for r in sched_rows %}<tr><td>{{ r.day|date:"D m/d" }}</td><td>{{ r.payee }}</td><td>{{ r.kind }}</td>{% if show_ref %}<td>{{ r.reference|default:"" }}</td>{% endif %}<td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>
-  {% else %}<p class="note">Nothing else is committed that week.</p>{% endif %}
-  {% endif %}
-{% endif %}
+<div class="grp">Items on this order</div>
+<form method="post" id="lines">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}">
+  <input type="hidden" name="delivery" value="{{ h.expected_delivery_date|default:''|slice:':10' }}">
+  <button type="submit" name="action" value="update" class="enter-default" tabindex="-1" aria-hidden="true">Save</button>{# Enter in a box = save the changes, never Remove #}
+  <div class="scroll-x"><table class="list">
+    <tr><th>Item</th><th>Unit</th><th>Qty</th><th>List price</th><th>Discount %</th><th>Net</th><th>Amount</th><th></th></tr>
+    {% for ln in lines %}<tr>
+      <td>{{ ln.item_name }}</td>
+      <td><input class="inline-input" style="width:60px" name="unit_{{ forloop.counter0 }}" value="{{ ln.unit }}" aria-label="Unit"></td>
+      <td><input class="inline-input" style="width:70px" inputmode="decimal" name="qty_{{ forloop.counter0 }}" value="{{ ln.qty|floatformat:'-2' }}" aria-label="Qty"></td>
+      <td><input class="inline-input" inputmode="decimal" name="list_price_{{ forloop.counter0 }}" value="{{ ln.list_shown|floatformat:2 }}" aria-label="List price"></td>
+      <td><input class="inline-input" name="chain_{{ forloop.counter0 }}" value="{{ ln.chain_shown }}" aria-label="Discount"></td>
+      <td class="num">{{ ln.est_unit_price|floatformat:2|intcomma }}</td><td class="num">{{ ln.est_amount|floatformat:2|intcomma }}</td>
+      <td><button class="btn small ghost" type="submit" name="remove" value="{{ forloop.counter0 }}" onclick="return confirm('Remove {{ ln.item_name|escapejs }} from the order?');">Remove</button></td></tr>
+    {% endfor %}
+    <tr><td colspan="6" class="num"><b>Estimated total</b></td><td class="num"><b>{{ total|floatformat:2|intcomma }}</b></td><td></td></tr>
+  </table></div>
+  <div class="actions"><button class="btn small ghost" type="submit" name="action" value="update"><span class="ms">refresh</span>Save the changes above</button>
+    <span class="hint">Discount: 5, 5 = less 5%, less 5% · 0 = none.</span></div>
+</form>
 
 <form method="post" style="margin-top:16px">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}">
   <input type="hidden" name="delivery" value="{{ h.expected_delivery_date|default:''|slice:':10' }}">
   <label for="notes">Notes for the supplier (optional)</label><textarea id="notes" name="notes" rows="2" style="width:100%;max-width:900px">{{ h.notes|default:'' }}</textarea>
   <div class="actions">
-    {% if may_order %}<button class="btn" type="submit" name="action" value="order"><span class="ms">send</span>Order it</button>{% endif %}
-    {% if h.status == "DRAFT" %}<a class="btn ghost" href="/purchase-orders/{{ h.po_id }}/split/"><span class="ms">call_split</span>Split into parts</a>{% endif %}
-    <button class="btn ghost" type="submit" name="action" value="dates"><span class="ms">save</span>{% if h.status == "DRAFT" %}Keep as draft{% else %}Save{% endif %}</button>
+    {% if may_send %}<button class="btn" type="submit" name="action" value="request"><span class="ms">send</span>Send to supplier</button>{% endif %}
+    {% if h.status == "DRAFT" and not sent %}<a class="btn ghost" href="/purchase-orders/{{ h.po_id }}/split/"><span class="ms">call_split</span>Split into parts</a>{% endif %}
+    <button class="btn ghost" type="submit" name="action" value="dates"><span class="ms">save</span>{% if sent %}Save{% elif h.status == "DRAFT" %}Save draft{% else %}Save{% endif %}</button>
+    {% if sent %}<a class="btn ghost" href="/purchase-orders/{{ h.po_id }}/"><span class="ms">arrow_back</span>Back to the request</a>{% endif %}
   </div>
+  {% if may_send %}<p class="hint">Send to supplier gives it a request number and the Order request PDF. It becomes a purchase order when the supplier confirms the items are available.</p>{% endif %}
 </form>
 
-{% if confirm %}{# "Confirm order anyway" (owner, 2026-10-08): no approval step, a warning to weigh #}
+{% if confirm %}{# over the daily limit (owner, 2026-10-08): no approval step, a warning to weigh -- shown before the request goes out, the earliest point to change the date #}
 <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="over_title"><div class="dialog">
   <h3 id="over_title"><span class="ms" style="color:#b26a00">warning</span> Over your daily limit</h3>
   <p>This order ({{ po.supplier }}, est. ₱{{ total|floatformat:2|intcomma }}) falls due on <b>{{ guard.pay_date|date:"D m/d" }}</b>.</p>
@@ -134,11 +89,11 @@
     {% if guard.suggestion %}<form method="post">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="use_delivery">
       <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="use" value="{{ guard.suggestion.delivery_date|date:'Y-m-d' }}">
       <button class="btn ghost" type="submit">Use {{ guard.suggestion.delivery_date|date:"m/d" }} delivery</button></form>{% endif %}
-    <form method="post">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="order"><input type="hidden" name="confirm_over" value="1">
+    <form method="post">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="request"><input type="hidden" name="confirm_over" value="1">
       <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="delivery" value="{{ h.expected_delivery_date|default:''|slice:':10' }}">
-      <button class="btn warn" type="submit" autofocus>Confirm order anyway</button></form>
+      <button class="btn warn" type="submit" autofocus>Send to supplier anyway</button></form>
   </div>
-  <p class="hint" style="margin-top:8px">Confirming orders it and adds a line to the Review list (no approval needed).</p>
+  <p class="hint" style="margin-top:8px">You are asked once more when the supplier confirms; it goes on the Review list then (no approval needed).</p>
 </div></div>
 {% endif %}
 {% endblock %}

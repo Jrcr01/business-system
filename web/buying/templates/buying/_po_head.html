@@ -3,6 +3,5 @@
 <div class="actions" style="margin-bottom:12px">
   <a class="btn small{% if page_kind != 'orders' %} ghost{% endif %}" href="/purchase-orders/"><span class="ms">list_alt</span>Orders</a>
   {% if may_create %}<a class="btn small{% if page_kind != 'new' %} ghost{% endif %}" href="/purchase-orders/new/"><span class="ms">add_shopping_cart</span>New order</a>{% endif %}
-  {% if may_receive %}<a class="btn small{% if page_kind != 'receive' %} ghost{% endif %}" href="/purchase-orders/receive/"><span class="ms">inventory_2</span>Receive goods</a>{% endif %}
-  {% if may_match %}<a class="btn small{% if page_kind != 'match' %} ghost{% endif %}" href="/purchase-orders/match/"><span class="ms">receipt_long</span>Match invoice</a>{% endif %}
+  {% if may_receive %}<a class="btn small{% if page_kind != 'receive' %} ghost{% endif %}" href="/purchase-orders/receive/"><span class="ms">inventory_2</span>Receive</a>{% endif %}
 </div>

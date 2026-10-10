@@ -1,39 +1,110 @@
 {% extends "core/base.html" %}{% load humanize %}
-{% block title %}Receive goods{% endblock %}
+{% block title %}Receive{% endblock %}
 {% block content %}
 {% with page_kind="receive" %}{% include "buying/_po_head.html" %}{% endwith %}
-<p class="note">A delivery arrived: record what came. The supplier's invoice is matched later by Payables, who put it in a batch.</p>
-{% if not suppliers %}<div class="later-box"><p>No supplier yet.</p></div>{% else %}
+<p class="note">A delivery arrived: tick what came and type the supplier's <b>SI no.</b> or <b>DR no.</b> (at least one). That document is what we owe on:
+  the goods are received and the payable is recorded together, at the price charged.
+  {% if many %}An order may come on several DRs.{% else %}An order should come on <b>one</b> DR or SI; if part of it has not arrived, you are asked what to do with the rest.{% endif %}</p>
+{% if not suppliers %}<div class="later-box"><p><span class="ms">inventory_2</span> Nothing to receive: no purchase order is waiting for goods{% if may_inv %} or for its document{% endif %}.
+  An order shows here once the supplier has confirmed it.</p></div>{% else %}
 <form class="bar" method="get" action="/purchase-orders/receive/">
-  <div class="grow"><label for="s">Supplier</label><select id="s" name="s" onchange="this.form.submit()">{% for id, name in suppliers %}<option value="{{ id }}"{% if id == cid %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
-  {% if may_both %}<div><label>What came with the delivery?</label><div class="seg" style="margin:0"><a href="?s={{ cid }}"{% if not both %} class="on"{% endif %}>Goods only</a><a href="?s={{ cid }}&amp;both=1"{% if both %} class="on"{% endif %}>Goods and the invoice</a></div></div>{% endif %}
+  <div class="grow"><label for="s">Supplier</label><select id="s" name="s" onchange="this.form.po.value='';this.form.submit()">{% for id, name in suppliers %}<option value="{{ id }}"{% if id == cid %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+  <div><label for="po">Purchase order</label><select id="po" name="po" onchange="this.form.submit()"><option value="">All open orders</option>
+    {% for id, no in orders %}<option value="{{ id }}"{% if id|stringformat:"s" == pre %} selected{% endif %}>{{ no }}</option>{% endfor %}</select></div>
+  {% if pre_batch %}<input type="hidden" name="batch" value="{{ pre_batch }}">{% endif %}
 </form>
-{% if not lines %}
-<p class="note"><span class="ms">inventory_2</span> No purchase order is waiting for goods from this supplier.</p>
-{% else %}
-<form method="post" id="form_r">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="{% if both %}both{% else %}goods{% endif %}">
+{% if not coming and not waiting and not pending %}
+<p class="note"><span class="ms">inventory_2</span> No purchase order is waiting for goods from this supplier{% if may_inv %}, and no delivery is waiting for its document. A payable with no order is typed in on Order statements{% endif %}.</p>
+{% endif %}
+
+{% if pending %}
+<div class="grp">Received earlier, payable not recorded</div>
+<p class="hint">These were received before receiving always recorded the payable. Record each one's document to make it a payable: the DR it came on, or the SI if the supplier gave one.</p>
+{% for r in pending %}
+<form method="post" class="dr-card">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="po" value="{{ pre }}">
+  <input type="hidden" name="action" value="document"><input type="hidden" name="receipt_id" value="{{ r.receipt_id }}">
+  <p style="margin:0 0 6px"><b>{{ r.ref|default:"No DR number" }}</b> · {{ r.po_no }} · received {{ r.received_date|dmy }} · ₱{{ r.total|floatformat:2|intcomma }} at the order's prices</p>
   <div class="scroll-x"><table class="list">
-    <tr><th>Arrived</th><th>PO</th><th>Item</th><th>Unit</th><th>Still to come</th><th>Qty arrived</th>{% if both %}<th>Estimated price</th><th>Actual price</th>{% endif %}</tr>
-    {% for ln in lines %}<tr data-line="{{ ln.line_id }}" data-est="{{ ln.est_unit_price }}">
+    <tr><th>Item</th><th>Unit</th><th>Qty</th><th>Order price</th><th>Price on the document</th></tr>
+    {% for ln in r.lines %}<tr><td>{{ ln.item_name }}</td><td>{{ ln.unit }}</td><td class="num">{{ ln.qty|floatformat:"-2" }}</td><td class="num">{{ ln.est_unit_price|floatformat:2|intcomma }}</td>
+      <td><input class="inline-input" inputmode="decimal" name="price_{{ ln.line_id }}" value="{{ ln.est_unit_price|floatformat:2 }}" aria-label="Price of {{ ln.item_name }}"></td></tr>{% endfor %}
+  </table></div>
+  <div class="bar" style="margin-top:8px">
+    <div><label>SI no. <span class="hint">(if they gave one)</span></label><input type="text" name="doc" placeholder="blank = {{ r.ref|default:'type the SI no.' }}"></div>
+    <div><label>Document date</label><input type="date" name="inv_date" value="{{ r.received_date|slice:':10' }}"></div>
+    <div class="grow"><label>Put it in (optional)</label><select name="batch"><option value="">Not in a batch yet</option>
+      {% for id, label in batches %}<option value="{{ id }}"{% if id|stringformat:"s" == pre_batch %} selected{% endif %}>{{ label }}</option>{% endfor %}<option value="new">A new batch</option></select></div>
+    <button class="btn small" type="submit"><span class="ms">receipt_long</span>Record the document</button>
+  </div>
+</form>
+{% endfor %}
+{% endif %}
+
+{% if waiting %}
+<div class="grp">Received earlier, no document yet</div>
+<form method="post" id="form_m">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="po" value="{{ pre }}"><input type="hidden" name="action" value="match">
+  <div class="scroll-x"><table class="list">
+    <tr><th>Covered</th><th>PO</th><th>Item</th><th>Unit</th><th>Waiting</th><th>Qty</th><th>Estimated price</th><th>Actual price</th><th>Came with</th></tr>
+    {% for ln in waiting %}<tr data-line="{{ ln.line_id }}" data-est="{{ ln.est_unit_price }}">
+      <td><input type="checkbox" name="pick_{{ ln.line_id }}" value="1"{% if ln.checked %} checked{% endif %} aria-label="Covered"></td>
+      <td>{{ ln.po_no }}</td><td>{{ ln.item_name }}</td><td>{{ ln.unit|default:"" }}</td><td class="num">{{ ln.remaining|floatformat:"-2" }}</td>
+      <td><input class="inline-input" inputmode="decimal" name="qty_{{ ln.line_id }}" value="{{ ln.remaining|floatformat:'-2' }}" aria-label="Qty"></td>
+      <td class="num">{{ ln.est_unit_price|floatformat:2|intcomma }}</td>
+      <td><input class="inline-input" inputmode="decimal" name="price_{{ ln.line_id }}" value="{{ ln.est_unit_price|floatformat:2 }}" aria-label="Actual price"></td>
+      <td>{{ ln.received_ref|default:"" }}</td></tr>{% endfor %}
+  </table></div>
+  {% with k="_m" %}{% include "buying/_invoice_fields.html" %}{% endwith %}
+  <div class="actions"><button class="btn" type="submit"><span class="ms">receipt_long</span>Record the document</button></div>
+</form>
+{% with k="_m" %}{% include "buying/_lines_sum.html" %}{% endwith %}
+{% endif %}
+
+{% if coming %}
+<div class="grp">Goods still to come</div>
+<form method="post" id="form_r">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="po" value="{{ pre }}"><input type="hidden" name="action" value="arrive">
+  <div class="scroll-x"><table class="list">
+    <tr><th>Arrived</th><th>PO</th><th>Item</th><th>Unit</th><th>Still to come</th><th>Qty arrived</th><th title="The tire's DOT week and year, e.g. 2425 = week 24 of 2025. Leave empty when unknown.">DOT</th><th>Estimated price</th><th>Actual price</th></tr>
+    {% for ln in coming %}<tr data-line="{{ ln.line_id }}" data-est="{{ ln.est_unit_price }}">
       <td><input type="checkbox" name="pick_{{ ln.line_id }}" value="1"{% if ln.checked %} checked{% endif %} aria-label="Arrived"></td>
       <td>{{ ln.po_no }}</td><td>{{ ln.item_name }}</td><td>{{ ln.unit|default:"" }}</td><td class="num">{{ ln.remaining|floatformat:"-2" }}</td>
       <td><input class="inline-input" inputmode="decimal" name="qty_{{ ln.line_id }}" value="{{ ln.remaining|floatformat:'-2' }}" aria-label="Qty arrived"></td>
-      {% if both %}<td class="num">{{ ln.est_unit_price|floatformat:2|intcomma }}</td><td><input class="inline-input" inputmode="decimal" name="price_{{ ln.line_id }}" value="{{ ln.est_unit_price|floatformat:2 }}" aria-label="Actual price"></td>{% endif %}</tr>{% endfor %}
+      <td><input class="inline-input" style="width:70px" inputmode="numeric" name="dot_{{ ln.line_id }}" placeholder="WWYY" aria-label="DOT of {{ ln.item_name }}"></td>
+      <td class="num">{{ ln.est_unit_price|floatformat:2|intcomma }}</td>
+      <td><input class="inline-input" inputmode="decimal" name="price_{{ ln.line_id }}" value="{{ ln.est_unit_price|floatformat:2 }}" aria-label="Actual price"></td></tr>{% endfor %}
   </table></div>
-  {% if both %}
-    {% with k="_r" %}{% include "buying/_invoice_fields.html" %}{% endwith %}
-    <div class="actions"><button class="btn" type="submit"><span class="ms">playlist_add</span>Record the goods and add the invoice to the batch</button></div>
-  {% else %}
-  <div class="bar" style="margin-top:12px">
-    <div><label for="kind">The supplier gave us</label><select id="kind" name="kind"><option value="delivery receipt">Delivery receipt</option><option value="invoice">Sales invoice</option></select></div>
-    <div class="grow"><label for="ref">Its number (optional)</label><input id="ref" type="text" name="ref"></div>
-    <div><label for="received">Date received</label><input id="received" type="date" name="received" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></div>
-    <button class="btn small" type="submit"><span class="ms">inventory_2</span>Record goods received</button>
-  </div>
-  <p class="hint">Some suppliers give no delivery receipt, only their sales invoice: pick Sales invoice and type its number, so Payables finds it when matching.
-    Until the invoice is matched, the goods still count as owed at the order price.</p>
+  {% if pre %}
+  <details class="manual" style="margin-top:8px"><summary>An item came that was not on the order</summary>
+    <p class="hint">A substitute or an extra the supplier sent, agreed with you. Choose it, then set its quantity and the price on the document: it is added to this delivery and to the order, marked "added at delivery", and noted on the Review list.</p>
+    {% with with_price=True %}{% include "buying/_item_picker.html" %}{% endwith %}
+  </details>
   {% endif %}
+  {% with k="_r" came_with="" %}{% include "buying/_invoice_fields.html" %}{% endwith %}
+  <div class="actions"><button class="btn" type="submit"><span class="ms">playlist_add</span>Record what arrived</button></div>
+  <p class="hint">Goods always come with a document. The SI no. is the reference when there is one; with only a DR, the reference is "DR" and its number. Either way the goods are received
+    and the payable is recorded together: owed on its due date (the document date plus the supplier's terms). If an SI comes later for a DR, add it on the order's page: the same payable takes it.</p>
 </form>
-{% if both %}{% with k="_r" %}{% include "buying/_lines_sum.html" %}{% endwith %}{% endif %}
-{% endif %}{% endif %}
+{% with k="_r" %}{% include "buying/_lines_sum.html" %}{% endwith %}
+{% endif %}
+{% if may_inv %}{% if coming or waiting or pending %}<p class="hint">The actual price prevails over the estimate. A price far above the order lands on the Review list; a document number the supplier already has is refused.</p>{% endif %}{% endif %}
+{% endif %}
+
+{% if ask %}{# nothing is saved yet: a question first (owner, 2026-10-11) #}
+<div class="overlay" role="dialog" aria-modal="true" aria-labelledby="ask_title"><div class="dialog">
+  <h3 id="ask_title"><span class="ms" style="color:#b26a00">help</span> Before this delivery is recorded</h3>
+  {% if ask.more %}<p><b>More than ordered.</b> Was it agreed with the supplier?</p><ul>{% for t in ask.more %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
+  {% if ask.rest %}<p><b>An order should come on one DR or SI.</b> Part of it has not arrived:</p><ul>{% for t in ask.rest %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
+  <form method="post">{% csrf_token %}{% for k, v in ask.carry %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}<input type="hidden" name="confirm_more" value="1">
+    <div class="actions" style="justify-content:flex-end">
+      <a class="btn ghost" href="/purchase-orders/receive/?s={{ cid }}{% if pre %}&amp;po={{ pre }}{% endif %}">Go back and change it</a>
+      {% if ask.rest %}
+      <button class="btn ghost" type="submit" name="rest" value="open">Keep it open for another DR</button>
+      <button class="btn warn" type="submit" name="rest" value="close" autofocus>The rest will not come</button>
+      {% else %}<button class="btn warn" type="submit" autofocus>Yes, agreed: record it</button>{% endif %}
+    </div>
+  </form>
+  <p class="hint" style="margin-top:8px">{% if ask.rest %}<b>The rest will not come</b> closes the order at what arrived, so the rest stops counting on the calendar.
+    <b>Keep it open</b> records this part and leaves the order waiting; it is noted on the Review list.{% endif %}
+    {% if ask.more %} More than ordered is noted on the Review list.{% endif %}</p>
+</div></div>
+{% endif %}
 {% endblock %}

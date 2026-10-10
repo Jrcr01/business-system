@@ -1,0 +1,95 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}{{ s.ref }}{% endblock %}
+{% block content %}
+<p class="note"><a href="/sales/?view=day&amp;d={{ s.sale_date }}">← Sales of {{ s.sale_date|dmy }}</a></p>
+<h2>{{ s.ref }} · {{ s.customer }}
+  {% if s.status == "VOID" %}<span class="pill off">Cancelled</span>{% elif s.status == "RELEASED" %}<span class="pill warn">Released, not invoiced</span>
+  {% elif s.charged %}<span class="pill warn">Charge · ₱{{ s.charged|floatformat:2|intcomma }}</span>{% else %}<span class="pill">Paid</span>{% endif %}
+  {% if s.typed_late %}<span class="pill off">typed late</span>{% endif %}</h2>
+{% if s.status == "VOID" %}<div class="later-box"><p><b>Cancelled</b> by {{ s.voided_by }}: {{ s.void_reason }}. The items went back to stock; the number stays used.</p></div>{% endif %}
+<div class="facts"><div><span>Date</span><b>{{ s.sale_date|dmy }}</b></div><div><span>Total</span><b>₱{{ s.total|floatformat:2|intcomma }}</b></div>
+  {% if s.returned %}<div><span>Returned</span><b class="neg">−₱{{ s.returned|floatformat:2|intcomma }}</b></div><div><span>Net</span><b>₱{{ s.net|floatformat:2|intcomma }}</b></div>{% endif %}
+  {% if s.status == "SAVED" %}<div><span>Profit</span><b class="{% if s.profit < 0 %}neg{% else %}pos{% endif %}">₱{{ s.profit|floatformat:2|intcomma }}</b></div>{% endif %}
+  <div><span>Typed by</span><b>{{ s.created_by }}</b></div></div>
+
+{% if s.status == "RELEASED" %}
+<p class="note">These goods left before their invoice. They are already out of stock. Write the invoice from the booklet, then type its number, the prices and how it was paid.</p>
+<form method="post" id="inv_form">{% csrf_token %}<input type="hidden" name="action" value="invoice">
+  <div class="formgrid">
+    <div><label for="si_no">SI no.</label><input id="si_no" type="text" inputmode="numeric" name="si_no" value="{{ si_no }}" required></div>
+    <div><label for="sale_date">Invoice date</label><input id="sale_date" type="date" name="sale_date" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></div>
+  </div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Item</th><th style="text-align:right">Qty</th><th>Price each</th><th style="text-align:right">Amount</th><th style="text-align:right">Cost</th></tr>
+    {% for ln in items %}<tr data-qty="{{ ln.qty }}"><td>{{ ln.description }}</td><td class="num">{{ ln.qty|floatformat:"-2" }}</td>
+      <td><input class="inline-input inv-p" style="width:120px" inputmode="decimal" name="price_{{ ln.line_id }}" placeholder="agreed price" required aria-label="Price of {{ ln.description }}"></td>
+      <td class="num inv-a">0.00</td><td class="num">{{ ln.unit_cost|floatformat:2|intcomma }}</td></tr>{% endfor %}
+  </table></div>
+  <details class="manual"><summary>Add a service (mounting, balancing, labor)</summary>
+    {% for sv in services %}<div class="bar" style="margin:6px 0"><div class="grow"><input type="text" name="svc_desc_{{ sv.k }}" placeholder="what was done" aria-label="Service {{ forloop.counter }}"></div>
+      <div><input class="svc-a" type="text" inputmode="decimal" name="svc_amt_{{ sv.k }}" placeholder="amount" style="width:140px" aria-label="Amount of service {{ forloop.counter }}"></div></div>{% endfor %}
+  </details>
+  <label for="below_reason">If any price is below cost, why? (optional)</label><input id="below_reason" type="text" name="below_reason" style="width:100%;max-width:520px">
+  <div class="grp">How it is paid</div>
+  {% include "selling/_pay_rows.html" %}
+  <div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save the invoice</button></div>
+</form>
+<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">The goods came back: cancel this release</summary>
+  <form class="bar" method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="cancel_release">
+    <div class="grow"><label for="creason">Why</label><input id="creason" type="text" name="reason" required placeholder="e.g. the customer did not take them"></div>
+    <button class="btn small danger" type="submit">Cancel the release</button></form>
+  <p class="hint">The items go back to stock.</p></details>
+<script>
+(function () {
+  var num = function (t) { var n = parseFloat(String(t).replace(/,/g, "")); return isNaN(n) ? 0 : n; };
+  var peso = function (n) { return n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  function total() {
+    var t = 0;
+    [].slice.call(document.querySelectorAll("#inv_form tr[data-qty]")).forEach(function (tr) {
+      var a = num(tr.dataset.qty) * num(tr.querySelector(".inv-p").value); tr.querySelector(".inv-a").textContent = peso(a); t += a; });
+    [].slice.call(document.querySelectorAll("#inv_form .svc-a")).forEach(function (el) { t += num(el.value); });
+    if (window.slicksPayTotal) window.slicksPayTotal(t);
+  }
+  [].slice.call(document.querySelectorAll("#inv_form .inv-p, #inv_form .svc-a")).forEach(function (el) { el.addEventListener("input", total); });
+  total();
+})();
+</script>
+{% else %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Amount</th><th style="text-align:right">Cost</th><th style="text-align:right">Profit</th><th>Returned</th></tr>
+  {% for ln in s.lines %}<tr><td>{% if ln.service %}<i>Service:</i> {% endif %}{{ ln.description }}</td><td class="num">{{ ln.qty|floatformat:"-2" }}</td>
+    <td class="num">{{ ln.unit_price|floatformat:2|intcomma }}</td><td class="num">{{ ln.amount|floatformat:2|intcomma }}</td>
+    <td class="num">{% if not ln.service %}{{ ln.unit_cost|floatformat:2|intcomma }}{% endif %}</td>
+    <td class="num {% if ln.profit < 0 %}neg{% else %}pos{% endif %}">{{ ln.profit|floatformat:2|intcomma }}</td>
+    <td class="num">{% if ln.qty_returned %}{{ ln.qty_returned|floatformat:"-2" }}{% endif %}</td></tr>{% endfor %}
+</table></div>
+<div class="grp">How it was paid</div>
+<table class="list" style="max-width:760px"><tr><th>How</th><th style="text-align:right">Amount</th><th>Details</th></tr>
+  {% for p in s.payments %}<tr><td>{{ p.label }}</td><td class="num">{{ p.amount|floatformat:2|intcomma }}</td>
+    <td>{% if p.method == "CHECK" %}{{ p.bank }} · no. {{ p.check_no }} · dated {{ p.check_date|dmy }}{% else %}{{ p.reference }}{% endif %}</td></tr>{% endfor %}
+</table>
+{% if s.below_cost_reason %}<p class="note">Below cost, the seller's reason: {{ s.below_cost_reason }}</p>{% endif %}
+{% if s.returns %}<div class="grp">Returned</div>
+<table class="list" style="max-width:900px"><tr><th>Date</th><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Amount</th><th>Why</th><th>By</th></tr>
+  {% for r in s.returns %}<tr><td>{{ r.on|dmy }}</td><td>{{ r.description }}</td><td class="num">{{ r.qty|floatformat:"-2" }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td><td>{{ r.reason }}</td><td>{{ r.by }}</td></tr>{% endfor %}
+</table>{% endif %}
+
+{% if s.status == "SAVED" %}
+<div class="two" style="margin-top:14px">
+  {% if items %}<div class="dlg"><b>Return an item</b>
+    <p class="hint" style="margin:4px 0 8px">The invoice stays. The item goes back to stock and the invoice's amount goes down.</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="return">
+      <div class="bar"><div class="grow"><label for="line_id">Item</label><select id="line_id" name="line_id">{% for ln in items %}<option value="{{ ln.line_id }}">{{ ln.description }}</option>{% endfor %}</select></div>
+        <div><label for="rqty">Qty</label><input id="rqty" type="text" inputmode="decimal" name="qty" value="1" style="width:80px"></div></div>
+      <label for="rreason">Why</label><input id="rreason" type="text" name="reason" required placeholder="e.g. wrong size for the rim" style="width:100%">
+      <div class="actions"><button class="btn small" type="submit">Record the return</button></div></form></div>{% endif %}
+  <div class="dlg"><b>Void the whole invoice</b>
+    <p class="hint" style="margin:4px 0 8px">All items go back to stock and the invoice shows as Cancelled. Keep the paper copies, as BIR requires.</p>
+    <form method="post" onsubmit="return confirm('Void {{ s.ref }}? Its items go back to stock.');">{% csrf_token %}<input type="hidden" name="action" value="void">
+      <label for="vreason">Why</label><input id="vreason" type="text" name="reason" required placeholder="e.g. written for the wrong customer" style="width:100%">
+      <div class="actions"><button class="btn small danger" type="submit">Void the invoice</button></div></form>
+    <p class="hint">It goes on the Review list for the System admin to look at afterwards.</p></div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

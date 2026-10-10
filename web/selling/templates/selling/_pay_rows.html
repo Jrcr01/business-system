@@ -1,0 +1,55 @@
+{% comment %}How it is paid, one or several ways (the revenue cycle, stage A). Posts pay_method_<k>, pay_amount_<k>, pay_bank_<k>, pay_no_<k>, pay_date_<k>,
+   pay_ref_<k>. Needs: pays (rows), methods. The first amount follows the total until it is typed over; "Still to pay" shows what is left.{% endcomment %}
+<div id="payrows">
+{% for r in pays %}<div class="payrow"{% if not forloop.first and not r.amount %} hidden{% endif %} data-k="{{ r.k }}">
+  <div><label for="pm{{ r.k }}">How</label><select id="pm{{ r.k }}" name="pay_method_{{ r.k }}" class="pay-m">
+    {% if not forloop.first %}<option value="">—</option>{% endif %}{% for k, label in methods %}<option value="{{ k }}"{% if k == r.method %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div><label for="pa{{ r.k }}">Amount</label><input id="pa{{ r.k }}" class="pay-a" type="text" inputmode="decimal" name="pay_amount_{{ r.k }}" value="{{ r.amount }}"></div>
+  <div class="bar pay-check" style="margin:0" hidden>
+    <div><label>Bank</label><input type="text" name="pay_bank_{{ r.k }}" value="{{ r.bank }}" style="width:110px"></div>
+    <div><label>Check no.</label><input type="text" name="pay_no_{{ r.k }}" value="{{ r.check_no }}" style="width:130px"></div>
+    <div><label>Check date</label><input type="date" name="pay_date_{{ r.k }}" value="{{ r.check_date }}"></div></div>
+  <div class="pay-ref" hidden><label>Reference or approval no.</label><input type="text" name="pay_ref_{{ r.k }}" value="{{ r.reference }}"></div>
+</div>{% endfor %}
+</div>
+<div class="actions"><button class="btn small ghost" type="button" id="pay_more"><span class="ms">add</span>Add another way</button>
+  <span class="hint">A post-dated check counts as paid: it waits to be deposited. Charge = on credit, to a named customer.</span></div>
+<div class="facts"><div><span>Total</span><b id="pay_total">₱0.00</b></div><div><span>Entered</span><b id="pay_in">₱0.00</b></div><div><span>Still to enter</span><b id="pay_left">₱0.00</b></div></div>
+<script>
+(function () {
+  var wrap = document.getElementById("payrows"); if (!wrap) return;
+  var rows = [].slice.call(wrap.querySelectorAll(".payrow")), total = 0, touched = !!rows[0].querySelector(".pay-a").value;
+  var peso = function (n) { return "₱" + n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  var num = function (t) { var n = parseFloat(String(t).replace(/,/g, "")); return isNaN(n) ? 0 : n; };
+  function shape(r) {
+    var m = r.querySelector(".pay-m").value;
+    r.querySelector(".pay-check").hidden = m !== "CHECK";
+    r.querySelector(".pay-ref").hidden = !(m === "TRANSFER" || m === "CARD");
+  }
+  function sum() {
+    var paid = rows.reduce(function (s, r) { return s + (r.hidden ? 0 : num(r.querySelector(".pay-a").value)); }, 0), left = Math.round((total - paid) * 100) / 100;
+    document.getElementById("pay_total").textContent = peso(total);
+    document.getElementById("pay_in").textContent = peso(paid);
+    var el = document.getElementById("pay_left"); el.textContent = peso(left); el.className = Math.abs(left) > 0.004 ? "neg" : "";
+  }
+  window.slicksPayTotal = function (t) {                        /* the sale's total changed */
+    total = Math.round(t * 100) / 100;
+    if (!touched) rows[0].querySelector(".pay-a").value = total ? total.toFixed(2) : "";
+    sum();
+  };
+  rows.forEach(function (r) {
+    shape(r);
+    r.querySelector(".pay-m").addEventListener("change", function () { shape(r); });
+    r.querySelector(".pay-a").addEventListener("input", function () { touched = true; sum(); });
+  });
+  document.getElementById("pay_more").addEventListener("click", function () {
+    var next = rows.filter(function (r) { return r.hidden; })[0]; if (!next) return;
+    next.hidden = false;
+    var paid = rows.reduce(function (s, r) { return s + (r.hidden || r === next ? 0 : num(r.querySelector(".pay-a").value)); }, 0);
+    next.querySelector(".pay-a").value = Math.max(total - paid, 0).toFixed(2);
+    if (!next.querySelector(".pay-m").value) next.querySelector(".pay-m").value = "CASH";
+    touched = true; shape(next); sum();
+  });
+  sum();
+})();
+</script>

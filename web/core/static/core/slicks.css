@@ -375,3 +375,77 @@ main.view-only form[method=post], main.view-only form[method=POST] { display: no
 b.plan { padding: 1px 6px; border-radius: 4px; }
 tr.est td { color: #6b7280; }
 .over-confirm ul { margin: 6px 0 8px 18px; }
+
+/* A request sent to a supplier and not confirmed yet (owner, 2026-10-11): tentative, like the card reserve. */
+table.list tr.tentative td { color: #6b7280; font-style: italic; }
+
+/* The item picker's searchable drop-down (owner, 2026-10-11: "add drop down not pure search"). */
+.pk-combo { position: relative; }
+.pk-drop { position: absolute; left: 0; right: 0; top: 100%; z-index: 30; max-height: 320px; overflow-y: auto; background: #fff; border: 1px solid #c9d1dc;
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(15, 23, 42, .16); margin-top: 2px; }
+.pk-opt { display: flex; justify-content: space-between; gap: 12px; padding: 7px 10px; cursor: pointer; font-size: 14px; }
+.pk-opt .p { color: #6b7280; white-space: nowrap; }
+.pk-opt.hi, .pk-opt:hover { background: #eef2f7; }
+.pk-opt.on .n { font-weight: 600; }
+.pk-opt.on .p { color: #1b7f3b; }
+.pk-none { padding: 8px 10px; color: #6b7280; font-size: 13px; }
+
+/* Receive: one card per delivery whose document is not recorded yet (owner, 2026-10-11). */
+.dr-card { border: 1px solid #d7dde6; border-radius: 10px; padding: 10px 12px; margin: 8px 0 12px; background: #fbfcfe; }
+
+/* Relationship map (owner, 2026-10-11): the line on top, totals under each step, long steps as one card that opens, due-date colours. */
+.rsum { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; padding: 8px 12px; background: #f2f7fd; border: 1px solid #cfe0f3; border-radius: 8px; color: #1f2937; font-weight: 600; }
+.rsum .ms { font-size: 18px; color: var(--blue); }
+.rlbl .rtot { display: block; font-weight: 400; font-size: .78rem; color: #6b7280; }
+.rgroup { width: 162px; }
+.rgroup > summary { list-style: none; cursor: pointer; background: #f8fafc; }
+.rgroup > summary::-webkit-details-marker { display: none; }
+.rgroup[open] > summary { border-color: var(--blue); }
+.rgroup .rlist { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; max-height: 340px; overflow-y: auto; padding-right: 2px; }
+.rgroup .rlist .rdoc { width: auto; }
+.rdoc .st.late { color: #b3261e; font-weight: 600; }
+.rdoc .st.soon { color: #b26a00; font-weight: 600; }
+.rdoc .st.quiet { color: #6b7280; }
+.rdoc.none.allowed { border-style: solid; background: #f3f4f6; color: #6b7280; }
+
+/* ---- the revenue cycle, stage A (owner, 2026-10-11) ---- */
+.neg { color: #b3261e; font-weight: 700; } .pos { color: #0b6e4f; font-weight: 700; }
+.scanbox { border: 2px dashed var(--blue); border-radius: 8px; padding: 8px 12px; display: flex; gap: 10px; align-items: center; background: #f5f9ff; margin: 8px 0 12px; flex-wrap: wrap; }
+.scanbox input[type=text] { flex: 1 1 260px; }
+.scanbox .ms { font-size: 26px; color: var(--blue); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+.dlg { border: 1px solid #cbd5e1; border-radius: 12px; padding: 14px 16px; background: #fff; }
+.payrow { display: grid; grid-template-columns: 220px 150px 1fr; gap: 10px; align-items: end; margin: 6px 0; } @media (max-width: 800px) { .payrow { grid-template-columns: 1fr 1fr; } }
+.payrow[hidden] { display: none; }
+.scanlines .pk-combo { position: relative; }
+
+/* ---- Home cards: the same shape as before, a little bigger (owner, 2026-10-11: "revert back the tiles ... just make it a little bigger").
+   Before: 168 x 140. Now: 190 x 156, with the words and the figure a touch larger. ---- */
+.grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+.tile { height: 156px; padding: 14px 15px; }
+.tile .t { font-size: 1.02rem; }
+.tile .u { font-size: .86rem; }
+.tile .f .ms { font-size: 32px; }
+.tile .f b { font-size: 2.15rem; }
+.tile.long .f b { font-size: 1.55rem; }
+.tile.long .f .ms { font-size: 24px; }
+@media (max-width: 480px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .tile { height: 146px; padding: 12px; } }      /* a phone: still two across */
+
+/* ---- the top bar on a phone: one Menu button instead of nine sections wrapping onto four lines (owner, 2026-10-11) ---- */
+.tb-burger { display: none; align-items: center; gap: 4px; background: none; border: none; color: #fff; font: inherit; font-size: .9rem; padding: 8px 10px; cursor: pointer; border-radius: 6px; }
+.tb-burger .ms { font-size: 26px; }
+.tb-burger:hover, .topbar.menu-open .tb-burger { background: var(--navy-hover); }
+@media (max-width: 760px) {
+  .tb-burger { display: inline-flex; }
+  .topbar > .tb-sec:not(.tb-user), .topbar > .tb-search { display: none; }
+  .tb-user > .tb-label { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; padding: 13px 6px; }      /* the name shortens so the bar stays on one line */
+  .tb-tag { margin-right: 2px; }
+  .topbar.menu-open { max-height: calc(100vh - 12px); overflow-y: auto; padding-bottom: 8px; }
+  .topbar.menu-open > .tb-search { display: flex; flex: 1 0 100%; order: 9; margin: 6px 0 4px; }
+  .topbar.menu-open > .tb-search input { width: 100%; }
+  .topbar.menu-open > .tb-sec:not(.tb-user) { display: block; flex: 1 0 100%; order: 10; border-top: 1px solid rgba(255,255,255,.14); }
+  .topbar.menu-open > .tb-sec:not(.tb-user) > .tb-label { padding: 12px 8px; font-size: .98rem; }
+  .topbar.menu-open > .tb-sec:not(.tb-user) .tb-menu { position: static; box-shadow: none; border-radius: 8px; margin: 0 0 8px; min-width: 0; }
+  .topbar.menu-open > .tb-sec:not(.tb-user):hover .tb-menu { display: none; }            /* a list, not a hover menu: only the section tapped opens */
+  .topbar.menu-open > .tb-sec.open .tb-menu, .topbar.menu-open > .tb-sec:focus-within .tb-menu { display: block !important; }
+}

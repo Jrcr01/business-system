@@ -60,3 +60,61 @@ def test_analytics_tabs_draw_and_follow_the_reports_switch(web, db):
     assert 'id="g-analytics"' in home and home.count("/analytics/?tab=") >= 8     # Analytics: its section on Home (4 cards) and the top bar's 4 entries
     from engines.permissions import PAGE_ACTION
     assert PAGE_ACTION["analytics"] == "reports.use"                     # the same switch as Reports
+
+
+# --- the relationship map, improved (owner, 2026-10-11, from the map of a batch with 12 sales invoices) ---------------------------------------------
+
+def _batch_with(web, db, n, name="Battery Depot of Central Luzon Inc."):
+    cid = make_creditor(db, name, terms="30")
+    sid = _new_batch(web, cid)
+    for i in range(n):
+        _add_inv(web, sid, doc=f"INV-{i + 1}", gross=f"{10 + i},000", date=f"2026-09-{8 + i:02d}")       # different amounts and dates: not look-alikes
+    return cid, sid
+
+
+def test_a_long_step_is_one_card_that_opens_and_each_step_shows_its_total(web, db):
+    _admin(web)
+    cid, sid = _batch_with(web, db, 5)
+    page = web.get(f"/related/statement/{sid}/").content.decode()
+    assert 'class="rgroup"' in page and "5 sales invoices" in page and "60,000.00" in page          # one summary card for the five
+    assert all(f"SI INV-{i}" in page for i in range(1, 6))                                          # the cards are inside it
+    assert "5 · ₱60,000.00" in page                                                                # the count and total under the step's name
+    from engines.doc_trail import trail
+    col = next(c for c in trail("statement", sid) if c["key"] == "invoice")
+    assert col["grouped"] and (col["count"], col["total"], col["done_count"]) == (5, 60_000.0, 0) and len(col["rest"]) == 5
+    inv = sqlite3.connect(_db()).execute("SELECT invoice_id FROM invoices WHERE doc_ref = 'INV-1'").fetchone()[0]
+    assert 'class="rgroup"' not in web.get(f"/related/invoice/{inv}/").content.decode()             # a short step is drawn as before
+
+
+def test_the_line_on_top_says_where_it_stands_and_what_is_next(web, db):
+    from engines.doc_trail import trail, trail_summary
+    _admin(web)
+    cid, sid = _batch_with(web, db, 2)
+    page = web.get(f"/related/statement/{sid}/").content.decode()
+    assert 'class="rsum"' in page and "21,000.00 owed" in page and "no checks yet" in page and "Next: park checks." in page
+    assert "Draft batch · Battery Depot of Central" in page                                     # the batch card names its supplier
+    web.post(f"/order-statements/{sid}/", {"action": "chk_park", "d1": "2026-11-01", "a1": "21,000"})
+    assert "Next: write 1 parked check." in trail_summary("statement", trail("statement", sid))
+    with sqlite3.connect(_db()) as conn:
+        conn.execute("UPDATE checks_issued SET check_number = '0004471' WHERE statement_id = ?", (sid,))
+    s = trail_summary("statement", trail("statement", sid))
+    assert "1 check ₱21,000.00" in s and "Next: wait for the bank on 1 check." in s
+
+
+def test_no_po_is_allowed_and_a_document_is_coloured_by_its_due_date(web, db):
+    from datetime import timedelta
+
+    from engines.clock import manila_today
+    from engines.doc_trail import trail
+    _admin(web)
+    cid, sid = _batch_with(web, db, 3)
+    page = web.get(f"/related/statement/{sid}/").content.decode()
+    assert page.count("No PO (allowed)") == 2 and "none yet" in page            # no order, no goods step: allowed; the check and bank steps are simply not there yet
+    today = manila_today()
+    with sqlite3.connect(_db()) as conn:
+        for doc, days in (("INV-1", 30), ("INV-2", 3), ("INV-3", -2)):
+            conn.execute("UPDATE invoices SET due_date = ? WHERE doc_ref = ?", ((today + timedelta(days=days)).isoformat(), doc))
+    docs = {d["title"]: (d["status"], d["tone"]) for d in next(c for c in trail("statement", sid) if c["key"] == "invoice")["docs"]}
+    assert docs == {"SI INV-1": ("Not due", "quiet"), "SI INV-2": ("Due soon", "soon"), "SI INV-3": ("Overdue", "late")}
+    page = web.get(f"/related/statement/{sid}/").content.decode()
+    assert "Overdue" in page and "Due soon" in page and "Not due" in page and "1 overdue" in page       # the line on top counts the overdue one

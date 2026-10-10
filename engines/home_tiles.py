@@ -81,6 +81,8 @@ def panels_enabled() -> bool:
 
 GROUPS: list[Group] = [                              # in the order the money moves (2026-10-03); a new module adds its row with register_group(..., before="buy")
     Group("buy", "Buy", "Prices and orders, before the invoice"),
+    Group("stock", "Stock", "What is on hand; counts and lending"),          # the revenue cycle, stage A (owner, 2026-10-11)
+    Group("sell", "Sell", "The counter: sales, invoices, customers"),
     Group("pay", "Pay suppliers", "Invoice to check to bank"),
     Group("bank", "Bank", "The bank statement is the truth"),
     Group("other", "Other payables", "Loans and cards"),
@@ -224,6 +226,24 @@ def _bank_cash():
     return peso_short(pos["balance"]), (f"under the buffer {dip:%m/%d}" if dip else f"as of {pos['as_of']:%m/%d}"), "alert" if dip else "ok"
 
 
+def _booklets():
+    """Open leaves in the booklets I hold (or in all of them when I hold none), and whether a booklet has leaves unaccounted for."""
+    from engines.acting_user import acting_email
+    from engines.booklet_rules import listing
+    books = [b for b in listing() if b["status"] == "Active"]
+    if not books:
+        return "", "No booklet registered", "none"
+    me = (acting_email() or "").strip().lower()
+    uid = _count("SELECT COALESCE((SELECT user_id FROM app_users WHERE LOWER(email) = ?), 0)", (me,)) if me else 0
+    mine = [b for b in books if uid and b.get("holder_user_id") == uid]
+    shown = mine or books
+    gaps = [b for b in shown if b["unrecorded"] or b["skipped"] or b["duplicates"]]
+    text = ("leaves open in my " if mine else "leaves open in ") + (f"{len(shown)} booklets" if len(shown) != 1 else "booklet " + shown[0]["code"])
+    if gaps:
+        return str(sum(b["open"] for b in shown)), text + f" · {len(gaps)} with leaves to account for", "alert"
+    return str(sum(b["open"] for b in shown)), text, "ok"
+
+
 def _payables_due():
     from engines.payables_due_service import next_days
     r = next_days(7)
@@ -248,7 +268,65 @@ def _purchase_orders():
     over = len(orders_over_plan())                  # empty while the cash forecast is hidden
     if over:
         return str(n), f"open · {over} over plan", "alert"
+    sent = _count("SELECT COUNT(*) FROM purchase_orders WHERE status = 'DRAFT' AND requested_at IS NOT NULL")       # owner, 2026-10-11: waiting for the supplier's answer
+    if sent:
+        from datetime import timedelta
+
+        from engines.clock import manila_now
+        cutoff = (manila_now() - timedelta(days=2, hours=8)).strftime("%Y-%m-%d %H:%M:%S")       # requested_at is stamped in UTC
+        slow = _count("SELECT COUNT(*) FROM purchase_orders WHERE status = 'DRAFT' AND requested_at IS NOT NULL AND requested_at < ?", (cutoff,))
+        return str(n), f"open · {sent} waiting for the supplier" + (f" ({slow} over 2 days)" if slow else ""), "warn"
     return _waiting(n, "open", "ok")
+
+
+def _stock_items():
+    low = _count("SELECT COUNT(*) FROM items i WHERE is_active = 1 AND on_hand >= 0 AND on_hand <= reorder_level AND EXISTS (SELECT 1 FROM stock_ledger s WHERE s.item_id = i.id)")
+    neg = _count("SELECT COUNT(*) FROM items WHERE is_active = 1 AND on_hand < 0")
+    if neg:
+        return str(neg), "below zero" + (f" · {low} low" if low else ""), "alert"
+    return _waiting(low, "low on stock")
+
+
+def _stock_counts():
+    from engines.count_rules import waiting_count
+    return _waiting(waiting_count(), "differences to approve", "alert")
+
+
+def _affiliates():
+    n = _count("SELECT COUNT(*) FROM affiliate_move_lines WHERE qty - qty_settled > 0.0000001")
+    return _waiting(n, "lent or borrowed, open")
+
+
+def _counter_sale():
+    from engines.sales_rules import next_si_no
+    nxt = next_si_no()
+    return (f"{nxt:06d}", "the next SI no.", "none") if nxt else ("—", "no booklet in use", "warn")
+
+
+def _sales_today():
+    from engines.clock import manila_today
+    from engines.common import get_conn
+    with get_conn() as conn:
+        n, total = conn.execute("SELECT COUNT(*), COALESCE(SUM(total), 0) FROM sales WHERE status = 'SAVED' AND sale_date = ?", (str(manila_today()),)).fetchone()
+    return str(n), f"invoices · ₱{float(total):,.0f}", "ok" if n else "none"
+
+
+def _released():
+    return _waiting(_count("SELECT COUNT(*) FROM sales WHERE status = 'RELEASED'"), "to invoice today", "alert")
+
+
+def _customers():
+    return str(_count("SELECT COUNT(*) FROM customers WHERE is_active = 1")), "customers", "none"
+
+
+def _si_booklets():
+    from engines.sales_rules import booklets
+    rows = booklets()
+    skipped = sum(len(b["skipped"]) for b in rows)
+    if skipped:
+        return str(skipped), "numbers skipped", "alert"
+    use = next((b for b in rows if b["status"] == "IN_USE"), None)
+    return (str(use["unused"]), "leaves left in " + use["code"], "warn" if use["unused"] <= 5 else "none") if use else ("0", "no booklet in use", "warn")
 
 
 def _receive_goods():
@@ -256,11 +334,6 @@ def _receive_goods():
     n = _count("SELECT COUNT(DISTINCT po_id) FROM purchase_order_lines WHERE qty - qty_received > 0.0000001 AND po_id IN (SELECT po_id FROM purchase_orders WHERE status IN ('ORDERED', 'PARTIAL'))")
     late = _count("SELECT COUNT(*) FROM purchase_orders WHERE status IN ('ORDERED', 'PARTIAL') AND expected_delivery_date < ?", (str(manila_today()),))
     return str(n), "orders waiting" + (f" · {late} late" if late else ""), "alert" if late else ("warn" if n else "none")
-
-
-def _match_invoices():
-    n = _count("SELECT COUNT(DISTINCT po_id) FROM purchase_order_lines WHERE qty_received - COALESCE(qty_invoiced, qty_received) > 0.0000001")
-    return _waiting(n, "orders without an invoice")
 
 
 def _price_lists():
@@ -346,8 +419,7 @@ for _t in (
     Tile("purchase-orders", "buy", "Purchase orders", _purchase_orders, actions=[
         A("New order", "From a supplier's price list", ":material/add_shopping_cart:", needs="po.create", po_mode="New order"),
         A("Orders", "Open, late and over-plan orders; PO PDF", ":material/list_alt:", po_mode="Orders")]),
-    Tile("purchase-orders", "buy", "Receive goods", _receive_goods, key="receive-goods", icon=":material/inventory_2:", state=(("po_mode", "Receive"),), needs="po.receive_goods"),
-    Tile("purchase-orders", "pay", "Match invoices", _match_invoices, key="match-invoices", icon=":material/receipt_long:", state=(("po_mode", "Match invoice"),), needs="po.receive"),
+    Tile("purchase-orders", "buy", "Receive", _receive_goods, key="receive-goods", icon=":material/inventory_2:", state=(("po_mode", "Receive"),), needs="po.receive_goods"),
     Tile("order-statements", "pay", "Order statements", _order_statements, actions=[
         A("Find a batch", "Open a supplier's batch: invoices, checks, void, print", ":material/search:", os_mode="Browse batches"),
         A("New batch", "Start a batch for a supplier", ":material/add:", os_mode="New batch"),
@@ -371,6 +443,15 @@ for _t in (
         A("Loan note or bank loan", "New loan, installment or schedule", ":material/handshake:", ad_kind="Loans"),
         A("Supplier, booklet or spoiled check", "Records and checkbook", ":material/contacts:", ad_kind="Records and checkbook")]),
     Tile("planner", "pay", "Check-date planner", _planner),
+    Tile("booklets", "bank", "Check booklets", _booklets, icon=":material/menu_book:", needs="booklets.use"),
+    Tile("stock", "stock", "Items and stock", _stock_items, needs="inventory.use"),
+    Tile("stock-counts", "stock", "Stock counts", _stock_counts, needs="inventory.use"),
+    Tile("affiliates", "stock", "Affiliates", _affiliates, needs="inventory.use"),
+    Tile("sales", "sell", "Counter sale", _counter_sale, needs="sales.use"),
+    Tile("sales", "sell", "Sales today", _sales_today, key="sales-today", icon=":material/today:", state=(("sales_view", "day"),), needs="sales.use"),
+    Tile("sales", "sell", "Released, not invoiced", _released, key="sales-released", icon=":material/local_shipping:", state=(("sales_view", "released"),), needs="sales.use"),
+    Tile("customers", "sell", "Customers", _customers, needs="sales.use"),
+    Tile("si-booklets", "sell", "Invoice booklets", _si_booklets, needs="sales.use"),
     Tile("bank-cash", "bank", "Bank and cash", _bank_cash, actions=[
         A("Import a bank statement", "Match your checks to the bank", ":material/upload_file:", bank_cash_tab=":material/upload_file: Import a statement"),
         A("Reconciliation", "What still needs a look", ":material/rule:", bank_cash_tab=":material/rule: Reconciliation"),

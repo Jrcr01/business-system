@@ -31,7 +31,7 @@ def test_the_checklist_shows_every_track_and_ticks_many_at_once(web, db):
     iid, csid = _loan_and_card(db, TODAY - timedelta(days=3))                # a bank-loan payment and a card statement, both overdue
     page = web.get("/checks/").content.decode()
     assert "Daily payables" in page and "0004471" in page and "L-77" in page and "Gold - 1234" in page and "overdue" in page
-    assert "Released" not in page
+    assert "Released" not in page.split("<main")[1]                          # the page itself (the top menu has "Released, not invoiced" under Sell)
     r = web.post("/checks/", {"action": "clear_many", f"tick_check_{cid}": "1", f"tick_loan_{iid}": "1", f"tick_card_{csid}": "1",
                               "on": str(TODAY), "note": "online banking", "show": "due"})
     assert r.status_code == 302

@@ -185,6 +185,16 @@ def web_setup():
     teardown_test_environment()
 
 
+@pytest.fixture(autouse=True)
+def _po_request_rule(request, monkeypatch):
+    """Owner, 2026-10-11: a draft becomes a PO only after it was sent to the supplier and they confirmed (po_rules.REQUEST_FIRST). The tests of the later
+    steps (receiving, matching, cash, the trail) make their PO with order_po straight from a draft, so the rule is off for them; the tests of the rule
+    itself (test_web_po_request.py) run with it on, as the system does."""
+    if not request.module.__name__.endswith("test_web_po_request"):
+        import engines.po_rules as po_rules
+        monkeypatch.setattr(po_rules, "REQUEST_FIRST", False)
+
+
 @pytest.fixture
 def web(web_setup, db):
     """A browser for the Django site on this test's fresh database."""

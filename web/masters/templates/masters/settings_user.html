@@ -44,7 +44,7 @@
 
 {% if access %}
 <div class="grp">What {{ u.name }} may see and do</div>
-<p class="note">For each page: <b>Hidden</b> (gone from the menu, Home and search), <b>See</b> (read only) or <b>See and do</b>. It applies at their next
+<p class="note">For each page: <b>Hidden</b> (gone from the menu, Home, search and its Analytics tab), <b>See</b> (read only) or <b>See and do</b>. It applies at their next
   click. Their own password, the System admin's settings, users and the audit log stay yours alone.</p>
 {% if copied_from %}<div class="msg info">Showing <b>{{ copied_from.name }}</b>'s settings. Press <b>Save</b> to give {{ u.name }} the same, or
   <a href="?">cancel</a>.</div>{% endif %}

@@ -36,6 +36,71 @@ def correct_cost(conn, item_id: int | None, qty: float, estimated_cost: float, a
     return True
 
 
+def stock_back(conn, item_id: int | None, qty: float, unit_cost: float, ref_type: str, ref_id: int, moved_on=None, note: str = "") -> bool:
+    """A delivery recorded by mistake is undone (owner, 2026-10-11): the pieces leave again and the average goes back to what it was without them, as far as
+    the pieces on hand allow. An ADJ row with a negative quantity records it."""
+    if not item_id or qty <= 0:
+        return False
+    on_hand, avg = conn.execute("SELECT on_hand, avg_cost FROM items WHERE id = ?", (int(item_id),)).fetchone()
+    on_hand, avg = float(on_hand or 0), float(avg or 0)
+    new_on_hand = on_hand - float(qty)
+    new_avg = round(max((on_hand * avg - float(qty) * float(unit_cost)) / new_on_hand, 0), 4) if new_on_hand > 0 and on_hand > 0 else avg
+    conn.execute("UPDATE items SET on_hand = ?, avg_cost = ? WHERE id = ?", (new_on_hand, new_avg, int(item_id)))
+    conn.execute("INSERT INTO stock_ledger (item_id, kind, qty, unit_cost, on_hand_after, avg_after, ref_type, ref_id, moved_on, note, created_by) VALUES (?, 'ADJ', ?, ?, ?, ?, ?, ?, ?, ?, acting_user())",
+                 (int(item_id), -float(qty), float(unit_cost), new_on_hand, new_avg, ref_type, int(ref_id), str(moved_on or manila_today()), note))
+    return True
+
+
+def _flag_negative(conn, item_id: int, on_hand: float, what: str) -> None:
+    """Stock below zero is allowed (a sale is never refused) and goes on the Review list: something was not received, or not counted."""
+    if on_hand >= -1e-9:
+        return
+    from engines.review_flags import flag
+    name = conn.execute("SELECT name FROM items WHERE id = ?", (int(item_id),)).fetchone()[0]
+    flag(conn, "STOCK_NEGATIVE", "items", int(item_id), f"{name}: on hand reads {on_hand:g} after {what}. Count it, or receive what came.")
+
+
+def stock_out(conn, item_id: int | None, qty: float, ref_type: str, ref_id: int, moved_on=None, note: str = "") -> float:
+    """Pieces left (a sale, a lend): on hand goes down, the average cost stays. Never refused -- below zero is flagged. Returns the cost each piece left at."""
+    if not item_id or qty <= 0:
+        return 0.0
+    on_hand, avg = conn.execute("SELECT on_hand, avg_cost FROM items WHERE id = ?", (int(item_id),)).fetchone()
+    on_hand, avg = float(on_hand or 0), float(avg or 0)
+    new_on_hand = on_hand - float(qty)
+    conn.execute("UPDATE items SET on_hand = ?, oldest_dot = CASE WHEN ? <= 0 THEN NULL ELSE oldest_dot END WHERE id = ?", (new_on_hand, new_on_hand, int(item_id)))
+    conn.execute("INSERT INTO stock_ledger (item_id, kind, qty, unit_cost, on_hand_after, avg_after, ref_type, ref_id, moved_on, note, created_by) VALUES (?, 'OUT', ?, ?, ?, ?, ?, ?, ?, ?, acting_user())",
+                 (int(item_id), -float(qty), avg, new_on_hand, avg, ref_type, int(ref_id), str(moved_on or manila_today()), note))
+    _flag_negative(conn, int(item_id), new_on_hand, note or "a movement")
+    return avg
+
+
+def stock_return(conn, item_id: int | None, qty: float, unit_cost: float, ref_type: str, ref_id: int, moved_on=None, note: str = "") -> bool:
+    """Pieces came back (a customer's return, a void, an affiliate returning what was lent) at the cost they left at."""
+    if not item_id or qty <= 0:
+        return False
+    on_hand, avg = conn.execute("SELECT on_hand, avg_cost FROM items WHERE id = ?", (int(item_id),)).fetchone()
+    on_hand, avg = float(on_hand or 0), float(avg or 0)
+    new_on_hand = on_hand + float(qty)
+    new_avg = round((max(on_hand, 0) * avg + float(qty) * float(unit_cost)) / (max(on_hand, 0) + float(qty)), 4) if max(on_hand, 0) + float(qty) > 0 else avg
+    conn.execute("UPDATE items SET on_hand = ?, avg_cost = ? WHERE id = ?", (new_on_hand, new_avg, int(item_id)))
+    conn.execute("INSERT INTO stock_ledger (item_id, kind, qty, unit_cost, on_hand_after, avg_after, ref_type, ref_id, moved_on, note, created_by) VALUES (?, 'RETURN', ?, ?, ?, ?, ?, ?, ?, ?, acting_user())",
+                 (int(item_id), float(qty), float(unit_cost), new_on_hand, new_avg, ref_type, int(ref_id), str(moved_on or manila_today()), note))
+    return True
+
+
+def stock_set(conn, item_id: int, counted: float, ref_type: str, ref_id: int, moved_on=None, note: str = "") -> float:
+    """What is really on hand, from a count or an adjustment: an ADJ row for the difference (the average cost stays). Returns the difference."""
+    on_hand, avg = conn.execute("SELECT on_hand, avg_cost FROM items WHERE id = ?", (int(item_id),)).fetchone()
+    on_hand, avg = float(on_hand or 0), float(avg or 0)
+    diff = float(counted) - on_hand
+    if abs(diff) < 1e-9:
+        return 0.0
+    conn.execute("UPDATE items SET on_hand = ? WHERE id = ?", (float(counted), int(item_id)))
+    conn.execute("INSERT INTO stock_ledger (item_id, kind, qty, unit_cost, on_hand_after, avg_after, ref_type, ref_id, moved_on, note, created_by) VALUES (?, 'ADJ', ?, ?, ?, ?, ?, ?, ?, ?, acting_user())",
+                 (int(item_id), diff, avg, float(counted), avg, ref_type, int(ref_id), str(moved_on or manila_today()), note))
+    return diff
+
+
 def moves(item_id: int):
     import pandas as pd
     from engines.common import get_conn

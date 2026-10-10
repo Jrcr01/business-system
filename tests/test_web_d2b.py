@@ -29,6 +29,12 @@ def _stamp(po_id):
     return po_stamp(po_id)
 
 
+def _order_it(web, po_id):
+    """Owner, 2026-10-11: sent to the supplier, then confirmed in full -- only then is it a purchase order."""
+    web.post(f"/purchase-orders/{po_id}/edit/", {"action": "request", "stamp": _stamp(po_id), "order_date": "2026-10-01", "delivery": "2026-10-08", "notes": "", "confirm_over": "1"})
+    return web.post(f"/purchase-orders/{po_id}/confirm/", {"stamp": _stamp(po_id), "delivery": "2026-10-08", "confirm_over": "1"})
+
+
 def test_new_order_takes_the_price_list_and_is_saved_as_a_draft(web, db):
     _admin(web)
     cid = _supplier_with_price(web, db)
@@ -81,7 +87,7 @@ def test_order_pdf_receive_match_and_follow_it_to_the_bank(web, db):
     _admin(web)
     cid = _supplier_with_price(web, db)
     po_id = _start(web, cid)
-    web.post(f"/purchase-orders/{po_id}/edit/", {"action": "order", "stamp": _stamp(po_id), "order_date": "2026-10-01", "delivery": "2026-10-08", "notes": ""})
+    _order_it(web, po_id)
     po_no, status = fetchone(_db(), "SELECT po_no, status FROM purchase_orders WHERE po_id = ?", (po_id,))
     assert status == "ORDERED" and " - PO " in po_no
     pdf = web.get(f"/purchase-orders/{po_id}/pdf/")
@@ -110,9 +116,10 @@ def test_receive_goods_and_the_invoice_in_one_step(web, db):
     _admin(web)
     cid = _supplier_with_price(web, db)
     po_id = _start(web, cid)
-    web.post(f"/purchase-orders/{po_id}/", {"action": "order"})
+    _order_it(web, po_id)
     line_id = fetchone(_db(), "SELECT line_id FROM purchase_order_lines WHERE po_id = ?", (po_id,))[0]
-    assert b"Goods and the invoice" in web.get(f"/purchase-orders/receive/?s={cid}&both=1").content
+    page = web.get(f"/purchase-orders/receive/?s={cid}").content.decode()        # one page (owner, 2026-10-11): what arrived, with its SI no. or DR no.
+    assert "Goods still to come" in page and 'name="doc"' in page and 'name="dr"' in page and "Goods only" not in page
     web.post("/purchase-orders/receive/", {"s": cid, "action": "both", f"pick_{line_id}": "1", f"qty_{line_id}": "10", f"price_{line_id}": "1000", "doc": "INV-1",
                                            "inv_date": "2026-10-03", "batch": "new"})
     assert fetchone(_db(), "SELECT status FROM purchase_orders WHERE po_id = ?", (po_id,))[0] == "RECEIVED"
@@ -126,7 +133,7 @@ def test_cancel_and_close_short(web, db):
     web.post(f"/purchase-orders/{a}/", {"action": "cancel", "reason": "typo"})
     assert fetchone(_db(), "SELECT status FROM purchase_orders WHERE po_id = ?", (a,))[0] == "CANCELLED"
     b = _start(web, cid)
-    web.post(f"/purchase-orders/{b}/", {"action": "order"})
+    _order_it(web, b)
     line_id = fetchone(_db(), "SELECT line_id FROM purchase_order_lines WHERE po_id = ?", (b,))[0]
     web.post("/purchase-orders/receive/", {"s": cid, "action": "goods", f"pick_{line_id}": "1", f"qty_{line_id}": "4", "kind": "delivery receipt", "received": "2026-10-03"})
     assert b"Close short" in web.get(f"/purchase-orders/{b}/").content
@@ -138,13 +145,14 @@ def test_the_list_and_its_tabs(web, db):
     _admin(web)
     cid = _supplier_with_price(web, db)
     po_id = _start(web, cid)
-    web.post(f"/purchase-orders/{po_id}/", {"action": "order"})
+    _order_it(web, po_id)
     page = web.get("/purchase-orders/").content.decode()
     assert "Goodyear Philippines" in page and "Ordered" in page and "10,000.00" in page
     for tab in ("out", "pipeline", "diffs"):
         assert web.get(f"/purchase-orders/?tab={tab}").status_code == 200
     assert web.get("/purchase-orders/?mode=receive")["Location"] == "/purchase-orders/receive/"
     assert web.get("/purchase-orders/?mode=match")["Location"] == "/purchase-orders/match/"
+    assert web.get("/purchase-orders/match/?s=1&po=2")["Location"] == "/purchase-orders/receive/?s=1&po=2"     # Match invoice is part of Receive now
 
 
 def test_the_item_box_fills_from_the_price_list(web, db):
@@ -164,10 +172,10 @@ def test_roles(web, db):
     assert buyer.get(f"/purchase-orders/{mine}/edit/").status_code == 200
     r = buyer.get(f"/purchase-orders/{theirs}/edit/", follow=True)
     assert b"can no longer be changed here" in r.content                        # Purchasing changes only its own orders
-    assert b"Match invoice" not in buyer.get("/purchase-orders/").content      # matching invoices is Payables' job
-    assert buyer.get("/purchase-orders/match/").status_code == 403
+    page = buyer.get(f"/purchase-orders/receive/?s={cid}").content.decode()    # receiving always records the payable (owner, 2026-10-11): the same form for all
+    assert "Record goods received" not in page
     payables = _sign_in_new("ap@slicks.test", "payables")
     assert payables.get("/purchase-orders/new/").status_code == 403
-    assert payables.get("/purchase-orders/match/").status_code == 200
+    assert payables.get("/purchase-orders/match/", follow=True).status_code == 200
     mother = _sign_in_new("mother@slicks.test", "releaser")
     assert mother.get("/purchase-orders/").status_code == 403

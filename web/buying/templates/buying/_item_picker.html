@@ -1,45 +1,48 @@
-{% comment %}The item picker (owner, 2026-10-08): search in any order, filter by brand / rim / terrain, tick several items with quantities. Sits inside a form; on submit
-   the ticked items go as pick_name_<n> / pick_qty_<n> / pick_unit_<n>. Needs: cid, and an input #order_date (the prices in force that day).{% endcomment %}
-<div class="picker" id="picker" data-cid="{{ cid }}">
+{% comment %}The item picker (owner, 2026-10-08): find items in any word order, filter by brand / rim / terrain, choose several with quantities.
+   Owner, 2026-10-11: "dont list down the items. i will search the product i need to order" and "add drop down not pure search" -- a searchable drop-down:
+   click the box and the list drops down under it, typing narrows it, a click (or Enter) adds the item with quantity 1 to the chosen items below.
+   Sits inside a form; on submit the chosen items go as pick_name_<n> / pick_qty_<n> / pick_unit_<n>. Needs: cid, and an input #order_date (the prices
+   in force that day).{% endcomment %}
+<div class="picker" id="picker" data-cid="{{ cid }}"{% if with_price %} data-price="1"{% endif %}>
   <div class="bar" style="margin-bottom:6px">
-    <div class="grow"><label for="pk_q">Search (any words, any order)</label><input id="pk_q" type="text" autocomplete="off" placeholder="e.g. 2055516 westlake, or ns60"></div>
+    <div class="grow pk-combo"><label for="pk_q">Item (click to open the list, type to narrow it)</label>
+      <input id="pk_q" type="text" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="pk_list" placeholder="e.g. 2055516 westlake, or ns60">
+      <div class="pk-drop" id="pk_list" role="listbox" hidden></div></div>
     <div><label for="pk_brand">Brand</label><select id="pk_brand"><option value="">All brands</option></select></div>
     <div><label for="pk_rim">Rim</label><select id="pk_rim"><option value="">All</option></select></div>
     <div><label for="pk_terrain">Terrain</label><select id="pk_terrain"><option value="">All</option></select></div>
-    <div><label for="pk_show">Show</label><select id="pk_show"><option selected>10</option><option>25</option><option>50</option><option>100</option></select></div>
   </div>
-  <p class="hint" id="pk_count">Loading the price list…</p>
-  <div class="scroll-x"><table class="list picktable"><thead><tr><th></th><th>Item</th><th>Size</th><th>Pattern</th><th style="text-align:right">List</th><th style="text-align:right">Net</th><th>Qty</th></tr></thead>
+  <p class="hint" id="pk_count">Type to search this supplier's price list, or click the box to open the list.</p>
+  <div class="scroll-x"><table class="list picktable" style="display:none"><thead><tr><th>Chosen item</th><th>Size</th><th>Pattern</th><th style="text-align:right">List</th><th style="text-align:right">Net</th>{% if with_price %}<th>Actual price</th>{% endif %}<th>Qty</th><th style="text-align:right">Amount</th><th></th></tr></thead>
     <tbody id="pk_rows"></tbody></table></div>
   <div id="pk_hidden"></div>
   <div class="actions" style="justify-content:space-between;align-items:center">
-    <span class="hint" id="pk_total">Nothing ticked yet.</span>
+    <span class="hint" id="pk_total">Nothing chosen yet.</span>
     {% if submit_label %}<button class="btn" type="submit" id="pk_submit"><span class="ms">playlist_add</span><span id="pk_submit_text">{{ submit_label }}</span></button>{% endif %}
   </div>
-  <p class="hint">Net = the list price less this supplier's usual discount. Typing a quantity ticks the row. ↑ ↓ and Enter work from the search box.</p>
+  <p class="hint">Net = the list price less this supplier's usual discount. ↑ ↓ and Enter work in the list; Esc closes it.</p>
 </div>
 <script>
 (function () {
   var box = document.getElementById("picker"); if (!box) return;
-  var cid = box.dataset.cid, items = [], picks = {}, shown = [], hi = 0, MAX = 10;
-  var fs = document.getElementById("pk_show");                 /* how many rows to show: each person's own choice, remembered on this browser */
-  try { var kept = localStorage.getItem("slicks_picker_show"); if (kept) { fs.value = kept; MAX = parseInt(kept, 10) || 10; } } catch (e) {}
-  fs.addEventListener("change", function () { MAX = parseInt(fs.value, 10) || 10; try { localStorage.setItem("slicks_picker_show", fs.value); } catch (e) {} draw(); });
+  var cid = box.dataset.cid, items = [], picks = {}, order = [], shown = [], hi = 0, MAX = 60, loaded = false, open = false;
   var q = document.getElementById("pk_q"), fb = document.getElementById("pk_brand"), fr = document.getElementById("pk_rim"), ft = document.getElementById("pk_terrain");
-  var rows = document.getElementById("pk_rows"), count = document.getElementById("pk_count"), total = document.getElementById("pk_total");
+  var list = document.getElementById("pk_list"), rows = document.getElementById("pk_rows"), count = document.getElementById("pk_count"), total = document.getElementById("pk_total");
+  var table = box.querySelector(".picktable"), withPrice = box.dataset.price === "1";
   var peso = function (n) { return n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
   function options(sel, values, fmt) {
+    while (sel.options.length > 1) sel.remove(1);
     values.filter(function (v, i, a) { return v && a.indexOf(v) === i; }).sort(function (a, b) { return a.localeCompare(b, undefined, {numeric: true}); })
       .forEach(function (v) { var o = document.createElement("option"); o.value = v; o.textContent = fmt ? fmt(v) : v; sel.appendChild(o); });
   }
   function load() {
     var on = (document.getElementById("order_date") || {}).value || "";
     fetch("/purchase-orders/items/?s=" + encodeURIComponent(cid) + "&on=" + encodeURIComponent(on)).then(function (r) { return r.json(); }).then(function (d) {
-      items = d.items || [];
+      items = d.items || []; loaded = true;
       options(fb, items.map(function (i) { return i.brand; }));
       options(fr, items.map(function (i) { return i.rim; }), function (v) { return v + '"'; });
       options(ft, items.map(function (i) { return i.terrain; }));
-      draw();
+      drawList(); drawChosen();
     });
   }
   function match(it) {
@@ -49,41 +52,88 @@
     var words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
     return words.every(function (w) { return it.find.indexOf(w) >= 0; });
   }
-  function cell(tr, text, right) { var td = document.createElement("td"); td.textContent = text; if (right) td.className = "num"; tr.appendChild(td); return td; }
-  function draw() {
+  function add(it) {
+    if (!picks[it.name]) { picks[it.name] = {qty: 1, it: it}; order.push(it.name); }
+    drawList(); drawChosen();
+  }
+  function drop(name) { delete picks[name]; order = order.filter(function (n) { return n !== name; }); drawList(); drawChosen(); }
+  function setOpen(on) { open = on; list.hidden = !on; q.setAttribute("aria-expanded", on ? "true" : "false"); if (on) drawList(); }
+  function drawList() {                                         /* the drop-down under the box */
     var found = items.filter(match);
     shown = found.slice(0, MAX); hi = Math.min(hi, Math.max(shown.length - 1, 0));
-    rows.innerHTML = "";
+    count.textContent = !items.length ? (loaded ? "This supplier has no prices on the order date." : "Loading the price list…")
+      : (q.value.trim() || fb.value || fr.value || ft.value) ? found.length + " of " + items.length + " items match."
+      : "Type to search this supplier's price list (" + items.length + " items), or click the box to open the list.";
+    if (!open) return;
+    list.innerHTML = "";
+    if (!shown.length) { var e = document.createElement("div"); e.className = "pk-none"; e.textContent = items.length ? "Nothing matches. Try fewer words, or type the item by hand below." : "No prices on the order date."; list.appendChild(e); return; }
     shown.forEach(function (it, k) {
-      var tr = document.createElement("tr"); if (picks[it.name]) tr.className = "on"; if (k === hi && q === document.activeElement) tr.className += " hi";
-      var td = document.createElement("td"), cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!picks[it.name]; cb.setAttribute("aria-label", "Pick " + it.name);
-      cb.addEventListener("change", function () { if (cb.checked) picks[it.name] = {qty: picks[it.name] ? picks[it.name].qty : 1, it: it}; else delete picks[it.name]; draw(); });
-      td.appendChild(cb); tr.appendChild(td);
-      cell(tr, it.name); cell(tr, it.size); cell(tr, it.pattern); cell(tr, peso(it.list_price), true); cell(tr, peso(it.net), true);
-      var tq = document.createElement("td"), qi = document.createElement("input"); qi.type = "text"; qi.inputMode = "decimal"; qi.className = "inline-input"; qi.style.width = "64px";
-      qi.value = picks[it.name] ? picks[it.name].qty : ""; qi.placeholder = "1"; qi.setAttribute("aria-label", "Qty of " + it.name);
-      qi.addEventListener("change", function () { var n = parseFloat(qi.value.replace(/,/g, "")); if (n > 0) picks[it.name] = {qty: n, it: it}; else delete picks[it.name]; draw(); });
-      tq.appendChild(qi); tr.appendChild(tq); rows.appendChild(tr);
+      var o = document.createElement("div"); o.className = "pk-opt" + (k === hi ? " hi" : "") + (picks[it.name] ? " on" : ""); o.setAttribute("role", "option");
+      var n = document.createElement("span"); n.className = "n"; n.textContent = it.name; o.appendChild(n);
+      var p = document.createElement("span"); p.className = "p"; p.textContent = (picks[it.name] ? "✓ chosen · " : "") + "net ₱" + peso(it.net); o.appendChild(p);
+      o.addEventListener("mousedown", function (ev) { ev.preventDefault(); hi = k; add(it); });      /* mousedown: the box keeps the focus, the list stays open */
+      list.appendChild(o);
     });
-    count.textContent = !items.length ? "This supplier has no prices on the order date."
-      : found.length > MAX ? "Showing " + MAX + " of " + found.length + " matching (" + items.length + " items in all): search or filter to narrow it down."
-      : found.length + " of " + items.length + " items.";
-    var names = Object.keys(picks), pcs = 0, sum = 0;
-    names.forEach(function (n) { pcs += picks[n].qty; sum += picks[n].qty * picks[n].it.net; });
-    total.textContent = names.length ? names.length + " ticked · " + pcs + " pcs · ₱" + peso(sum) + " (net)" : "Nothing ticked yet.";
-    var st = document.getElementById("pk_submit_text"); if (st) st.textContent = names.length ? "Add " + names.length + " item" + (names.length > 1 ? "s" : "") + " to the order" : "{{ submit_label|escapejs }}";
+    if (found.length > MAX) { var m = document.createElement("div"); m.className = "pk-none"; m.textContent = "Showing " + MAX + " of " + found.length + ": type to narrow it down."; list.appendChild(m); }
+    var cur = list.querySelector(".hi"); if (cur && cur.scrollIntoView) cur.scrollIntoView({block: "nearest"});
   }
-  [q, fb, fr, ft].forEach(function (el) { el.addEventListener(el === q ? "input" : "change", function () { hi = 0; draw(); }); });
+  function cell(tr, text, right) { var td = document.createElement("td"); td.textContent = text; if (right) td.className = "num"; tr.appendChild(td); return td; }
+  function drawChosen() {                                       /* what will be added, with the quantities */
+    rows.innerHTML = "";
+    order.forEach(function (name) {
+      var pk = picks[name], it = pk.it, tr = document.createElement("tr"); tr.className = "on";
+      cell(tr, it.name); cell(tr, it.size); cell(tr, it.pattern); cell(tr, peso(it.list_price), true); cell(tr, peso(it.net), true);
+      if (pk.price === undefined) pk.price = it.net;
+      var pi = null;
+      if (withPrice) {                                          /* Receive: the price on the SI / DR may differ from the list */
+        var tp = document.createElement("td"); pi = document.createElement("input"); pi.type = "text"; pi.inputMode = "decimal"; pi.className = "inline-input"; pi.style.width = "96px";
+        pi.value = pk.price.toFixed(2); pi.setAttribute("aria-label", "Actual price of " + it.name); tp.appendChild(pi); tr.appendChild(tp);
+      }
+      var tq = document.createElement("td"), qi = document.createElement("input"); qi.type = "text"; qi.inputMode = "decimal"; qi.className = "inline-input"; qi.style.width = "64px";
+      qi.value = pk.qty; qi.setAttribute("aria-label", "Qty of " + it.name);
+      tq.appendChild(qi); tr.appendChild(tq);
+      var amt = cell(tr, peso(pk.qty * pk.price), true);
+      qi.addEventListener("input", function () { var n = parseFloat(qi.value.replace(/,/g, "")); if (n > 0) { pk.qty = n; amt.textContent = peso(n * pk.price); sum(); } });
+      if (pi) pi.addEventListener("input", function () { var n = parseFloat(pi.value.replace(/,/g, "")); if (n > 0) { pk.price = n; amt.textContent = peso(pk.qty * n); sum(); } });
+      qi.addEventListener("change", function () { var n = parseFloat(qi.value.replace(/,/g, "")); if (!(n > 0)) drop(name); });
+      qi.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); q.focus(); q.select(); } });
+      var tx = document.createElement("td"), x = document.createElement("button"); x.type = "button"; x.className = "btn small ghost"; x.textContent = "Remove";
+      x.addEventListener("click", function () { drop(name); }); tx.appendChild(x); tr.appendChild(tx);
+      rows.appendChild(tr);
+    });
+    table.style.display = order.length ? "" : "none";
+    sum();
+  }
+  function sum() {
+    var pcs = 0, s = 0;
+    order.forEach(function (n) { pcs += picks[n].qty; s += picks[n].qty * (picks[n].price === undefined ? picks[n].it.net : picks[n].price); });
+    total.textContent = order.length ? order.length + " chosen · " + pcs + " pcs · ₱" + peso(s) + " (net)" : "Nothing chosen yet.";
+    var st = document.getElementById("pk_submit_text"); if (st) st.textContent = order.length ? "Add " + order.length + " item" + (order.length > 1 ? "s" : "") + " to the order" : "{{ submit_label|escapejs }}";
+  }
+  q.addEventListener("focus", function () { setOpen(true); });
+  q.addEventListener("click", function () { setOpen(true); });
+  q.addEventListener("input", function () { hi = 0; setOpen(true); });
+  q.addEventListener("blur", function () { setOpen(false); });
+  [fb, fr, ft].forEach(function (el) { el.addEventListener("change", function () { hi = 0; drawList(); q.focus(); }); });
   q.addEventListener("keydown", function (e) {
-    if (e.key === "ArrowDown") { hi = Math.min(hi + 1, shown.length - 1); draw(); e.preventDefault(); }
-    else if (e.key === "ArrowUp") { hi = Math.max(hi - 1, 0); draw(); e.preventDefault(); }
-    else if (e.key === "Enter") { e.preventDefault(); var it = shown[hi]; if (it) { if (picks[it.name]) delete picks[it.name]; else picks[it.name] = {qty: 1, it: it}; draw(); } }
+    if (e.key === "ArrowDown") { if (!open) setOpen(true); else { hi = Math.min(hi + 1, shown.length - 1); drawList(); } e.preventDefault(); }
+    else if (e.key === "ArrowUp") { hi = Math.max(hi - 1, 0); drawList(); e.preventDefault(); }
+    else if (e.key === "Escape") { setOpen(false); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      var it = open ? shown[hi] : null;
+      if (it) {
+        add(it); setOpen(false);
+        var boxes = rows.querySelectorAll("input"), qi = boxes[order.indexOf(it.name)];
+        if (qi) { qi.focus(); qi.select(); }
+      }
+    }
   });
-  var od = document.getElementById("order_date"); if (od) od.addEventListener("change", function () { items = []; load(); });
+  var od = document.getElementById("order_date"); if (od) od.addEventListener("change", function () { items = []; loaded = false; load(); });
   box.closest("form").addEventListener("submit", function () {
     var h = document.getElementById("pk_hidden"); h.innerHTML = "";
-    Object.keys(picks).forEach(function (n, k) {
-      [["pick_name_" + k, n], ["pick_qty_" + k, picks[n].qty], ["pick_unit_" + k, picks[n].it.unit]].forEach(function (pair) {
+    order.forEach(function (n, k) {
+      [["pick_name_" + k, n], ["pick_qty_" + k, picks[n].qty], ["pick_unit_" + k, picks[n].it.unit]].concat(withPrice ? [["pick_price_" + k, picks[n].price]] : []).forEach(function (pair) {
         var i = document.createElement("input"); i.type = "hidden"; i.name = pair[0]; i.value = pair[1]; h.appendChild(i);
       });
     });

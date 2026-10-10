@@ -173,7 +173,7 @@ def test_home_shows_the_tiles_by_group_with_their_figures(web):
     page = web.get("/").content.decode()
     assert "Welcome, Admin" in page and 'class="home-top"' not in page                 # one header: the top bar (logo = Home, the person's name on the account button)
     assert 'alt="Slick\'s"' in page and "<span class=\"ms\">person</span> Admin" in page
-    for word in ("Purchase orders", "Receive goods", "Daily payables", "Bank loans", "Credit cards", "Lenders", "Checks and review"):
+    for word in ("Purchase orders", "Receive", "Daily payables", "Bank loans", "Credit cards", "Lenders", "Checks and review"):
         assert word in page, word
     assert 'href="/purchase-orders/?mode=receive"' in page
     assert 'class="tb-label" href="/#g-buy"' in page and 'id="g-buy"' in page      # the top bar's section name goes to its tiles on Home

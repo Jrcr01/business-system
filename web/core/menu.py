@@ -27,35 +27,44 @@ PAGES: dict[str, Page] = {
     "bank-loans": Page("Bank loans", "account_balance", "D6"),
     "credit-cards": Page("Credit cards", "credit_card", "D7"),
     "bank-cash": Page("Bank and cash", "account_balance_wallet", "D7"),
+    "stock": Page("Items and stock", "inventory_2", "R-A"),         # the revenue cycle, stage A (owner, 2026-10-11)
+    "stock-counts": Page("Stock counts", "fact_check", "R-A"),
+    "affiliates": Page("Affiliates", "handshake", "R-A"),
+    "sales": Page("Counter sale", "point_of_sale", "R-A"),
+    "customers": Page("Customers", "group", "R-A"),
+    "si-booklets": Page("Invoice booklets", "receipt_long", "R-A"),
+    "booklets": Page("Check booklets", "menu_book", "D7"),          # add, change, hand over, gap audit (owner, 2026-10-11)
     "reports": Page("Reports", "summarize", "D8"),
     "analytics": Page("Analytics", "monitoring", "D8"),
     "review": Page("Checks and review", "fact_check", "D8"),     # Roles and controls + Admin and audit + Data health, combined (owner, 2026-10-09)
 }
 
-BUILT = {"home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "calendar",
-         "reports", "checks", "bank-cash", "lenders", "analytics", "bank-loans", "credit-cards", "review"}     # drawn by Django (D0-D3; Reports: the schedule of payments first; Checks: waiting for the bank + the cleared tick, 2026-10-08)
+BUILT = {"stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets", "home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "calendar",
+         "reports", "checks", "bank-cash", "booklets", "lenders", "analytics", "bank-loans", "credit-cards", "review"}     # drawn by Django (D0-D3; Reports: the schedule of payments first; Checks: waiting for the bank + the cleared tick, 2026-10-08)
 
-STAGE_NAME = {"D1": "Masters", "D2": "Buying", "D3": "Payables", "D4": "Paying", "D5": "Release", "D6": "Loans", "D7": "Cards and bank", "D8": "Oversight"}
+STAGE_NAME = {"R-A": "Sell and stock", "D1": "Masters", "D2": "Buying", "D3": "Payables", "D4": "Paying", "D5": "Release", "D6": "Loans", "D7": "Cards and bank", "D8": "Oversight"}
 
-# (label, icon, page id, query, needed action): a shortcut that opens a page already in a mode, shown only to a role allowed that action
+# (label, icon, page id, query, needed action): a shortcut that opens a page already in a mode, shown only to a role allowed that action (a tuple: any of them)
 MENU: dict[str, list] = {
-    "Buy": ["price-lists", "purchase-orders", ("Receive goods", "inventory_2", "purchase-orders", "mode=receive", "po.receive_goods")],
-    "Pay suppliers": [("Match invoices", "receipt_long", "purchase-orders", "mode=match", "po.receive"),
-                      "order-statements", "checks", "calendar"],     # Payment run, Release checks and Add data removed (owner, 2026-10-09): its work is in the batch and Daily payables
-    "Bank": ["bank-cash"],     # the Check-date planner dropped with /more/ (owner, 2026-10-09)
+    "Buy": ["price-lists", "purchase-orders", ("Receive", "inventory_2", "purchase-orders", "mode=receive", ("po.receive_goods", "po.receive"))],   # one page (owner, 2026-10-11)
+    "Stock": ["stock", "stock-counts", "affiliates"],
+    "Sell": ["sales", ("Sales today", "today", "sales", "view=day", "sales.use"), ("Released, not invoiced", "local_shipping", "sales", "view=released", "sales.use"),
+             "customers", "si-booklets"],
+    "Pay suppliers": ["order-statements", "calendar", "checks"],     # Payment run, Release checks and Add data removed (owner, 2026-10-09): its work is in the batch and Daily payables
+    "Bank": ["bank-cash", "booklets"],     # the Check-date planner dropped with /more/ (owner, 2026-10-09)
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records": ["reports"],
-    "Analytics": [("Payables", "receipt_long", "analytics", "tab=payables", "reports.use"), ("Lenders", "handshake", "analytics", "tab=lenders", "reports.use"),
-                  ("Bank and cash", "account_balance", "analytics", "tab=bank", "reports.use"), ("Purchasing", "shopping_cart", "analytics", "tab=purchasing", "reports.use")],
+    "Analytics": [("Purchasing", "shopping_cart", "analytics", "tab=purchasing", "reports.use"), ("Payables", "receipt_long", "analytics", "tab=payables", "reports.use"),
+                  ("Bank and cash", "account_balance", "analytics", "tab=bank", "reports.use"), ("Lenders", "handshake", "analytics", "tab=lenders", "reports.use")],
     "Set-up": ["creditors", "settings", "review"],
 }
 
 # each top-bar section's row of tiles on Home (engines/home_tiles.py GROUPS): clicking the section name goes there, resting on it opens its pages (owner, 2026-10-03:
 # "combine" the top bar and Home's blue group bar)
-SECTION_GROUP = {"Buy": "buy", "Pay suppliers": "pay", "Bank": "bank", "Other payables": "other", "Records": "records", "Analytics": "analytics", "Set-up": "system"}
+SECTION_GROUP = {"Stock": "stock", "Sell": "sell", "Buy": "buy", "Pay suppliers": "pay", "Bank": "bank", "Other payables": "other", "Records": "records", "Analytics": "analytics", "Set-up": "system"}
 
 # the Home tiles' page states (engines/home_tiles.py, written for Streamlit's widget keys) in this site's words
-TILE_QUERY = {("po_mode", "Receive"): "mode=receive", ("po_mode", "Match invoice"): "mode=match",
+TILE_QUERY = {("po_mode", "Receive"): "mode=receive", ("po_mode", "Match invoice"): "mode=match", ("sales_view", "day"): "view=day", ("sales_view", "released"): "view=released",
               **{("analytics_tab", t): f"tab={t}" for t in ("payables", "lenders", "bank", "purchasing")}}
 
 
@@ -91,15 +100,19 @@ def doable_pages(role: str | None) -> set[str]:
 
 def menu_for(role: str | None) -> list[dict]:
     """The top bar for this role: [{'title', 'url', 'items': [{'label', 'icon', 'url', 'page'}]}], sections left empty dropped. 'url' = the section's tiles on Home."""
-    from engines.permissions import PAGE_ACTION, can
+    from engines.permissions import PAGE_ACTION, analytics_tabs, can
     mine = pages_for(role)
+    tabs = analytics_tabs()
     out = []
     for title, entries in MENU.items():
         items = []
         for e in entries:
             if isinstance(e, tuple):
                 label, icon, pid, query, needs = e
-                if pid in mine and (needs is None or needs == PAGE_ACTION.get(pid) or can(role, needs)):     # the page's own action: seeing it is enough
+                wanted = needs if isinstance(needs, tuple) else (needs,)
+                if pid == "analytics" and query.removeprefix("tab=") not in tabs:     # its page is hidden from this person: so is its dashboard
+                    continue
+                if pid in mine and (needs is None or PAGE_ACTION.get(pid) in wanted or any(can(role, n) for n in wanted)):     # the page's own action: seeing it is enough
                     items.append({"label": label, "icon": icon, "url": page_url(pid, query), "page": pid})
             elif e in mine:
                 items.append({"label": PAGES[e].title, "icon": PAGES[e].icon, "url": page_url(e), "page": e})

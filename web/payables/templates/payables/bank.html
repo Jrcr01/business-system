@@ -8,7 +8,7 @@
   <a href="?tab=import"{% if tab == "import" %} class="on"{% endif %}>Import statement</a>
   <a href="?tab=look"{% if tab == "look" %} class="on"{% endif %}>Needs a look{% if n_look %} <span class="pill warn">{{ n_look }}</span>{% endif %}</a>
   <a href="?tab=recon"{% if tab == "recon" %} class="on"{% endif %}>Reconciliation</a>
-  <a href="?tab=booklets"{% if tab == "booklets" %} class="on"{% endif %}>Booklets</a>
+  <a href="/booklets/">Check booklets</a>
 </nav>
 
 {% if tab == "import" %}

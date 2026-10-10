@@ -1,0 +1,30 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Stock counts{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">fact_check</span> Stock counts</h2>
+<p class="note">Count a part of the stock at a time: one type, one brand, or the items not counted lately. Selling goes on while you count.
+  The person counting does not see what the system expects. Stock changes only when the System admin approves a difference.</p>
+
+<div class="grp" style="margin-top:0">Start a count</div>
+<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="start">
+  <div><label for="type">Type</label><select id="type" name="type"><option value="">All types</option>{% for k, label in types %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></div>
+  <div><label for="brand">Brand</label><select id="brand" name="brand"><option value="">All brands</option>{% for b in brands %}<option>{{ b }}</option>{% endfor %}</select></div>
+  <div class="grow"><label for="q">Or only items with these words</label><input id="q" type="text" name="q" placeholder="e.g. 16 or 205/55"></div>
+  <div><label class="inline"><input type="checkbox" name="uncounted" value="1"> Only items not counted in 90 days</label></div>
+  <div><label for="counted_by">Counted by</label><input id="counted_by" type="text" name="counted_by" placeholder="the employee's name"></div>
+  <button class="btn small" type="submit"><span class="ms">play_arrow</span>Start the count</button>
+</form>
+
+{% if rows %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Count</th><th>What</th><th>Counted by</th><th>Started</th><th>Status</th><th>Items</th><th>Short</th><th>Over</th><th style="text-align:right">Value of differences</th><th></th></tr>
+  {% for c in rows %}<tr>
+    <td><a href="/stock-counts/{{ c.count_id }}/">{{ c.count_no }}</a></td><td>{{ c.scope }}</td><td>{{ c.counted_by|default:"—" }}</td><td>{{ c.started_at|dmy }}</td>
+    <td><span class="pill{% if c.status == 'WAITING' %} warn{% elif c.status != 'COUNTING' %} off{% endif %}">{{ c.status_label }}</span></td>
+    <td class="num">{% if c.status == "COUNTING" %}{{ c.typed }} of {{ c.items }}{% else %}{{ c.items }}{% endif %}</td>
+    <td class="num">{{ c.short|default_if_none:"" }}</td><td class="num">{{ c.over|default_if_none:"" }}</td>
+    <td class="num{% if c.value < 0 %} neg{% endif %}">{% if c.value %}{{ c.value|floatformat:2|intcomma }}{% endif %}</td>
+    <td>{% if c.open %}<a class="btn small" href="/stock-counts/{{ c.count_id }}/">{{ c.open }} to approve</a>{% endif %}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="note">No count yet.</p>{% endif %}
+{% endblock %}

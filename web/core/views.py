@@ -228,6 +228,27 @@ CREATE_CARDS = [
 MY_HOME = ["purchase-orders", "order-statements", "checks", "calendar", "review"]     # the everyday cards, first row
 MY_HOME_CREATE = ["New order", "New batch"]
 
+# The order of the cards in each row (owner, 2026-10-11: "organize the tiles have a logical sequence"): left to right in the order the work is done.
+# A card that STARTS something ("New order", "Import ...") sits just before the page it lands on. Named by a tile's id (its key, else its page id) or
+# by a "New ..." card's title; a card not named here goes after the others, in its old order. The rows themselves follow the goods, then the money:
+# Buy -> Stock -> Sell -> Pay suppliers -> Bank -> Other payables -> Records -> Analytics -> Set-up (engines/home_tiles.GROUPS).
+ROW_ORDER = {
+    "mine": ["New order", "purchase-orders", "New batch", "order-statements", "calendar", "checks", "review"],
+    "buy": ["Import a price list", "price-lists", "New order", "purchase-orders", "receive-goods"],
+    "stock": ["stock", "stock-counts", "affiliates"],
+    "sell": ["sales", "sales-today", "sales-released", "customers", "si-booklets"],
+    "pay": ["New batch", "order-statements", "payment-run", "calendar", "over-limit-days", "payables-due", "checks", "release"],
+    "bank": ["Import bank statement", "bank-cash", "booklets"],
+    "other": ["New loan note", "lenders", "bank-loans", "credit-cards"],
+    "analytics": ["an-purchasing", "an-payables", "an-bank", "an-lenders"],
+    "system": ["creditors", "settings", "review"],
+}
+
+
+def _in_order(row_key: str, cards: list[dict]) -> list[dict]:
+    order = {k: n for n, k in enumerate(ROW_ORDER.get(row_key, []))}
+    return sorted(cards, key=lambda c: order.get(c.get("tid") or c["title"], len(order)))      # sorted() is stable: unnamed cards keep their order
+
 
 def home(request):
     """The launchpad (SAP Business One style, owner 2026-10-09): a "My home" row of the everyday cards, then a row per section; each card its live figure
@@ -238,21 +259,25 @@ def home(request):
     mine = pages_for(user["role"])
     titles = {g.key: g for g in GROUPS}
     rows, by_id = [], {}
+    from engines.permissions import analytics_tabs
+    an_tabs = analytics_tabs()
     for key, tiles in layout(mine):
         cards = []
         for t in tiles:
+            if t.page_id == "analytics" and dict(t.state or ()).get("analytics_tab") not in an_tabs:     # its page is hidden from this person: so is its card
+                continue
             v = evaluate(t)
             icon = (t.icon or "").removeprefix(":material/").removesuffix(":") or PAGES[t.page_id].icon
             card = {"title": t.title, "icon": icon, "url": _tile_url(t), "figure": v["figure"], "unit": v["unit"], "level": v["level"],
-                    "later": t.page_id not in BUILT}
+                    "later": t.page_id not in BUILT, "tid": t.tid}
             cards.append(card)
             by_id.setdefault(t.tid, card)
         rows.append({"key": key, "title": titles[key].title, "hint": titles[key].hint, "tiles": cards})
     creates = [{"title": title, "icon": icon, "url": url, "create": True, "group": g} for g, title, icon, url, pid, needs in CREATE_CARDS
                if pid in mine and pid in BUILT and (needs is None or can(user["role"], needs))]
     for r in rows:
-        r["tiles"] += [c for c in creates if c["group"] == r["key"]]
-    top = [by_id[k] for k in MY_HOME if k in by_id] + [c for c in creates if c["title"] in MY_HOME_CREATE]
+        r["tiles"] = _in_order(r["key"], r["tiles"] + [c for c in creates if c["group"] == r["key"]])
+    top = _in_order("mine", [by_id[k] for k in MY_HOME if k in by_id] + [c for c in creates if c["title"] in MY_HOME_CREATE])
     if top:
         rows.insert(0, {"key": "mine", "title": "My home", "hint": "", "tiles": top})
     from engines.settings_registry import NOTICE_KEY
@@ -291,7 +316,12 @@ def related(request, kind: str, doc_id: int):
         for d in col.get("docs", []):
             if d.get("url") and _page_of(d["url"]) not in mine:
                 d["url"] = None                                   # a document on a page hidden from the person: shown, not opened
-    return render(request, "core/_related.html", {"related": cols})
+    try:
+        from engines.doc_trail import trail_summary
+        summary = trail_summary(kind, cols)
+    except Exception:                                             # noqa: BLE001 -- the line on top must never break the map
+        summary = ""
+    return render(request, "core/_related.html", {"related": cols, "summary": summary})
 
 
 def page(request, page_id: str):

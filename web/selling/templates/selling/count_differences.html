@@ -1,0 +1,35 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}{{ c.count_no }}{% endblock %}
+{% block content %}
+<p class="note"><a href="/stock-counts/">← Stock counts</a></p>
+<h2>Count {{ c.count_no }} · {{ c.scope }} <span class="pill{% if c.status == 'WAITING' %} warn{% else %} off{% endif %}">{{ c.status_label }}</span></h2>
+<p class="note">Counted by <b>{{ c.counted_by|default:"not named" }}</b>, typed in by {{ c.finished_by|default:c.started_by }} on {{ c.finished_at|dmy }}.</p>
+<div class="facts"><div><span>Items counted</span><b>{{ rows|length }}</b></div><div><span>Matched</span><b>{{ matched }}</b></div>
+  <div><span>Short</span><b{% if short %} class="neg"{% endif %}>{{ short|length }} item{{ short|length|pluralize }} · {{ short_pcs|floatformat:"-2" }} pcs · ₱{{ short_value|floatformat:2|intcomma }}</b></div>
+  <div><span>Over</span><b{% if over %} class="pos"{% endif %}>{{ over|length }} item{{ over|length|pluralize }} · {{ over_pcs|floatformat:"-2" }} pcs · ₱{{ over_value|floatformat:2|intcomma }}</b></div></div>
+<div class="scroll-x"><table class="list">
+  <tr><th>Item</th><th style="text-align:right">Expected</th><th style="text-align:right">Counted</th><th style="text-align:right">Difference</th><th style="text-align:right">Value</th><th>Counter's note</th><th>Reason</th><th></th></tr>
+  {% for r in rows %}<tr>
+    <td><a href="/stock/{{ r.item_id }}/">{{ r.name }}</a>{% for h in r.hints %}<div class="hint">· {{ h }}</div>{% endfor %}</td>
+    <td class="num">{{ r.expected|floatformat:"-2" }}</td><td class="num">{{ r.counted|floatformat:"-2" }}</td>
+    <td class="num{% if r.difference < 0 %} neg{% elif r.difference > 0 %} pos{% endif %}">{% if r.difference > 0 %}+{% endif %}{{ r.difference|floatformat:"-2" }}</td>
+    <td class="num{% if r.value < 0 %} neg{% elif r.value > 0 %} pos{% endif %}">{{ r.value|floatformat:2|intcomma }}</td><td>{{ r.note }}</td>
+    {% if r.decision == "MATCHED" %}<td class="hint">matched</td><td></td>
+    {% elif r.decision == "APPROVED" %}<td>{{ r.reason }}</td><td class="hint">approved by {{ r.decided_by }}</td>
+    {% elif may_approve and c.status == "WAITING" %}
+    <td colspan="2"><form method="post" class="bar" style="margin:0">{% csrf_token %}<input type="hidden" name="line_id" value="{{ r.line_id }}">
+      <div class="grow"><input type="text" name="reason" placeholder="why does it differ?" aria-label="Reason for {{ r.name }}"></div>
+      <button class="btn small" type="submit" name="action" value="approve">Approve</button>
+      <button class="btn small ghost" type="submit" name="action" value="recount">Count again</button></form></td>
+    {% else %}<td class="hint" colspan="2">waiting for the System admin</td>{% endif %}
+  </tr>{% endfor %}
+</table></div>
+{% if may_approve and c.status == "WAITING" %}
+<form method="post" class="bar" style="margin-top:10px" onsubmit="return confirm('Approve every difference still waiting, with this one reason?');">{% csrf_token %}
+  <input type="hidden" name="action" value="approve_all">
+  <div class="grow"><label for="all_reason">One reason for all that are still waiting</label><input id="all_reason" type="text" name="reason" placeholder="e.g. opening count: what was on the rack"></div>
+  <button class="btn small ghost" type="submit"><span class="ms">done_all</span>Approve all</button></form>
+{% endif %}
+<p class="hint">Stock changes only when a line is approved, with the reason. The difference is applied to what is on hand at that moment, so a sale made after the count is not undone.
+  "Count again" sends that item back to the sheet. Every approved difference is on the Review list.</p>
+{% endblock %}

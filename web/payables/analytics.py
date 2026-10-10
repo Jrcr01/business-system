@@ -10,7 +10,7 @@ from django.shortcuts import render
 from masters.views import page_needed
 from engines.common import us_date
 
-TABS = [("payables", "Payables"), ("lenders", "Lenders"), ("bank", "Bank and cash"), ("purchasing", "Purchasing")]
+TABS = [("purchasing", "Purchasing"), ("payables", "Payables"), ("bank", "Bank and cash"), ("lenders", "Lenders")]     # in the order of the work, as on Home
 PERIODS = [("month", "This month"), ("quarter", "This quarter"), ("year", "This year")]
 TRACK_OF = {"payables": "Supplier", "lenders": "Lender"}
 
@@ -62,10 +62,16 @@ def _summary() -> dict:
 def analytics(request):
     from engines.clock import manila_today
     today = manila_today()
-    tab = request.GET.get("tab") if request.GET.get("tab") in dict(TABS) else "payables"
+    from engines.permissions import analytics_tabs
+    seen = analytics_tabs()                                          # a page hidden from this person hides its dashboard too (owner, 2026-10-11)
+    tabs = [t for t in TABS if t[0] in seen]
+    if not tabs:
+        from core.menu import PAGES
+        return render(request, "core/not_allowed.html", {"page": PAGES["analytics"]}, status=403)
+    tab = request.GET.get("tab") if request.GET.get("tab") in dict(tabs) else ("payables" if "payables" in dict(tabs) else tabs[0][0])     # Payables opens first, as before
     per = request.GET.get("period") if request.GET.get("period") in dict(PERIODS) else "month"
     start, end = _period(per, today)
-    ctx = {"page_id": "analytics", "tabs": TABS, "tab": tab, "periods": PERIODS, "period": per, "start": start, "end": end, "today": today}
+    ctx = {"page_id": "analytics", "tabs": tabs, "tab": tab, "periods": PERIODS, "period": per, "start": start, "end": end, "today": today}
     try:
         ctx.update(globals()[f"_{tab}"](today, start, end))
         ctx["charts"] = [ctx.get("chart_a"), ctx.get("chart_b"), ctx.get("chart_c")]

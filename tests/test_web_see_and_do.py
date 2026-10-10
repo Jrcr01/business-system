@@ -62,9 +62,9 @@ def test_extras_count_only_under_see_and_do(web):
     _admin(web)
     _sign_in_new("family@slicks.test", "owner")
     uid = fetchone_uid("family@slicks.test")
-    web.post(f"/settings/users/{uid}/", levels_post({}, extras=["receive"]))         # PO on do: only Receive goods ticked
+    web.post(f"/settings/users/{uid}/", levels_post({}, extras=["receive"]))         # PO on do: only Receive ticked
     off = get_restrictions(uid)
-    assert "po.receive_goods" not in off and {"po.receive", "po.cancel", "po.ack_over_plan"} <= off
+    assert not ({"po.receive_goods", "po.receive"} & off) and {"po.cancel", "po.ack_over_plan"} <= off      # receiving is ONE switch: it always records the payable
     web.post(f"/settings/users/{uid}/", levels_post({"purchase-orders": "see"}, extras=["receive", "cancel_po"]))
     off = get_restrictions(uid)
     assert {"po.create", "po.order", "po.receive_goods", "po.cancel"} <= off                  # see only: the ticks don't count
@@ -94,3 +94,22 @@ def test_presets_and_copy_set_both(web):
     assert "bank-cash" in get_hidden_pages(uid) and "purchase-orders" not in get_hidden_pages(uid)
     page = web.get(f"/settings/users/{cousin}/?copy={uid}").content.decode()
     assert "Showing <b>Family</b>" in page and 'name="lv_bank-cash" value="hidden" checked' in page
+
+
+def test_a_hidden_page_hides_its_analytics_tab_too(web, db):
+    # owner, 2026-10-11: hidden means hidden everywhere -- the Bank and cash dashboard goes with the Bank and cash page
+    _admin(web)
+    family = _sign_in_new("family@slicks.test", "owner")
+    uid = fetchone_uid("family@slicks.test")
+    before = family.get("/analytics/").content.decode()
+    assert "?tab=bank&" in before and 'href="/analytics/?tab=bank"' in family.get("/").content.decode()
+    web.post(f"/settings/users/{uid}/", levels_post({"bank-cash": "hidden"}))
+    page = family.get("/analytics/").content.decode()
+    assert "?tab=bank&" not in page and "?tab=payables&" in page and "?tab=lenders&" in page
+    home = family.get("/").content.decode()
+    assert 'href="/analytics/?tab=bank"' not in home and 'href="/analytics/?tab=lenders"' in home      # no menu entry, no Home card
+    asked = family.get("/analytics/?tab=bank").content.decode()                  # typed in the address bar: the first dashboard they may see
+    assert "Bank balance, last statement" not in asked
+    assert "?tab=bank&" in web.get("/analytics/").content.decode()               # the System admin still sees it
+    web.post(f"/settings/users/{uid}/", levels_post({"bank-cash": "hidden", "order-statements": "hidden", "lenders": "hidden", "purchase-orders": "hidden"}))
+    assert family.get("/analytics/").status_code == 403                          # every dashboard's page is hidden: nothing to show

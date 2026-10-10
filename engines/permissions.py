@@ -31,7 +31,7 @@ ROLE_LABEL = {"admin": "System admin", "owner": "Owner", "sales": "Sales", "paya
 Y, VIEW, OWN = "Y", "view", "own"
 
 # action id: (group, what it means, admin, sales, payables, purchasing, viewer) -- the Owner column is the admin's, less SYSTEM_ONLY; the Releaser's is RELEASER
-SYSTEM_ONLY = {"carveout.use", "users.manage", "audit.view", "settings.edit", "health.fix"}      # the System admin's alone (family owners never get these)
+SYSTEM_ONLY = {"carveout.use", "users.manage", "audit.view", "settings.edit", "health.fix", "inventory.approve"}      # the System admin's alone (family owners never get these)
 RELEASER = {"home.open": "Y", "account.own": "Y", "po.receive_goods": "Y", "check.release": "Y"}
 _ROWS: list[tuple[str, str, str, tuple]] = [
     ("home.open", "Purchasing", "Home", (Y, Y, Y, Y, Y)),
@@ -54,6 +54,7 @@ _ROWS: list[tuple[str, str, str, tuple]] = [
     ("check.release", "Payables", "Mark post-dated checks as released to the supplier, or undo it", (Y, None, Y, None, None)),
     ("check.void", "Payables", "Cancel or void a check, cancel a batch, change a locked batch", (Y, None, None, None, None)),
     ("bank.use", "Payables", "Bank and cash: import a bank statement, reconcile", (Y, None, Y, None, None)),
+    ("booklets.use", "Payables", "Check booklets: add, change, hand over, archive, log spoiled leaves (owner, 2026-10-11: apart from Bank and cash)", (Y, None, Y, None, None)),
     ("loans.use", "Payables", "Lenders: loan notes, their schedules and guarantee checks", (Y, None, Y, None, None)),
     ("bankloans.use", "Payables", "Bank loans: new loans, schedules, imports, paid ticks (owner, 2026-10-09: apart from Lenders)", (Y, None, Y, None, None)),
     ("cards.use", "Payables", "Credit cards: statements (SOA), cards and cardholders", (Y, None, Y, None, None)),
@@ -64,7 +65,8 @@ _ROWS: list[tuple[str, str, str, tuple]] = [
     ("health.view", "Records", "Data health: see the findings", (Y, None, Y, None, None)),
     ("health.fix", "Records", "Data health: fix findings", (Y, None, None, None, None)),
     ("sales.use", "Sales", "Record sales, the day sheet, invoice booklets, customers", (Y, Y, None, None, VIEW)),
-    ("inventory.use", "Sales", "Items and stock: add items, stock in, count adjustments", (Y, Y, None, None, VIEW)),
+    ("inventory.use", "Sales", "Items and stock: labels, stock counts, lending to and borrowing from affiliates", (Y, Y, None, None, VIEW)),
+    ("inventory.approve", "Sales", "Approve a count's differences, adjust stock outside a count, allow a customer to buy on charge", (Y, None, None, None, None)),
     ("controls.view", "System", "Roles and controls: who can do what, and what the system checks (read-only)", (Y, None, None, None, None)),
     ("review.use", "System", "The Review list: see what was flagged and tick it OK", (Y, None, None, None, None)),
     ("carveout.use", "System", "Business vs family carve-out tags", (Y, None, None, None, None)),
@@ -84,8 +86,10 @@ ACTIONS: dict[str, dict] = {a: {"group": g, "label": text, "levels": _levels(a, 
 # the menu page that needs an action (a page is open to a role that has that action at any level except None; a page with writes also guards them in the engine)
 PAGE_ACTION = {
     "home": "home.open", "price-lists": "price.view", "purchase-orders": "po.view", "payables-due": "payables_due.view", "calendar": "payables_due.view",
-    "payment-run": "invoice.enter", "add-data": "invoice.enter", "order-statements": "invoice.enter", "checks": "payables.mark_paid", "release": "check.release", "controls": "controls.view", "bank-cash": "bank.use", "planner": "bank.use",
+    "payment-run": "invoice.enter", "add-data": "invoice.enter", "order-statements": "invoice.enter", "checks": "payables.mark_paid", "release": "check.release", "controls": "controls.view", "bank-cash": "bank.use", "booklets": "booklets.use", "planner": "bank.use",
     "lenders": "loans.use", "bank-loans": "bankloans.use", "credit-cards": "cards.use", "creditors": "creditors.edit",
+    "stock": "inventory.use", "stock-counts": "inventory.use", "affiliates": "inventory.use",                   # revenue cycle, stage A (2026-10-11)
+    "sales": "sales.use", "customers": "sales.use", "si-booklets": "sales.use",
     "reports": "reports.use", "analytics": "reports.use", "review": "review.use", "data-health": "health.view",
     "settings": "settings.edit", "admin": "audit.view",
 }
@@ -100,7 +104,7 @@ WORKFLOW: list[tuple[str, list[str]]] = [
     ("Pay suppliers", ["po.receive", "invoice.enter", "payables_due.view", "check.park", "check.issue", "check.void", "creditors.edit", "calendar.mark",
                        "payables.mark_paid"]),
     ("Release", ["check.release"]),
-    ("Bank", ["bank.use"]),
+    ("Bank", ["bank.use", "booklets.use"]),
     ("Loans and cards", ["loans.use", "bankloans.use", "cards.use"]),
     ("Records", ["search.use", "reports.use", "health.view"]),
     ("Review", ["review.use", "po.ack_over_plan", "controls.view"]),
@@ -219,6 +223,25 @@ def hidden_for(email: str | None) -> frozenset:
     return out
 
 
+# Hidden means hidden everywhere (owner, 2026-10-11): an Analytics tab goes with the page it reports on.
+ANALYTICS_TAB_PAGE = {"payables": "order-statements", "lenders": "lenders", "bank": "bank-cash", "purchasing": "purchase-orders"}
+
+
+def analytics_tabs() -> set[str]:
+    """The Analytics tabs the signed-in person sees: every tab whose page is not hidden from them (the System admin: all of them)."""
+    hidden = hidden_for(acting_email())
+    return {tab for tab, page in ANALYTICS_TAB_PAGE.items() if page not in hidden}
+
+
+def may_receive(role: str | None = None) -> tuple[bool, str]:
+    """May the person acting record a delivery? Receiving always records the payable (owner, 2026-10-11), so the two older switches -- "receive goods"
+    and "record the SI or DR" -- are one: either lets a person receive, and the delivery's document is the payable."""
+    role = role if role is not None else acting_role()
+    if role is None or can(role, "po.receive_goods") or can(role, "po.receive"):
+        return True, ""
+    return False, "Receiving is switched off for you."
+
+
 def viewable_pages(role: str | None, all_pages: set[str]) -> set[str]:
     """The pages this person may OPEN. Owners see every page except Set-up (2026-10-09: "view access to all modules") less the pages the System admin
     hid from them ("control what they can see and what they can do"); what they may DO stays per their switches -- a page they may only see is read-only
@@ -243,8 +266,16 @@ ACCESS_ROWS: list[tuple[str, list[tuple[str, str, list[str], list[tuple[str, str
     ("Buy", [
         ("price-lists", "Price lists", ["price.write"], []),
         ("purchase-orders", "Purchase orders", ["po.create", "po.order"],
-         [("receive", "Receive goods", ["po.receive_goods"]), ("match", "Match invoices", ["po.receive"]), ("cancel_po", "Cancel an order", ["po.cancel"]),
+         [("receive", "Receive goods with their DR or SI (this records the payable)", ["po.receive_goods", "po.receive"]), ("cancel_po", "Cancel an order", ["po.cancel"]),
           ("over_plan", "Confirm an order over the cash plan", ["po.ack_over_plan"])])]),
+    ("Stock", [
+        ("stock", "Items and stock (do = labels, low-stock levels)", ["inventory.use"], []),
+        ("stock-counts", "Stock counts (do = start a count, type what was counted)", ["inventory.use"], []),
+        ("affiliates", "Affiliates (lend, borrow, settle)", ["inventory.use"], [])]),
+    ("Sell", [
+        ("sales", "Counter sale, sales today, released goods", ["sales.use"], []),
+        ("customers", "Customers", ["sales.use"], []),
+        ("si-booklets", "Sales invoice booklets", ["sales.use"], [])]),
     ("Pay suppliers", [
         ("order-statements", "Order statements (invoices, batches)", ["invoice.enter"],
          [("checks", "Park, write and release checks (batches and lender loans)", ["check.park", "check.issue", "check.release"]),
@@ -253,6 +284,7 @@ ACCESS_ROWS: list[tuple[str, list[tuple[str, str, list[str], list[tuple[str, str
         ("calendar", "Calendar (do = mark holidays and no-check days)", ["calendar.mark"], [])]),
     ("Bank, loans and cards", [
         ("bank-cash", "Bank and cash", ["bank.use"], []),
+        ("booklets", "Check booklets", ["booklets.use"], []),
         ("lenders", "Lenders", ["loans.use"], []),
         ("bank-loans", "Bank loans", ["bankloans.use"], []),
         ("credit-cards", "Credit cards", ["cards.use"], [])]),
@@ -311,7 +343,7 @@ def _preset(do: set, extras: set, hidden: set = frozenset()) -> dict:
 
 ACCESS_PRESETS = {
     "daily": ("Daily operations", _preset({"price-lists", "purchase-orders", "order-statements", "checks", "calendar", "lenders", "bank-loans"},
-                                          {"receive", "match", "cancel_po", "checks"})),
+                                          {"receive", "cancel_po", "checks"})),
     "purchasing": ("Purchasing only", _preset({"price-lists", "purchase-orders"}, {"receive", "cancel_po"},
                                               hidden=set(ACCESS_PAGES) - {"price-lists", "purchase-orders", "search"})),
     "view": ("View only", _preset(set(), set())),
@@ -345,17 +377,17 @@ SWITCH_LINES: list[tuple[str, list[tuple[str, str, str, list[str]]]]] = [
     ("Buy", [
         ("see_po", "See prices and purchase orders", "Price lists, Purchase orders", ["price.view", "po.view", "committed.view"]),
         ("write_po", "Add prices, create and send purchase orders", "Price lists, New order", ["price.write", "po.create", "po.order"]),
-        ("receive", "Receive goods against an order", "Receive goods", ["po.receive_goods"]),
+        ("receive", "Receive goods with their DR or SI (records the payable)", "Receive", ["po.receive_goods", "po.receive"]),
         ("cancel_po", "Cancel an order", "", ["po.cancel"])]),
     ("Pay suppliers", [
-        ("invoices", "Match invoices, enter invoices and batches", "Match invoice, Order statements, Add data", ["po.receive", "invoice.enter"]),
+        ("invoices", "Enter invoices and batches", "Order statements, Add data", ["invoice.enter"]),
         ("checks", "Park, write and number checks; release them", "a batch's Checks tab", ["check.park", "check.issue", "check.release"]),
         ("mark_paid", "Mark payables paid (checks, bank loans, card payments)", "Daily payables", ["payables.mark_paid"]),
         ("calendar", "See the calendar; mark holidays and no-check days", "Calendar", ["payables_due.view", "calendar.mark"]),
         ("void", "Void or replace a check, cancel or reopen a batch", "", ["check.void"]),
         ("suppliers", "Add and change suppliers", "Creditors", ["creditors.edit"])]),
     ("Bank, loans and cards", [
-        ("bank", "Import bank statements, reconcile, booklets", "Bank and cash", ["bank.use"]),
+        ("bank", "Import bank statements, reconcile, booklets", "Bank and cash, Check booklets", ["bank.use", "booklets.use"]),
         ("loans", "Lenders and bank loans", "Lenders, Bank loans", ["loans.use", "bankloans.use"]),
         ("cards", "Card statements (SOA) and cards", "Credit cards", ["cards.use"])]),
     ("Records", [

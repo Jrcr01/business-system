@@ -1,0 +1,6 @@
+{% load humanize %}{% if d.url and not d.me %}<a class="rdoc{% if d.off %} off{% endif %}" href="{{ d.url }}">{% else %}<div class="rdoc{% if d.me %} me{% endif %}{% if d.off %} off{% endif %}">{% endif %}
+  <b>{{ d.title }}</b>
+  <span class="st{% if d.done %} ok{% elif d.tone %} {{ d.tone }}{% endif %}"><span class="ms">{% if d.done %}check_circle{% elif d.tone == "late" %}error{% elif d.tone == "soon" %}schedule{% else %}keyboard_double_arrow_right{% endif %}</span>{{ d.status }}</span>
+  <span class="kv">Amount: ₱{{ d.amount|floatformat:2|intcomma }}</span>
+  {% if d.date %}<span class="kv">{{ d.date_label }}: {{ d.date|dmy }}</span>{% endif %}
+{% if d.url and not d.me %}</a>{% else %}</div>{% endif %}

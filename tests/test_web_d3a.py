@@ -172,7 +172,7 @@ def test_match_invoice_opens_with_the_batch_chosen(web, db):
     cid = make_creditor(db, "Goodyear Philippines")
     a = _new_batch(web, cid)
     b = _new_batch(web, cid)
-    page = web.get(f"/purchase-orders/match/?s={cid}&batch={a}").content.decode()
+    page = web.get(f"/purchase-orders/match/?s={cid}&batch={a}", follow=True).content.decode()
     assert page.index(f'value="{a}"') < page.index(f'value="{b}"') if f'value="{b}"' in page else True
 
 
@@ -289,9 +289,9 @@ def test_the_match_form_offers_no_batch_first_and_keeps_the_batch_it_came_from(w
     _admin(web)
     cid, line = _ordered_and_received(db)
     sid = _new_batch(web, cid)
-    plain = web.get(f"/purchase-orders/match/?s={cid}").content.decode()
+    plain = web.get(f"/purchase-orders/match/?s={cid}", follow=True).content.decode()
     assert "Not in a batch yet" in plain and " selected>" not in plain.split('name="batch"')[1].split("</select>")[0]
-    chosen = web.get(f"/purchase-orders/match/?s={cid}&batch={sid}").content.decode()
+    chosen = web.get(f"/purchase-orders/match/?s={cid}&batch={sid}", follow=True).content.decode()
     assert f'value="{sid}" selected' in chosen
 
 

@@ -97,7 +97,7 @@
   })();
   </script>
   <p class="hint"><b>Every invoice needs a document reference: the SI no. or the DR no.</b> (either, or both). With only a DR, the invoice is listed as "DR 342". Due = date received + the supplier's terms (today's invoice would be due {{ due_today|date:"m/d/Y" }}). A number this supplier already has is refused.
-    <a href="/purchase-orders/match/?s={{ b.creditor_id }}&amp;batch={{ b.statement_id }}">From a purchase order</a> opens Match invoice with this batch chosen.
+    <a href="/purchase-orders/match/?s={{ b.creditor_id }}&amp;batch={{ b.statement_id }}">From a purchase order</a> opens Receive with this batch chosen.
     <a href="/order-statements/{{ b.statement_id }}/import/">From photos, PDFs or a spreadsheet</a> reads many at once.</p>
   {% else %}<p class="hint">{% if cancelled %}This batch is cancelled and can't be edited.{% else %}Closed (fully covered by checks). To change an invoice, use Edit this batch above; a new invoice for this supplier goes in a new batch.{% endif %}</p>{% endif %}
 

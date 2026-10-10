@@ -1,6 +1,6 @@
 from django.urls import path
 
-from payables import analytics, bank, bankloans, bulk, calendar, cards, lenders, views
+from payables import analytics, bank, bankloans, booklets, bulk, calendar, cards, lenders, views
 
 urlpatterns = [
     path("order-statements/", views.statements, name="statements"),
@@ -26,5 +26,7 @@ urlpatterns = [
     path("bank-loans/<int:blid>/loan.pdf", bankloans.bank_loan_pdf, name="bank_loan_pdf"),
     path("credit-cards/", cards.credit_cards, name="credit_cards"),
     path("bank-cash/", bank.bank, name="bank"),
+    path("booklets/", booklets.booklets, name="booklets"),
+    path("booklets/<int:booklet_id>/audit.xlsx", booklets.audit_xlsx, name="booklet_audit_xlsx"),
     path("bank-cash/recon/<int:import_id>.pdf", bank.recon_pdf, name="bank_recon_pdf"),
 ]

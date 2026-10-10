@@ -45,7 +45,7 @@ def items(role: str | None) -> list[dict]:
         def invoices():
             n = _count("SELECT COUNT(DISTINCT po_id) FROM purchase_order_lines WHERE qty_received - COALESCE(qty_invoiced, qty_received) > 0.0000001")
             if n:
-                add(f"{n} order(s) delivered, waiting for the supplier's invoice", "purchase-orders", ":material/receipt_long:", {"po_mode": "Match invoice"})
+                add(f"{n} order(s) with goods in, the SI or DR not recorded yet", "purchase-orders", ":material/receipt_long:", {"po_mode": "Match invoice"})
         safe(invoices)
     if can(role, "invoice.enter"):
         def batches():

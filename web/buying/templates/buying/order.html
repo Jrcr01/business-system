@@ -1,8 +1,12 @@
 {% extends "core/base.html" %}{% load humanize %}
-{% block title %}{{ h.po_no }}{% endblock %}
+{% block title %}{% if sent %}{{ h.request_no }}{% elif h.status == "DRAFT" %}Draft order{% else %}{{ h.po_no }}{% endif %}{% endblock %}
 {% block content %}
 <p class="note"><a href="/purchase-orders/">← Purchase orders</a></p>
-<h2>{% if h.status == "DRAFT" %}Draft order{% else %}{{ h.po_no }}{% endif %} · {{ po.supplier }} <span class="pill{% if h.status == 'DRAFT' or h.status == 'CANCELLED' %} off{% endif %}">{{ status_label }}</span></h2>
+<h2>{% if sent %}Request {{ h.request_no }}{% elif h.status == "DRAFT" %}Draft order{% else %}{{ h.po_no }}{% endif %} · {{ po.supplier }} <span class="pill{% if sent %} warn{% elif h.status == 'DRAFT' or h.status == 'CANCELLED' %} off{% endif %}">{{ status_label }}</span></h2>
+{% if sent %}<div class="later-box"><p><b>Sent to the supplier {{ sent_on|date:"m/d/Y" }} · waiting for their answer.</b> It is not a purchase order yet: download the order request and send it to them.
+  When they tell you what is available, press <b>Supplier confirmed</b>.</p></div>
+{% elif h.status == "DRAFT" %}<p class="note">A draft: not sent to the supplier yet.</p>
+{% elif h.request_no %}<p class="note">From request {{ h.request_no }}.</p>{% endif %}
 <div class="facts">
   <div><span>Ordered</span><b>{{ h.order_date|dmy }}</b></div><div><span>Delivery</span><b>{{ h.expected_delivery_date|default:"not set"|dmy }}</b></div>
   <div><span>Terms</span><b>{% if h.terms_snapshot %}{{ h.terms_snapshot }}{% if h.terms_snapshot != "COD" %} days{% endif %}{% else %}not set{% endif %}</b></div>
@@ -16,20 +20,56 @@
 {% endif %}
 
 <div class="scroll-x"><table class="list"><tr><th>Item</th><th>Unit</th><th>Qty</th><th>Unit price</th><th>Amount</th>{% if h.status != "DRAFT" %}<th>Received</th>{% endif %}</tr>
-  {% for ln in lines %}<tr><td>{{ ln.item_name }}</td><td>{{ ln.unit|default:"" }}</td><td class="num">{{ ln.qty|floatformat:"-2" }}</td><td class="num">{{ ln.est_unit_price|floatformat:2|intcomma }}</td>
-    <td class="num">{{ ln.est_amount|floatformat:2|intcomma }}</td>{% if h.status != "DRAFT" %}<td class="num">{{ ln.qty_received|floatformat:"-2" }}</td>{% endif %}</tr>{% endfor %}
+  {% for ln in lines %}<tr><td>{{ ln.item_name }}</td><td>{{ ln.unit|default:"" }}</td><td class="num">{{ ln.qty|floatformat:"-2" }}{% if ln.qty_requested and ln.qty_requested > ln.qty %} <span class="hint">of {{ ln.qty_requested|floatformat:"-2" }} asked</span>{% endif %}{% if ln.added_at_delivery %} <span class="pill warn">added at delivery</span>{% endif %}</td><td class="num">{{ ln.est_unit_price|floatformat:2|intcomma }}</td>
+    <td class="num">{{ ln.est_amount|floatformat:2|intcomma }}</td>{% if h.status != "DRAFT" %}<td class="num">{{ ln.qty_received|floatformat:"-2" }}{% if ln.qty_received > ln.qty %} <span class="pill warn">{{ ln.qty_received|floatformat:"-2" }} received of {{ ln.qty|floatformat:"-2" }} ordered</span>{% endif %}</td>{% endif %}</tr>{% endfor %}
 </table></div>
+
+{% if deliveries %}
+<div class="grp">Deliveries</div>
+<div class="scroll-x"><table class="list">
+  <tr><th>Date</th><th>Document</th><th>Items</th><th>Amount</th><th>Payable</th><th></th></tr>
+  {% for d in deliveries %}<tr>
+    <td>{{ d.date|dmy }}</td>
+    <td><b>{{ d.doc }}</b>{% if d.dr_no and not d.dr_only %} <span class="hint">· DR {{ d.dr_no }}</span>{% endif %}</td>
+    <td>{{ d.items }}</td><td class="num">{{ d.amount|floatformat:2|intcomma }}</td>
+    <td>{% if not d.invoice_id %}<span class="pill warn">document not recorded yet</span>
+      {% elif d.statement_id %}<a href="/order-statements/{{ d.statement_id }}/">in {{ d.batch|default:"its batch" }}</a> · {{ d.checks }} · {{ d.inv_status }}
+        {% for m in d.memos %}<div class="hint">credit memo {{ m.ref }} −₱{{ m.amount|floatformat:2|intcomma }} on the batch{% if m.reason %} ({{ m.reason }}){% endif %}</div>{% endfor %}
+      {% else %}not in a batch yet · no check yet · {{ d.inv_status }}{% endif %}</td>
+    <td>
+      {% if d.dr_only and may_inv %}<details><summary class="hint" style="cursor:pointer">Add the SI no.</summary>
+        <form method="post" class="bar" style="margin-top:4px">{% csrf_token %}<input type="hidden" name="action" value="add_si"><input type="hidden" name="receipt_id" value="{{ d.receipt_id }}">
+          <div><input type="text" name="si" placeholder="SI no." required aria-label="SI no."></div><button class="btn small" type="submit">Add</button></form>
+        <p class="hint">The same payable takes the SI no.; the DR stays beside it.</p></details>{% endif %}
+      {% if d.lines %}<a class="hint" href="/stock/labels/?receipt={{ d.receipt_id }}" target="_blank">Print labels</a>{% endif %}
+      {% if may_undo %}{% if d.undo_block %}<span class="hint" title="{{ d.undo_block }}">can't be undone</span>
+      {% else %}<details><summary class="hint" style="cursor:pointer">Undo this delivery</summary>
+        <form method="post" class="bar" style="margin-top:4px" onsubmit="return confirm('Undo this delivery? Its payable is removed and the goods go back to still to come.');">{% csrf_token %}
+          <input type="hidden" name="action" value="undo_delivery"><input type="hidden" name="receipt_id" value="{{ d.receipt_id }}">
+          <div class="grow"><input type="text" name="reason" placeholder="Why? e.g. wrong quantity typed" required aria-label="Why"></div><button class="btn small danger" type="submit">Undo</button></form>
+        <p class="hint">Then record it again correctly. Noted on the Review list.</p></details>{% endif %}{% endif %}
+    </td></tr>{% endfor %}
+</table></div>
+{% if to_come and to_come.pcs %}<p class="note">Still to come: {{ to_come.pcs|floatformat:"-2" }} pc(s) (₱{{ to_come.amount|floatformat:2|intcomma }}).</p>{% endif %}
+<p class="hint">Recorded wrongly and not yet paid by check? Undo it and record it again. Once its batch has a check, use a credit memo on the batch for goods returned or a price reduction.</p>
+{% endif %}
 
 <div class="actions" style="margin-top:12px">
   <button class="btn small ghost" type="button" data-rmap="/related/po/{{ h.po_id }}/"><span class="ms">account_tree</span>Relationship map</button>
-  {% if may_order %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="order"><button class="btn small" type="submit"><span class="ms">send</span>Order it</button></form>{% endif %}
+  {% if may_confirm %}<a class="btn small" href="/purchase-orders/{{ h.po_id }}/confirm/"><span class="ms">task_alt</span>Supplier confirmed</a>{% endif %}
+  {% if sent %}<a class="btn small{% if may_confirm %} ghost{% endif %}" href="/purchase-orders/{{ h.po_id }}/request-pdf/"><span class="ms">picture_as_pdf</span>Download order request (PDF)</a>{% endif %}
+  {% if may_send %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="request"><button class="btn small" type="submit"><span class="ms">send</span>Send to supplier</button></form>{% endif %}
   {% if may_pdf %}<a class="btn small ghost" href="/purchase-orders/{{ h.po_id }}/pdf/"><span class="ms">picture_as_pdf</span>Download PO (PDF)</a>{% endif %}
-  {% if may_receive %}<a class="btn small" href="/purchase-orders/receive/?s={{ h.creditor_id }}&amp;po={{ h.po_id }}"><span class="ms">inventory_2</span>Receive goods</a>{% endif %}
-  {% if may_match %}<a class="btn small ghost" href="/purchase-orders/match/?s={{ h.creditor_id }}&amp;po={{ h.po_id }}"><span class="ms">receipt_long</span>Match invoice</a>{% endif %}
+  {% if open_to_receive %}<a class="btn small" href="/purchase-orders/receive/?s={{ h.creditor_id }}&amp;po={{ h.po_id }}"><span class="ms">inventory_2</span>{% if h.status == "RECEIVED" %}Record the document{% else %}Receive{% endif %}</a>{% endif %}
   {% if may_change %}<a class="btn small ghost" href="/purchase-orders/{{ h.po_id }}/edit/"><span class="ms">edit</span>Change</a>{% endif %}
 </div>
+{% if may_confirm %}
+<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">It was not sent after all</summary>
+  <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="unsend">
+    <button class="btn small ghost" type="submit"><span class="ms">undo</span>Back to a draft</button> <span class="hint">It keeps its request number for the next time it is sent.</span></form></details>
+{% endif %}
 {% if may_cancel %}
-<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Cancel this order</summary>
+<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Cancel this {% if h.status == "DRAFT" %}{% if sent %}request{% else %}draft{% endif %}{% else %}order{% endif %}</summary>
   <form class="bar" method="post" style="margin-top:8px" onsubmit="return confirm('Cancel this order? It stops counting as money owed. If the supplier already has the PO, tell them.');">{% csrf_token %}
     <input type="hidden" name="action" value="cancel"><div class="grow"><label for="reason">Why (optional)</label><input id="reason" type="text" name="reason"></div>
     <button class="btn small danger" type="submit"><span class="ms">cancel</span>Cancel order</button></form></details>
