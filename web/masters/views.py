@@ -146,8 +146,11 @@ def settings_numbers(request):
             ok, msg = False, "Unknown action."
         (messages.success if ok else messages.error)(request, msg)
         return redirect("/settings/" + (f"#{request.POST.get('key')}" if request.POST.get("key") else ""))
+    from engines.features import REVENUE_SETTINGS_GROUPS, revenue_on
     groups = []
     for g in sr.GROUPS:
+        if g in REVENUE_SETTINGS_GROUPS and not revenue_on():
+            continue
         items = []
         for m in [x for x in sr.registry() if x["group"] == g]:
             cur, d = sr.value(m["key"]), m["decimals"]
@@ -213,9 +216,12 @@ def settings_user(request, user_id: int):
         elif what == "role" and not is_me:
             ok, msg = au.set_role(user_id, request.POST.get("role", ""))
         elif what == "access" and u["role"] != "admin":                # what they see and what they do, per page (owner, 2026-10-09)
+            from engines.features import off_pages
             from engines.permissions import ACCESS_PAGES, LEVELS, access_from_choices
+            off = off_pages()                                          # pages not on this site keep whatever they were set to
             levels = {p: request.POST.get(f"lv_{p}") for p in ACCESS_PAGES if request.POST.get(f"lv_{p}") in LEVELS}
-            hidden, denied = access_from_choices(levels, set(request.POST.getlist("x")), au.get_restrictions(user_id))
+            hidden, denied = access_from_choices(levels, set(request.POST.getlist("x")), au.get_restrictions(user_id), skip=off)
+            hidden |= set(au.get_hidden_pages(user_id)) & off
             ok, msg = au.set_access(user_id, hidden, denied)
         elif what == "email":
             ok, msg = au.set_email(user_id, request.POST.get("email", ""))
@@ -243,12 +249,13 @@ def _switch_ctx(request, u: dict, user_id: int) -> dict:
     import json
 
     from engines import auth_service as au
+    from engines.features import off_pages
     from engines.permissions import ACCESS_PRESETS, row_levels
     others = [x for x in au.list_users().to_dict("records") if x["role"] != "admin" and int(x["user_id"]) != int(user_id)]
     copy = int(request.GET.get("copy")) if (request.GET.get("copy") or "").isdigit() else None
     source = next((x for x in others if int(x["user_id"]) == copy), None)
     who = source["user_id"] if source else user_id
-    return {"access": row_levels(au.get_restrictions(who), au.get_hidden_pages(who)), "others": others, "copied_from": source,
+    return {"access": row_levels(au.get_restrictions(who), au.get_hidden_pages(who), skip=off_pages()), "others": others, "copied_from": source,
             "presets": [(k, label) for k, (label, _) in ACCESS_PRESETS.items()], "presets_json": json.dumps({k: v for k, (_, v) in ACCESS_PRESETS.items()})}
 
 

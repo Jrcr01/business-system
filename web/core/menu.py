@@ -83,7 +83,8 @@ def installed_pages() -> set[str]:
     ids = set(PAGES)
     if not forecast_shown():
         ids.discard("planner")
-    return ids
+    from engines.features import off_pages
+    return ids - off_pages()                                 # the revenue cycle stays on the sandbox until the owner releases it (engines/features.py)
 
 
 def pages_for(role: str | None) -> set[str]:

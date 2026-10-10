@@ -301,12 +301,15 @@ SEE_ACTIONS = {"price.view", "po.view", "committed.view", "payables_due.view", "
 LEVELS = ("hidden", "see", "do")
 
 
-def row_levels(denied: set, hidden: set) -> list[dict]:
-    """The person's page: [{'section', 'rows': [{'page', 'label', 'can_do', 'level', 'extras': [{'key', 'label', 'on'}]}]}]."""
+def row_levels(denied: set, hidden: set, skip: frozenset = frozenset()) -> list[dict]:
+    """The person's page: [{'section', 'rows': [{'page', 'label', 'can_do', 'level', 'extras': [{'key', 'label', 'on'}]}]}]. 'skip': pages this site
+    does not have (engines/features.off_pages): no row for them, and a section left empty goes."""
     out = []
     for section, rows in ACCESS_ROWS:
         items = []
         for page, label, acts, extras in rows:
+            if page in skip:
+                continue
             if page in hidden:
                 level = "hidden"
             elif acts and not (set(acts) & set(denied)):
@@ -315,17 +318,21 @@ def row_levels(denied: set, hidden: set) -> list[dict]:
                 level = "see"
             items.append({"page": page, "label": label, "can_do": bool(acts), "level": level,
                           "extras": [{"key": k, "label": lb, "on": level == "do" and not (set(a) & set(denied))} for k, lb, a in extras]})
-        out.append({"section": section, "rows": items})
+        if items:
+            out.append({"section": section, "rows": items})
     return out
 
 
-def access_from_choices(levels: dict, extras_on: set, denied_before: set) -> tuple[set, set]:
+def access_from_choices(levels: dict, extras_on: set, denied_before: set, skip: frozenset = frozenset()) -> tuple[set, set]:
     """(hidden pages, denied actions) from the page's choices: levels {page: 'hidden'|'see'|'do'} and the ticked extra keys. A row not on 'do' denies
-    its actions and its extras; seeing is never denied; the switches not on this page keep their setting."""
+    its actions and its extras; seeing is never denied; the switches not on this page keep their setting. 'skip': pages with no row on the form
+    (engines/features.off_pages): their switches keep their setting too."""
     hidden, denied = set(), set()
     shown = SEE_ACTIONS.copy()
     for _, rows in ACCESS_ROWS:
         for page, _, acts, extras in rows:
+            if page in skip:
+                continue
             shown |= set(acts) | {a for _, _, ax in extras for a in ax}
             level = levels.get(page, "see")
             if level == "hidden":

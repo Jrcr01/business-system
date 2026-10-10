@@ -110,7 +110,8 @@ def labels(request):
 def _any_stock_page(request) -> bool:
     """The scan box is on several pages: any person who sees one of them may ask what a code means."""
     from core.menu import pages_for
-    return bool({"stock", "stock-counts", "affiliates", "sales", "purchase-orders"} & pages_for(request.slicks_user["role"]))
+    from engines.features import revenue_on
+    return revenue_on() and bool({"stock", "stock-counts", "affiliates", "sales", "purchase-orders"} & pages_for(request.slicks_user["role"]))
 
 
 def picker_items(request):

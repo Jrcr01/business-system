@@ -21,6 +21,7 @@ def page_frame(request) -> dict:
         "role_label": ROLE_LABEL.get(user["role"], user["role"]) if user else "",
         "topbar": menu_for(user["role"]) if user else [],
         "is_sandbox": settings.IS_SANDBOX,
+        "revenue_on": __import__("engines.features", fromlist=["revenue_on"]).revenue_on(),
         "may_search": bool(user) and __import__("engines.permissions", fromlist=["sees_search"]).sees_search(user["role"]),
         "search_q": request.GET.get("q", "") if request.path == "/search/" else "",
         "page_notice": _page_notice() if user else "",

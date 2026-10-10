@@ -41,7 +41,7 @@
         <form method="post" class="bar" style="margin-top:4px">{% csrf_token %}<input type="hidden" name="action" value="add_si"><input type="hidden" name="receipt_id" value="{{ d.receipt_id }}">
           <div><input type="text" name="si" placeholder="SI no." required aria-label="SI no."></div><button class="btn small" type="submit">Add</button></form>
         <p class="hint">The same payable takes the SI no.; the DR stays beside it.</p></details>{% endif %}
-      {% if d.lines %}<a class="hint" href="/stock/labels/?receipt={{ d.receipt_id }}" target="_blank">Print labels</a>{% endif %}
+      {% if d.lines and revenue_on %}<a class="hint" href="/stock/labels/?receipt={{ d.receipt_id }}" target="_blank">Print labels</a>{% endif %}
       {% if may_undo %}{% if d.undo_block %}<span class="hint" title="{{ d.undo_block }}">can't be undone</span>
       {% else %}<details><summary class="hint" style="cursor:pointer">Undo this delivery</summary>
         <form method="post" class="bar" style="margin-top:4px" onsubmit="return confirm('Undo this delivery? Its payable is removed and the goods go back to still to come.');">{% csrf_token %}

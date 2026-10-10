@@ -41,10 +41,17 @@ NOTES = [
 ]
 
 
+def _notes() -> list:
+    """The notes of what this site has: a part built but not released (engines/features.py) says nothing yet."""
+    from engines.features import REVENUE_NOTES, revenue_on
+    return NOTES if revenue_on() else [n for n in NOTES if n[0] not in REVENUE_NOTES]
+
+
 def latest_id() -> str:
-    return NOTES[0][0] if NOTES else ""
+    notes = _notes()
+    return notes[0][0] if notes else ""
 
 
 def unseen(seen: str | None) -> list[dict]:
     """The notes newer than the one this person last saw."""
-    return [{"id": i, "date": d, "title": t, "lines": lines} for i, d, t, lines in NOTES if not seen or i > seen]
+    return [{"id": i, "date": d, "title": t, "lines": lines} for i, d, t, lines in _notes() if not seen or i > seen]

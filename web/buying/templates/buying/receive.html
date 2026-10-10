@@ -63,12 +63,12 @@
 <div class="grp">Goods still to come</div>
 <form method="post" id="form_r">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="po" value="{{ pre }}"><input type="hidden" name="action" value="arrive">
   <div class="scroll-x"><table class="list">
-    <tr><th>Arrived</th><th>PO</th><th>Item</th><th>Unit</th><th>Still to come</th><th>Qty arrived</th><th title="The tire's DOT week and year, e.g. 2425 = week 24 of 2025. Leave empty when unknown.">DOT</th><th>Estimated price</th><th>Actual price</th></tr>
+    <tr><th>Arrived</th><th>PO</th><th>Item</th><th>Unit</th><th>Still to come</th><th>Qty arrived</th>{% if revenue_on %}<th title="The tire's DOT week and year, e.g. 2425 = week 24 of 2025. Leave empty when unknown.">DOT</th>{% endif %}<th>Estimated price</th><th>Actual price</th></tr>
     {% for ln in coming %}<tr data-line="{{ ln.line_id }}" data-est="{{ ln.est_unit_price }}">
       <td><input type="checkbox" name="pick_{{ ln.line_id }}" value="1"{% if ln.checked %} checked{% endif %} aria-label="Arrived"></td>
       <td>{{ ln.po_no }}</td><td>{{ ln.item_name }}</td><td>{{ ln.unit|default:"" }}</td><td class="num">{{ ln.remaining|floatformat:"-2" }}</td>
       <td><input class="inline-input" inputmode="decimal" name="qty_{{ ln.line_id }}" value="{{ ln.remaining|floatformat:'-2' }}" aria-label="Qty arrived"></td>
-      <td><input class="inline-input" style="width:70px" inputmode="numeric" name="dot_{{ ln.line_id }}" placeholder="WWYY" aria-label="DOT of {{ ln.item_name }}"></td>
+      {% if revenue_on %}<td><input class="inline-input" style="width:70px" inputmode="numeric" name="dot_{{ ln.line_id }}" placeholder="WWYY" aria-label="DOT of {{ ln.item_name }}"></td>{% endif %}
       <td class="num">{{ ln.est_unit_price|floatformat:2|intcomma }}</td>
       <td><input class="inline-input" inputmode="decimal" name="price_{{ ln.line_id }}" value="{{ ln.est_unit_price|floatformat:2 }}" aria-label="Actual price"></td></tr>{% endfor %}
   </table></div>
