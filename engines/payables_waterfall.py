@@ -30,11 +30,31 @@ def uncovered_invoices() -> pd.DataFrame:
     oldest first -- the same split as engines/check_date_planner.open_items, but every batch that isn't cancelled (a locked batch that still owes
     counts too). Unbatched: the invoice's full amount (not paid, not cancelled, not paid by card, not an opening-balance line)."""
     rows = []
-    batches = _read("""SELECT b.statement_id, b.statement_ref AS batch, cr.creditor_name AS supplier, b.net_total,
+    for b, parts in _batches():
+        batch = "Draft batch" if str(b.batch or "").startswith("DRAFT-") else b.batch
+        for p in parts:
+            rows.append((p["due"], b.supplier, "Supplier", f"SI {p['doc_ref']} · no check yet", batch, p["amount"], "invoice"))
+    loose = _read("""SELECT i.due_date, c.creditor_name AS supplier, i.doc_ref, i.amount FROM invoices i JOIN creditors c ON c.creditor_id = i.creditor_id
+                     WHERE i.statement_id IS NULL AND i.status NOT IN ('Cancelled', 'Paid') AND i.is_opening_balance = 0 AND i.paid_via_card_id IS NULL
+                       AND i.amount > 0.005""")
+    for r in loose.itertuples():
+        rows.append((str(r.due_date)[:10], r.supplier, "Supplier", f"SI {r.doc_ref} · no check yet", "Not in a batch", round(float(r.amount), 2), "invoice"))
+    return pd.DataFrame(rows, columns=COLS)
+
+
+def uncovered_by_batch(statement_id: int) -> list[dict]:
+    """One batch's SIs that no check covers yet: [{'doc_ref', 'due', 'amount'}] (the same split as the schedule)."""
+    return next((parts for b, parts in _batches(int(statement_id))), [])
+
+
+def _batches(statement_id: int | None = None):
+    """(batch row, [{'doc_ref', 'due', 'amount'}]) for each batch still owing more than its active checks cover."""
+    where, params = ("AND b.statement_id = ?", (int(statement_id),)) if statement_id is not None else ("", ())
+    batches = _read(f"""SELECT b.statement_id, b.statement_ref AS batch, cr.creditor_name AS supplier, b.net_total,
                               COALESCE((SELECT SUM(c.amount) FROM checks_issued c WHERE c.statement_id = b.statement_id AND c.status = 'Active'), 0) AS checks
                        FROM v_batch_net_totals b JOIN order_statements os ON os.statement_id = b.statement_id
                        JOIN creditors cr ON cr.creditor_id = b.creditor_id
-                       WHERE os.status != 'Cancelled'""")
+                       WHERE os.status != 'Cancelled' {where}""", params)
     for b in batches.itertuples():
         remaining = round(float(b.net_total or 0) - float(b.checks or 0), 2)
         if remaining < 0.01:
@@ -55,16 +75,7 @@ def uncovered_invoices() -> pd.DataFrame:
             i += 1
         if extra < -0.005:                                     # the batch owes more than its open invoices show: on the last one
             amounts[-1] = round(amounts[-1] - extra, 2)
-        batch = "Draft batch" if str(b.batch or "").startswith("DRAFT-") else b.batch
-        for r, amt in zip(inv.itertuples(), amounts):
-            if amt >= 0.01:
-                rows.append((str(r.due_date)[:10], b.supplier, "Supplier", f"SI {r.doc_ref} · no check yet", batch, amt, "invoice"))
-    loose = _read("""SELECT i.due_date, c.creditor_name AS supplier, i.doc_ref, i.amount FROM invoices i JOIN creditors c ON c.creditor_id = i.creditor_id
-                     WHERE i.statement_id IS NULL AND i.status NOT IN ('Cancelled', 'Paid') AND i.is_opening_balance = 0 AND i.paid_via_card_id IS NULL
-                       AND i.amount > 0.005""")
-    for r in loose.itertuples():
-        rows.append((str(r.due_date)[:10], r.supplier, "Supplier", f"SI {r.doc_ref} · no check yet", "Not in a batch", round(float(r.amount), 2), "invoice"))
-    return pd.DataFrame(rows, columns=COLS)
+        yield b, [{"doc_ref": r.doc_ref, "due": str(r.due_date)[:10], "amount": amt} for r, amt in zip(inv.itertuples(), amounts) if amt >= 0.01]
 
 
 def received_not_invoiced() -> pd.DataFrame:

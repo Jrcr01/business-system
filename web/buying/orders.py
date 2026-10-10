@@ -506,3 +506,83 @@ def match(request):
     pre_batch = request.GET.get("batch", "")                   # opened from a batch's "From a purchase order": that batch is chosen
     return render(request, "buying/match.html", {"page_id": "purchase-orders", **_head(request), "suppliers": suppliers, "cid": cid, "waiting": waiting, "unreceived": unreceived,
                                                  "came_with": came_with, "today": manila_today(), "batches": _batches(cid), "pre_batch": pre_batch})
+
+
+@page_needed("purchase-orders")
+def order_split(request, po_id: int):
+    """Split a draft order into parts (owner, 2026-10-10: "suggest a partition of purchase order"): the suggestion (?n= parts) side by side, editable
+    quantities and delivery dates, Recalculate (pay days and day loads, nothing saved), Save the parts; then the parts with "Order all parts"."""
+    from engines.po_rules import CHANGED, SPLIT_MAX, get_po, order_po, po_stamp, save_split, split_days, suggest_split
+    po = _po_or_404(po_id)
+    h = po["header"]
+    done = [int(x) for x in request.GET.get("parts", "").split(",") if x.isdigit()]
+    if done:                                                   # after saving: the parts, and Order all parts
+        if request.method == "POST" and request.POST.get("action") == "order_all":
+            if not _can(request, "po.order", h.get("created_by")):
+                _say(request, False, "Ordering is switched off for you.")
+                return redirect(request.get_full_path())
+            over = [i for i in done if _over_limit(i)]
+            if over and not request.POST.get("confirm_over"):
+                request.session["split_over"] = over
+                return redirect(request.get_full_path())
+            msgs = []
+            for i in done:
+                ok, msg = order_po(i)
+                msgs.append(msg)
+                if ok and i in over:
+                    from engines.po_rules import note_high_day
+                    note_high_day(i)
+            _say(request, True, " ".join(msgs))
+            return redirect("/purchase-orders/")
+        rows = []
+        for i in done:
+            p = get_po(i)
+            if p:
+                ph = p["header"]
+                info = split_days(int(ph["creditor_id"]), i, [{"delivery": ph["expected_delivery_date"], "amount": p["total"]}])[0] if ph["expected_delivery_date"] else {}
+                rows.append({"po_id": i, "ref": ph["po_no"], "status": ph["status"], "total": p["total"], "delivery": ph["expected_delivery_date"],
+                             "notes": ph["notes"], **info})
+        return render(request, "buying/order_split.html", {"page_id": "purchase-orders", "po": po, "h": h, "done": rows, "parts_q": request.GET.get("parts"),
+                                                           "over_ids": request.session.pop("split_over", None), **_head(request)})
+    if h["status"] != "DRAFT" or not _can(request, "po.create", h.get("created_by")):
+        _say(request, False, "Only a draft order can be split.")
+        return redirect(f"/purchase-orders/{po_id}/")
+    n = max(2, min(SPLIT_MAX, int(request.POST.get("n") or request.GET.get("n") or 2)))
+    if request.method == "POST":
+        p = request.POST
+        lines = [int(x) for x in p.getlist("line")]
+        parts = []
+        for k in range(n):
+            qty = {}
+            for lid in lines:
+                raw = (p.get(f"q_{lid}_{k}") or "").replace(",", "").strip()
+                try:
+                    qty[lid] = float(raw) if raw else 0.0
+                except ValueError:
+                    _say(request, False, f"Part {k + 1}: '{raw}' is not a quantity.")
+                    return redirect(f"/purchase-orders/{po_id}/split/?n={n}")
+            parts.append({"delivery": _date(p.get(f"d_{k}")), "qty": qty})
+        if p.get("action") == "save":
+            ok, msg, ids = save_split(po_id, parts, p.get("stamp"))
+            if not ok and msg == CHANGED:
+                _say(request, False, "Someone else changed this order after you opened it. Nothing was saved; this is their version.")
+                return redirect(f"/purchase-orders/{po_id}/split/?n={n}")
+            _say(request, ok, msg)
+            if ok:
+                return redirect(f"/purchase-orders/{po_id}/split/?parts={','.join(map(str, ids))}")
+        sug = {"lines": suggest_split(po_id, n)["lines"], "total": None}
+        by_line = {ln["line_id"]: ln for ln in sug["lines"]}
+        shown = []
+        for pt in parts:                                           # Recalculate (or a refused save): the edited parts, with their days
+            amt = round(sum(q * by_line[lid]["unit_price"] for lid, q in pt["qty"].items() if lid in by_line), 2)
+            shown.append({"qty": pt["qty"], "amount": amt, "delivery": pt["delivery"]})
+        for pt, info in zip(shown, split_days(int(h["creditor_id"]), po_id, shown)):
+            pt.update(info)
+        sug["parts"], sug["total"] = shown, round(sum(ln["amount"] for ln in sug["lines"]), 2)
+    else:
+        sug = suggest_split(po_id, n)
+    from engines.day_cap import ceiling, target
+    rows = [{**ln, "per": [pt["qty"].get(ln["line_id"], 0) for pt in sug["parts"]]} for ln in sug["lines"]]
+    return render(request, "buying/order_split.html", {"page_id": "purchase-orders", "po": po, "h": h, "n": n, "nums": range(2, SPLIT_MAX + 1),
+                                                       "rows": rows, "parts": sug["parts"], "total": sug["total"], "stamp": po_stamp(po_id),
+                                                       "cap_target": target(), "cap_ceiling": ceiling(), **_head(request)})

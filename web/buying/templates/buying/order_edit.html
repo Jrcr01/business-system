@@ -115,6 +115,7 @@
   <label for="notes">Notes for the supplier (optional)</label><textarea id="notes" name="notes" rows="2" style="width:100%;max-width:900px">{{ h.notes|default:'' }}</textarea>
   <div class="actions">
     {% if may_order %}<button class="btn" type="submit" name="action" value="order"><span class="ms">send</span>Order it</button>{% endif %}
+    {% if h.status == "DRAFT" %}<a class="btn ghost" href="/purchase-orders/{{ h.po_id }}/split/"><span class="ms">call_split</span>Split into parts</a>{% endif %}
     <button class="btn ghost" type="submit" name="action" value="dates"><span class="ms">save</span>{% if h.status == "DRAFT" %}Keep as draft{% else %}Save{% endif %}</button>
   </div>
 </form>

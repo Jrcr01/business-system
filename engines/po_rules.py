@@ -498,8 +498,10 @@ def day_guard(creditor_id: int, delivery, estimate: float, exclude_po_id: int | 
     pay = expected_pay_date(creditor_id, delivery) if delivery else None
     if limit <= 0 or not estimate or estimate <= 0 or pay is None:
         return {"on": False, "limit": limit, "pay_date": pay, "already": 0.0, "with_order": 0.0, "over": False, "suggestion": None}
-    rows = _committed_rows(pay + timedelta(days=60), exclude_po_id)
+    from engines.day_cap import loads, soft_line           # everything that goes out on a day, cards outside Metrobank and the card reserve included (owner, 2026-10-10)
+    rows = loads(manila_today(), pay + timedelta(days=60), exclude_po_id)
     sums = rows.groupby("day")["amount"].sum() if not rows.empty else pd.Series(dtype=float)
+    plan_line = soft_line() or limit                        # suggestions aim under the target (₱350,000), the warning is at the ceiling
     already = float(sums.get(pay, 0.0))
     out = {"on": True, "limit": limit, "pay_date": pay, "already": already, "with_order": already + float(estimate), "over": already + float(estimate) > limit, "suggestion": None}
     if out["over"]:
@@ -508,7 +510,7 @@ def day_guard(creditor_id: int, delivery, estimate: float, exclude_po_id: int | 
             d = first + timedelta(days=k)
             p = expected_pay_date(creditor_id, d)
             load = float(sums.get(p, 0.0)) + float(estimate)
-            if p and load <= limit:
+            if p and load <= plan_line:
                 out["suggestion"] = {"delivery_date": d, "pay_date": p, "with_order": load}
                 break
     return out
@@ -638,9 +640,11 @@ def month_calendar(month, pay_date=None, exclude_po_id: int | None = None) -> di
     start = first - timedelta(days=first.weekday())
     end = nxt - timedelta(days=1)
     end = end + timedelta(days=6 - end.weekday())
-    rows = _committed_rows(end, exclude_po_id)
+    from engines.day_cap import loads, target
+    rows = loads(min(start, manila_today()), end, exclude_po_id)
     rows = rows[(rows["day"] >= start) & (rows["day"] <= end)] if not rows.empty else rows
     limit = float(value("po_daily_payables_limit"))
+    near = target() if 0 < target() < limit else limit * NEAR_LIMIT
     blocked = _blocked_days()
     marks = {}
     for m in {start.replace(day=1), first, end.replace(day=1)}:
@@ -655,7 +659,7 @@ def month_calendar(month, pay_date=None, exclude_po_id: int | None = None) -> di
             payees = mine.groupby("payee")["amount"].sum().sort_values(ascending=False) if not mine.empty else pd.Series(dtype=float)
             mark = marks.get(d) or {}
             closed = not is_bank_day(d, blocked)
-            level = "over" if limit > 0 and total > limit else ("near" if limit > 0 and total > limit * NEAR_LIMIT else "")
+            level = "over" if limit > 0 and total > limit else ("near" if limit > 0 and total > near else "")
             week.append({"day": d, "in_month": d.month == first.month, "total": total, "closed": closed, "past": d < today,
                          "label": mark.get("label") or ("Holiday" if mark.get("kind") == "holiday" else ""), "level": level, "selected": d == pay,
                          "payees": "; ".join(f"{p} ₱{a:,.0f}" for p, a in payees.head(6).items()) + (f"; +{len(payees) - 6} more" if len(payees) > 6 else "")})
@@ -965,3 +969,152 @@ def price_differences(creditor_id: int | None = None, since=None) -> pd.DataFram
     df["difference"] = ((df["actual_unit_price"] - df["est_unit_price"]) * df["qty_received"]).round(2)
     df["difference_pct"] = ((df["actual_unit_price"] / df["est_unit_price"] - 1) * 100).where(df["est_unit_price"] > 0)
     return df
+
+
+# --- split an order into parts (owner, 2026-10-10: "suggest a partition of purchase order") -------------------------------------------------------
+# A big order can put more on one pay day than the daily limit allows. It is split into separate POs -- each a normal order with its own number,
+# PDF, receiving and SI -- whose pay days keep each day's load under the daily target (engines/day_cap.py). Suggested, then edited, then saved.
+SPLIT_MAX = 5
+
+
+def _split_lines(po: dict) -> list[dict]:
+    out = []
+    for ln in po["lines"].to_dict("records"):
+        lp = ln.get("list_price")
+        chain = ln.get("discount_chain")
+        out.append({"line_id": int(ln["line_id"]), "item_name": ln["item_name"], "unit": ln.get("unit") or "", "qty": float(ln["qty"]),
+                    "unit_price": float(ln["est_unit_price"] or 0), "amount": float(ln["est_amount"] or 0),
+                    "list_price": None if lp is None or lp != lp else float(lp), "discount_chain": chain if isinstance(chain, str) else None})
+    return out
+
+
+def split_days(creditor_id: int, po_id: int, parts: list[dict]) -> list[dict]:
+    """Each part's pay day and that day's load with the parts before it: [{'pay', 'day_total', 'level'}] (parts: [{'delivery', 'amount'}]).
+    The order's own commitment is left out (its parts replace it)."""
+    from engines import day_cap
+    pays = [expected_pay_date(creditor_id, p["delivery"]) if p.get("delivery") else None for p in parts]
+    known = [d for d in pays if d]
+    totals = day_cap.day_totals(manila_today(), max(known), exclude_po_id=po_id) if known else {}
+    placed, out = {}, []
+    for p, pay in zip(parts, pays):
+        if pay is None:
+            out.append({"pay": None, "day_total": None, "level": ""})
+            continue
+        placed[pay] = placed.get(pay, 0.0) + float(p["amount"])
+        t = round(totals.get(pay, 0.0) + placed[pay], 2)
+        out.append({"pay": pay, "day_total": t, "level": day_cap.level(t)})
+    return out
+
+
+def suggest_split(po_id: int, parts: int) -> dict:
+    """A split of a draft order into `parts` POs (nothing is saved): lines kept whole where they fit, largest first, so the parts' amounts stay as even as
+    possible; a line bigger than one part is split by quantity (whole units). Each part gets the earliest delivery date -- Part 1 from the order's own
+    delivery date, each later part after the one before, within 21 days -- whose pay day stays at or under the daily target with what is already
+    there, else the least loaded one. {'po', 'lines', 'parts': [{'qty': {line_id: qty}, 'amount', 'delivery', 'pay', 'day_total', 'level'}], 'total'}."""
+    import math
+    from engines import day_cap
+    po = get_po(po_id)
+    if po is None:
+        raise ValueError("Order not found.")
+    parts = max(2, min(SPLIT_MAX, int(parts)))
+    lines = _split_lines(po)
+    total = round(sum(ln["amount"] for ln in lines), 2)
+    cap = total / parts
+    pieces = []                                                # (line, qty, amount)
+    for ln in sorted(lines, key=lambda x: -x["amount"]):
+        if ln["amount"] > cap + 0.005 and ln["unit_price"] > 0 and ln["qty"] > 1:
+            whole = float(ln["qty"]).is_integer()
+            step = max(1.0, math.floor(cap / ln["unit_price"])) if whole else ln["qty"] / parts
+            left = ln["qty"]
+            while left > 1e-9:
+                q = min(step, left)
+                pieces.append((ln, q, round(q * ln["unit_price"], 2)))
+                left = round(left - q, 6)
+        else:
+            pieces.append((ln, ln["qty"], ln["amount"]))
+    out = [{"qty": {}, "amount": 0.0} for _ in range(parts)]
+    for ln, q, a in sorted(pieces, key=lambda x: -x[2]):
+        p = min(out, key=lambda x: x["amount"])
+        p["qty"][ln["line_id"]] = round(p["qty"].get(ln["line_id"], 0.0) + q, 6)
+        p["amount"] = round(p["amount"] + a, 2)
+    out = sorted([p for p in out if p["qty"]], key=lambda x: -x["amount"])
+    h = po["header"]
+    cid = int(h["creditor_id"])
+    line = day_cap.soft_line()
+    start = _as_date(h["expected_delivery_date"]) or manila_today()
+    for k in range(len(out)):                                  # Part 1 from the order's own delivery date, each later part after the one before
+        prev = start if k == 0 else out[k - 1]["delivery"]
+        best, best_load = None, None
+        for n in range(0 if k == 0 else 1, 22):
+            d = prev + timedelta(days=n)
+            trial = split_days(cid, po_id, [{"delivery": x["delivery"], "amount": x["amount"]} for x in out[:k]] + [{"delivery": d, "amount": out[k]["amount"]}])[-1]
+            if trial["pay"] is None:
+                continue
+            if not line or trial["day_total"] <= line + 0.005:
+                best = d
+                break
+            if best_load is None or trial["day_total"] < best_load:
+                best, best_load = d, trial["day_total"]
+        out[k]["delivery"] = best or (prev if k == 0 else prev + timedelta(days=1))
+    for p, info in zip(out, split_days(cid, po_id, out)):
+        p.update(info)
+    return {"po": po, "lines": lines, "parts": out, "total": total}
+
+
+def save_split(po_id: int, parts: list[dict], expected_stamp: str | None = None) -> tuple[bool, str, list[int]]:
+    """Saves a split: the draft becomes Part 1 (its lines and delivery date replaced) and Parts 2..N become new draft POs for the same supplier, noted
+    "Part k of N, split from <ref>". parts: [{'delivery', 'qty': {line_id: qty}}]. Every line's quantities must add up to the original -- nothing left out,
+    nothing doubled. Audited PO_SPLIT. Returns (ok, message, the parts' po ids)."""
+    po = get_po(po_id)
+    if po is None:
+        return False, "Order not found.", []
+    h = po["header"]
+    if h["status"] != "DRAFT":
+        return False, "Only a draft order can be split (an ordered one has its number already).", []
+    if expected_stamp is not None and po_stamp(po_id) != expected_stamp:
+        return False, CHANGED, []
+    lines = {ln["line_id"]: ln for ln in _split_lines(po)}
+    parts = [p for p in parts if any(float(q or 0) > 0 for q in p["qty"].values())]
+    if len(parts) < 2:
+        return False, "A split needs at least two parts with items.", []
+    for p in parts:
+        if p.get("delivery") is None:
+            return False, "Give every part a delivery date.", []
+        if any(lid not in lines for lid in p["qty"]):
+            return False, "A line is not on this order.", []
+    for lid, ln in lines.items():
+        got = round(sum(float(p["qty"].get(lid, 0) or 0) for p in parts), 6)
+        if abs(got - ln["qty"]) > 1e-6:
+            return False, f"{ln['item_name']}: the parts hold {got:g}, the order has {ln['qty']:g}. Every quantity must go to exactly one part.", []
+    cid, order_day, n, ref = int(h["creditor_id"]), _as_date(h["order_date"]), len(parts), h["po_no"]
+
+    def part_lines(p):
+        out = []
+        for lid, q in p["qty"].items():
+            q = float(q or 0)
+            if q <= 0:
+                continue
+            ln = lines[lid]
+            x = {"item_name": ln["item_name"], "unit": ln["unit"], "qty": q}
+            if ln["list_price"] is not None:
+                x.update({"list_price": ln["list_price"], "discount_chain": ln["discount_chain"] or ""})
+            else:
+                x["est_unit_price"] = ln["unit_price"]
+            out.append(x)
+        return out
+
+    base_note = (h.get("notes") or "").strip()
+    ok, msg, _ = save_po(po_id, cid, order_day, parts[0]["delivery"], part_lines(parts[0]),
+                         (base_note + " · " if base_note else "") + f"Part 1 of {n}", expected_stamp=expected_stamp)
+    if not ok:
+        return False, msg, []
+    ids = [po_id]
+    for k, p in enumerate(parts[1:], start=2):
+        ok, msg, new_id = save_po(None, cid, order_day, p["delivery"], part_lines(p), f"Part {k} of {n}, split from {ref}")
+        if not ok:
+            return False, f"Part {k}: {msg} (Part 1 and the parts before it were saved.)", ids
+        ids.append(int(new_id))
+    with get_conn() as conn:
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_SPLIT', 'purchase_orders', ?, ?)",
+                     (po_id, f"{ref} split into {n} parts: " + ", ".join(f"#{i}" for i in ids)))
+    return True, f"Split into {n} draft orders.", ids

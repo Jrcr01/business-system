@@ -1,0 +1,59 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Split an order{% endblock %}
+{% block content %}
+<p class="note"><a href="/purchase-orders/{{ h.po_id }}/edit/">← Back to the order</a></p>
+{% if done %}
+<h2>Split into {{ done|length }} draft orders · {{ po.supplier }}</h2>
+{% if over_ids %}<div class="warnbox over-confirm"><b>{{ over_ids|length }} part{{ over_ids|length|pluralize }} would put {% if over_ids|length == 1 %}its{% else %}their{% endif %} pay day over the daily limit.</b>
+  <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="order_all"><input type="hidden" name="confirm_over" value="1">
+    <button class="btn small" type="submit">Order all parts anyway</button></form> <span class="hint">Noted on the Review list.</span></div>{% endif %}
+<div class="scroll-x"><table class="list"><tr><th>Part</th><th>Order</th><th>Delivery</th><th>Pay day</th><th style="text-align:right">Amount</th><th style="text-align:right">Day's payables</th><th></th></tr>
+  {% for r in done %}<tr><td>{{ forloop.counter }}</td><td><a href="/purchase-orders/{{ r.po_id }}/edit/">{{ r.ref }}</a> <span class="pill off">{{ r.status|title }}</span></td>
+    <td>{{ r.delivery|dmy }}</td><td>{{ r.pay|date:"m/d/Y" }}</td><td class="num">{{ r.total|floatformat:2|intcomma }}</td>
+    <td class="num"><span class="plan lvl-{{ r.level }}">{{ r.day_total|floatformat:2|intcomma }}</span></td><td class="hint">{{ r.notes|default:"" }}</td></tr>{% endfor %}
+</table></div>
+<form method="post" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="action" value="order_all">
+  <button class="btn" type="submit"><span class="ms">send</span>Order all parts</button>
+  <span class="hint">Each part gets its own PO number. Or open a part to change or order it on its own.</span></form>
+{% else %}
+<h2>Split into parts · {{ po.supplier }}</h2>
+<p class="note">The order (₱{{ total|floatformat:2|intcomma }}) becomes separate draft orders, each with its own number, delivery and pay day, so no pay day goes over
+  the daily limit. Suggested: lines kept whole where they fit, and later parts delivered on the first days whose pay day stays under ₱{{ cap_target|floatformat:0|intcomma }}.
+  Change any quantity or date, press <b>Recalculate</b>, then <b>Save the parts</b>.</p>
+<form method="get" class="bar"><div><label for="n">Number of parts</label><select id="n" name="n" onchange="this.form.submit()">{% for k in nums %}<option value="{{ k }}"{% if k == n %} selected{% endif %}>{{ k }}</option>{% endfor %}</select></div></form>
+<form method="post" id="split-form">{% csrf_token %}<input type="hidden" name="n" value="{{ n }}"><input type="hidden" name="stamp" value="{{ stamp }}">
+<div class="scroll-x"><table class="list split-table"><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit price</th>
+  {% for p in parts %}<th style="text-align:right">Part {{ forloop.counter }}</th>{% endfor %}<th>Left</th></tr>
+  {% for r in rows %}<tr data-qty="{{ r.qty }}" data-price="{{ r.unit_price }}"><td>{{ r.item_name }}<input type="hidden" name="line" value="{{ r.line_id }}"></td>
+    <td class="num">{{ r.qty|floatformat:"-2" }}</td><td class="num">{{ r.unit_price|floatformat:2|intcomma }}</td>
+    {% for q in r.per %}<td><input class="inline-input num sq" style="width:6em;text-align:right" inputmode="decimal" name="q_{{ r.line_id }}_{{ forloop.counter0 }}" value="{% if q %}{{ q|floatformat:'-2' }}{% endif %}"></td>{% endfor %}
+    <td class="left hint"></td></tr>{% endfor %}
+  <tr class="subhead"><td colspan="3"><b>Amount</b></td>{% for p in parts %}<td class="num"><b class="pamt">{{ p.amount|floatformat:2|intcomma }}</b></td>{% endfor %}<td></td></tr>
+  <tr><td colspan="3">Delivery date</td>{% for p in parts %}<td><input type="date" name="d_{{ forloop.counter0 }}" value="{{ p.delivery|date:'Y-m-d' }}"></td>{% endfor %}<td></td></tr>
+  <tr><td colspan="3">Pay day (delivery + terms)</td>{% for p in parts %}<td class="num">{{ p.pay|date:"m/d/Y"|default:"—" }}</td>{% endfor %}<td></td></tr>
+  <tr><td colspan="3">That day's payables, with this part</td>{% for p in parts %}<td class="num"><span class="plan lvl-{{ p.level }}">{% if p.day_total is not None %}₱{{ p.day_total|floatformat:0|intcomma }}{% else %}—{% endif %}</span></td>{% endfor %}<td></td></tr>
+</table></div>
+<p class="hint">Daily target ₱{{ cap_target|floatformat:0|intcomma }} · limit ₱{{ cap_ceiling|floatformat:0|intcomma }}. "Left" shows any quantity not yet given to a part.</p>
+<div class="actions"><button class="btn ghost" type="submit" name="action" value="recalc"><span class="ms">refresh</span>Recalculate</button>
+  <button class="btn" type="submit" name="action" value="save"><span class="ms">call_split</span>Save the parts</button></div>
+</form>
+<script>
+(function () {
+  var f = document.getElementById("split-form"); if (!f) return;
+  var peso = function (v) { return v.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  function sum() {
+    var amts = [].slice.call(f.querySelectorAll(".pamt")).map(function () { return 0; });
+    f.querySelectorAll("tr[data-qty]").forEach(function (tr) {
+      var qty = parseFloat(tr.dataset.qty), price = parseFloat(tr.dataset.price), used = 0;
+      tr.querySelectorAll("input.sq").forEach(function (inp, k) { var q = parseFloat(inp.value.replace(/,/g, "")) || 0; used += q; amts[k] += q * price; });
+      var left = Math.round((qty - used) * 100) / 100, cell = tr.querySelector(".left");
+      cell.textContent = left === 0 ? "✓" : (left > 0 ? left + " left" : (-left) + " too many");
+      cell.style.color = left === 0 ? "" : "#b3261e";
+    });
+    f.querySelectorAll(".pamt").forEach(function (b, k) { b.textContent = peso(Math.round(amts[k] * 100) / 100); });
+  }
+  f.addEventListener("input", sum); sum();
+})();
+</script>
+{% endif %}
+{% endblock %}

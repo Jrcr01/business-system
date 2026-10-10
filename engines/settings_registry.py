@@ -44,8 +44,15 @@ NUMBERS = [
      "The Dashboard warns when one supplier alone is at least this share of everything owed to suppliers."),
     ("po_in_forecast", "Purchasing", "Count open purchase orders in the cash forecast (1 = yes, 0 = no)", 1, 0, 1, 0, "",
      "An ordered purchase order counts as money going out on its expected pay date, in the forecast and the Check-date planner, before the supplier's invoice exists."),
-    ("po_daily_payables_limit", "Purchasing", "Warn when one day's payables would pass (0 = no warning)", 0, 0, 1_000_000_000, 2, "₱",
-     "On the purchase order form, a day whose checks, dues and orders (with this order) would add up to more than this shows a warning and a lighter day to deliver on. It is a warning only: the user decides, and ordering anyway is noted on the Review list."),
+    ("po_daily_payables_target", "Daily payment limit", "Daily target: plan each day at or under", 350_000, 0, 1_000_000_000, 2, "₱",
+     "Owner, 2026-10-09: \"no AP above 350,000 to 400,000 per day\". Days above this show amber on the Calendar; Suggest dates and the split of an order "
+     "plan each day under it. Everything that goes out counts: checks, SIs with no check yet, open orders, bank loans, cards (and the card reserve). 0 = off."),
+    ("po_daily_payables_limit", "Daily payment limit", "Daily ceiling: confirm above (0 = no warning)", 400_000, 0, 1_000_000_000, 2, "₱",
+     "A day above this shows red. Ordering, parking a check or moving a check date onto such a day asks \"Confirm anyway\" and is noted on the Review "
+     "list. It is a warning only: the user decides."),
+    ("card_reserve_on", "Daily payment limit", "Reserve room for card dues before their SOA arrives (1 = yes, 0 = no)", 1, 0, 1, 0, "",
+     "A card's SOA comes about a month before its due date. Until then, its usual due day carries an estimate -- the average of its last 3 statements -- "
+     "shown as \"Card reserve (estimate)\", so the day is not filled by orders or checks."),
     ("po_max_defer_days", "Purchasing", "Suggest a later order date up to", 30, 0, 180, 0, "days later",
      "When an order does not fit the cash plan, the system looks this many days ahead for the first order date that does."),
     ("planner_max_days_late", "Check-date planner", "Planner may push a check at most", 7, 0, 60, 0, "days later",

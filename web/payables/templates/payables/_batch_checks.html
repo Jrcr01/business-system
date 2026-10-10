@@ -122,12 +122,19 @@
   <div class="bar split-bar">
     <div><label>How to split</label>
       <span class="seg"><label><input type="radio" name="split" value="count" checked> By number of checks</label>
-        <label><input type="radio" name="split" value="invoice"{% if not open_invoices %} disabled{% endif %}> One check per invoice ({{ open_invoices|length }})</label></span></div>
+        <label><input type="radio" name="split" value="invoice"{% if not open_invoices %} disabled{% endif %}> One check per invoice ({{ open_invoices|length }})</label>
+        <label><input type="radio" name="split" value="limit"{% if not suggested %} disabled{% endif %}> Within the daily limit</label></span></div>
     <div id="split-n-box"><label for="split-n">Number of checks</label><input id="split-n" class="inline-input" type="number" min="1" max="50" value="1" style="width:6em"></div>
     <button class="btn small ghost" type="button" id="split-go"><span class="ms">call_split</span>Split</button>
   </div>
   <p class="hint">By number: the balance is split evenly in whole pesos (the last check takes the centavos), all dated {{ split_day|date:"m/d/Y" }}. Per invoice: one check for each
-    unpaid invoice, on its due date, for what is left of it. Every date and amount stays editable.</p>
+    unpaid invoice, on its due date, for what is left of it. Within the daily limit: dates that keep each day's payables under the daily target (never before an
+    SI's due date, one check a day for this supplier); a row marked "Doesn't fit" could not stay under it. Every date and amount stays editable.</p>
+  {% if suggested %}<details class="hint" id="sug-box"><summary>What "Within the daily limit" suggests ({{ suggested|length }} check{{ suggested|length|pluralize }})</summary>
+    <table class="list" style="max-width:640px"><tr><th>Dated</th><th style="text-align:right">Amount</th><th>SIs</th><th style="text-align:right">Day total</th><th></th></tr>
+    {% for s in suggested %}<tr><td>{{ s.date }}</td><td class="num">{{ s.amount|floatformat:2|intcomma }}</td><td>{{ s.invoices }}</td>
+      <td class="num">{{ s.day_total|floatformat:2|intcomma }}</td><td>{% if s.status == "Doesn't fit" %}<span class="pill warn">Doesn't fit</span>{% elif s.status == "Moved" %}<span class="pill">moved later</span>{% endif %}</td></tr>{% endfor %}
+    </table></details>{% endif %}
   <div class="scroll-x"><table class="list" style="max-width:560px" id="park-rows"><tr><th>#</th><th>Dated</th><th>Amount</th></tr>
     {% for i in park_rows %}<tr data-i="{{ i }}"{% if i > 6 %} hidden{% endif %}><td class="hint">{{ i }}</td>
       <td><input type="date" name="d{{ i }}"{% if i == 1 %} value="{{ split_day|date:'Y-m-d' }}"{% endif %}></td>
@@ -136,12 +143,13 @@
   <p><a href="#" id="park-add">+ Add a row</a> · <span id="park-sum" class="hint"></span></p>
   <button class="btn small" type="submit"><span class="ms">add</span>Park these checks</button>
 </form>
-{{ open_invoices|json_script:"open-invoices" }}
+{{ open_invoices|json_script:"open-invoices" }}{{ suggested|json_script:"suggested-dates" }}
 <script>
 (function () {
   var f = document.getElementById("park-form"); if (!f) return;
   var rows = [].slice.call(f.querySelectorAll("#park-rows tr[data-i]")), remaining = parseFloat(f.dataset.remaining) || 0;
   var invoices = JSON.parse(document.getElementById("open-invoices").textContent || "[]");
+  var suggested = JSON.parse((document.getElementById("suggested-dates") || {}).textContent || "[]");
   var peso = function (v) { return v.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
   var cell = function (r, k) { return r.querySelector('[name="' + k + r.dataset.i + '"]'); };
   function sum() {
@@ -163,10 +171,11 @@
     return out;
   }
   var nBox = document.getElementById("split-n-box");
-  f.querySelectorAll('input[name=split]').forEach(function (r) { r.addEventListener("change", function () { nBox.hidden = r.value === "invoice" && r.checked; }); });
+  f.querySelectorAll('input[name=split]').forEach(function (r) { r.addEventListener("change", function () { nBox.hidden = r.value !== "count" && r.checked; }); });
   document.getElementById("split-go").addEventListener("click", function () {
     var mode = f.querySelector('input[name=split]:checked').value;
     if (mode === "invoice") { fill(invoices.map(function (x) { return [x.due, x.remaining]; }).slice(0, rows.length)); return; }
+    if (mode === "limit") { fill(suggested.map(function (x) { return [x.date, x.amount]; }).slice(0, rows.length)); var box = document.getElementById("sug-box"); if (box) box.open = true; return; }
     var n = Math.max(1, Math.min(rows.length, parseInt(document.getElementById("split-n").value) || 1));
     fill(evenly(remaining, n).map(function (a) { return [f.dataset.day, a]; }));
   });

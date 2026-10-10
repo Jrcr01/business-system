@@ -3,7 +3,9 @@
 {% block content %}
 <h2><span class="ms" style="font-size:28px">calendar_month</span> Calendar</h2>
 <p class="note">Every payable, day by day: supplier and lender checks, bank loans and cards. <span class="cal-key paid">paid</span> cleared or ticked ·
-  <span class="cal-key due">to pay</span> · <span class="cal-key off">weekend, holiday or no-check day</span>. Unpaid items from earlier days count on today.</p>
+  <span class="cal-key due">to pay</span> · <span class="cal-key off">weekend, holiday or no-check day</span>. Unpaid items from earlier days count on today.
+  {% if cap_ceiling or cap_target %}<br>Daily limit: the line under each day is everything planned to go out (open orders and card reserves included) ·
+  <span class="cap-key near">above ₱{{ cap_target|floatformat:0|intcomma }}</span> · <span class="cap-key over">above ₱{{ cap_ceiling|floatformat:0|intcomma }}</span>{% endif %}</p>
 <div class="cal-head">
   <a class="btn small ghost" href="?m={{ prev }}" aria-label="Month before"><span class="ms">chevron_left</span></a>
   <b>{{ first|date:"F Y" }}</b>
@@ -18,15 +20,20 @@
      href="?m={{ m }}&day={{ c.d|date:'Y-m-d' }}#day">
     <span class="dd">{{ c.d|date:"d" }}</span>{% if c.mark %}<span class="mk" title="{{ c.mark.label }}">{% if c.mark.kind == "holiday" %}holiday{% elif c.mark.kind == "custom" %}no checks{% else %}note{% endif %}</span>{% endif %}
     {% if c.n %}<b>₱{{ c.total|floatformat:0|intcomma }}</b><span class="cnt">{% if c.due_n %}{{ c.due_n }} to pay{% endif %}{% if c.due_n and c.paid_n %} · {% endif %}{% if c.paid_n %}{{ c.paid_n }} paid{% endif %}</span>{% endif %}
+    {% if c.plan and not c.out %}<span class="plan lvl-{{ c.lvl }}" title="Planned out (with open orders and card reserves)">plan ₱{{ c.plan|floatformat:0|intcomma }}</span>{% endif %}
   </a>{% endfor %}{% endfor %}
 </div>
 
 <div class="grp" id="day">{{ pick|date:"l" }} {{ pick|date:"m/d/Y" }}{% if day_rows %} · ₱{{ day_total|floatformat:2|intcomma }} · {{ day_rows|length }} item{{ day_rows|length|pluralize }}{% endif %}
   {% if pick_mark %}<span class="pill warn">{% if pick_mark.kind == "holiday" %}Holiday{% elif pick_mark.kind == "custom" %}No-check day{% else %}Note{% endif %}{% if pick_mark.label %}: {{ pick_mark.label }}{% endif %}</span>{% endif %}</div>
-{% if day_rows %}
+{% if pick_plan %}<p class="note">Planned to go out this day: <b class="plan lvl-{{ pick_lvl }}">₱{{ pick_plan|floatformat:2|intcomma }}</b>
+  {% if pick_lvl == "over" %}— above the daily limit ₱{{ cap_ceiling|floatformat:2|intcomma }}{% elif pick_lvl == "near" %}— above the target ₱{{ cap_target|floatformat:2|intcomma }}{% endif %}</p>{% endif %}
+{% if day_rows or extra %}
 <div class="scroll-x"><table class="list"><tr><th>Pay to</th><th>Kind</th><th>Check / reference</th><th style="text-align:right">Amount</th><th>Status</th></tr>
   {% for r in day_rows %}<tr><td>{{ r.payee }}</td><td>{{ r.kind }}</td><td>{{ r.ref|default:"—" }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td>
     <td>{% if r.paid %}<span class="pill">paid</span>{% elif r.late_from %}<span class="pill warn">to pay · from {{ r.late_from|date:"m/d/Y" }}</span>{% else %}to pay{% endif %}</td></tr>{% endfor %}
+  {% for r in extra %}<tr class="est"><td>{{ r.payee }}</td><td>{{ r.kind }}</td><td><i>{{ r.ref }}</i></td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td>
+    <td><span class="hint">{% if r.kind == "Card reserve" %}estimate until the SOA comes{% else %}not owed yet{% endif %}</span></td></tr>{% endfor %}
 </table></div>
 <p class="hint">Mark what is paid on <a href="/checks/">Daily payables</a>.</p>
 {% else %}<p class="note">Nothing on this day.</p>{% endif %}

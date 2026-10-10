@@ -28,8 +28,9 @@ def _supplier_with_a_heavy_pay_day(db, heavy=8000.0):
     return cid, pay
 
 
-def test_with_no_limit_set_there_is_no_guard(db):
+def test_with_the_limit_switched_off_there_is_no_guard(db):
     cid, pay = _supplier_with_a_heavy_pay_day(db)
+    set_setting("po_daily_payables_limit", 0, "Purchasing")          # the default is now ₱400,000 (owner, 2026-10-09); 0 switches it off
     assert day_guard(cid, DELIVERY, 4000.0)["on"] is False
 
 

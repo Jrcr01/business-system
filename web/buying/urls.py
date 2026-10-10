@@ -13,5 +13,6 @@ urlpatterns = [
     path("purchase-orders/match/", orders.match, name="po_match"),
     path("purchase-orders/<int:po_id>/", orders.order, name="po"),
     path("purchase-orders/<int:po_id>/edit/", orders.order_edit, name="po_edit"),
+    path("purchase-orders/<int:po_id>/split/", orders.order_split, name="po_split"),
     path("purchase-orders/<int:po_id>/pdf/", orders.order_pdf, name="po_pdf"),
 ]

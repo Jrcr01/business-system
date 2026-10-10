@@ -24,7 +24,16 @@ def page_frame(request) -> dict:
         "may_search": bool(user) and __import__("engines.permissions", fromlist=["sees_search"]).sees_search(user["role"]),
         "search_q": request.GET.get("q", "") if request.path == "/search/" else "",
         "page_notice": _page_notice() if user else "",
+        "over_confirm": _over_confirm(request) if user else None,
     }
+
+
+def _over_confirm(request):
+    try:
+        from payables.day_limit import pending
+        return pending(request)
+    except Exception:                                   # noqa: BLE001 -- never break a page
+        return None
 
 
 def _page_notice() -> str:

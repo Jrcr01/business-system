@@ -7,7 +7,7 @@
 <link rel="icon" href="{% static 'assets/slicks_logo.jpg' %}">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
-<link rel="stylesheet" href="{% static 'core/slicks.css' %}?v=2026-10-09r">
+<link rel="stylesheet" href="{% static 'core/slicks.css' %}?v=2026-10-10a">
 </head>
 <body>
 {% if me %}
@@ -40,6 +40,15 @@
 {% if page_notice %}<div class="notice page-notice"><span class="ms">campaign</span> {{ page_notice }}</div>{% endif %}
 {% if request.view_only %}<div class="msg view-note"><span class="ms">visibility</span> View only: you can look at this page, but the System admin has not switched on changes here for you.</div>{% endif %}
 {% for m in messages %}<div class="msg {{ m.tags }}">{{ m|usdates }}</div>{% endfor %}
+{% if over_confirm %}{% load humanize %}<div class="warnbox over-confirm"><b>{{ over_confirm.what }} would put {% if over_confirm.over|length == 1 %}a day{% else %}{{ over_confirm.over|length }} days{% endif %}
+  over the daily limit of ₱{{ over_confirm.ceiling|floatformat:2|intcomma }}</b>
+  <ul>{% for d in over_confirm.over %}<li>{{ d.day|date:"D m/d/Y" }}: already ₱{{ d.already|floatformat:2|intcomma }} + this ₱{{ d.adding|floatformat:2|intcomma }}
+    = <b>₱{{ d.total|floatformat:2|intcomma }}</b></li>{% endfor %}</ul>
+  <form method="post" action="{{ over_confirm.back }}" style="display:inline">{% csrf_token %}
+    {% for f in over_confirm.fields %}<input type="hidden" name="{{ f.0 }}" value="{{ f.1 }}">{% endfor %}<input type="hidden" name="confirm_over" value="1">
+    <button class="btn small" type="submit">Confirm anyway</button></form>
+  <a class="btn small ghost" href="{{ over_confirm.back }}">Change it</a>
+  <p class="hint">Confirming is noted on the Review list. See the days on the <a href="/calendar/">Calendar</a>.</p></div>{% endif %}
 {% block content %}{% endblock %}
 </main>
 <script>

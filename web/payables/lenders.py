@@ -215,14 +215,29 @@ def _note_post(request, note: dict):
             if not row or row["status"] == "Active":
                 _say(request, False, "That payment already has its check.")
             else:
-                ok, msg, _ = issue_check(int(note["creditor_id"]), round(float(row["amount"]), 2), date.fromisoformat(str(row["due_date"])[:10]),
+                from payables import day_limit
+                day = date.fromisoformat(str(row["due_date"])[:10])
+                held, over = day_limit.check(request, [(day, float(row["amount"]))], back, "Parking a lender check")
+                if held:
+                    return held
+                ok, msg, _ = issue_check(int(note["creditor_id"]), round(float(row["amount"]), 2), day,
                                          loan_note_id=lnid, installment_id=int(p.get("installment_id")))
+                if ok:
+                    day_limit.flag(over, "a parked lender check of")
                 _say(request, ok, msg)
     elif what == "park_all":
         if not _can(request, "check.park"):
             _say(request, False, "Parking checks is switched off for you.")
         else:
+            from payables import day_limit
+            todo = _rows("SELECT due_date, principal + interest AS amount FROM loan_installments WHERE loan_note_id = ? AND status = 'Pending'", (lnid,))
+            held, over = day_limit.check(request, [(date.fromisoformat(str(r["due_date"])[:10]), float(r["amount"])) for r in todo], back,
+                                         "Parking the lender checks")
+            if held:
+                return held
             ok, msg, _ = ls.issue_all_pdcs(lnid)
+            if ok:
+                day_limit.flag(over, "a parked lender check of")
             _say(request, ok, msg)
     else:
         _say(request, False, "Unknown action.")

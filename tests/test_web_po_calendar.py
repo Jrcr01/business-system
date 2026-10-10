@@ -75,7 +75,10 @@ def test_the_month_calendar_shows_the_days_and_a_click_moves_the_order(web, db):
     assert 'class="cal"' in page and "Payables by pay day" in page and "Over limit" in page    # the month view is the first one shown
     target = manila_today() + timedelta(days=45)
     target += timedelta(days=(7 - target.weekday()) % 7)                       # a Monday, well ahead
-    r = web.post(f"/purchase-orders/{po_id}/edit/", {"action": "pay_day", "stamp": _stamp(po_id), "order_date": "2026-10-01", "day": target.isoformat(),
+    from engines.po_rules import _blocked_days
+    while target.isoformat() in {str(d)[:10] for d in _blocked_days()}:           # ... not a holiday (11/30/2026 is Bonifacio Day)
+        target += timedelta(days=7)
+    r = web.post(f"/purchase-orders/{po_id}/edit/", {"action": "pay_day", "stamp": _stamp(po_id), "order_date": manila_today().isoformat(), "day": target.isoformat(),
                                                     "m": target.replace(day=1).isoformat()})
     assert r.status_code == 302
     delivery = date.fromisoformat(fetchone(_db(), "SELECT expected_delivery_date FROM purchase_orders WHERE po_id = ?", (po_id,))[0][:10])

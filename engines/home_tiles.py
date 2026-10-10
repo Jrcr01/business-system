@@ -186,6 +186,22 @@ def _calendar():
     return peso_short(float(today["amount"].sum())), f"due today · {len(today)} item(s)", ("warn" if len(today) else "none")
 
 
+def _over_limit_days():
+    """Days in the next 30 above the daily ceiling (owner, 2026-10-09: "no AP above 350,000 to 400,000 per day"), counting everything that goes out."""
+    from datetime import timedelta
+    from engines import day_cap
+    from engines.clock import manila_today
+    c = day_cap.ceiling()
+    if c <= 0:
+        return "—", "daily limit off", "none"
+    today = manila_today()
+    over = {d: v for d, v in day_cap.day_totals(today, today + timedelta(days=30)).items() if v > c + 0.005}
+    if not over:
+        return "0", "days over the limit · next 30 days", "ok"
+    first = min(over)
+    return str(len(over)), f"over ₱{c:,.0f} · first {first:%m/%d} · ₱{sum(over.values()) - c * len(over):,.0f} above", "alert"
+
+
 def _checks():
     """Daily payables (owner, 2026-10-09): what is due today or overdue, every track, until it is paid."""
     from engines.clearing import daily_payables
@@ -339,6 +355,7 @@ for _t in (
     Tile("payment-run", "pay", "Payment run", _payment_run),
     Tile("checks", "pay", "Daily payables", _checks, icon=":material/fact_check:"),
     Tile("calendar", "pay", "Calendar", _calendar, icon=":material/calendar_month:"),
+    Tile("calendar", "pay", "Days over the limit", _over_limit_days, key="over-limit-days", icon=":material/warning:"),
     Tile("release", "pay", "Release checks", _release),
     Tile("payables-due", "pay", "Payables due", _payables_due, actions=[
         A("Everything owed, with downloads", "All tracks, by date; CSV, Excel and PDF", ":material/event:", pd_tab="Everything owed"),

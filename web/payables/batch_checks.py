@@ -30,7 +30,14 @@ def park_context(b: dict, rows_fn, due_today) -> dict:
                                                   for _, r in inv.iterrows() if float(r[col]) > 0.004]
     day = min((x["due"] for x in open_), default=None)
     from datetime import date as _d
-    return {"split_day": _d.fromisoformat(day) if day else due_today, "open_invoices": open_, "park_rows": range(1, PARK_ROWS + 1)}
+    try:                                                     # "Within the daily limit" (owner, 2026-10-09): dates that keep each day under the target
+        from engines.day_cap import soft_line, suggest_batch_dates
+        suggested = [{"date": s["date"].isoformat(), "amount": s["amount"], "invoices": s["invoices"], "status": s["status"],
+                      "day_total": s["day_total"]} for s in suggest_batch_dates(int(b["statement_id"]))] if soft_line() else []
+    except Exception:                                        # noqa: BLE001 -- the grid must never break
+        suggested = []
+    return {"split_day": _d.fromisoformat(day) if day else due_today, "open_invoices": open_, "park_rows": range(1, PARK_ROWS + 1),
+            "suggested": suggested}
 
 
 def booklet_plan(request, num_checks: list[dict]) -> dict:
@@ -139,7 +146,13 @@ def post(request, b: dict, say, can, loan_note_id: int | None = None) -> HttpRes
         if not rows:
             say(False, "Give each check a date and an amount.")
             return redirect(back)
+        from payables import day_limit
+        held, over = day_limit.check(request, [(r["check_date"], r["amount"]) for r in rows], back, "Parking checks")
+        if held:
+            return held
         ok, msg, _ = cr.issue_checks_grid(cid, sid, rows)
+        if ok:
+            day_limit.flag(over, "a parked check of")
         say(ok, msg)
         return redirect(back)
 
@@ -150,9 +163,23 @@ def post(request, b: dict, say, can, loan_note_id: int | None = None) -> HttpRes
         one = int(p.get("check_id") or 0)
         day, amount = _date(p.get("date")), p.get("amount", "").replace(",", "").strip()
         try:
-            ok, msg = cr.edit_parked_check(one, float(amount), day)
+            new_amount = float(amount)
         except (TypeError, ValueError):
-            ok, msg = False, "Give the check a date and an amount."
+            say(False, "Give the check a date and an amount.")
+            return redirect(back)
+        from payables import day_limit
+        with get_conn() as conn:
+            old = conn.execute("SELECT check_date, amount FROM checks_issued WHERE check_id = ?", (one,)).fetchone()
+        over = []
+        if day and old:
+            from datetime import date as _d
+            held, over = day_limit.check(request, [(day, new_amount)], back, "Changing a parked check",
+                                         minus=[(_d.fromisoformat(str(old[0])[:10]), float(old[1]))])
+            if held:
+                return held
+        ok, msg = cr.edit_parked_check(one, new_amount, day)
+        if ok:
+            day_limit.flag(over, "a moved check of")
         say(ok, msg)
         return redirect(back)
 

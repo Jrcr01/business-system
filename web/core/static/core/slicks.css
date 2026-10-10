@@ -366,3 +366,12 @@ main.view-only form[method=post], main.view-only form[method=POST] { display: no
 .wn-item ul { margin: 4px 0 6px 18px; padding: 0; }
 .wn-item li { margin: 2px 0; }
 .page-notice { margin: 0 0 10px; }
+
+/* The daily payment limit on the Calendar (owner, 2026-10-09): planned out per day against the target and the ceiling */
+.cal .cell .plan { display: block; font-size: .72rem; margin-top: 2px; padding: 1px 4px; border-radius: 4px; background: #ecfdf5; color: #065f46; }
+.plan.lvl-near, .cap-key.near { background: #fef3c7; color: #92400e; }
+.plan.lvl-over, .cap-key.over { background: #fee2e2; color: #991b1b; font-weight: 600; }
+.cap-key { padding: 1px 6px; border-radius: 4px; }
+b.plan { padding: 1px 6px; border-radius: 4px; }
+tr.est td { color: #6b7280; }
+.over-confirm ul { margin: 6px 0 8px 18px; }
