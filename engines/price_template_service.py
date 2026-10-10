@@ -120,6 +120,121 @@ def build_template(creditor_id: int | None = None, on: date | None = None, layou
     return buf.getvalue()
 
 
+TYPE_HOW_TO = [
+    "How to fill this price list",
+    "",
+    "1. One sheet per kind of product: Tires, Battery, Mags, Rims. Each has its own columns. Use only the sheets you need; empty sheets are ignored.",
+    "2. One row per product. Columns in orange (marked *) must be filled. Brand is always required.",
+    "3. Click a cell under Brand, Terrain, Type, Tube or Terminal: an arrow appears, pick from the list. Brand also takes a new brand typed in.",
+    "4. Tires: Size is only the size (315/80R22.5). The ply goes in Ply / load-speed (20PR), Lug / Rib / Mix or A/T ... in Terrain, the pattern code in Pattern (MD777).",
+    "5. List price is the supplier's price BEFORE any discount, as a number. The supplier's discount (less 5%, less 5%) is set in the system, not here.",
+    "6. Effective date is the day the new price starts (mm/dd/yyyy). Leave it empty to use the date you pick when uploading (the usual way).",
+    "7. A price update: type the new price over the old one. The 'Changed' column then says 'changed' on that row, so you can check before uploading.",
+    "8. Remarks: only what else tells this product apart from a similar one (Mining, Heavy Duty, XL). Leave it empty otherwise.",
+    "9. Never repeat a row. The same product on a later date is a new price: the old one stays in the history.",
+    "",
+    "Before anything is saved, the system lists every row it could not read (by sheet and row number) and shows what is new, changed and the same.",
+    "",
+    "Examples:",
+    "Tires:    Westlake | 315/80R22.5 | 20PR | Lug | MD777 | TBR | TL | ... | 16,800",
+    "Battery:  Motolite | NS60 | 12 | 45 | 430 | MF | L | ... | 5,200",
+    "Rims:     Westlake | 8.25x22.5 | 10 | 335 | 169 | TL | 16mm | Silver | ... | 4,150",
+    "Mags:     Enkei | RPF1 | 17x7.5 | 5x114.3 | ET40 | 73.1 | Silver | ... | 12,500",
+]
+SUPPLIER_LINE = "Supplier: "
+TYPE_ROWS = 2000                                 # how far down the drop-downs and checks reach
+
+
+def build_type_template(creditor_id: int | None = None, on: date | None = None) -> bytes:
+    """The standard template (owner, 2026-10-10: "standardize the fields for each type"; "a drop down instead of just data validation"): one sheet per
+    type -- Tires, Battery, Rims, Mags -- each with exactly its fields (product_catalog.CATEGORY_FIELDS) and the common columns; real drop-downs on the
+    choice fields and Brand (from a hidden 'Lists' sheet); List price must be a number above 0 and Effective date a date; a 'Changed' column that marks an
+    edited price. With a supplier it is pre-filled with that supplier's items and prices in force, so an update is: type the new prices, upload."""
+    from openpyxl.worksheet.datavalidation import DataValidation
+    wb = Workbook()
+    guide = wb.active
+    guide.title = "How to fill"
+    supplier = _supplier_name(creditor_id) if creditor_id else ""
+    lines = TYPE_HOW_TO[:1] + ([SUPPLIER_LINE + supplier] if supplier else []) + TYPE_HOW_TO[1:]
+    for i, line in enumerate(lines, start=1):
+        guide.cell(row=i, column=1, value=line).font = Font(bold=(i == 1 or line.startswith(SUPPLIER_LINE)), size=14 if i == 1 else 11)
+    guide.column_dimensions["A"].width = 150
+    current = _current_rows(creditor_id, on or manila_today(), with_remark=True) if creditor_id else {}
+
+    lists = wb.create_sheet("Lists")                                    # the drop-downs' choices, out of sight
+    brands = sorted({r["brand"] for rows in current.values() for r in rows} | set(pc.brands() if hasattr(pc, "brands") else []), key=str.lower)
+    named = {"brand": brands or [""]}
+    for category in pc.CATEGORIES:
+        for fld in pc.CATEGORY_FIELDS[category]:
+            if fld["choices"]:
+                named[f"{category}.{fld['key']}"] = list(fld["choices"])
+    ref = {}
+    for j, (name, values) in enumerate(named.items(), start=1):
+        col = get_column_letter(j)
+        lists.cell(row=1, column=j, value=name)
+        for i, v in enumerate(values, start=2):
+            lists.cell(row=i, column=j, value=v)
+        ref[name] = f"=Lists!${col}$2:${col}${max(2, len(values) + 1)}"
+    lists.sheet_state = "hidden"
+
+    head_fill, req_fill = PatternFill("solid", fgColor="1F3A5F"), PatternFill("solid", fgColor="B45309")
+    for category in pc.CATEGORIES:
+        ws = wb.create_sheet(category)
+        headers = _headers(category) + [("changed", "Changed", False), ("old_price", "Old price", False)]
+        col_of = {key: get_column_letter(j) for j, (key, _, _) in enumerate(headers, start=1)}
+        for j, (key, text, required) in enumerate(headers, start=1):
+            c = ws.cell(row=1, column=j, value=_title(text, required))
+            c.font, c.fill, c.alignment = Font(bold=True, color="FFFFFF"), (req_fill if required else head_fill), Alignment(wrap_text=True, vertical="center")
+            ws.column_dimensions[get_column_letter(j)].width = {"brand": 18, "size": 18, "pattern": 18, "model": 20, "remarks": 26}.get(key, max(13, len(text) + 5))
+            fld = next((f for f in pc.CATEGORY_FIELDS[category] if f["key"] == key), None)
+            if fld and fld["note"]:
+                c.comment = None
+        ws.row_dimensions[1].height = 32
+        ws.freeze_panes = "B2"
+        ws.column_dimensions[col_of["old_price"]].hidden = True
+        last = TYPE_ROWS
+        # drop-downs: an arrow in the cell with the choices. Brand takes a new one typed in (a warning, not a stop); the fixed-choice fields only their list.
+        dv = DataValidation(type="list", formula1=ref["brand"], allow_blank=True, errorStyle="warning", showErrorMessage=True,
+                            errorTitle="New brand?", error="This brand is not in the list yet. Keep it if it is right.")
+        ws.add_data_validation(dv)
+        dv.add(f"{col_of['brand']}2:{col_of['brand']}{last}")
+        for fld in pc.CATEGORY_FIELDS[category]:
+            if not fld["choices"]:
+                continue
+            dv = DataValidation(type="list", formula1=ref[f"{category}.{fld['key']}"], allow_blank=True, errorStyle="stop", showErrorMessage=True,
+                                errorTitle=fld["label"], error=f"Pick one from the list: {', '.join(fld['choices'])}.")
+            ws.add_data_validation(dv)
+            dv.add(f"{col_of[fld['key']]}2:{col_of[fld['key']]}{last}")
+        dv = DataValidation(type="decimal", operator="greaterThan", formula1="0", allow_blank=True, errorStyle="stop", showErrorMessage=True,
+                            errorTitle="List price", error="Type the price as a number above 0, without the peso sign.")
+        ws.add_data_validation(dv)
+        dv.add(f"{col_of['list_price']}2:{col_of['list_price']}{last}")
+        dv = DataValidation(type="date", operator="greaterThan", formula1="36526", allow_blank=True, errorStyle="stop", showErrorMessage=True,
+                            errorTitle="Effective date", error="Type a date, like 09/15/2026.")
+        ws.add_data_validation(dv)
+        dv.add(f"{col_of['effective_date']}2:{col_of['effective_date']}{last}")
+        rows = current.get(category, [])
+        for r, rowvals in enumerate(rows, start=2):
+            for j, (key, _, _) in enumerate(headers, start=1):
+                if key == "changed":
+                    ws.cell(row=r, column=j, value=f'=IF(AND({col_of["list_price"]}{r}<>"",{col_of["list_price"]}{r}<>{col_of["old_price"]}{r}),"changed","")')
+                    continue
+                v = rowvals.get("list_price") if key == "old_price" else (rowvals.get("item_remark", "") if key == "remarks" else rowvals.get(key, ""))
+                if key == "effective_date":
+                    v = ""                                            # left empty on purpose: a new price takes the date picked when uploading (the old date already has its price)
+                cell = ws.cell(row=r, column=j, value=v if v != "" else None)
+                if key == "effective_date":
+                    cell.number_format = "mm/dd/yyyy"
+                if key in ("list_price", "old_price"):
+                    cell.number_format = "#,##0.00"
+        for r in range(len(rows) + 2, len(rows) + 202):                  # new rows typed under the list are marked too
+            ws.cell(row=r, column=[h[0] for h in headers].index("changed") + 1,
+                    value=f'=IF({col_of["list_price"]}{r}<>"","new","")')
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def _build_standard(creditor_id: int | None, on: date | None) -> bytes:
     wb = Workbook()
     guide = wb.active
@@ -242,6 +357,12 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
         if not out["rows"] and not out["problems"]:
             out["problems"].append("The file has no product rows.")
         return out
+    if "How to fill" in wb.sheetnames:                          # the per-type template names its supplier on the guide sheet
+        for row in wb["How to fill"].iter_rows(min_row=1, max_row=6, max_col=1, values_only=True):
+            text = str(row[0] or "")
+            if text.startswith(SUPPLIER_LINE) and text[len(SUPPLIER_LINE):].strip():
+                out["suppliers"].append(text[len(SUPPLIER_LINE):].strip())
+    first: dict = {}
     for category in pc.CATEGORIES:
         if category not in wb.sheetnames:
             out["sheets_missing"].append(category)
@@ -281,7 +402,14 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
                 v = pc._clean(v)
                 if fld["required"] and not v:
                     bad.append(f"{fld['label']} is empty")
+                if v and fld["choices"]:                              # a fixed-choice field: only its list (capitals ignored; 'AT' reads as 'A/T')
+                    hit = next((c for c in fld["choices"] if c.lower() == v.lower()), None) or (pc.terrain_of(v) if fld["key"] == "terrain" else None)
+                    if hit is None:
+                        bad.append(f"{fld['label']} '{v}' is not one of {', '.join(fld['choices'])}")
+                    else:
+                        v = hit
                 values[fld["key"]] = v
+            remark = pc._clean(cell("remarks"))                      # what else tells this product apart (Mining, Heavy Duty ...): part of the item
             raw_price = cell("list_price")
             price = pls._to_price(raw_price)
             if price is None:
@@ -291,17 +419,18 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
             if when is None:
                 bad.append(f"Effective date '{raw_date}' could not be read" if raw_date != "" else "Effective date is empty (or pick a start date when uploading)")
             if not bad:
-                key = (category, pc.product_key(category, brand, **values), str(when))
+                key = (category, pc.product_key(category, brand, remark, **values), str(when))
                 if key in seen:
-                    bad.append("the same product and date appears twice in the file")
+                    bad.append(f"the same product and date as row {first.get(key, '?')}: keep one")
                 seen.add(key)
+                first.setdefault(key, rno)
             if bad:
                 out["problems"].append(f"{where}: " + "; ".join(bad) + ".")
                 continue
             out["brands"][brand] = out["brands"].get(brand, 0) + 1
-            out["rows"].append({"category": category, "row": rno, "brand": brand, "values": values, "supplier_code": pc._clean(cell("supplier_code")), "unit": pc._clean(cell("unit")),
-                                "list_price": price, "effective_date": when, "remarks": pc._clean(cell("remarks")),
-                                "name": pc.standard_name(category, brand, **values)})
+            out["rows"].append({"category": category, "row": rno, "brand": brand, "values": values, "item_remark": remark, "supplier_code": pc._clean(cell("supplier_code")),
+                                "unit": pc._clean(cell("unit")), "list_price": price, "effective_date": when, "remarks": remark,
+                                "name": pc.standard_name(category, brand, **values) + (f" {remark}" if remark else "")})
         out["counts"][category] = n
     if not out["rows"] and not out["problems"]:
         out["problems"].append("The file has no product rows.")
@@ -344,6 +473,7 @@ def _parse_standard(rows: list, default_date: date | None, out: dict, seen: dict
         if category == "Tires":                                 # brand, size, pattern, terrain kept clean; everything else = the others (owner, 2026-10-08)
             out["counts"][category] = out["counts"].get(category, 0) + 1
             values, remark, tire_bad = pc.tidy_tire(str(cell("model")), str(cell("size")), str(cell("terrain")), str(cell("other")))
+            values, remark = pc.field_tire_remark(values, remark)       # ply, tube and type to their own fields (owner, 2026-10-10: standard fields per type)
             values = pc.normalise_specs(category, values)
             bad += tire_bad
             if values["size"] != pc._clean(cell("size")).replace(" ", "").upper() and not tire_bad:

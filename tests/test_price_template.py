@@ -63,9 +63,10 @@ def test_every_kind_of_problem_is_named_by_sheet_and_row():
     parsed = pt.parse_workbook(_fill(bad))
     text = "\n".join(parsed["problems"])
     for needle in ("Tires row 2: Brand is empty", "Tires row 3: Size is empty", "Tires row 5: List price 'call'",
-                   "Tires row 6: Effective date 'someday'", "Tires row 7: Effective date is empty", "Tires row 9: the same product and date appears twice"):
+                   "Tires row 6: Effective date 'someday'", "Tires row 7: Effective date is empty", "Tires row 9: the same product and date as row 8"):
         assert needle in text, needle
-    assert [r["row"] for r in parsed["rows"]] == [4, 8]                                                            # the good rows survive (an unlisted Terrain is fine since 2026-10-04)
+    assert "Tires row 4: Terrain 'Q/Q' is not one of" in text                                                      # the choice fields are standard again (owner, 2026-10-10)
+    assert [r["row"] for r in parsed["rows"]] == [8]                                                               # the good row survives
     assert len(pt.parse_workbook(_fill(bad), default_date=DAY)["problems"]) == len(parsed["problems"]) - 1          # a pick-date on upload fills the empty date
 
 

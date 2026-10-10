@@ -20,6 +20,7 @@ if [ -f "$WEB_DB_PATH" ]; then
   "$PY" web/manage.py fill_usernames                      # sign in with a username (2026-10-08): accounts without one get it from their email; a no-op once done
   "$PY" web/manage.py split_switches                      # the new "Mark payables paid" / "Card statements" switches start as Bank / Loans (2026-10-09); once
   "$PY" web/manage.py rekey_items --apply                 # item keys with every spec (2026-10-08); lists possible duplicates, never merges; a no-op once done
+  "$PY" web/manage.py refield_items --apply               # tires: ply / terrain / tube from the remark to their own fields (2026-10-10); never merges; a no-op once done
 else
   echo "No database yet at $WEB_DB_PATH -- upload it first (deploy/upload_data.sh), then deploy again."
 fi

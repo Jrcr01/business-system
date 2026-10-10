@@ -57,12 +57,10 @@ def test_the_template_downloads_and_an_import_is_checked_before_it_is_saved(web,
     blank = web.get("/price-lists/template/")
     assert blank.status_code == 200 and blank["Content-Type"].startswith("application/vnd.openxmlformats")
     wb = load_workbook(io.BytesIO(blank.content))
-    ws = wb[pt.SHEET]                                                          # the one standard sheet
-    keys = [k for k, _, _ in pt.STANDARD]
-    row = {"category": "Battery", "brand": "Motolite", "model": "NS60", "other": "12V 45Ah L", "list_price": 5200}
-    for j, k in enumerate(keys, start=1):
-        if k in row:
-            ws.cell(row=2, column=j, value=row[k])
+    ws = wb["Battery"]                                                         # one sheet per type, its own fields (owner, 2026-10-10)
+    head = {str(c.value).replace(" *", ""): c.column for c in ws[1]}
+    for k, v in {"Brand": "Motolite", "Model / group": "NS60", "Volts": 12, "Ah": 45, "Terminal": "L", "List price": 5200}.items():
+        ws.cell(row=2, column=head[k], value=v)
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)

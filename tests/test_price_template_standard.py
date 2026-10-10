@@ -60,13 +60,16 @@ def test_rows_are_read_into_clean_products():
 def test_a_tire_keeps_its_crucial_fields_clean_and_the_rest_as_others():
     vals, others, bad = pc.tidy_tire("NU025 H/T", "LT255/55R19-10PR", "", "111T")
     assert bad == [] and vals == {"size": "LT255/55R19", "pattern": "NU025", "terrain": "H/T"} and others == "10PR 111T"
+    vals, others = pc.field_tire_remark(vals, others)                    # standard fields per type (owner, 2026-10-10): the ply / load-speed has its own field
+    assert vals["ply"] == "10PR 111T" and others == ""
     vals, others, bad = pc.tidy_tire("NL106", "225/55ZR17C8", "", "109/107T")
     assert bad == [] and vals["size"] == "225/55ZR17" and others == "C8 109/107T"
     for size in ("11R22.5", "7.00R16", "31X10.50R15", "195R15", "23.5-25", "9.5R17.5", "12.00R20", "LT205/85R16", "4.00-8", "6.40/6.50-13"):
         assert pc.tidy_tire("X1", size, "", "")[2] == [], size
     assert "has two patterns" in pc.tidy_tire("NU006 / NU033", "265/50R20", "A/T", "")[2][0]
     assert "does not look like a tire size" in pc.tidy_tire("X1", "big one", "", "")[2][0]
-    assert "is not A/T, H/T, M/T or R/T" in pc.tidy_tire("X1", "285/50R20", "Snow", "")[2][0]
+    assert "is not one of A/T, M/T, H/T, R/T, Lug, Rib, Mix" in pc.tidy_tire("X1", "285/50R20", "Snow", "")[2][0]
+    assert pc.tidy_tire("X1", "285/50R20", "rib", "")[0]["terrain"] == "Rib"
     assert pc.tidy_tire("X1", "285/50R20", "at", "")[0]["terrain"] == "A/T"
 
 
@@ -84,7 +87,7 @@ def test_tubetype_and_tubeless_get_their_own_prices(db):
     ok, msg, counts = pt.import_workbook(cid, pt.parse_workbook(_file(rows)))
     assert ok and counts["added"] == 2 and counts["products"] == 2, msg
     names = [r[0] for r in __import__("sqlite3").connect(db).execute("SELECT name FROM items ORDER BY code")]
-    assert names == ["Westlake 7.00R16 EZ525 14PR Rib TT", "Westlake 7.00R16 EZ525 14PR Rib TL"]
+    assert names == ["Westlake 7.00R16 14PR (Rib) EZ525 Tubetype", "Westlake 7.00R16 14PR (Rib) EZ525 Tubeless"]     # each spec in its own field now (2026-10-10)
     assert price_on(cid, names[0], DAY)["unit_price"] == 5500 and price_on(cid, names[1], DAY)["unit_price"] == 5200
 
 
@@ -107,7 +110,8 @@ def test_an_exact_repeated_row_is_skipped_with_a_note_not_a_problem():
 
 def test_sizes_with_specs_inside_are_tidied_and_reported():
     parsed = pt.parse_workbook(_file([_tire("SU011", "LT255/55R19-10PR", "A/T", "111T")]))
-    assert parsed["problems"] == [] and parsed["rows"][0]["values"]["size"] == "LT255/55R19" and parsed["rows"][0]["item_remark"] == "10PR 111T"
+    assert parsed["problems"] == [] and parsed["rows"][0]["values"]["size"] == "LT255/55R19" and parsed["rows"][0]["values"]["ply"] == "10PR 111T"
+    assert parsed["rows"][0]["item_remark"] == ""
     assert parsed["tidied"] and "LT255/55R19-10PR" in parsed["tidied"][0]
 
 

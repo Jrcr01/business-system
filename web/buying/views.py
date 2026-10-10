@@ -271,7 +271,7 @@ def template(request):
     """The price template to fill: blank, or with this supplier's current prices to change and upload back."""
     from engines import price_template_service as pt
     cid = int(request.GET.get("s") or 0)
-    data = pt.build_template(cid) if cid else pt.build_template()
+    data = pt.build_type_template(cid) if cid else pt.build_type_template()      # one sheet per type, drop-downs (owner, 2026-10-10)
     name = "price_list_template.xlsx"
     if cid:
         name = f"price_list_{dict(_suppliers()).get(cid, cid)}.xlsx".replace(" ", "_")

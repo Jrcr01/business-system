@@ -27,7 +27,7 @@ from engines.clock import manila_today
 from engines.common import get_conn, write_tx
 from engines.permissions import require as require_permission
 
-TERRAIN = ["A/T", "M/T", "H/T", "R/T"]
+TERRAIN = ["A/T", "M/T", "H/T", "R/T", "Lug", "Rib", "Mix"]      # Lug / Rib / Mix: truck and bus tires (owner, 2026-10-10: standard fields per type)
 TIRE_TYPES = ["PCR", "LT", "TBR", "TBB", "OTR"]
 TUBE = ["TL", "TT"]
 
@@ -41,7 +41,7 @@ def _f(key, label, required=False, choices=None, name=False, ident=True, note=""
 CATEGORY_FIELDS: dict[str, list[dict]] = {
     "Tires": [_f("size", "Size", True, name=True, ident=True, note="e.g. 285/50R20"), _f("ply", "Ply / load-speed", name=True, ident=True, note="e.g. 10PR, 18PR, 112H"),
               _f("terrain", "Terrain", choices=TERRAIN, name=True, ident=True), _f("pattern", "Pattern", True, name=True, ident=True, note="e.g. SL369"),
-              _f("type", "Type", choices=TIRE_TYPES), _f("tube", "Tube", choices=TUBE)],
+              _f("type", "Type", choices=TIRE_TYPES), _f("tube", "Tube", choices=TUBE, name=True)],     # the tube is in the name: a TT and a TL of one size are two tires
     "Battery": [_f("model", "Model / group", True, name=True, ident=True, note="e.g. NS60"), _f("volts", "Volts", name=True, note="e.g. 12"),
                 _f("ah", "Ah", name=True, note="e.g. 45"), _f("cca", "CCA"), _f("battery_type", "Type", choices=["MF", "Conventional"]),   # Ah not required (owner, 2026-10-08)
                 _f("terminal", "Terminal", choices=["L", "R"], name=True, ident=True)],
@@ -110,8 +110,8 @@ def split_other_specs(category: str, model: str, size: str, other: str) -> tuple
         u = t.upper()
         low = t.lower()
         if category == "Tires":
-            if u in TERRAIN:
-                vals["terrain"] = u
+            if terrain_of(t):
+                vals["terrain"] = terrain_of(t)
             elif u in TIRE_TYPES:
                 vals["type"] = u
             elif low in _TUBE_WORDS:
@@ -173,7 +173,7 @@ def split_other_specs(category: str, model: str, size: str, other: str) -> tuple
 # "Others", free text kept as it is written. A tire is the same tire only when brand, size, pattern, terrain AND the others all match (capitals, spaces, dashes
 # and the order of the other words ignored), so "14PR Rib TT" and "14PR Rib TL" are two tires with their own prices.
 TIRE_SIZE = re.compile(r"(LT|P)?(\d{3}/\d{2}Z?R\d{2}(\.\d)?|\d{1,3}(\.\d{1,2})?Z?R\d{2}(\.\d)?|\d{2}X\d{1,2}(\.\d{1,2})?Z?R\d{2}|\d{1,2}(\.\d{1,2})?(/\d{1,2}(\.\d{1,2})?)?-\d{1,2}(\.\d)?)")     # the last: bias-ply, e.g. 4.00-8, 6.40/6.50-13, 23.5-25
-_TERRAIN_WORDS = {t.replace("/", ""): t for t in TERRAIN} | {t: t for t in TERRAIN}
+_TERRAIN_WORDS = {t.replace("/", "").upper(): t for t in TERRAIN} | {t.upper(): t for t in TERRAIN}
 
 
 def terrain_of(text) -> str | None:
@@ -199,7 +199,7 @@ def tidy_tire(model: str, size: str, terrain: str, other: str) -> tuple[dict, st
         problems.append(f"Size '{_clean(size)}' does not look like a tire size (e.g. 285/50R20, LT255/55R19, 11R22.5, 7.00R16, 31X10.50R15)")
     terr = terrain_of(terrain)
     if terr is None:
-        problems.append(f"Terrain '{_clean(terrain)}' is not A/T, H/T, M/T or R/T (or leave it empty)")
+        problems.append(f"Terrain '{_clean(terrain)}' is not one of {', '.join(TERRAIN)} (or leave it empty)")
         terr = ""
     words = _clean(model).split()
     pattern_words = []
@@ -222,6 +222,70 @@ def tidy_tire(model: str, size: str, terrain: str, other: str) -> tuple[dict, st
         else:
             rest.append(w)
     return {"size": sz, "pattern": pattern, "terrain": terr}, _clean(" ".join(extra + rest)), problems
+
+
+def field_tire_remark(values: dict, remark: str) -> tuple[dict, str]:
+    """Standard fields per type (owner, 2026-10-10): what used to sit in a tire's free-text "others" goes to its own field -- the ply or load-speed
+    ('18PR', '121/118R') to Ply, Lug / Rib / Mix (or A/T ...) to Terrain, TL / TT to Tube, PCR / LT / TBR / TBB / OTR to Type -- when that field is
+    still empty. What is none of these (Mining, Heavy Duty, XL ...) stays as the remark. Returns (values, remark)."""
+    vals, ply, rest = dict(values), [], []
+    for tok in _clean(remark).split():
+        t = tok.strip("(),;")
+        u = t.upper()
+        if re.fullmatch(r"\d+PR|\d{2,3}(/\d{2,3})?[A-Z]", u) and not _clean(values.get("ply")):
+            ply.append(u)
+        elif terrain_of(t) and not _clean(vals.get("terrain")):
+            vals["terrain"] = terrain_of(t)
+        elif t.lower() in _TUBE_WORDS and not _clean(vals.get("tube")):
+            vals["tube"] = _TUBE_WORDS[t.lower()]
+        elif u in TIRE_TYPES and not _clean(vals.get("type")):
+            vals["type"] = u
+        else:
+            rest.append(tok)
+    if ply:
+        vals["ply"] = " ".join(ply)
+    return vals, _clean(" ".join(rest))
+
+
+def refield_tires(apply: bool = False) -> dict:
+    """Once (owner, 2026-10-10): tires saved while the template had one "Other specs" column keep their ply, terrain and tube as free text in the
+    remark ('18PR Mix'). This moves each to its own field (field_tire_remark) and recomputes the item's key, so a row from the per-type template
+    finds the same item. The NAME is not changed (prices and orders go by name). Two items that would end up the same are listed and left alone.
+    Returns {'changed': n, 'duplicates': [[(id, code, name), ...]], 'examples': [...]}. Safe to run again."""
+    with get_conn() as conn:
+        conn.row_factory = __import__("sqlite3").Row
+        rows = conn.execute("SELECT id, code, name, category, brand, size_model, specs, remark, key FROM items").fetchall()
+    new, plan = {}, {}
+    for r in rows:
+        try:
+            vals = values_of(r)
+            remark = r["remark"] or ""
+            if label_of(r["category"]) == "Tires":
+                vals, remark = field_tire_remark(vals, remark)
+                vals = normalise_specs("Tires", vals)
+            new[r["id"]] = product_key(r["category"], r["brand"], remark, **vals)
+            plan[r["id"]] = (vals, remark)
+        except (KeyError, ValueError):
+            continue
+    groups: dict[str, list] = {}
+    for r in rows:
+        if r["id"] in new:
+            groups.setdefault(new[r["id"]], []).append((r["id"], r["code"], r["name"]))
+    dupes = [g for g in groups.values() if len(g) > 1]
+    blocked = {i for g in dupes for i, _, _ in g}
+    todo = [r for r in rows if r["id"] in new and r["id"] not in blocked and label_of(r["category"]) == "Tires"
+            and (new[r["id"]] != r["key"] or plan[r["id"]][1] != (r["remark"] or ""))]
+    examples = [f"{r['name']}: ply {plan[r['id']][0].get('ply') or '—'}, terrain {plan[r['id']][0].get('terrain') or '—'}, tube {plan[r['id']][0].get('tube') or '—'}"
+                + (f", remark '{plan[r['id']][1]}'" if plan[r["id"]][1] else "") for r in todo[:8]]
+    if apply and todo:
+        with write_tx() as conn:
+            for r in todo:
+                vals, remark = plan[r["id"]]
+                other = {k: v for k, v in vals.items() if v and k != HEADLINE["Tires"]}
+                conn.execute("UPDATE items SET specs = ?, remark = ?, key = ? WHERE id = ?", (json.dumps(other, sort_keys=True), remark, new[r["id"]], r["id"]))
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'ITEMS_REFIELDED', 'items', NULL, ?)",
+                         (f"{len(todo)} tire(s): ply / terrain / tube / type moved from the remark to their own fields; {len(dupes)} duplicate group(s) left for the owner",))
+    return {"changed": len(todo), "duplicates": dupes, "examples": examples}
 
 
 def other_specs_text(category: str, values: dict, remark: str = "") -> tuple[str, str, str]:
