@@ -1059,8 +1059,25 @@ CREATE TABLE IF NOT EXISTS app_users (
     totp_secret TEXT,               -- the 6-digit sign-in code's key (migration 077); NULL = not set up
     totp_enabled_at DATETIME,       -- confirmed with a first correct code
     totp_last_step INTEGER,         -- the last code used, so the same code never works twice
-    username TEXT                   -- what the person signs in with (owner, 2026-10-08: a username, not the email); lowercase, unique
+    username TEXT,                  -- what the person signs in with (owner, 2026-10-08: a username, not the email); lowercase, unique
+    totp_setup_until DATETIME,      -- migration 088: an authenticator may be set up until then (the System admin's "Allow", 24 hours); NULL = not allowed
+    device_epoch INTEGER NOT NULL DEFAULT 0     -- migration 088: "Sign out everywhere" adds 1; sign-ins and remembered devices from before it end
 );
+-- migration 088 (owner, 2026-10-11): every sign-in, right or wrong, with the device, the browser and the place Cloudflare reports
+CREATE TABLE IF NOT EXISTS sign_in_log (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES app_users(user_id),
+    email TEXT,
+    result TEXT NOT NULL,                     -- CODE, REMEMBERED, SET_UP (signed in) / PASSWORD_REFUSED, WRONG_CODE, SETUP_REFUSED (not signed in)
+    device_id TEXT,                           -- the browser's own number (a cookie), so a device not used before can be told
+    is_new_device INTEGER NOT NULL DEFAULT 0 CHECK(is_new_device IN (0, 1)),
+    browser TEXT,
+    ip TEXT,
+    country TEXT,                             -- from Cloudflare, when it sends them
+    city TEXT,
+    at DATETIME NOT NULL                      -- Manila time
+);
+CREATE INDEX IF NOT EXISTS idx_sign_in_log_user ON sign_in_log (user_id, log_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_username ON app_users (username);
 
 -- SECURITY AND ROLES (owner, 2026-10-08, migration 076): everyone is an Owner; the System admin switches off, per person, what they may NOT do.

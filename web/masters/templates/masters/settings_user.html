@@ -28,10 +28,23 @@
 <p class="hint">Not used to sign in any more (people sign in with their email); kept as a short name in records. 3 to 30 characters: letters, digits, dot, dash or underscore.</p>
 
 <div class="grp">Sign-in code</div>
-{% if code_since %}<form class="bar" method="post" onsubmit="return confirm('Reset the sign-in code of {{ u.name|escapejs }}? Their authenticator app stops working for Slick\'s; they set up a new code at their next sign-in.');">{% csrf_token %}
+{% if code_since %}<form class="bar" method="post" onsubmit="return confirm('Reset the sign-in code of {{ u.name|escapejs }}? Their authenticator app stops working for Slick\'s and they are signed out. They set up a new one only after you allow it.');">{% csrf_token %}
   <input type="hidden" name="action" value="reset_code"><span>Set up {{ code_since }}</span>
   <button class="btn small ghost" type="submit"><span class="ms">phonelink_erase</span>Reset code</button></form>
-{% else %}<p class="hint">Not set up yet: they set it up at their next sign-in.</p>{% endif %}
+{% elif setup_until %}<p class="hint">Not set up yet. <b>Set-up allowed until {{ setup_until }}</b>: at their next sign-in they scan the QR code with Google Authenticator on their own phone.</p>
+{% else %}<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="allow_code"><span>Not set up. They cannot sign in until you allow it.</span>
+  <button class="btn small" type="submit"><span class="ms">phonelink_lock</span>Allow authenticator set-up (24 hours)</button></form>{% endif %}
+<p class="hint">Everyone signs in with their password and the 6-digit code from Google Authenticator, once a day on each device. An authenticator is set up, or replaced after Reset code, only while you allow it.</p>
+
+<div class="grp">Sign-ins</div>
+<form class="bar" method="post" onsubmit="return confirm('Sign {{ u.name|escapejs }} out everywhere? Every device asks for the password and the code again.');">{% csrf_token %}
+  <input type="hidden" name="action" value="signout_all"><span>{% if sign_ins %}The last {{ sign_ins|length }} sign-in{{ sign_ins|length|pluralize }}, newest first.{% else %}Ends all of their sign-ins at once.{% endif %}</span>
+  <button class="btn small ghost" type="submit"><span class="ms">logout</span>Sign out everywhere</button></form>
+{% if sign_ins %}<div class="scroll-x"><table class="list">
+  <tr><th>When</th><th>What happened</th><th>Device</th><th>Browser</th><th>Place</th><th>Internet address</th></tr>
+  {% for s in sign_ins %}<tr><td>{{ s.when }}</td><td{% if not s.ok %} class="neg"{% endif %}>{{ s.label }}</td>
+    <td>{{ s.device }}{% if s.new %} <span class="pill warn">new device</span>{% endif %}</td><td>{{ s.browser }}</td><td>{{ s.place }}</td><td>{{ s.ip }}</td></tr>{% endfor %}
+</table></div>{% else %}<p class="hint">No sign-in recorded yet.</p>{% endif %}
 
 <div class="grp">Sign-in</div>
 {% if is_me %}<p class="hint">You can't switch yourself off.</p>

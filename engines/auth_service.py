@@ -183,7 +183,7 @@ def _audit(conn, action: str, user_id, text: str, who: str | None = None) -> Non
 
 def _public(row) -> dict:
     return {"user_id": row["user_id"], "email": row["email"], "username": row["username"], "name": row["name"], "role": row["role"], "is_active": row["is_active"],
-            "must_change_password": row["must_change_password"]}
+            "must_change_password": row["must_change_password"], "device_epoch": int(row["device_epoch"] or 0) if "device_epoch" in row.keys() else 0}
 
 
 def get_user(user_id: int) -> dict | None:
@@ -218,6 +218,7 @@ def create_owner(email: str, name: str, password: str, username: str = "") -> tu
             return False, problem, None
         uid = conn.execute("INSERT INTO app_users (email, username, name, role, password_hash, must_change_password) VALUES (?, ?, ?, 'admin', ?, 0) RETURNING user_id",
                            (email, username, name.strip(), hash_password(password))).fetchone()[0]
+        conn.execute("UPDATE app_users SET totp_setup_until = ? WHERE user_id = ?", (_setup_until(), uid))     # the first account sets up its own authenticator
         _audit(conn, "USER_CREATED", uid, f"{email} as System admin (first account)", who=email)
     return True, "Owner account created.", int(uid)
 
@@ -245,7 +246,8 @@ def create_user(email: str, name: str, role: str, username: str = "") -> tuple[b
         uid = conn.execute("INSERT INTO app_users (email, username, name, role, password_hash, must_change_password) VALUES (?, ?, ?, ?, ?, 1) RETURNING user_id",
                            (email, username, name.strip(), role, hash_password(temp))).fetchone()[0]
         from engines.whats_new import latest_id
-        conn.execute("UPDATE app_users SET whats_new_seen = ? WHERE user_id = ?", (latest_id(), uid))      # a new person starts with nothing "new"
+        conn.execute("UPDATE app_users SET whats_new_seen = ?, totp_setup_until = ? WHERE user_id = ?", (latest_id(), _setup_until(), uid))
+        # a new person starts with nothing "new", and with a day to set up their authenticator: adding them is the System admin's go-ahead
         _audit(conn, "USER_CREATED", uid, f"{email} (username {username}) as {role}")
     return True, f"{name.strip()} signs in as {username} with the temporary password and must choose their own.", int(uid), temp
 
@@ -302,6 +304,50 @@ def authenticate(email: str, password: str, where: str = "more", by_email: bool 
 # show it. Asked at every sign-in to the main system, after the password. A code is accepted once only, and wrong codes count toward the same 5-tries lock.
 TOTP_STEP = 30
 TOTP_ISSUER = "Slick's"
+SETUP_HOURS = 24            # the System admin's "Allow authenticator set-up" lasts a day (owner, 2026-10-11)
+SETUP_NOT_ALLOWED = "Ask the System admin to allow your authenticator set-up."
+STAMP = "%Y-%m-%d %H:%M:%S"
+
+
+def _setup_until() -> str:
+    return (manila_now() + timedelta(hours=SETUP_HOURS)).strftime(STAMP)
+
+
+def shown_time(stamp: str | None) -> str:
+    """A stored Manila time as people read it: 10/12/2026 5:30 AM."""
+    if not stamp:
+        return ""
+    from datetime import datetime
+    try:
+        return datetime.strptime(str(stamp)[:19], STAMP).strftime("%m/%d/%Y %I:%M %p")
+    except ValueError:
+        return str(stamp)
+
+
+def totp_setup_until(user_id: int) -> str | None:
+    """Until when (Manila time) this person may set up an authenticator; None = not allowed now (never allowed, or the day has passed)."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT totp_setup_until FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
+    until = row[0] if row else None
+    return until if until and str(until) > manila_now().strftime(STAMP) else None
+
+
+def allow_totp_setup(user_id: int) -> tuple[bool, str]:
+    """The System admin lets this person set up an authenticator for the next 24 hours (owner, 2026-10-11: it is set up or replaced only when the
+    admin allows it -- a stolen password and a hacked inbox are not enough to add one). A person who has one is reset first (a lost or new phone)."""
+    _ok, _msg = require_permission("users.manage")
+    if not _ok:
+        raise PermissionError(_msg)
+    with write_tx() as conn:
+        row = conn.execute("SELECT email, totp_enabled_at FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
+        if row is None:
+            return False, "No such person."
+        if row[1]:
+            return False, f"{row[0]} already has an authenticator. For a lost or new phone, press Reset code first, then allow the set-up."
+        until = _setup_until()
+        conn.execute("UPDATE app_users SET totp_setup_until = ? WHERE user_id = ?", (until, int(user_id)))
+        _audit(conn, "USER_2FA_SETUP_ALLOWED", int(user_id), f"{row[0]} until {until}")
+    return True, f"{row[0]} may set up an authenticator at their next sign-in, within {SETUP_HOURS} hours."
 
 
 def _totp_at(secret: str, step: int) -> str:
@@ -350,6 +396,9 @@ def verify_totp(user_id: int, code: str) -> tuple[bool, str]:
             return False, f"This account is locked for now. Try again in {mins} minute(s)."
         if not row["totp_secret"]:
             return False, "Set up your sign-in code first."
+        setting_up = not row["totp_enabled_at"]
+        if setting_up and not str(row["totp_setup_until"] or "") > now.strftime(STAMP):       # also refused here, not only on the screen
+            return False, SETUP_NOT_ALLOWED
         last, here = row["totp_last_step"] or 0, _now_step()
         hit = next((s for s in (here - 1, here, here + 1) if s > last and len(code) == 6 and hmac.compare_digest(_totp_at(row["totp_secret"], s), code)), None)
         if hit is None:
@@ -362,9 +411,12 @@ def verify_totp(user_id: int, code: str) -> tuple[bool, str]:
             conn.execute("UPDATE app_users SET failed_attempts = ? WHERE user_id = ?", (tries, row["user_id"]))
             return False, "That code didn't match. Try the newest one."
         stamp = now.strftime("%Y-%m-%d %H:%M:%S")
-        if not row["totp_enabled_at"]:
-            conn.execute("UPDATE app_users SET totp_enabled_at = ? WHERE user_id = ?", (stamp, row["user_id"]))
+        if setting_up:
+            conn.execute("UPDATE app_users SET totp_enabled_at = ?, totp_setup_until = NULL WHERE user_id = ?", (stamp, row["user_id"]))
             _audit(conn, "USER_2FA_SET_UP", row["user_id"], row["email"], who=row["email"])
+            conn.execute("INSERT INTO review_flags (kind, ref_type, ref_id, detail, raised_by) VALUES ('AUTHENTICATOR_SET_UP', 'app_users', ?, ?, ?)",
+                         (row["user_id"], f"{row['email']} set up an authenticator on {now.strftime('%m/%d/%Y %I:%M %p')}. Check with them that it was their own phone.",
+                          row["email"]))
         conn.execute("UPDATE app_users SET totp_last_step = ?, failed_attempts = 0, locked_until = NULL, last_login_at = ? WHERE user_id = ?", (hit, stamp, row["user_id"]))
         _audit(conn, "USER_SIGNED_IN", row["user_id"], f"{row['email']} (password and code)", who=row["email"])
         return True, ""
@@ -380,9 +432,77 @@ def reset_totp(user_id: int, by_command: bool = False) -> tuple[bool, str]:
         row = conn.execute("SELECT email FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
         if row is None:
             return False, "No such person."
-        conn.execute("UPDATE app_users SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL WHERE user_id = ?", (int(user_id),))
+        # the new set-up needs the System admin's go-ahead (allow_totp_setup). Given at once for the server command and for the admin's own account:
+        # both are the admin acting, and without it the only System admin would be locked out
+        from engines.acting_user import acting_email
+        own = by_command or (acting_email() or "") == str(row[0]).strip().lower()
+        # device_epoch + 1: the devices that gave the old code today are forgotten and the person's open sign-ins end
+        conn.execute("UPDATE app_users SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL, totp_setup_until = ?, device_epoch = device_epoch + 1 "
+                     "WHERE user_id = ?", (_setup_until() if own else None, int(user_id)))
         _audit(conn, "USER_2FA_RESET", int(user_id), row[0] + (" (server command)" if by_command else ""))
-    return True, f"The sign-in code of {row[0]} is reset. They set up a new one at their next sign-in."
+    if own:
+        return True, f"The sign-in code of {row[0]} is reset. Set up the new one at the next sign-in, within {SETUP_HOURS} hours."
+    return True, f"The sign-in code of {row[0]} is reset. Press \"Allow authenticator set-up\" when they are ready to set up the new one."
+
+
+def note_password_sign_in(user_id: int) -> None:
+    """A sign-in with the password alone, on a device that already gave this person's code today (once a day per device; owner, 2026-10-11)."""
+    with write_tx() as conn:
+        row = conn.execute("SELECT email FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
+        if row is None:
+            return
+        conn.execute("UPDATE app_users SET failed_attempts = 0, locked_until = NULL, last_login_at = ? WHERE user_id = ?", (manila_now().strftime(STAMP), int(user_id)))
+        _audit(conn, "USER_SIGNED_IN", int(user_id), f"{row[0]} (password; this device gave the code earlier today)", who=row[0])
+
+
+def sign_out_everywhere(user_id: int) -> tuple[bool, str]:
+    """Ends every sign-in of this person and forgets every device that gave their code today: each device signs in again with the password and the code."""
+    _ok, _msg = require_permission("users.manage")
+    if not _ok:
+        raise PermissionError(_msg)
+    with write_tx() as conn:
+        row = conn.execute("SELECT email FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
+        if row is None:
+            return False, "No such person."
+        conn.execute("UPDATE app_users SET device_epoch = device_epoch + 1 WHERE user_id = ?", (int(user_id),))
+        _audit(conn, "USER_SIGNED_OUT_EVERYWHERE", int(user_id), row[0])
+    return True, f"{row[0]} is signed out everywhere. Every device asks for the password and the code again."
+
+
+SIGNED_IN = ("CODE", "REMEMBERED", "SET_UP")
+SIGN_IN_RESULTS = {"CODE": "Signed in: password and code", "REMEMBERED": "Signed in: password (code given earlier that day on this device)",
+                   "SET_UP": "Authenticator set up, signed in", "PASSWORD_REFUSED": "Not signed in: wrong password, locked or switched off",
+                   "WRONG_CODE": "Not signed in: wrong code", "SETUP_REFUSED": "Not signed in: authenticator set-up not allowed"}
+
+
+def log_sign_in(user_id: int, result: str, device_id: str = "", browser: str = "", ip: str = "", country: str = "", city: str = "") -> bool:
+    """One line of the sign-in record (owner, 2026-10-11: "are they really the one accessing the system"). Returns True when the person signed in on a
+    device they had not used before; that also goes on the Review list."""
+    now = manila_now()
+    with write_tx() as conn:
+        row = conn.execute("SELECT email FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
+        if row is None:
+            return False
+        marks = ",".join("?" * len(SIGNED_IN))
+        new = bool(result in SIGNED_IN and device_id and not conn.execute(
+            f"SELECT 1 FROM sign_in_log WHERE user_id = ? AND device_id = ? AND result IN ({marks})", (int(user_id), device_id, *SIGNED_IN)).fetchone())
+        conn.execute("INSERT INTO sign_in_log (user_id, email, result, device_id, is_new_device, browser, ip, country, city, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     (int(user_id), row[0], result, device_id or None, int(new), browser or None, ip or None, country or None, city or None, now.strftime(STAMP)))
+        if new:
+            place = ", ".join(x for x in (city, country) if x)
+            what = " ".join(x for x in (browser, f"in {place}" if place else "") if x) or "an unknown browser"
+            conn.execute("INSERT INTO review_flags (kind, ref_type, ref_id, detail, raised_by) VALUES ('NEW_DEVICE_SIGN_IN', 'app_users', ?, ?, ?)",
+                         (int(user_id), f"{row[0]} signed in on a device not used before: {what}, {now.strftime('%m/%d/%Y %I:%M %p')}.", row[0]))
+    return new
+
+
+def recent_sign_ins(user_id: int, limit: int = 20) -> list[dict]:
+    """The person's last sign-ins, newest first, for their page in Settings > Users."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT at, result, device_id, is_new_device, browser, ip, country, city FROM sign_in_log WHERE user_id = ? ORDER BY log_id DESC LIMIT ?",
+                            (int(user_id), int(limit))).fetchall()
+    return [{"at": r[0], "when": shown_time(r[0]), "result": r[1], "label": SIGN_IN_RESULTS.get(r[1], r[1]), "ok": r[1] in SIGNED_IN, "device": (r[2] or "")[:6], "new": bool(r[3]),
+             "browser": r[4] or "", "ip": r[5] or "", "place": ", ".join(x for x in (r[7], r[6]) if x)} for r in rows]
 
 
 def totp_enabled_at(user_id: int) -> str | None:

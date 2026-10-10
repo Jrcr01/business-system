@@ -19,7 +19,10 @@ def code_for(email):
 
 
 def _code_step(c, r, email):
-    """After a right password: set up the code (first time) or enter it. Returns the response of the code step."""
+    """After a right password: set up the code (first time) or enter it. Returns the response of the code step. A device that gave this person's code
+    already today is signed in by the password alone (owner, 2026-10-11): then it is the password step's own response."""
+    if r.status_code == 302 and r["Location"] not in ("/2fa/", "/2fa/setup/"):
+        return r
     assert r.status_code == 302 and r["Location"] in ("/2fa/", "/2fa/setup/"), getattr(r, "content", b"")[:300]
     if r["Location"] == "/2fa/setup/":
         assert c.get("/2fa/setup/").status_code == 200                      # makes the key

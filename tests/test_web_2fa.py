@@ -30,7 +30,7 @@ def test_the_password_alone_does_not_sign_anyone_in(web):
     assert "<svg" in page and "Set up your sign-in code" in page
     r = c.post("/2fa/setup/", {"code": code_for("family@slicks.test")})
     assert r["Location"] == "/" and c.get("/").status_code == 200
-    c.post("/logout/")
+    c = Client()                                                             # another device (this one gave the code today: test_web_authenticator.py)
     r = c.post("/login/", {"email": "family@slicks.test", "password": PW})
     assert r["Location"] == "/2fa/"                                          # from now on: the code
     assert c.get("/").status_code == 302
@@ -43,7 +43,7 @@ def test_a_wrong_code_counts_toward_the_lock_and_a_code_works_once(web):
     c = Client()
     assert login(c, "family@slicks.test").status_code == 302
     used = fetchone(_db(), "SELECT totp_last_step FROM app_users WHERE email = 'family@slicks.test'")[0]
-    c.post("/logout/")
+    c = Client()                                                             # another device: asked for the code
     c.post("/login/", {"email": "family@slicks.test", "password": PW})
     from engines.auth_service import _totp_at
     secret = fetchone(_db(), "SELECT totp_secret FROM app_users WHERE email = 'family@slicks.test'")[0]

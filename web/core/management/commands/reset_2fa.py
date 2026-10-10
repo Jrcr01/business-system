@@ -1,6 +1,7 @@
 """For a lost phone when the System admin can't sign in to reset it themselves (owner, 2026-10-08). Run on the server, over SSH:
     set -a; . /etc/slicks-erp/env; set +a; /srv/slicks/venv/bin/python /srv/slicks/app/current/web/manage.py reset_2fa someone@example.com
-The person sets up a new sign-in code at their next sign-in. Recorded in the audit log."""
+The person sets up a new authenticator at their next sign-in, within 24 hours (the command is the System admin's go-ahead; for anyone else the
+admin presses "Allow authenticator set-up" on their page). Recorded in the audit log."""
 from django.core.management.base import BaseCommand, CommandError
 
 

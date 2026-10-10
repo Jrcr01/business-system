@@ -4,6 +4,8 @@
   * Not signed in: every page leads to Sign in, and back to the page asked for afterwards.
   * Signed in: the person is read from app_users on EVERY request, so switching someone off, or changing their password, signs them out everywhere at once.
   * Signing in takes the password AND the 6-digit code from the person's authenticator app (owner, 2026-10-08): after the password, only /2fa/ is open.
+    The code is asked once a day per device, of everyone, whether or not Cloudflare Access is in front (owner, 2026-10-11).
+  * "Sign out everywhere" (Settings > Users) ends every sign-in of a person at once.
   * A temporary password must be changed before anything else.
   * Everything saved while the request runs is recorded as done by this person, with their role for the permission guards (engines/acting_user.py).
     The value is per request, so two people saving at the same moment never get each other's name."""
@@ -17,6 +19,7 @@ from django.http import HttpResponse
 from django.shortcuts import redirect
 
 OPEN = ("/static/", "/health/")
+MFA_MARK = 2                                 # what a sign-in carries since 2026-10-11; an older one (1: Cloudflare stood in for the code) is ended
 _SEEN: dict[int, float] = {}                 # user id -> when this worker last wrote last_seen_at (at most once a minute: no extra save on every click)
 
 
@@ -48,11 +51,12 @@ def current_user(request) -> dict | None:
     uid = request.session.get("uid")
     if not uid:
         return None
-    if not request.session.get("mfa"):                          # a sign-in from before the 6-digit code (2026-10-08): sign in again, with the code
+    if request.session.get("mfa") != MFA_MARK:                  # a sign-in from before the code was asked of everyone (2026-10-11): sign in again, with it
         request.session.flush()
         return None
     user = get_user(int(uid))
-    if not user or not user["is_active"] or request.session.get("pw") != password_stamp(int(uid)):
+    if (not user or not user["is_active"] or request.session.get("pw") != password_stamp(int(uid))
+            or int(request.session.get("ep") or 0) != int(user.get("device_epoch") or 0)):      # "Sign out everywhere" was pressed since
         request.session.flush()
         return None
     return user

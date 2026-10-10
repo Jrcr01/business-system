@@ -229,6 +229,10 @@ def settings_user(request, user_id: int):
             ok, msg = au.set_username(user_id, request.POST.get("username", ""))
         elif what == "reset_code":
             ok, msg = au.reset_totp(user_id)
+        elif what == "allow_code":                                     # an authenticator is set up only while the System admin allows it (owner, 2026-10-11)
+            ok, msg = au.allow_totp_setup(user_id)
+        elif what == "signout_all":
+            ok, msg = au.sign_out_everywhere(user_id)
         else:
             ok, msg = False, "You can't do that to your own account."
         (messages.success if ok else messages.error)(request, msg)
@@ -238,6 +242,7 @@ def settings_user(request, user_id: int):
     return render(request, "masters/settings_user.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/users/",
                                                           "u": u, "role_label": ROLE_LABEL.get(u["role"], u["role"]), "roles": [(r, ROLE_LABEL[r]) for r in ROLES],
                                                           "is_me": is_me, "shown": shown, "code_since": (au.totp_enabled_at(user_id) or "")[:10],
+                                                          "setup_until": au.shown_time(au.totp_setup_until(user_id)), "sign_ins": au.recent_sign_ins(user_id),
                                                           **_switch_ctx(request, u, user_id)})
 
 

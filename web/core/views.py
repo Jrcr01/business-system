@@ -9,7 +9,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from core.menu import BUILT, PAGES, STAGE_NAME, TILE_QUERY, menu_for, pages_for
-from core.middleware import password_stamp
+from core.middleware import MFA_MARK, password_stamp
 
 
 def page_frame(request) -> dict:
@@ -51,17 +51,75 @@ def _sign_in(request, user: dict) -> None:
     request.session.pop("pending", None)
     request.session["uid"] = int(user["user_id"])
     request.session["pw"] = password_stamp(int(user["user_id"]))
-    request.session["mfa"] = 1
+    request.session["ep"] = int(user.get("device_epoch") or 0)
+    request.session["mfa"] = MFA_MARK
+
+
+# --- this device (owner, 2026-10-11): the 6-digit code is asked once a day per device. A signed cookie keeps the browser's own number (so a device not used
+# before can be told) and whose code it gave on which day. A changed password or "Sign out everywhere" cancels it; a copied cookie is worth one day at most.
+DEVICE_SALT = "slicks.device"
+
+
+def _device(request) -> dict:
+    from django.core import signing
+    try:
+        got = signing.loads(request.COOKIES.get(settings.DEVICE_COOKIE_NAME, ""), salt=DEVICE_SALT)
+    except signing.BadSignature:
+        return {}
+    return got if isinstance(got, dict) else {}
+
+
+def _device_id(request) -> str:
+    if not getattr(request, "_device_id", None):
+        import secrets
+        request._device_id = str(_device(request).get("d") or "") or secrets.token_hex(8)
+    return request._device_id
+
+
+def _today() -> str:
+    from engines.clock import manila_now
+    return manila_now().strftime("%Y-%m-%d")
+
+
+def _code_given_today(request, user: dict) -> bool:
+    d, uid = _device(request), int(user["user_id"])
+    return (d.get("u") == uid and d.get("day") == _today() and d.get("pw") == password_stamp(uid) and d.get("ep") == int(user.get("device_epoch") or 0))
+
+
+def _remember_device(request, response, user: dict):
+    """After a correct code: this device is not asked again today for this person."""
+    from django.core import signing
+    uid = int(user["user_id"])
+    value = signing.dumps({"d": _device_id(request), "u": uid, "day": _today(), "pw": password_stamp(uid), "ep": int(user.get("device_epoch") or 0)}, salt=DEVICE_SALT)
+    response.set_cookie(settings.DEVICE_COOKIE_NAME, value, max_age=400 * 86400, httponly=True, secure=settings.SESSION_COOKIE_SECURE, samesite="Lax")
+    return response
+
+
+def _browser(ua: str) -> str:
+    system = next((n for k, n in (("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Windows", "Windows"), ("Mac OS X", "Mac"), ("Linux", "Linux")) if k in ua), "")
+    name = next((n for k, n in (("Edg/", "Edge"), ("OPR/", "Opera"), ("SamsungBrowser", "Samsung Internet"), ("CriOS", "Chrome"), ("FxiOS", "Firefox"),
+                                ("Chrome/", "Chrome"), ("Firefox/", "Firefox"), ("Safari/", "Safari")) if k in ua), "")
+    return " on ".join(x for x in (name, system) if x) or ua[:40]
+
+
+def _log(request, user_id: int, result: str) -> bool:
+    """One line in the sign-in record; True when the person signed in on a device they had not used before."""
+    from engines.auth_service import log_sign_in
+    m = request.META
+    return log_sign_in(int(user_id), result, device_id=_device_id(request), browser=_browser(m.get("HTTP_USER_AGENT", "")),
+                       ip=(m.get("HTTP_CF_CONNECTING_IP") or m.get("REMOTE_ADDR") or "")[:45], country=m.get("HTTP_CF_IPCOUNTRY", "")[:2],
+                       city=m.get("HTTP_CF_IPCITY", "")[:60])
 
 
 def _half_signed_in(request, user: dict, nxt: str = "/"):
-    """The password was right: next comes the code (or setting it up, the first time). Nothing else is open until then."""
-    from engines.auth_service import totp_enabled_at
-    cf = getattr(request, "cf_email", None)
-    if cf and cf == str(user.get("email") or "").strip().lower():
-        # Cloudflare Access already checked this person (owner, 2026-10-09: "we can drop 6 digit code" -- once Access is on): its sign-in, for this very
-        # email, is the second step, so the code is not asked. Without Access (not set, or a different email) the code stays.
+    """The password was right: next comes the code (or setting it up, the first time). Nothing else is open until then. Cloudflare Access in front does
+    not stand in for the code any more (owner, 2026-10-11: a hacked inbox passes Cloudflare's email check; the phone is what proves it is them). The
+    code is asked once a day per device: a device that gave this person's code today signs in with the password."""
+    from engines.auth_service import note_password_sign_in, totp_enabled_at
+    if _code_given_today(request, user):
+        note_password_sign_in(int(user["user_id"]))
         _sign_in(request, user)
+        _log(request, int(user["user_id"]), "REMEMBERED")
         return redirect(nxt or "/")
     request.session.cycle_key()
     request.session.pop("uid", None)
@@ -127,16 +185,20 @@ def login(request):
         ok, user, msg = authenticate(email, request.POST.get("password", ""), where="web", by_email=True)
         if ok:
             return _half_signed_in(request, user, nxt)
-        if cf and not _has_account(cf):
+        uid = _account_id(email)
+        if uid:
+            _log(request, uid, "PASSWORD_REFUSED")
+        if cf and not uid:
             msg = f"No account in the system uses {cf}. Ask the System admin."
         messages.error(request, msg)
     return render(request, "core/login.html", {"email": email, "cf_email": cf, "next": nxt})
 
 
-def _has_account(email: str) -> bool:
+def _account_id(email: str) -> int | None:
     from engines.common import get_conn
     with get_conn() as conn:
-        return conn.execute("SELECT 1 FROM app_users WHERE lower(trim(email)) = ?", (email.strip().lower(),)).fetchone() is not None
+        row = conn.execute("SELECT user_id FROM app_users WHERE lower(trim(email)) = ?", ((email or "").strip().lower(),)).fetchone()
+    return int(row[0]) if row else None
 
 
 def code(request):
@@ -155,30 +217,41 @@ def code(request):
         if ok:
             nxt = request.session["pending"].get("next") or "/"
             _sign_in(request, user)
-            return redirect(nxt)
+            _log(request, int(user["user_id"]), "CODE")
+            return _remember_device(request, redirect(nxt), user)
+        _log(request, int(user["user_id"]), "WRONG_CODE")
         messages.error(request, msg)
     return render(request, "core/code.html", {})
 
 
 def code_setup(request):
-    """The first sign-in (or after the System admin reset the code): scan the QR code into an authenticator app, then confirm with its first code."""
-    from engines.auth_service import totp_setup_secret, totp_uri, verify_totp
+    """The first sign-in (or after the System admin reset the code): scan the QR code into an authenticator app, then confirm with its first code.
+    Only while the System admin allows it (owner, 2026-10-11): otherwise no QR code and no key are shown, only whom to ask."""
+    from engines.auth_service import totp_enabled_at, totp_setup_secret, totp_setup_until, totp_uri, verify_totp
     user = _pending_user(request)
     if user is None:
         return redirect("/login/")
+    if totp_enabled_at(int(user["user_id"])):                # already set up: the ordinary code screen
+        return redirect("/2fa/")
+    if request.method == "POST" and request.POST.get("cancel"):
+        request.session.flush()
+        return redirect("/login/")
+    if not totp_setup_until(int(user["user_id"])):
+        if request.method == "GET":
+            _log(request, int(user["user_id"]), "SETUP_REFUSED")
+        return render(request, "core/code_wait.html", {"email": user["email"]})
     secret = totp_setup_secret(int(user["user_id"]))
-    if secret is None:                                       # already set up: the ordinary code screen
+    if secret is None:
         return redirect("/2fa/")
     if request.method == "POST":
-        if request.POST.get("cancel"):
-            request.session.flush()
-            return redirect("/login/")
         ok, msg = verify_totp(int(user["user_id"]), request.POST.get("code", ""))
         if ok:
             nxt = request.session["pending"].get("next") or "/"
             _sign_in(request, user)
-            messages.success(request, "Your sign-in code is set up. From now on, sign-in asks for it after your password.")
-            return redirect(nxt)
+            _log(request, int(user["user_id"]), "SET_UP")
+            messages.success(request, "Your authenticator is set up. Sign-in asks for its 6-digit code after your password, once a day on each device.")
+            return _remember_device(request, redirect(nxt), user)
+        _log(request, int(user["user_id"]), "WRONG_CODE")
         messages.error(request, msg)
     import qrcode
     import qrcode.image.svg

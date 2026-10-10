@@ -12,6 +12,12 @@ NOTES = [
         "Released, not invoiced: goods that left before their invoice. Write the invoice the same day.",
         "Sales today: the day's sales in the notebook's order, with the day's money by how it was paid.",
     ]),
+    ("2026-10-12b", "10/11/2026", "Sign-in: Google Authenticator for everyone", [
+        "Signing in now takes your password and the 6-digit code from Google Authenticator on your own phone. The code is asked once a day on each device.",
+        "An authenticator is set up, or replaced after a lost or new phone, only when the System admin allows it. The allowance lasts 24 hours.",
+        "Settings, Users: each person's page lists their last 20 sign-ins with the device, the browser and the place. A device not used before is noted on the Review list.",
+        "Settings, Users: \"Sign out everywhere\" ends all of a person's sign-ins at once.",
+    ]),
     ("2026-10-12a", "10/12/2026", "Purchase orders: ask the supplier first", [
         "New order: choose the supplier and the dates, and the payables calendar shows straight away. Click a day to make the order fall due that day.",
         "Items: click the item box and the supplier's list drops down; type a size, a brand or a pattern to narrow it, click an item to choose it, then set its quantity.",

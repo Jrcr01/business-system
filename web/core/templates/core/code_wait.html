@@ -1,0 +1,12 @@
+{% extends "core/base.html" %}{% load static %}
+{% block title %}Authenticator not set up{% endblock %}
+{% block content %}
+<form class="card" method="post" action="/2fa/setup/">{% csrf_token %}
+  <img src="{% static 'assets/slicks_logo.jpg' %}" alt="Slick's">
+  <h2>Your authenticator is not set up</h2>
+  <p class="note">Signing in needs the 6-digit code from Google Authenticator on your own phone.</p>
+  <p class="note"><b>Ask the System admin to allow your authenticator set-up.</b> Once allowed, sign in again within 24 hours and scan the QR code with your phone.</p>
+  <p class="note">{{ email }}</p>
+  <button class="btn wide" type="submit" name="cancel" value="1" formnovalidate>Back to sign in</button>
+</form>
+{% endblock %}

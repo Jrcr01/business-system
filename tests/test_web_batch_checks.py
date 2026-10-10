@@ -82,7 +82,7 @@ def test_write_by_hand_numbers_and_the_skipped_leaves_pop_up(web, db):
     web.post(f"/order-statements/{sid}/", {"action": "chk_skip_spoiled", "leaves": "1001,1002"})
     assert fetchone(_db(), "SELECT COUNT(*) FROM spoiled_checks")[0] == 2
     web.post(f"/order-statements/{sid}/", {"action": "chk_skip_later", "booklet": "1", "code": "B-1000", "leaves": "1004"})
-    assert fetchone(_db(), "SELECT kind FROM review_flags")[0] == "CHECK_NUMBER_SKIPPED"
+    assert fetchone(_db(), "SELECT COUNT(*) FROM review_flags WHERE kind = 'CHECK_NUMBER_SKIPPED'")[0] == 1
 
 
 def test_release_is_for_everyone_with_the_switch_and_void_needs_a_reason(web, db):

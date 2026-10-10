@@ -28,6 +28,15 @@ def _h(token):
     return {"HTTP_CF_ACCESS_JWT_ASSERTION": token}
 
 
+def _first_admin(web):
+    """The very first account, made behind Cloudflare Access: it needs a pass, and its own authenticator all the same."""
+    r = web.post("/setup/", {"name": "Admin", "email": "admin@slicks.test", "password": PW, "password2": PW}, **_h(_pass()))
+    assert r.status_code == 302 and r["Location"] == "/2fa/setup/"       # Cloudflare in front does not stand in for the code (owner, 2026-10-11)
+    assert web.get("/2fa/setup/", **_h(_pass())).status_code == 200
+    r = web.post("/2fa/setup/", {"code": code_for("admin@slicks.test")}, **_h(_pass()))
+    assert r.status_code == 302 and r["Location"] == "/"
+
+
 def test_no_pass_no_page(web, access):
     assert web.get("/login/").status_code == 403
     assert web.get("/login/", **_h("garbage")).status_code == 403
@@ -51,8 +60,7 @@ def test_the_servers_own_health_check_is_exempt_but_the_internet_is_not(web, acc
 
 
 def test_the_pass_email_must_be_the_account(web, access):
-    r = web.post("/setup/", {"name": "Admin", "email": "admin@slicks.test", "password": PW, "password2": PW}, **_h(_pass()))      # the very first account also needs a pass
-    assert r.status_code == 302 and r["Location"] == "/"                # with Access on, no 6-digit code (2026-10-09)
+    _first_admin(web)
     ok = web.get("/", **_h(_pass("admin@slicks.test")))
     assert ok.status_code == 200
     other = web.get("/", **_h(_pass("someone.else@gmail.com")))
@@ -65,19 +73,23 @@ def test_not_configured_means_not_checked(web):
     assert web.get("/login/").status_code in (200, 302)
 
 
-def test_with_access_on_the_6_digit_code_is_not_asked_but_without_it_it_is(web, access):
-    # owner, 2026-10-09: "we can drop 6 digit code" -- Cloudflare Access (Google / email check, same email) is the second step instead
-    r = web.post("/setup/", {"name": "Admin", "email": "admin@slicks.test", "password": PW, "password2": PW}, **_h(_pass()))
-    assert r.status_code == 302 and r["Location"] == "/"                          # signed in: no code, no code set-up
+def test_cloudflare_in_front_does_not_stand_in_for_the_code(web, access):
+    # owner, 2026-10-11: "the risk is my family's email will be hack" -- a hacked inbox passes Cloudflare's email check, so the 6-digit code from the
+    # person's own phone is asked all the same (2026-10-09's "we can drop 6 digit code" is reversed)
+    from django.test import Client
+    _first_admin(web)
     assert web.get("/", **_h(_pass())).status_code == 200
-    web.get("/logout/", **_h(_pass()))
+    web.post("/logout/", **_h(_pass()))
     page = web.get("/login/", **_h(_pass())).content.decode()
     assert "Verified by Cloudflare as <b>admin@slicks.test</b>" in page and 'type="email"' not in page    # only the password is typed (owner, 2026-10-09)
-    r = web.post("/login/", {"password": PW}, **_h(_pass()))
-    assert r.status_code == 302 and r["Location"] == "/"
-    web.get("/logout/", **_h(_pass()))
-    r = web.post("/login/", {"email": "someone.else@x.test", "password": PW}, **_h(_pass()))
-    assert r.status_code == 302 and r["Location"] == "/"                          # the typed email is ignored: Cloudflare's is used
-    web.get("/logout/", **_h(_pass()))
-    r = web.post("/login/", {"password": "wrong-one-77"}, **_h(_pass()))
-    assert r.status_code != 302 or r["Location"] != "/"                           # the password is still checked
+    other = Client()                                                              # another device holding the same Cloudflare pass
+    r = other.post("/login/", {"password": PW}, **_h(_pass()))
+    assert r.status_code == 302 and r["Location"] == "/2fa/"                      # the code is asked
+    assert other.get("/", **_h(_pass()))["Location"].startswith("/login/")        # and nothing is open without it
+    r = other.post("/login/", {"email": "someone.else@x.test", "password": PW}, **_h(_pass()))
+    assert r.status_code == 302 and r["Location"] == "/2fa/"                      # the typed email is ignored: Cloudflare's is used
+    r = other.post("/login/", {"password": "wrong-one-77"}, **_h(_pass()))
+    assert r.status_code != 302                                                   # the password is still checked
+    other.post("/login/", {"password": PW}, **_h(_pass()))
+    r = other.post("/2fa/", {"code": code_for("admin@slicks.test")}, **_h(_pass()))
+    assert r.status_code == 302 and r["Location"] == "/" and other.get("/", **_h(_pass())).status_code == 200

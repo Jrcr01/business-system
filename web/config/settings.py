@@ -83,6 +83,7 @@ SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
 _COOKIE_TAG = "".join(ch for ch in Path(DB_PATH).stem.lower() if ch.isalnum())
 SESSION_COOKIE_NAME = f"slicks_{_COOKIE_TAG}_session"
 CSRF_COOKIE_NAME = f"slicks_{_COOKIE_TAG}_csrf"
+DEVICE_COOKIE_NAME = f"slicks_{_COOKIE_TAG}_dev"             # this browser's own number, and whose 6-digit code it gave today (core/views.py)
 IDLE_MINUTES = int(os.environ.get("WEB_IDLE_MINUTES") or 120)
 SESSION_COOKIE_AGE = IDLE_MINUTES * 60
 SESSION_SAVE_EVERY_REQUEST = True                          # each page opened restarts the idle time
