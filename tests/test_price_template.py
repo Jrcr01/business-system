@@ -54,12 +54,12 @@ def test_a_filled_template_is_read_into_clean_rows():
 def test_every_kind_of_problem_is_named_by_sheet_and_row():
     bad = {"Tires": [{"Brand": "", "Size": "175/70R13", "Pattern": "X", "List price": 100, "Effective date": DAY},
                      {"Brand": "Apollo", "Size": "", "Pattern": "X", "List price": 100, "Effective date": DAY},
-                     {"Brand": "Apollo", "Size": "1", "Pattern": "X", "Terrain": "Q/Q", "List price": 100, "Effective date": DAY},
-                     {"Brand": "Apollo", "Size": "2", "Pattern": "X", "List price": "call", "Effective date": DAY},
-                     {"Brand": "Apollo", "Size": "3", "Pattern": "X", "List price": 5, "Effective date": "someday"},
-                     {"Brand": "Apollo", "Size": "4", "Pattern": "X", "List price": 5},
-                     {"Brand": "Apollo", "Size": "5", "Pattern": "X", "List price": 5, "Effective date": DAY},
-                     {"Brand": "apollo", "Size": "5", "Pattern": "x", "List price": 6, "Effective date": DAY}]}
+                     {"Brand": "Apollo", "Size": "185/65R15", "Pattern": "X", "Terrain": "Q/Q", "List price": 100, "Effective date": DAY},
+                     {"Brand": "Apollo", "Size": "195/65R15", "Pattern": "X", "List price": "call", "Effective date": DAY},
+                     {"Brand": "Apollo", "Size": "205/65R15", "Pattern": "X", "List price": 5, "Effective date": "someday"},
+                     {"Brand": "Apollo", "Size": "215/65R15", "Pattern": "X", "List price": 5},
+                     {"Brand": "Apollo", "Size": "225/65R15", "Pattern": "X", "List price": 5, "Effective date": DAY},
+                     {"Brand": "apollo", "Size": "225/65R15", "Pattern": "x", "List price": 6, "Effective date": DAY}]}
     parsed = pt.parse_workbook(_fill(bad))
     text = "\n".join(parsed["problems"])
     for needle in ("Tires row 2: Brand is empty", "Tires row 3: Size is empty", "Tires row 5: List price 'call'",

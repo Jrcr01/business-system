@@ -126,7 +126,10 @@ TYPE_HOW_TO = [
     "1. One sheet per kind of product: Tires, Battery, Mags, Rims. Each has its own columns. Use only the sheets you need; empty sheets are ignored.",
     "2. One row per product. Columns in orange (marked *) must be filled. Brand is always required.",
     "3. Click a cell under Brand, Terrain, Type, Tube or Terminal: an arrow appears, pick from the list. Brand also takes a new brand typed in.",
-    "4. Tires: Size is only the size (315/80R22.5). The ply goes in Ply / load-speed (20PR), Lug / Rib / Mix or A/T ... in Terrain, the pattern code in Pattern (MD777).",
+    "4. Tires: Size is the size (315/80R22.5). Ply / load-speed takes the ply (20PR) or the LI/SI printed on the list (114V). Terrain: Lug / Rib / Mix or A/T ...",
+    "   Pattern: the pattern code (MD777), ONE per row: a line printed 'NU006 / NU033' becomes two rows with the same size and price.",
+    "   You may copy the cells as printed -- 'LT255/55R19-10PR', '114V XL', 'NU025 H/T': the system moves each piece to its own column (XL and C8 go to Remarks).",
+    "   The rim size is not a column: it is read from the size. Light-truck / van lists: pick LT under Type.",
     "5. List price is the supplier's price BEFORE any discount, as a number. The supplier's discount (less 5%, less 5%) is set in the system, not here.",
     "6. Effective date is the day the new price starts (mm/dd/yyyy). Leave it empty to use the date you pick when uploading (the usual way).",
     "7. A price update: type the new price over the old one. The 'Changed' column then says 'changed' on that row, so you can check before uploading.",
@@ -402,7 +405,7 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
                 v = pc._clean(v)
                 if fld["required"] and not v:
                     bad.append(f"{fld['label']} is empty")
-                if v and fld["choices"]:                              # a fixed-choice field: only its list (capitals ignored; 'AT' reads as 'A/T')
+                if v and fld["choices"] and not (category == "Tires" and fld["key"] == "terrain"):   # a fixed-choice field: only its list (capitals ignored); a tire's terrain is checked below
                     hit = next((c for c in fld["choices"] if c.lower() == v.lower()), None) or (pc.terrain_of(v) if fld["key"] == "terrain" else None)
                     if hit is None:
                         bad.append(f"{fld['label']} '{v}' is not one of {', '.join(fld['choices'])}")
@@ -410,6 +413,13 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
                         v = hit
                 values[fld["key"]] = v
             remark = pc._clean(cell("remarks"))                      # what else tells this product apart (Mining, Heavy Duty ...): part of the item
+            if category == "Tires" and values.get("size") and values.get("pattern"):
+                # Cells may be copied as the supplier prints them (owner, 2026-10-10, the Sunny PCR list): "LT255/55R19-10PR" / "215/70R16C6" in Size,
+                # "114V XL" under LI/SI, "NU025 H/T" in Pattern. Each piece goes to its own field; what is no field (XL, C6) goes to Remarks.
+                tidy, rest, tire_bad = pc.tidy_tire(values["pattern"], values["size"], values["terrain"], " ".join(x for x in (values["ply"], remark) if x))
+                bad += tire_bad
+                values, remark = pc.field_tire_remark({**values, **tidy, "ply": ""}, rest)
+                values = pc.normalise_specs(category, values)
             raw_price = cell("list_price")
             price = pls._to_price(raw_price)
             if price is None:

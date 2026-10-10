@@ -50,6 +50,9 @@ NUMBERS = [
     ("po_daily_payables_limit", "Daily payment limit", "Daily ceiling: confirm above (0 = no warning)", 400_000, 0, 1_000_000_000, 2, "₱",
      "A day above this shows red. Ordering, parking a check or moving a check date onto such a day asks \"Confirm anyway\" and is noted on the Review "
      "list. It is a warning only: the user decides."),
+    ("po_daily_limit_scope", "Daily payment limit", "What the daily limit counts (1 = everything that goes out, 0 = suppliers only)", 1, 0, 1, 0, "",
+     "1: checks, SIs with no check, open orders, lender checks, bank loans, cards and the card reserve (owner, 2026-10-10). 0: only the supplier side -- supplier "
+     "checks, SIs with no check yet and open orders. With everything counted, most days pass ₱400,000 on loans and cards alone."),
     ("card_reserve_on", "Daily payment limit", "Reserve room for card dues before their SOA arrives (1 = yes, 0 = no)", 1, 0, 1, 0, "",
      "A card's SOA comes about a month before its due date. Until then, its usual due day carries an estimate -- the average of its last 3 statements -- "
      "shown as \"Card reserve (estimate)\", so the day is not filled by orders or checks."),

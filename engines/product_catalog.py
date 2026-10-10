@@ -205,8 +205,8 @@ def tidy_tire(model: str, size: str, terrain: str, other: str) -> tuple[dict, st
     pattern_words = []
     for w in words:
         t = terrain_of(w)
-        if t:
-            terr = terr or t
+        if t and "/" in t:                                      # 'NU025 H/T': the terrain moves out. Lug / Rib / Mix can be part of a pattern's own name
+            terr = terr or t                                    # ('MINE LUG', 'VIHAAN RIB'), so those words stay in the pattern (2026-10-10)
         else:
             pattern_words.append(w)
     pattern = " ".join(pattern_words)
@@ -217,7 +217,7 @@ def tidy_tire(model: str, size: str, terrain: str, other: str) -> tuple[dict, st
     rest = []
     for w in _clean(other).split():
         t = terrain_of(w)
-        if t and (not terr or t == terr):
+        if t and (not terr or (t == terr and "/" in t)):         # the first terrain word; a later 'Lug' is part of the description ('Super Lug IS')
             terr = t
         else:
             rest.append(w)

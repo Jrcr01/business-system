@@ -19,6 +19,7 @@ from engines.common import get_conn
 TARGET_KEY = "po_daily_payables_target"
 CEILING_KEY = "po_daily_payables_limit"
 RESERVE_KEY = "card_reserve_on"
+SCOPE_KEY = "po_daily_limit_scope"
 COLS = ["day", "payee", "kind", "reference", "amount"]
 
 
@@ -92,7 +93,15 @@ def loads(start: date, end: date, exclude_po_id: int | None = None) -> pd.DataFr
     from engines.cash_insights_service import split_card_rows
     from engines.po_rules import _committed_rows
     from engines.reports_service import get_payment_schedule_all_tracks
-    parts = [_committed_rows(end, exclude_po_id)]
+    from engines.settings_registry import int_value
+    base = _committed_rows(end, exclude_po_id)
+    if not int_value(SCOPE_KEY):                              # suppliers only (Settings): supplier checks, SIs with no check, open orders
+        base = base[base["kind"].isin(["Supplier checks", "Purchase orders"])] if not base.empty else base
+        if base.empty:
+            return pd.DataFrame(columns=COLS)
+        base = base.assign(day=pd.to_datetime(base["day"]).dt.date)
+        return base[(base["day"] >= start) & (base["day"] <= end)][COLS].reset_index(drop=True)
+    parts = [base]
     sched = get_payment_schedule_all_tracks()
     if not sched.empty:
         _, outside = split_card_rows(sched)

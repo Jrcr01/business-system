@@ -121,3 +121,20 @@ def test_card_reserve_until_the_soa_comes(db):
     from engines.settings_store import set_setting
     set_setting("card_reserve_on", "0")
     assert card_reserve_rows(today, today + timedelta(days=95)).empty
+
+
+def test_the_limit_can_count_suppliers_only(db):
+    # owner's real figures (2026-10-10): loans and cards alone pass 400,000 on most days, so what the limit counts is a Settings choice
+    import app
+    from engines.day_cap import day_totals
+    from engines.settings_store import set_setting
+    sup, lender = make_creditor(db, "Goodyear", terms="30"), make_creditor(db, "Richie", creditor_type="LENDER")
+    day = _bank_day(40)
+    _check_on(db, sup, day, 100_000)
+    with sqlite3.connect(db) as conn:
+        ln = conn.execute("INSERT INTO loan_notes (creditor_id, note_ref, issue_date, status) VALUES (?, 'LN-1', ?, 'Active')", (lender, day.isoformat())).lastrowid
+        conn.execute("INSERT INTO checks_issued (bank_account_id, creditor_id, loan_note_id, amount, check_date, status) VALUES (1, ?, ?, 50000, ?, 'Active')",
+                     (lender, ln, day.isoformat()))
+    assert day_totals(day, day)[day] == 150_000
+    set_setting("po_daily_limit_scope", "0")
+    assert day_totals(day, day)[day] == 100_000

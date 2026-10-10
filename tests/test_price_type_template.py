@@ -102,3 +102,20 @@ def test_the_old_single_sheet_and_the_new_sheets_give_one_tire_one_key(db):
     vals, remark = pc.field_tire_remark(vals, remark)
     assert bad == [] and (vals["size"], vals["ply"], vals["terrain"], vals["tube"], remark) == ("315/80R22.5", "20PR", "Lug", "TL", "")
     assert pc.product_key("Tires", "Westlake", remark, **vals) == pc.product_key("Tires", "Westlake", size="315/80R22.5", ply="20PR", terrain="Lug", pattern="MD777", tube="TL")
+
+
+def test_cells_copied_as_the_sunny_pcr_list_prints_them_land_in_their_own_fields(db):
+    # owner, 2026-10-10: "SUNNY PCR (09-15-2026).pdf -- consider this in the template": Rim | Size | LI/SI | Pattern | Price
+    cid = make_creditor(db, "Sunny Tires")
+    data = _fill(pt.build_type_template(cid), "Tires", [
+        {"Brand": "Sunny", "Size": "285/45R22", "Ply / load-speed": "114V XL", "Pattern": "NU025 H/T", "List price": 6200},
+        {"Brand": "Sunny", "Size": "LT255/55R19-10PR", "Ply / load-speed": "111T", "Pattern": "SU011 A/T", "List price": 8000},
+        {"Brand": "Sunny", "Size": "215/70R16C6", "Ply / load-speed": "108/106T", "Pattern": "NL106", "Type": "LT", "List price": 3900},
+        {"Brand": "Sunny", "Size": "265/50R20", "Ply / load-speed": "111V XL", "Pattern": "NU006 / NU033 A/T", "List price": 6000}])
+    parsed = pt.parse_workbook(data, default_date=date(2026, 9, 15))
+    rows = {r["values"]["pattern"]: r for r in parsed["rows"]}
+    a, b, c = rows["NU025"], rows["SU011"], rows["NL106"]
+    assert (a["values"]["size"], a["values"]["ply"], a["values"]["terrain"], a["item_remark"]) == ("285/45R22", "114V", "H/T", "XL")
+    assert (b["values"]["size"], b["values"]["ply"], b["values"]["terrain"]) == ("LT255/55R19", "10PR 111T", "A/T")
+    assert (c["values"]["size"], c["values"]["ply"], c["values"]["type"], c["item_remark"]) == ("215/70R16", "108/106T", "LT", "C6")
+    assert len(parsed["rows"]) == 3 and any("Tires row 5" in p and "two patterns" in p for p in parsed["problems"])
