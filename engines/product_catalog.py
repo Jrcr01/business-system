@@ -90,7 +90,13 @@ def normalise_specs(category: str, values: dict) -> dict[str, str]:
 # fields by what each piece looks like; whatever is not recognised stays with the item (as its remark), so it still tells two products apart.
 CATEGORY_WORDS = {"tire": "Tires", "tires": "Tires", "tyre": "Tires", "tyres": "Tires", "battery": "Battery", "batteries": "Battery",
                   "mag": "Mags", "mags": "Mags", "mag wheels": "Mags", "wheels": "Mags", "rim": "Rims", "rims": "Rims"}
-_TUBE_WORDS = {"tl": "TL", "tubeless": "TL", "tt": "TT", "tubetype": "TT", "tube type": "TT"}
+_TUBE_WORDS = {"tl": "TL", "tubeless": "TL", "tt": "TT", "tubetype": "TT", "tube type": "TT", "tube-type": "TT", "with tube": "TT"}
+
+
+def tube_of(text) -> str | None:
+    """'Tubeless' / 'tl' / 'Tube type' -> 'TL' / 'TT'; '' -> ''; anything else -> None (owner's list, 2026-10-11: the full words are typed too)."""
+    t = " ".join(_clean(text).lower().split())
+    return "" if not t else _TUBE_WORDS.get(t)
 
 
 def category_of(text) -> str | None:
@@ -173,7 +179,9 @@ def split_other_specs(category: str, model: str, size: str, other: str) -> tuple
 # "Others", free text kept as it is written. A tire is the same tire only when brand, size, pattern, terrain AND the others all match (capitals, spaces, dashes
 # and the order of the other words ignored), so "14PR Rib TT" and "14PR Rib TL" are two tires with their own prices.
 TIRE_SIZE = re.compile(r"(LT|P)?(\d{3}/\d{2}Z?R\d{2}(\.\d)?|\d{1,3}(\.\d{1,2})?Z?R\d{2}(\.\d)?|\d{2}X\d{1,2}(\.\d{1,2})?Z?R\d{2}|\d{1,2}(\.\d{1,2})?(/\d{1,2}(\.\d{1,2})?)?-\d{1,2}(\.\d)?)")     # the last: bias-ply, e.g. 4.00-8, 6.40/6.50-13, 23.5-25
-_TERRAIN_WORDS = {t.replace("/", "").upper(): t for t in TERRAIN} | {t.upper(): t for t in TERRAIN}
+_TERRAIN_WORDS = ({t.replace("/", "").upper(): t for t in TERRAIN} | {t.upper(): t for t in TERRAIN}
+                  # the full words too (owner's list, 2026-10-11: "Highway-Terrain", "All-Terrain" ... refused by the very template that taught them)
+                  | {w + sep + "TERRAIN": t for w, t in (("ALL", "A/T"), ("MUD", "M/T"), ("HIGHWAY", "H/T"), ("RUGGED", "R/T")) for sep in ("-", " ", "")})
 
 
 def terrain_of(text) -> str | None:

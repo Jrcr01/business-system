@@ -406,7 +406,8 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
                 if fld["required"] and not v:
                     bad.append(f"{fld['label']} is empty")
                 if v and fld["choices"] and not (category == "Tires" and fld["key"] == "terrain"):   # a fixed-choice field: only its list (capitals ignored); a tire's terrain is checked below
-                    hit = next((c for c in fld["choices"] if c.lower() == v.lower()), None) or (pc.terrain_of(v) if fld["key"] == "terrain" else None)
+                    hit = (next((c for c in fld["choices"] if c.lower() == v.lower()), None) or (pc.terrain_of(v) if fld["key"] == "terrain" else None)
+                           or (pc.tube_of(v) if fld["key"] == "tube" else None))     # the full words count: Tubeless, Tube type (owner's list, 2026-10-11)
                     if hit is None:
                         bad.append(f"{fld['label']} '{v}' is not one of {', '.join(fld['choices'])}")
                     else:

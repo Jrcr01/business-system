@@ -119,3 +119,17 @@ def test_cells_copied_as_the_sunny_pcr_list_prints_them_land_in_their_own_fields
     assert (b["values"]["size"], b["values"]["ply"], b["values"]["terrain"]) == ("LT255/55R19", "10PR 111T", "A/T")
     assert (c["values"]["size"], c["values"]["ply"], c["values"]["type"], c["item_remark"]) == ("215/70R16", "108/106T", "LT", "C6")
     assert len(parsed["rows"]) == 3 and any("Tires row 5" in p and "two patterns" in p for p in parsed["problems"])
+
+
+def test_the_full_words_are_accepted_where_the_short_codes_live(db):
+    # owner, 2026-10-11: his list said "Tubeless" and "Highway-Terrain" and 89 rows were refused -- the obvious spellings count
+    cid = make_creditor(db, "New Century City Marketing Corp.")
+    data = _fill(pt.build_type_template(cid), "Tires", [
+        {"Brand": "Westlake", "Size": "265/65R17", "Ply / load-speed": "112T", "Terrain": "Highway-Terrain", "Pattern": "SL369", "Type": "PCR", "Tube": "Tubeless", "List price": 7400},
+        {"Brand": "Westlake", "Size": "31X10.50R15", "Ply / load-speed": "109S", "Terrain": "All Terrain", "Pattern": "SL309", "Tube": "Tube type", "List price": 8200},
+        {"Brand": "Westlake", "Size": "12.00-20", "Ply / load-speed": "18PR", "Terrain": "Mud-Terrain", "Pattern": "CL991", "List price": 15700}])
+    parsed = pt.parse_workbook(data, default_date=date(2026, 9, 15))
+    assert parsed["problems"] == []
+    got = {r["values"]["pattern"]: (r["values"]["terrain"], r["values"].get("tube", "")) for r in parsed["rows"]}
+    assert got["SL369"] == ("H/T", "TL") and got["SL309"] == ("A/T", "TT") and got["CL991"][0] == "M/T"
+    assert pc.terrain_of("Rugged-Terrain") == "R/T" and pc.tube_of("TUBELESS") == "TL" and pc.tube_of("nonsense") is None
