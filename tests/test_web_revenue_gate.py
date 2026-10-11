@@ -76,3 +76,12 @@ def test_on_the_sandbox_everything_is_there(web, db):
     assert "stock_old_years" in web.get("/settings/").content.decode()
     cid, po, lid = _ordered(db)
     assert f'name="dot_{lid}"' in web.get(f"/purchase-orders/receive/?s={cid}&po={po}").content.decode()
+
+
+def test_the_server_switch_is_a_file_beside_the_database(tmp_path, monkeypatch):
+    from engines import common, features
+    monkeypatch.delenv("WEB_REVENUE_CYCLE", raising=False)
+    monkeypatch.setattr(common, "DB_PATH", str(tmp_path / "ap_disbursement.db"))
+    assert not features.revenue_on()                                            # a live database, no file: hidden
+    (tmp_path / "revenue_on.txt").write_text("on (owner, 2026-10-11)", encoding="utf-8")
+    assert features.revenue_on()                                                # the file beside the database turns it on

@@ -16,7 +16,12 @@ def revenue_on() -> bool:
     if asked in ("0", "1"):
         return asked == "1"
     from engines import common
-    return "TEST" in Path(common.DB_PATH).name.upper()
+    db = Path(common.DB_PATH)
+    if (db.parent / "revenue_on.txt").exists():
+        # the server's ON switch (owner, 2026-10-11: "Stock and Sell, all on"): a file beside the database, like cf_access.txt,
+        # because /etc/slicks-erp/env belongs to root and the deploy account may not edit it. Delete the file and restart to hide it all again.
+        return True
+    return "TEST" in db.name.upper()
 
 
 def off_pages() -> frozenset:
