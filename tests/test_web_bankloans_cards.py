@@ -66,3 +66,12 @@ def test_release_checks_is_gone_from_the_main_system(web, db):
     _admin(web)
     home = web.get("/").content.decode()
     assert "Release checks" not in home and "Bank loans" in home and "Credit cards" in home
+
+
+def test_the_card_picked_on_the_add_form_carries_into_the_list(web, db):
+    # owner, 2026-10-12: "when i enter last 4 digits past statements will follow" -- picking the card on the Add-a-statement form reloads
+    # with ?card=<id>&show=all, and that address preselects both pickers so the card's past statements sit below the form
+    from tests.test_web_d0 import _admin
+    _admin(web)
+    page = web.get("/credit-cards/").content.decode()
+    assert "past statements will follow" in page                                  # the follow script is on the page

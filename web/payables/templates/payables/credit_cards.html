@@ -162,5 +162,15 @@ document.querySelectorAll(".card-find").forEach(function (box) {
   });
   box.addEventListener("keydown", function (e) { if (e.key === "Enter") e.preventDefault(); });
 });
+/* the statements below follow the card picked above (owner, 2026-10-12: "when i enter last 4 digits past statements will follow") */
+(function () {
+  var sel = document.getElementById("card"); if (!sel) return;
+  sel.addEventListener("change", function () {
+    if (!sel.value) return;
+    var here = new URLSearchParams(location.search);
+    if (here.get("card") === sel.value) return;
+    location.href = "/credit-cards/?card=" + encodeURIComponent(sel.value) + "&show=all";
+  });
+})();
 </script>
 {% endblock %}
