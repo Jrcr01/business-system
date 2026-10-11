@@ -1,4 +1,4 @@
-"""The revenue cycle, stage A, the Sell and Affiliates screens (owner, 2026-10-11: sales "live at the counter"; "one invoice booklet in use"; the seller
+"""The revenue cycle, stage A, the Sell and Affiliates screens (owner, 2026-10-11: "one invoice booklet in use"; the seller
 sees cost and profit; a post-dated check makes the "sale paid"; the seller voids and the System admin reviews afterwards; an affiliate pays "at cost"):
 the counter sale as it is posted from the screen, the day sheet in the notebook's order, released goods, a sale's page, customers, booklets, affiliates."""
 from conftest import fetchone
@@ -34,12 +34,12 @@ def _sale(web, a, si="004501", qty="4", price="3600", **extra):
 def test_the_counter_sale_offers_the_next_number_and_saves_in_one_step(web, db):
     _admin(web)
     a, name = _ready(web)
-    page = web.get("/sales/").content.decode()
+    page = web.get("/sales/?view=new").content.decode()                        # typing an invoice (owner, 2026-10-11: recorded after close)
     assert 'name="si_no" value="004501"' in page and 'id="scanlines"' in page and "Save the sale" in page and "Release now, invoice later" in page
     r = _sale(web, a, pay_amount_0="5000", pay_method_1="CHECK", pay_amount_1="10000", pay_bank_1="BDO", pay_no_1="0048812", pay_date_1="2026-12-25",
               svc_desc_0="Mounting and balancing", svc_amt_0="600")
     assert r.status_code == 302 and _n("SELECT on_hand FROM items WHERE id = ?", (a,)) == 8 and _n("SELECT total FROM sales") == 15000.0
-    assert 'name="si_no" value="004502"' in web.get("/sales/").content.decode()
+    assert 'name="si_no" value="004502"' in web.get("/sales/?view=new").content.decode()
     sid = _n("SELECT sale_id FROM sales")
     page = web.get(f"/sales/{sid}/").content.decode()
     assert "SI 004501" in page and "Walk-in" in page and "BDO" in page and "0048812" in page and "3,640.00" in page and "Paid" in page      # cost and profit shown; a PDC is paid
@@ -123,7 +123,7 @@ def test_booklets_register_cancel_a_leaf_and_one_in_use(web, db):
     page = web.get("/si-booklets/").content.decode()
     assert "SB-0001" in page and "SB-0002" in page and "In use" in page and "Waiting" in page and "Use this booklet now" in page
     web.post("/si-booklets/", {"action": "cancel_leaf", "si_no": "4501", "reason": "torn"})
-    assert _n("SELECT COUNT(*) FROM si_cancelled") == 1 and 'name="si_no" value="004502"' in web.get("/sales/").content.decode()
+    assert _n("SELECT COUNT(*) FROM si_cancelled") == 1 and 'name="si_no" value="004502"' in web.get("/sales/?view=new").content.decode()
     r = web.post("/si-booklets/", {"action": "register", "start": "4540", "end": "4560", "holder": ""}, follow=True)
     assert "overlap" in r.content.decode()
 
@@ -153,7 +153,7 @@ def test_home_and_the_menu_have_stock_and_sell(web, db):
     _admin(web)
     _ready(web)
     home = web.get("/").content.decode()
-    for word in ("Items and stock", "Stock counts", "Affiliates", "Counter sale", "Customers", "Invoice booklets", "Sales today", "Released, not invoiced"):
+    for word in ("Items and stock", "Stock counts", "Affiliates", "Scan out", "Customers", "Invoice booklets", "Sales today", "Record the day"):
         assert word in home, word
     assert 'href="/sales/?view=day"' in home and 'href="/stock/"' in home
     payables = _sign_in_new("ap@slicks.test", "payables")
@@ -177,10 +177,10 @@ def test_the_home_cards_follow_the_order_of_the_work(web, db):
     assert list(rows)[:6] == ["My home", "Buy", "Stock", "Sell", "Pay suppliers", "Bank"]
     assert rows["Buy"] == ["Import a price list", "Price lists", "New order", "Purchase orders", "Receive"]
     assert rows["Stock"] == ["Items and stock", "Stock counts", "Affiliates"]
-    assert rows["Sell"] == ["Counter sale", "Sales today", "Released, not invoiced", "Customers", "Invoice booklets"]
+    assert rows["Sell"] == ["Scan out", "Record the day&#x27;s invoices", "Sales today", "Customers", "Invoice booklets"]
     assert rows["Pay suppliers"] == ["New batch", "Order statements", "Calendar", "Days over the limit", "Daily payables"]
     assert rows["Bank"] == ["Import bank statement", "Bank and cash", "Check booklets"]
     assert rows["Other payables"] == ["New loan note", "Lenders", "Bank loans", "Credit cards"]
     assert rows["Analytics"] == ["Purchasing", "Payables", "Bank and cash", "Lenders"]
     assert rows["My home"] == ["New order", "Purchase orders", "New batch", "Order statements", "Calendar", "Daily payables", "Checks and review"]
-    assert 'href="/sales/?view=released"' in page and "the next SI no." in page
+    assert 'href="/sales/?view=scan"' in page and "the next SI no." in page

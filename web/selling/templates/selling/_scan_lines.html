@@ -20,10 +20,10 @@
     <th>Item</th><th style="text-align:right">On hand</th><th>Oldest DOT</th><th>Qty</th>
     {% if scan_mode == "sale" %}<th>Price each</th><th style="text-align:right">Amount</th><th style="text-align:right">Cost</th><th style="text-align:right">Profit</th>
     {% elif scan_mode == "borrow" %}<th>Cost each</th><th style="text-align:right">Amount</th>
-    {% else %}<th style="text-align:right">Cost</th><th style="text-align:right">Amount</th>{% endif %}<th></th></tr></thead>
+    {% elif scan_mode == "lend" %}<th style="text-align:right">Cost</th><th style="text-align:right">Amount</th>{% endif %}<th></th></tr></thead>
     <tbody id="sl_rows"></tbody>
-    <tfoot><tr><td colspan="{% if scan_mode == 'sale' %}5{% else %}5{% endif %}" class="num"><b>Total</b></td><td class="num"><b id="sl_total">0.00</b></td>
-      {% if scan_mode == "sale" %}<td></td><td class="num"><b id="sl_profit">0.00</b></td>{% endif %}<td></td></tr></tfoot>
+    {% if scan_mode != "out" %}<tfoot><tr><td colspan="{% if scan_mode == 'sale' %}5{% else %}5{% endif %}" class="num"><b>Total</b></td><td class="num"><b id="sl_total">0.00</b></td>
+      {% if scan_mode == "sale" %}<td></td><td class="num"><b id="sl_profit">0.00</b></td>{% endif %}<td></td></tr></tfoot>{% endif %}
   </table></div>
   <div id="sl_hidden"></div>
 </div>
@@ -38,13 +38,17 @@
   var num = function (t) { var n = parseFloat(String(t).replace(/,/g, "")); return isNaN(n) ? 0 : n; };
   var csrf = function () { var m = document.cookie.match(/csrftoken=([^;]+)/); return m ? m[1] : ""; };
   function say(text, bad) { msg.textContent = text; msg.style.color = bad ? "#b3261e" : ""; }
+  function beep() {                                             /* heard at a noisy bay: a short blip on every accepted scan */
+    try { var AC = window.AudioContext || window.webkitAudioContext; box._ac = box._ac || new AC(); var o = box._ac.createOscillator(), g = box._ac.createGain();
+          o.frequency.value = 1320; g.gain.value = .07; o.connect(g); g.connect(box._ac.destination); o.start(); o.stop(box._ac.currentTime + .08); } catch (e) { }
+  }
   function find(code) { code = code.toUpperCase(); return items.filter(function (it) { return it.codes.indexOf(code) >= 0; })[0]; }
   function match(it) { return q.value.toLowerCase().split(/\s+/).filter(Boolean).every(function (w) { return it.find.indexOf(w) >= 0; }); }
   function add(it, qty, price) {
     var ln = lines.filter(function (l) { return l.it.id === it.id; })[0];
     if (ln) ln.qty += qty || 1;
     else lines.push({it: it, qty: qty || 1, price: price != null ? price : (mode === "sale" ? "" : it.cost)});
-    say(it.name + " added.", false); draw(); changed();
+    say("✓ " + it.name + " added.", false); msg.style.color = "#0b6e4f"; beep(); draw(); changed();
   }
   function changed() { box.dispatchEvent(new CustomEvent("lines", {detail: {lines: lines, total: total(), profit: profit()}})); }
   function total() { return lines.reduce(function (s, l) { return s + l.qty * num(mode === "lend" ? l.it.cost : l.price); }, 0); }
@@ -91,7 +95,8 @@
       var tq = document.createElement("td"), qi = document.createElement("input"); qi.className = "inline-input"; qi.style.width = "64px"; qi.inputMode = "decimal"; qi.value = l.qty;
       qi.setAttribute("aria-label", "Qty of " + l.it.name); tq.appendChild(qi); tr.appendChild(tq);
       var pi = null, amt, cost, prof;
-      if (mode === "lend") { cell(tr, peso(l.it.cost), true); amt = cell(tr, "", true); }
+      if (mode === "out") { }                                   /* Scan out: the movement only, no money (owner, 2026-10-11) */
+      else if (mode === "lend") { cell(tr, peso(l.it.cost), true); amt = cell(tr, "", true); }
       else {
         var tp = document.createElement("td"); pi = document.createElement("input"); pi.className = "inline-input"; pi.style.width = "110px"; pi.inputMode = "decimal"; pi.value = l.price;
         pi.setAttribute("aria-label", (mode === "sale" ? "Price each of " : "Cost each of ") + l.it.name); pi.placeholder = mode === "sale" ? "agreed price" : "their cost";
@@ -100,10 +105,10 @@
       }
       function recalc() {
         var price = mode === "lend" ? l.it.cost : num(l.price);
-        amt.textContent = peso(l.qty * price);
+        if (amt) amt.textContent = peso(l.qty * price);
         if (prof) { var p = l.qty * (price - l.it.cost); prof.textContent = l.price === "" ? "" : peso(p); prof.className = "num " + (p < 0 ? "neg" : "pos"); }
         oh.className = "num" + (mode !== "borrow" && l.qty > l.it.on_hand ? " neg" : "");
-        document.getElementById("sl_total").textContent = peso(total());
+        var st = document.getElementById("sl_total"); if (st) st.textContent = peso(total());
         var sp = document.getElementById("sl_profit"); if (sp) { sp.textContent = peso(profit()); sp.className = profit() < 0 ? "neg" : "pos"; }
         changed();
       }
@@ -117,7 +122,7 @@
       if (pi && k === lines.length - 1 && l.price === "" && document.activeElement === q) { pi.focus(); }
     });
     table.style.display = lines.length ? "" : "none";
-    if (!lines.length) { document.getElementById("sl_total").textContent = "0.00"; }
+    var s0 = document.getElementById("sl_total"); if (!lines.length && s0) { s0.textContent = "0.00"; }
   }
   q.addEventListener("focus", function () { if (q.value.trim()) setOpen(true); });
   q.addEventListener("input", function () { hi = 0; setOpen(q.value.trim().length > 0); });

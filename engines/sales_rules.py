@@ -382,14 +382,21 @@ def save_sale(si_no, sale_date, customer_id: int | None, customer_name: str, lin
             conn.execute("INSERT INTO sale_payments (sale_id, method, amount, bank, check_no, check_date, reference) VALUES (?, ?, ?, ?, ?, ?, ?)",
                          (sale_id, p["method"], p["amount"], p["bank"], p["check_no"], str(p["check_date"]) if p["check_date"] else None, p["reference"]))
         conn.execute("UPDATE sales SET cost_total = ? WHERE sale_id = ?", (round(cost_total, 2), sale_id))
+        if clean and not no_stock_out:
+            # typed straight in, with no scan slip (owner, 2026-10-11: the scan tracks the movement): saved all the same, noted so a missed scan is seen
+            from engines.review_flags import flag
+            flag(conn, "SALE_NOT_SCANNED", "sales", int(sale_id),
+                 f"{si_text(n)}: {sum(ln['qty'] for ln in clean):g} pc(s) typed without a scan slip. The usual way: Scan out when the goods leave, then write the invoice on the slip.")
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'SALE_SAVED', 'sales', ?, ?)",
                      (sale_id, f"{si_text(n)}: ₱{total:,.2f}, " + " + ".join(f"{METHODS[p['method']].split(' ')[0].lower()} {p['amount']:,.2f}" for p in pays)))
         _after_save(conn, sale_id, n, day, customer_id, below, _text(below_cost_reason), sum(p["amount"] for p in pays if p["method"] == "CHARGE"))
     return True, f"{si_text(n)} saved: ₱{total:,.2f}." + (f" {len(below)} line(s) below cost: noted for review." if below else ""), int(sale_id)
 
 
-def release(customer_id: int | None, customer_name: str, lines: list[dict], note: str = "") -> tuple[bool, str, int | None]:
-    """Goods leave before the invoice is written (RL-0001): the stock goes out now; the invoice must follow the same day."""
+def release(customer_id: int | None, customer_name: str, lines: list[dict], note: str = "", si_hint=None) -> tuple[bool, str, int | None]:
+    """Goods leave before the invoice is written (RL-0001): the stock goes out now; the invoice must follow the same day. This is what the Scan out page
+    saves (owner, 2026-10-11: the barcode tracks the movement, the invoice is typed after the store closes). si_hint = the number already on the paper
+    invoice, when known, offered back when the invoice is typed. A slip without a name is a walk-in; the invoice names the customer."""
     allowed, why = require_permission("sales.use")
     if not allowed:
         return False, why, None
@@ -400,14 +407,13 @@ def release(customer_id: int | None, customer_name: str, lines: list[dict], note
             return False, problem, None
         if not clean:
             return False, "Scan or choose what is being released.", None
-        if customer_id is None and not _text(customer_name):
-            return False, "Say who the goods are released to: choose the customer, or type a name.", None
         used = [int(r[0][3:]) for r in conn.execute("SELECT release_no FROM sales WHERE release_no LIKE 'RL-%'") if r[0][3:].isdigit()]
         number = f"RL-{next_doc_number(conn, 'RL', 0, max(used, default=0)):04d}"
         today = manila_today()
-        sale_id = conn.execute("""INSERT INTO sales (release_no, sale_date, customer_id, customer_name, status, released_at, created_by)
-                                  VALUES (?, ?, ?, ?, 'RELEASED', CURRENT_TIMESTAMP, acting_user()) RETURNING sale_id""",
-                               (number, str(today), customer_id, _text(customer_name) or None)).fetchone()[0]
+        hint = "".join(ch for ch in str(si_hint or "") if ch.isdigit()) or None
+        sale_id = conn.execute("""INSERT INTO sales (release_no, sale_date, customer_id, customer_name, status, released_at, si_hint, created_by)
+                                  VALUES (?, ?, ?, ?, 'RELEASED', CURRENT_TIMESTAMP, ?, acting_user()) RETURNING sale_id""",
+                               (number, str(today), customer_id, _text(customer_name) or None, hint)).fetchone()[0]
         for ln in clean:
             cost = stock_out(conn, ln["item_id"], ln["qty"], "sales", sale_id, today, note=f"released on {number}, invoice to follow")
             conn.execute("INSERT INTO sale_lines (sale_id, item_id, description, qty, unit_price, amount, unit_cost) VALUES (?, ?, ?, ?, 0, 0, ?)",
@@ -560,7 +566,7 @@ def return_item(sale_id: int, line_id: int, qty, reason: str) -> tuple[bool, str
 def get_sale(sale_id: int) -> dict | None:
     with get_conn() as conn:
         h = conn.execute("""SELECT s.sale_id, s.si_no, s.release_no, s.sale_date, s.customer_id, COALESCE(c.customer_name, NULLIF(s.customer_name, ''), 'Walk-in'), s.status, s.total,
-                                   s.cost_total, s.typed_late, s.below_cost_reason, s.void_reason, s.voided_by, s.created_by, s.created_at, s.no_stock_out
+                                   s.cost_total, s.typed_late, s.below_cost_reason, s.void_reason, s.voided_by, s.created_by, s.created_at, s.no_stock_out, s.si_hint
                             FROM sales s LEFT JOIN customers c ON c.customer_id = s.customer_id WHERE s.sale_id = ?""", (int(sale_id),)).fetchone()
         if not h:
             return None
@@ -573,7 +579,7 @@ def get_sale(sale_id: int) -> dict | None:
                    for a, b, c, d, e, f in conn.execute("""SELECT l.description, r.qty, r.amount, r.reason, r.returned_on, r.created_by FROM sale_returns r JOIN sale_lines l ON l.line_id = r.line_id
                                                            WHERE r.sale_id = ? ORDER BY r.return_id""", (int(sale_id),))]
     keys = ("sale_id", "si_no", "release_no", "sale_date", "customer_id", "customer", "status", "total", "cost_total", "typed_late", "below_cost_reason", "void_reason", "voided_by",
-            "created_by", "created_at", "no_stock_out")
+            "created_by", "created_at", "no_stock_out", "si_hint")
     out = dict(zip(keys, h))
     returned = round(sum(r["amount"] for r in returns), 2)
     out.update({"lines": lines, "payments": pays, "returns": returns, "returned": returned, "net": round(float(out["total"] or 0) - returned, 2),
@@ -633,12 +639,14 @@ def open_releases() -> list[dict]:
     """Goods out with no invoice yet: sale_id, release_no, when, customer, items, by, old (released before today)."""
     today = str(manila_today())
     with get_conn() as conn:
-        heads = conn.execute("""SELECT s.sale_id, s.release_no, s.sale_date, s.released_at, COALESCE(c.customer_name, NULLIF(s.customer_name, ''), 'Walk-in'), s.created_by
+        heads = conn.execute("""SELECT s.sale_id, s.release_no, s.sale_date, s.released_at, COALESCE(c.customer_name, NULLIF(s.customer_name, ''), 'Walk-in'), s.created_by, s.si_hint
                                 FROM sales s LEFT JOIN customers c ON c.customer_id = s.customer_id WHERE s.status = 'RELEASED' ORDER BY s.sale_id DESC""").fetchall()
         out = []
-        for sale_id, number, day, when, who, by in heads:
-            items = ", ".join(f"{float(q):g} × {d}" for d, q in conn.execute("SELECT description, qty FROM sale_lines WHERE sale_id = ? ORDER BY line_id", (sale_id,)))
-            out.append({"sale_id": int(sale_id), "release_no": number, "day": day, "when": when, "customer": who, "items": items, "by": by or "", "old": str(day) < today})
+        for sale_id, number, day, when, who, by, hint in heads:
+            detail = conn.execute("SELECT description, qty FROM sale_lines WHERE sale_id = ? ORDER BY line_id", (sale_id,)).fetchall()
+            items = ", ".join(f"{float(q):g} × {d}" for d, q in detail)
+            out.append({"sale_id": int(sale_id), "release_no": number, "day": day, "when": when, "customer": who, "items": items, "by": by or "",
+                        "old": str(day) < today, "si_hint": hint or "", "pcs": round(sum(float(q) for _, q in detail), 2)})
     return out
 
 

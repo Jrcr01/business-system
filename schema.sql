@@ -1311,6 +1311,7 @@ CREATE TABLE IF NOT EXISTS sales (
     voided_by TEXT,
     voided_at DATETIME,
     released_at DATETIME,
+    si_hint TEXT,                   -- migration 089: the SI number typed at the scan (Scan out), offered back when the invoice is written after close
     created_by TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

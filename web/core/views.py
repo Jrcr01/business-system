@@ -310,7 +310,7 @@ ROW_ORDER = {
     "mine": ["New order", "purchase-orders", "New batch", "order-statements", "calendar", "checks", "review"],
     "buy": ["Import a price list", "price-lists", "New order", "purchase-orders", "receive-goods"],
     "stock": ["stock", "stock-counts", "affiliates"],
-    "sell": ["sales", "sales-today", "sales-released", "customers", "si-booklets"],
+    "sell": ["scan-out", "sales", "sales-today", "customers", "si-booklets"],
     "pay": ["New batch", "order-statements", "payment-run", "calendar", "over-limit-days", "payables-due", "checks", "release"],
     "bank": ["Import bank statement", "bank-cash", "booklets"],
     "other": ["New loan note", "lenders", "bank-loans", "credit-cards"],

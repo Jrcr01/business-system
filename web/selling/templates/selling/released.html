@@ -1,18 +1,24 @@
 {% extends "core/base.html" %}
-{% block title %}Released, not invoiced{% endblock %}
+{% block title %}Record the day's invoices{% endblock %}
 {% block content %}
-<h2><span class="ms" style="font-size:28px">local_shipping</span> Released, not invoiced yet</h2>
+{% comment %}The evening's page (owner, 2026-10-11: "the invoice is done manually. we record after the store close"): the day's slips from Scan out,
+each becoming one invoice with its items already on it. The stock left with the scan and is never taken twice.{% endcomment %}
+<h2><span class="ms" style="font-size:28px">receipt_long</span> Record the day's invoices</h2>
 <div class="actions" style="margin-bottom:10px">
-  <a class="btn small ghost" href="/sales/"><span class="ms">point_of_sale</span>New sale</a><a class="btn small ghost" href="/sales/?view=day"><span class="ms">today</span>Sales today</a></div>
-<p class="note">Goods that left before the invoice was written. They are already out of stock. Each must be invoiced the same day.</p>
+  <a class="btn small ghost" href="/sales/?view=scan"><span class="ms">barcode_scanner</span>Scan out</a>
+  <a class="btn small ghost" href="/sales/?view=new"><span class="ms">receipt_long</span>Invoice without a scan</a>
+  <a class="btn small ghost" href="/sales/?view=day"><span class="ms">today</span>Sales today</a></div>
 {% if rows %}
+<div class="warnbox"><b>{{ rows|length }} slip{{ rows|length|pluralize }} still need{{ rows|length|pluralize:"s," }} an invoice.</b>
+  Each slip is goods already out of stock; write its invoice from the booklet{% if next_si %} — the next number is {{ next_si }}{% endif %}.</div>
 <div class="scroll-x"><table class="list">
-  <tr><th>Release</th><th>When</th><th>Customer</th><th>Items</th><th>Released by</th><th></th><th></th></tr>
-  {% for r in rows %}<tr><td><a href="/sales/{{ r.sale_id }}/">{{ r.release_no }}</a></td><td>{{ r.day|dmy }}</td><td>{{ r.customer }}</td><td>{{ r.items }}</td><td>{{ r.by }}</td>
+  <tr><th>Day</th><th>Slip</th><th>Items</th><th class="num">Pcs</th><th>SI typed at the scan</th><th>Customer</th><th>Scanned by</th><th></th><th></th></tr>
+  {% for r in rows %}<tr><td>{{ r.day|dmy }}</td><td><a href="/sales/{{ r.sale_id }}/">{{ r.release_no }}</a></td><td>{{ r.items }}</td><td class="num">{{ r.pcs|floatformat:"-2" }}</td>
+    <td>{% if r.si_hint %}<span class="pill">{{ r.si_hint }}</span>{% endif %}</td><td>{{ r.customer }}</td><td>{{ r.by }}</td>
     <td>{% if r.old %}<span class="pill warn">Not invoiced the same day</span>{% endif %}</td>
     <td><a class="btn small" href="/sales/{{ r.sale_id }}/"><span class="ms">receipt_long</span>Write the invoice</a></td></tr>{% endfor %}
 </table></div>
-<p class="hint">"Write the invoice" opens the release: you type the SI number, the prices and how it was paid. If the goods came back, cancel the release there.
-  One still open the next day is on the Review list.</p>
+<p class="hint">"Write the invoice" opens the slip: its items are already there; type the SI number, the prices, the customer and how it was paid.
+  The stock left with the scan and is not taken again. If the goods came back, cancel the slip on its page. A slip still open the next day is on the Review list.</p>
 {% else %}<p class="note"><span class="ms">task_alt</span> Nothing is out without its invoice.</p>{% endif %}
 {% endblock %}

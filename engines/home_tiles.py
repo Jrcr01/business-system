@@ -82,7 +82,7 @@ def panels_enabled() -> bool:
 GROUPS: list[Group] = [                              # in the order the money moves (2026-10-03); a new module adds its row with register_group(..., before="buy")
     Group("buy", "Buy", "Prices and orders, before the invoice"),
     Group("stock", "Stock", "What is on hand; counts and lending"),          # the revenue cycle, stage A (owner, 2026-10-11)
-    Group("sell", "Sell", "The counter: sales, invoices, customers"),
+    Group("sell", "Sell", "Scan out by day, the invoices after close, customers"),
     Group("pay", "Pay suppliers", "Invoice to check to bank"),
     Group("bank", "Bank", "The bank statement is the truth"),
     Group("other", "Other payables", "Loans and cards"),
@@ -297,8 +297,22 @@ def _affiliates():
     return _waiting(n, "lent or borrowed, open")
 
 
-def _counter_sale():
+def _scan_out():
+    """Pieces scanned out today, on slips (owner, 2026-10-11: the scan is the monitoring; the invoice follows after close)."""
+    from engines.clock import manila_today
+    from engines.common import get_conn
+    with get_conn() as conn:
+        pcs = conn.execute("""SELECT COALESCE(SUM(l.qty), 0) FROM sales s JOIN sale_lines l ON l.sale_id = s.sale_id
+                              WHERE s.release_no IS NOT NULL AND s.status != 'VOID' AND s.sale_date = ?""", (str(manila_today()),)).fetchone()[0]
+    return f"{float(pcs):g}", "pcs scanned out today", "none"
+
+
+def _to_record():
+    """The evening's work: slips waiting for their invoice; quiet, the next SI number."""
     from engines.sales_rules import next_si_no
+    open_n = _count("SELECT COUNT(*) FROM sales WHERE status = 'RELEASED'")
+    if open_n:
+        return str(open_n), "slip(s) to invoice", "alert"
     nxt = next_si_no()
     return (f"{nxt:06d}", "the next SI no.", "none") if nxt else ("—", "no booklet in use", "warn")
 
@@ -309,10 +323,6 @@ def _sales_today():
     with get_conn() as conn:
         n, total = conn.execute("SELECT COUNT(*), COALESCE(SUM(total), 0) FROM sales WHERE status = 'SAVED' AND sale_date = ?", (str(manila_today()),)).fetchone()
     return str(n), f"invoices · ₱{float(total):,.0f}", "ok" if n else "none"
-
-
-def _released():
-    return _waiting(_count("SELECT COUNT(*) FROM sales WHERE status = 'RELEASED'"), "to invoice today", "alert")
 
 
 def _customers():
@@ -447,9 +457,9 @@ for _t in (
     Tile("stock", "stock", "Items and stock", _stock_items, needs="inventory.use"),
     Tile("stock-counts", "stock", "Stock counts", _stock_counts, needs="inventory.use"),
     Tile("affiliates", "stock", "Affiliates", _affiliates, needs="inventory.use"),
-    Tile("sales", "sell", "Counter sale", _counter_sale, needs="sales.use"),
+    Tile("sales", "sell", "Scan out", _scan_out, key="scan-out", icon=":material/barcode_scanner:", state=(("sales_view", "scan"),), needs="sales.use"),
+    Tile("sales", "sell", "Record the day's invoices", _to_record, needs="sales.use"),
     Tile("sales", "sell", "Sales today", _sales_today, key="sales-today", icon=":material/today:", state=(("sales_view", "day"),), needs="sales.use"),
-    Tile("sales", "sell", "Released, not invoiced", _released, key="sales-released", icon=":material/local_shipping:", state=(("sales_view", "released"),), needs="sales.use"),
     Tile("customers", "sell", "Customers", _customers, needs="sales.use"),
     Tile("si-booklets", "sell", "Invoice booklets", _si_booklets, needs="sales.use"),
     Tile("bank-cash", "bank", "Bank and cash", _bank_cash, actions=[

@@ -273,7 +273,7 @@ ACCESS_ROWS: list[tuple[str, list[tuple[str, str, list[str], list[tuple[str, str
         ("stock-counts", "Stock counts (do = start a count, type what was counted)", ["inventory.use"], []),
         ("affiliates", "Affiliates (lend, borrow, settle)", ["inventory.use"], [])]),
     ("Sell", [
-        ("sales", "Counter sale, sales today, released goods", ["sales.use"], []),
+        ("sales", "Sales: scan out, the day's invoices, sales today", ["sales.use"], []),
         ("customers", "Customers", ["sales.use"], []),
         ("si-booklets", "Sales invoice booklets", ["sales.use"], [])]),
     ("Pay suppliers", [

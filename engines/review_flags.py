@@ -30,7 +30,7 @@ KINDS = {**SOD_RULES, "PRICE_OVER_PO": "Invoice price well above the order", "NE
          "AFFILIATE_LONG_OPEN": "Lent or borrowed tires open a long time", "SALE_BELOW_COST": "Sold below cost", "SALE_NO_CREDIT": "Charged to a customer without credit allowed",
          "SI_SKIPPED": "A sales invoice number was skipped", "SALE_TYPED_LATE": "A sale typed after its date", "SALE_VOIDED": "A sales invoice was voided",
          "SALE_RETURN": "An item was returned by a customer", "RELEASE_OPEN": "Goods released and not invoiced the same day",
-         "AUTHENTICATOR_SET_UP": "An authenticator was set up", "NEW_DEVICE_SIGN_IN": "Signed in on a device not used before",
+         "SALE_NOT_SCANNED": "Sold without a scan", "AUTHENTICATOR_SET_UP": "An authenticator was set up", "NEW_DEVICE_SIGN_IN": "Signed in on a device not used before",
          "BOOKLET_SEQUENCE_GAP": "Check numbers in no booklet"}
 PRICE_OVER_PCT = 10.0                   # an invoice price this far above the order's net price is flagged
 

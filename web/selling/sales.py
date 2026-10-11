@@ -57,6 +57,12 @@ def _pay_ctx(p=None) -> list[dict]:
     return [{"k": k, **r} for k, r in enumerate(rows)]
 
 
+def _scan_ctx(request, p, start: str) -> dict:
+    from engines import sales_rules as sr
+    return {"page_id": "sales", "customer": p.get("customer", "") if p else "", "si_hint": p.get("si_hint", "") if p else "",
+            "names": [c["name"] for c in sr.customers()], "scan_lines": json.loads(start), "slips": sr.open_releases()}
+
+
 @page_needed("sales")
 def sales(request):
     from engines import sales_rules as sr
@@ -65,6 +71,13 @@ def sales(request):
     if request.method == "POST":
         p = request.POST
         cust, name = _customer(p)
+        if p.get("action") == "slip":                           # the Scan out page (owner, 2026-10-11): Done -- the stock is out, the invoice after close
+            ok, msg, sale_id = sr.release(cust, name, _lines(p), p.get("note", ""), si_hint=p.get("si_hint", ""))
+            _say(request, ok, msg)
+            if ok:
+                return redirect("/sales/?view=scan")
+            start = json.dumps([{"id": int(ln["item_id"]), "qty": float(ln["qty"] or 0), "price": ""} for ln in _lines(p) if str(ln["item_id"]).isdigit()])
+            return render(request, "selling/scan.html", _scan_ctx(request, p, start))
         if p.get("action") == "release":
             ok, msg, sale_id = sr.release(cust, name, _lines(p), p.get("note", ""))
             _say(request, ok, msg)
@@ -74,7 +87,7 @@ def sales(request):
             ok, msg, sale_id = sr.save_sale(p.get("si_no"), p.get("sale_date"), cust, name, _lines(p), _services(p), _payments(p), p.get("below_reason", ""))
             _say(request, ok, msg)
             if ok:
-                return redirect("/sales/")
+                return redirect("/sales/?view=new")             # the next invoice straight away: they are typed one after another after close
         start = json.dumps([{"id": int(ln["item_id"]), "qty": float(ln["qty"] or 0), "price": ln["price"]} for ln in _lines(p) if str(ln["item_id"]).isdigit()])
         return render(request, "selling/sale.html", _sale_ctx(request, p, start))
     if view == "day":
@@ -86,10 +99,13 @@ def sales(request):
         sheet = sr.day_sheet(day)
         return render(request, "selling/day_sheet.html", {"page_id": "sales", "d": sheet, "prev": day - timedelta(days=1), "next": day + timedelta(days=1) if day < manila_today() else None,
                                                           "is_today": day == manila_today(), "methods": sr.METHODS, "skipped": sr.skipped() if day == manila_today() else []})
-    if view == "released":
-        sr.flag_open_releases()
-        return render(request, "selling/released.html", {"page_id": "sales", "rows": sr.open_releases()})
-    return render(request, "selling/sale.html", _sale_ctx(request, None, "[]"))
+    if view == "scan":                                      # the day: scan what leaves, Done per customer (owner, 2026-10-11)
+        return render(request, "selling/scan.html", _scan_ctx(request, None, "[]"))
+    if view == "new":                                           # an invoice typed with no slip: allowed, noted on the Review list
+        return render(request, "selling/sale.html", _sale_ctx(request, None, "[]"))
+    sr.flag_open_releases()                                     # the page itself: the day's slips, each becoming its invoice after close
+    nxt = sr.next_si_no()
+    return render(request, "selling/released.html", {"page_id": "sales", "rows": sr.open_releases(), "next_si": f"{nxt:06d}" if nxt else ""})
 
 
 def _sale_ctx(request, p, start: str) -> dict:
@@ -127,8 +143,9 @@ def sale(request, sale_id: int):
             return redirect("/sales/?view=released")
         return redirect(f"/sales/{sale_id}/")
     nxt = sr.next_si_no()
+    offered = str(s.get("si_hint") or "") or (f"{nxt:06d}" if nxt else "")      # the number typed at the scan comes first (owner, 2026-10-11)
     return render(request, "selling/sale_page.html", {"page_id": "sales", "s": s, "pays": _pay_ctx(), "methods": list(sr.METHODS.items()), "today": manila_today(),
-                                                      "si_no": f"{nxt:06d}" if nxt else "", "services": [{"k": k, "description": "", "amount": ""} for k in range(4)],
+                                                      "si_no": offered, "services": [{"k": k, "description": "", "amount": ""} for k in range(4)],
                                                       "items": [ln for ln in s["lines"] if not ln["service"]]})
 
 

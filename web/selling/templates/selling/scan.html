@@ -1,0 +1,30 @@
+{% extends "core/base.html" %}
+{% block title %}Scan out{% endblock %}
+{% block content %}
+{% comment %}The day's page, phone-first (owner, 2026-10-11: "the barcode feature will be used only to track movements of inventory in and outs ...
+we record after the store close"). Scan the customer's tires, Done -- the stock is out that moment; the invoice is typed after closing on
+Record the day's invoices. Pin this page to the phone's home screen and it opens like an app; a wireless scanner typing like a keyboard lands here too.{% endcomment %}
+<div style="max-width:600px">
+<h2><span class="ms" style="font-size:28px">barcode_scanner</span> Scan out</h2>
+<p class="hint">Scan the customer's tires as they leave, or type to find them. <b>Done</b> takes the stock out now; the invoice is typed after closing.</p>
+<form method="post" action="/sales/">{% csrf_token %}<input type="hidden" name="action" value="slip">
+  {% with scan_mode="out" %}{% include "selling/_scan_lines.html" %}{% endwith %}
+  <div class="formgrid" style="margin-top:10px">
+    <div><label for="si_hint">SI no., if the invoice is already written (optional)</label>
+      <input id="si_hint" type="text" inputmode="numeric" name="si_hint" value="{{ si_hint }}" style="max-width:150px" placeholder="004503"></div>
+    <div><label for="customer">Customer (optional)</label>
+      <input id="customer" type="text" name="customer" value="{{ customer }}" list="cust_names" placeholder="Walk-in" autocomplete="off">
+      <datalist id="cust_names">{% for n in names %}<option value="{{ n }}">{% endfor %}</datalist></div>
+  </div>
+  <button class="btn wide" type="submit" style="margin-top:12px"><span class="ms">done_all</span>Done — the goods are out</button>
+</form>
+<div class="grp" style="margin-top:20px">Slips waiting for their invoice</div>
+{% if slips %}
+{% for r in slips %}<div style="border-bottom:1px solid var(--line);padding:8px 2px">
+  <span class="hint">{{ r.day|dmy }}</span> <a href="/sales/{{ r.sale_id }}/">{{ r.release_no }}</a> · {{ r.items }}
+  {% if r.si_hint %}<span class="pill">SI {{ r.si_hint }}</span>{% else %}<span class="pill warn">no SI yet</span>{% endif %}
+  {% if r.customer != "Walk-in" %}<span class="hint">· {{ r.customer }}</span>{% endif %}</div>{% endfor %}
+<p class="hint" style="margin-top:8px">After closing: <a href="/sales/">Record the day's invoices</a>.</p>
+{% else %}<p class="hint">Nothing waiting: every slip has its invoice.</p>{% endif %}
+</div>
+{% endblock %}

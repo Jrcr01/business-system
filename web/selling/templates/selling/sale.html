@@ -1,12 +1,14 @@
 {% extends "core/base.html" %}
-{% block title %}Counter sale{% endblock %}
+{% block title %}Type an invoice{% endblock %}
 {% block content %}
-<h2><span class="ms" style="font-size:28px">point_of_sale</span> Counter sale</h2>
+<h2><span class="ms" style="font-size:28px">receipt_long</span> Type an invoice</h2>
 <div class="actions" style="margin-bottom:10px">
-  <a class="btn small" href="/sales/"><span class="ms">point_of_sale</span>New sale</a>
+  <a class="btn small ghost" href="/sales/"><span class="ms">receipt_long</span>The day's slips{% if open_releases %} ({{ open_releases }}){% endif %}</a>
+  <a class="btn small ghost" href="/sales/?view=scan"><span class="ms">barcode_scanner</span>Scan out</a>
   <a class="btn small ghost" href="/sales/?view=day"><span class="ms">today</span>Sales today</a>
-  <a class="btn small ghost" href="/sales/?view=released"><span class="ms">local_shipping</span>Released, not invoiced{% if open_releases %} ({{ open_releases }}){% endif %}</a>
 </div>
+<p class="note">For an invoice whose items were <b>not scanned</b> when they left (saving takes the stock now and notes it for review), or for services only.
+  The usual way: <a href="/sales/?view=scan">Scan out</a> during the day, then each slip's invoice from <a href="/sales/">Record the day's invoices</a>.</p>
 {% if no_booklet %}<div class="warnbox"><b>No invoice booklet is in use.</b> <a href="/si-booklets/">Register the booklet</a> so the next number is offered and skipped numbers are seen.
   You can still type a number.</div>{% endif %}
 {% if skipped %}<div class="warnbox"><b>{{ skipped|length }} number{{ skipped|length|pluralize }} skipped:</b> {% for n in skipped %}{{ n|stringformat:"06d" }}{% if not forloop.last %}, {% endif %}{% endfor %}.

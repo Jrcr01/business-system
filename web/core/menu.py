@@ -30,7 +30,7 @@ PAGES: dict[str, Page] = {
     "stock": Page("Items and stock", "inventory_2", "R-A"),         # the revenue cycle, stage A (owner, 2026-10-11)
     "stock-counts": Page("Stock counts", "fact_check", "R-A"),
     "affiliates": Page("Affiliates", "handshake", "R-A"),
-    "sales": Page("Counter sale", "point_of_sale", "R-A"),
+    "sales": Page("Sales", "point_of_sale", "R-A"),
     "customers": Page("Customers", "group", "R-A"),
     "si-booklets": Page("Invoice booklets", "receipt_long", "R-A"),
     "booklets": Page("Check booklets", "menu_book", "D7"),          # add, change, hand over, gap audit (owner, 2026-10-11)
@@ -48,8 +48,8 @@ STAGE_NAME = {"R-A": "Sell and stock", "D1": "Masters", "D2": "Buying", "D3": "P
 MENU: dict[str, list] = {
     "Buy": ["price-lists", "purchase-orders", ("Receive", "inventory_2", "purchase-orders", "mode=receive", ("po.receive_goods", "po.receive"))],   # one page (owner, 2026-10-11)
     "Stock": ["stock", "stock-counts", "affiliates"],
-    "Sell": ["sales", ("Sales today", "today", "sales", "view=day", "sales.use"), ("Released, not invoiced", "local_shipping", "sales", "view=released", "sales.use"),
-             "customers", "si-booklets"],
+    "Sell": [("Scan out", "barcode_scanner", "sales", "view=scan", "sales.use"), ("Record the day's invoices", "receipt_long", "sales", "", "sales.use"),
+             ("Sales today", "today", "sales", "view=day", "sales.use"), "customers", "si-booklets"],
     "Pay suppliers": ["order-statements", "calendar", "checks"],     # Payment run, Release checks and Add data removed (owner, 2026-10-09): its work is in the batch and Daily payables
     "Bank": ["bank-cash", "booklets"],     # the Check-date planner dropped with /more/ (owner, 2026-10-09)
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
@@ -64,7 +64,7 @@ MENU: dict[str, list] = {
 SECTION_GROUP = {"Stock": "stock", "Sell": "sell", "Buy": "buy", "Pay suppliers": "pay", "Bank": "bank", "Other payables": "other", "Records": "records", "Analytics": "analytics", "Set-up": "system"}
 
 # the Home tiles' page states (engines/home_tiles.py, written for Streamlit's widget keys) in this site's words
-TILE_QUERY = {("po_mode", "Receive"): "mode=receive", ("po_mode", "Match invoice"): "mode=match", ("sales_view", "day"): "view=day", ("sales_view", "released"): "view=released",
+TILE_QUERY = {("po_mode", "Receive"): "mode=receive", ("po_mode", "Match invoice"): "mode=match", ("sales_view", "day"): "view=day", ("sales_view", "released"): "view=released", ("sales_view", "scan"): "view=scan",
               **{("analytics_tab", t): f"tab={t}" for t in ("payables", "lenders", "bank", "purchasing")}}
 
 
