@@ -331,6 +331,12 @@ def _sales_today():
     return str(n), f"invoices · ₱{float(total):,.0f}", "ok" if n else "none"
 
 
+def _receivables():
+    from engines.collect_rules import receivables_total
+    total, who = receivables_total()
+    return f"{total:,.0f}", f"owed by {who} customer(s)" if who else "nothing owed", "none"
+
+
 def _customers():
     return str(_count("SELECT COUNT(*) FROM customers WHERE is_active = 1")), "customers", "none"
 
@@ -466,6 +472,7 @@ for _t in (
     Tile("sales", "sell", "Scan out", _scan_out, key="scan-out", icon=":material/barcode_scanner:", state=(("sales_view", "scan"),), needs="sales.use", when=_scan_on),
     Tile("sales", "sell", "Record the day's invoices", _to_record, needs="sales.use"),
     Tile("sales", "sell", "Sales today", _sales_today, key="sales-today", icon=":material/today:", state=(("sales_view", "day"),), needs="sales.use"),
+    Tile("collect", "sell", "Collect payments", _receivables, needs="collect.use"),
     Tile("customers", "sell", "Customers", _customers, needs="sales.use"),
     Tile("si-booklets", "sell", "Invoice booklets", _si_booklets, needs="sales.use"),
     Tile("bank-cash", "bank", "Bank and cash", _bank_cash, actions=[

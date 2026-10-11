@@ -65,6 +65,7 @@ _ROWS: list[tuple[str, str, str, tuple]] = [
     ("health.view", "Records", "Data health: see the findings", (Y, None, Y, None, None)),
     ("health.fix", "Records", "Data health: fix findings", (Y, None, None, None, None)),
     ("sales.use", "Sales", "Record sales, the day sheet, invoice booklets, customers", (Y, Y, None, None, VIEW)),
+    ("collect.use", "Sales", "Collect customer payments and see who owes (stage B, 2026-10-11)", (Y, Y, None, None, VIEW)),
     ("inventory.use", "Sales", "Items and stock: labels, stock counts, lending to and borrowing from affiliates", (Y, Y, None, None, VIEW)),
     ("inventory.approve", "Sales", "Approve a count's differences, adjust stock outside a count, allow a customer to buy on charge", (Y, None, None, None, None)),
     ("controls.view", "System", "Roles and controls: who can do what, and what the system checks (read-only)", (Y, None, None, None, None)),
@@ -89,7 +90,7 @@ PAGE_ACTION = {
     "payment-run": "invoice.enter", "add-data": "invoice.enter", "order-statements": "invoice.enter", "checks": "payables.mark_paid", "release": "check.release", "controls": "controls.view", "bank-cash": "bank.use", "booklets": "booklets.use", "planner": "bank.use",
     "lenders": "loans.use", "bank-loans": "bankloans.use", "credit-cards": "cards.use", "creditors": "creditors.edit",
     "stock": "inventory.use", "stock-counts": "inventory.use", "affiliates": "inventory.use",                   # revenue cycle, stage A (2026-10-11)
-    "sales": "sales.use", "customers": "sales.use", "si-booklets": "sales.use",
+    "sales": "sales.use", "customers": "sales.use", "si-booklets": "sales.use", "collect": "collect.use",
     "reports": "reports.use", "analytics": "reports.use", "review": "review.use", "data-health": "health.view",
     "settings": "settings.edit", "admin": "audit.view",
 }
@@ -108,7 +109,7 @@ WORKFLOW: list[tuple[str, list[str]]] = [
     ("Loans and cards", ["loans.use", "bankloans.use", "cards.use"]),
     ("Records", ["search.use", "reports.use", "health.view"]),
     ("Review", ["review.use", "po.ack_over_plan", "controls.view"]),
-    ("Sales", ["sales.use", "inventory.use"]),
+    ("Sales", ["sales.use", "collect.use", "inventory.use"]),
     ("Old screens", ["more.use"]),
 ]
 SWITCHES = {a for _, acts in WORKFLOW for a in acts}
@@ -274,6 +275,7 @@ ACCESS_ROWS: list[tuple[str, list[tuple[str, str, list[str], list[tuple[str, str
         ("affiliates", "Affiliates (lend, borrow, settle)", ["inventory.use"], [])]),
     ("Sell", [
         ("sales", "Sales: scan out, the day's invoices, sales today", ["sales.use"], []),
+        ("collect", "Collect customer payments (receivables, receipts, advances)", ["collect.use"], []),
         ("customers", "Customers", ["sales.use"], []),
         ("si-booklets", "Sales invoice booklets", ["sales.use"], [])]),
     ("Pay suppliers", [

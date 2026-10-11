@@ -1,0 +1,148 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Stage B mock-ups: collect, deposit, and cash in by day</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+/* Slick's look, as in docs/mockups/a2_scan_and_evening.html */
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --yellow: #F3E03B; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; font-weight: normal; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1100px; margin: 0 auto; padding: 18px 20px 60px; }
+h1 { color: var(--blue); font-size: 1.35rem; }
+h2 { color: var(--blue); margin: 36px 0 6px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 76ch; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+table.list { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: .93rem; }
+table.list th { text-align: left; color: var(--muted); font-weight: 600; font-size: .8rem; border-bottom: 2px solid var(--line); padding: 6px 8px; }
+table.list td { border-bottom: 1px solid var(--line); padding: 7px 8px; }
+.num { text-align: right; }
+.in { border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; font: inherit; }
+.in.small { width: 120px; }
+label { font-size: .85rem; color: var(--muted); font-weight: 600; display: block; margin: 10px 0 3px; }
+.btn { display: inline-flex; align-items: center; gap: 7px; background: var(--blue); color: #fff; border: none; border-radius: 8px; padding: 9px 15px; font: inherit; font-weight: 700; }
+.btn.ghost { background: #fff; color: var(--blue); border: 1px solid #b9c6d8; font-weight: 600; }
+.pill { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 1px 8px; background: #eef3fa; color: var(--blue); white-space: nowrap; }
+.pill.warn { background: #fff7e0; color: var(--warn); }
+.pill.ok { background: #e7f6ee; color: var(--ok); }
+.pill.off { background: var(--soft); color: #6b7280; }
+.note { background: #fff7e0; border-radius: 8px; padding: 10px 14px; margin: 12px 0; color: #713f12; }
+.grp { font-weight: 700; color: #1f2937; border-bottom: 2px solid var(--line); padding-bottom: 4px; margin: 16px 0 6px; }
+.strip { background: #eef3fa; border-radius: 8px; padding: 9px 12px; font-size: .92rem; color: #0a2c4d; margin: 10px 0; }
+.payrow { display: flex; gap: 10px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 10px 0; }
+.day { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-height: 86px; font-size: .8rem; background: #fff; }
+.day b { display: block; color: var(--muted); font-weight: 600; }
+.day .out { color: var(--red); } .day .inn { color: var(--ok); } .day .room { border-top: 1px dashed var(--line); margin-top: 4px; padding-top: 3px; font-weight: 700; }
+.pos { color: var(--ok); } .neg { color: var(--red); }
+.aging td:first-child { white-space: nowrap; }
+</style></head><body><main>
+<h1>Stage B mock-ups: collect, deposit, and see cash in by day</h1>
+<p class="why">The buying side answers "what goes out, and when". Stage B answers the other half: <b>what comes in, and when</b> — collections on charge sales, customer checks to deposit, and a cash-in line beside every day's cash-out. Your rules drawn in: oldest invoice first, partial payments fine, a PDC counts when it clears, the bank statement is the truth, everything flags and nothing blocks. Six screens; nothing is built.</p>
+
+<h2>1 · Opening receivables — typed once, before the start</h2>
+<p class="why">What customers owe you today, from the notebook, one line per unpaid invoice. Typed once, tagged "opening", final — like the opening payables were.</p>
+<div class="screen" style="max-width:760px">
+  <table class="list">
+    <tr><th>Customer</th><th>SI no. / note</th><th>Date</th><th class="num">Amount still owed</th></tr>
+    <tr><td>RGV Trucking</td><td>004471</td><td>09/02/2026</td><td class="num"><input class="in small num" value="43,800.00"></td></tr>
+    <tr><td>Mang Ruben</td><td>004466</td><td>08/28/2026</td><td class="num"><input class="in small num" value="7,400.00"></td></tr>
+    <tr><td colspan="4"><span class="ms">add</span> Add a line</td></tr>
+  </table>
+  <p class="payrow"><button class="btn"><span class="ms">save</span>Save the opening receivables</button>
+    <span class="why" style="margin:0">Saved once; afterwards balances move only by sales and collections.</span></p>
+</div>
+
+<h2>2 · Collect — a customer pays</h2>
+<p class="why">Customers pass by the shop, so whoever is signed in at the counter takes the payment. Pick the customer, their open invoices wait oldest first; take any amount — it fills the oldest unless you move it. One receipt per visit, numbered by the system (CR-0001 …, no booklet; your choice no. 1).</p>
+<div class="screen" style="max-width:860px">
+  <div class="payrow"><span style="flex:1"><label>Customer</label><input class="in" style="width:100%" value="RGV Trucking"></span>
+    <span><label>Receipt no. (optional)</label><input class="in small" value="CR-0012"></span>
+    <span><label>Date</label><input class="in small" value="10/11/2026"></span></div>
+  <table class="list">
+    <tr><th></th><th>Invoice</th><th>Date</th><th class="num">Owed</th><th class="num">Collect now</th></tr>
+    <tr><td>☑</td><td>SI 004471 <span class="pill warn">39 days</span></td><td>09/02/2026</td><td class="num">43,800.00</td><td class="num"><input class="in small num" value="43,800.00"></td></tr>
+    <tr><td>☑</td><td>SI 004512</td><td>10/08/2026</td><td class="num">21,900.00</td><td class="num"><input class="in small num" value="6,200.00"></td></tr>
+  </table>
+  <div class="grp">How it was paid — ₱50,000.00</div>
+  <div class="payrow"><span class="pill ok">Cash</span><input class="in small num" value="10,000.00">
+    <span class="pill">Check</span><input class="in small num" value="40,000.00"><span class="why" style="margin:0">bank, check no. and date required; a post-dated check is fine — it waits on screen 3</span></div>
+  <div class="payrow"><label style="margin:0"><input type="checkbox" checked> The white copy of SI 004471 was handed over (it is fully paid)</label></div>
+  <p class="payrow"><button class="btn"><span class="ms">save</span>Save CR-0012</button>
+    <span class="why" style="margin:0">Paid more than owed? The extra stays as the customer's advance, used on their next invoice.</span></p>
+</div>
+
+<h2>3 · Customer checks to deposit</h2>
+<p class="why">Every check taken at the counter or on a collection, sitting by its check date. Deposit day comes, bring them to the bank; the bank statement then says cleared or bounced — a bounced one reopens its invoice and goes on the Review list.</p>
+<div class="screen" style="max-width:860px">
+  <table class="list">
+    <tr><th>Check date</th><th>Customer</th><th>Bank · check no.</th><th class="num">Amount</th><th>For</th><th>Status</th></tr>
+    <tr><td><b>Today 10/11</b></td><td>RGV Trucking</td><td>BDO · 0044812</td><td class="num">40,000.00</td><td>CR-0012</td><td><span class="pill">to deposit</span></td></tr>
+    <tr><td>10/14</td><td>Mang Ruben</td><td>MBT · 1190223</td><td class="num">7,400.00</td><td>SI 004502</td><td><span class="pill off">post-dated</span></td></tr>
+    <tr><td>10/08</td><td>JLo Trucking</td><td>BPI · 0902211</td><td class="num">12,500.00</td><td>SI 004489</td><td><span class="pill ok">cleared 10/10</span></td></tr>
+    <tr><td>10/05</td><td>D. Santos</td><td>PNB · 5513309</td><td class="num">9,800.00</td><td>SI 004480</td><td><span class="pill warn">bounced — SI 004480 owed again</span></td></tr>
+  </table>
+  <p class="why" style="margin:0">Cleared and bounced come from the bank statement import you already run — nothing typed twice.</p>
+</div>
+
+<h2>4 · Cash in by day — the Calendar shows both sides</h2>
+<p class="why">The same Calendar, each day now carrying what comes in (checks to deposit, invoices falling due, and the usual cash sales for that weekday — included, your choice no. 3) above what goes out. Room = in − out. The daily limit can read this room — a Settings switch, off to start, exactly like the other survival controls.</p>
+<div class="screen">
+  <div class="cal">
+    <div class="day"><b>Mon 10/12</b><span class="inn">in 68,400</span><br><span class="out">out 112,000</span><div class="room neg">−43,600</div></div>
+    <div class="day"><b>Tue 10/13</b><span class="inn">in 52,000</span><br><span class="out">out 38,500</span><div class="room pos">+13,500</div></div>
+    <div class="day"><b>Wed 10/14</b><span class="inn">in 95,100</span><br><span class="out">out 400,000</span><div class="room neg">−304,900</div></div>
+    <div class="day"><b>Thu 10/15</b><span class="inn">in 47,300</span><br><span class="out">out 21,000</span><div class="room pos">+26,300</div></div>
+    <div class="day"><b>Fri 10/16</b><span class="inn">in 83,000</span><br><span class="out">out 64,200</span><div class="room pos">+18,800</div></div>
+    <div class="day"><b>Sat 10/17</b><span class="inn">in 102,400</span><br><span class="out">out 0</span><div class="room pos">+102,400</div></div>
+    <div class="day" style="background:var(--soft)"><b>Sun 10/18</b><span class="why">closed</span></div>
+  </div>
+  <p class="why" style="margin:0">Clicking a day lists its pieces: <b>firm</b> (PDCs to deposit, invoices falling due) in full colour, <b>the usual cash sales for that weekday</b> greyed as an estimate — labelled, like the card reserve, never passed off as fact.</p>
+</div>
+
+<h2>5 · The customer's page — statement, aging, write-off</h2>
+<div class="screen" style="max-width:860px">
+  <div class="payrow"><b style="font-size:1.1rem">RGV Trucking</b><span class="pill">Fleet · 30 days</span><span class="pill ok">credit allowed</span>
+    <span style="margin-left:auto"><button class="btn ghost"><span class="ms">picture_as_pdf</span>Statement PDF</button></span></div>
+  <table class="list aging">
+    <tr><th></th><th class="num">Not yet due</th><th class="num">1–30</th><th class="num">31–60</th><th class="num">61–90</th><th class="num">Over 90</th><th class="num">Balance</th></tr>
+    <tr><td>Owed</td><td class="num">15,700.00</td><td class="num">21,900.00</td><td class="num neg">43,800.00</td><td class="num">0.00</td><td class="num">0.00</td><td class="num"><b>81,400.00</b></td></tr>
+  </table>
+  <p class="why" style="margin:0">Under it: every invoice, collection and note on one timeline. <b>Write off</b> is the System admin's alone, with a reason; a later payment is a recovery. An unusually high balance or long-overdue invoice raises an alert — never a block.</p>
+</div>
+
+<h2>6 · Follow-ups — today's calls</h2>
+<div class="screen" style="max-width:860px">
+  <table class="list">
+    <tr><th>Call</th><th class="num">Owed</th><th>Why on the list</th><th>What happened</th></tr>
+    <tr><td>RGV Trucking · 0917 555 2201</td><td class="num">81,400.00</td><td><span class="pill warn">SI 004471 — 39 days</span></td><td><input class="in" style="width:100%" placeholder="note the call… e.g. will pay 20k on 10/15"> </td></tr>
+    <tr><td>D. Santos · 0905 311 8820</td><td class="num">9,800.00</td><td><span class="pill warn">check bounced</span></td><td><input class="in" style="width:100%" placeholder="note the call…"></td></tr>
+  </table>
+  <p class="why" style="margin:0">The call list is simply every customer past their terms and every bounced check; what was said is noted and kept on the customer's timeline. No promise bookkeeping (your choice no. 4).</p>
+</div>
+
+<h2>7 · Deposits, light</h2>
+<p class="why">Each day's cash sales plus checks deposited, beside what the bank statement actually shows. The difference is shown, never policed — the bank statement stays the final word.</p>
+<div class="screen" style="max-width:760px">
+  <table class="list">
+    <tr><th>Day</th><th class="num">Cash taken</th><th class="num">Checks deposited</th><th class="num">On the statement</th><th class="num">Difference</th></tr>
+    <tr><td>10/10</td><td class="num">38,250.00</td><td class="num">12,500.00</td><td class="num">50,750.00</td><td class="num pos">0.00</td></tr>
+    <tr><td>10/09</td><td class="num">41,900.00</td><td class="num">0.00</td><td class="num">38,000.00</td><td class="num neg">−3,900.00</td></tr>
+  </table>
+  <p class="why" style="margin:0">A difference usually means cash kept for expenses or deposited a day late — it shows, you judge.</p>
+</div>
+
+<h2>What goes on the Review list</h2>
+<div class="screen" style="max-width:860px"><ul style="margin:6px 0">
+  <li>A bounced check (its invoice owed again)</li>
+  <li>An invoice overdue past the customer's terms; an unusually high balance</li>
+  <li>A write-off (admin only, reason kept) and any recovery after it</li>
+</ul></div>
+
+<h2>What does not change</h2>
+<div class="screen" style="max-width:860px"><ul style="margin:6px 0">
+  <li>Recording sales stays exactly as it is now — Stage B only adds what happens after a charge sale.</li>
+  <li>The daily limit keeps working as today; "room = in − out" is a switch, off until you turn it.</li>
+  <li>The bank import, the AP side, the Review list: untouched.</li>
+  <li>New tables (collections, customer checks, write-offs), migration at release — sandbox first, your click-through, then one 12 AM–6 AM release.</li>
+</ul></div>
+</main></body></html>

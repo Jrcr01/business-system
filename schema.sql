@@ -1312,10 +1312,62 @@ CREATE TABLE IF NOT EXISTS sales (
     voided_at DATETIME,
     released_at DATETIME,
     si_hint TEXT,                   -- migration 089: the SI number typed at the scan (Scan out), offered back when the invoice is written after close
+    is_opening INTEGER NOT NULL DEFAULT 0 CHECK(is_opening IN (0, 1)),      -- migration 090: an unpaid invoice typed once from the notebook
+    white_copy_at DATETIME,         -- migration 090: when the white copy was handed over (an invoice fully paid)
+    written_off_at DATETIME,        -- migration 090: the System admin's judgement; lifted when a payment comes after all (a recovery)
+    write_off_reason TEXT,
     created_by TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_sales_date ON sales (sale_date);
+-- RECEIVABLES AND COLLECTIONS (owner, 2026-10-11, migration 090): a charge sale is the receivable; a collection pays invoices oldest first,
+-- partial fine; the extra stays as the customer's advance; the receipt number is optional ("BIR CR is optional").
+CREATE TABLE IF NOT EXISTS collections (
+    collection_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cr_no TEXT,                                      -- optional: the paper receipt's number when one was written
+    customer_id INTEGER NOT NULL REFERENCES customers(customer_id),
+    collect_date DATE NOT NULL,
+    received REAL NOT NULL DEFAULT 0,                -- money that came in (cash, checks, transfer, card)
+    allocated REAL NOT NULL DEFAULT 0,               -- what was put on invoices
+    advance_used REAL NOT NULL DEFAULT 0,            -- paid from the customer's advance; received - allocated accumulates it
+    note TEXT,
+    void_reason TEXT,
+    voided_at DATETIME,
+    voided_by TEXT,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_collections_customer ON collections (customer_id);
+CREATE TABLE IF NOT EXISTS collection_lines (
+    line_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    collection_id INTEGER NOT NULL REFERENCES collections(collection_id),
+    sale_id INTEGER NOT NULL REFERENCES sales(sale_id),
+    amount REAL NOT NULL CHECK(amount > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_collection_lines_sale ON collection_lines (sale_id);
+CREATE TABLE IF NOT EXISTS collection_payments (
+    payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    collection_id INTEGER NOT NULL REFERENCES collections(collection_id),
+    method TEXT NOT NULL CHECK(method IN ('CASH', 'CHECK', 'TRANSFER', 'CARD', 'ADVANCE')),
+    amount REAL NOT NULL CHECK(amount > 0),
+    bank TEXT,
+    check_no TEXT,
+    check_date DATE,                                 -- a post-dated check waits here for stage B part 2 (deposits)
+    reference TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_collection_payments_k ON collection_payments (collection_id);
+-- THE CUSTOMERS' CHECKS (owner, 2026-10-11, migration 091): deposited, then cleared or bounced from the bank statement (the statement is the truth).
+CREATE TABLE IF NOT EXISTS customer_check_state (
+    source TEXT NOT NULL CHECK(source IN ('sale', 'collection')),
+    payment_id INTEGER NOT NULL,                     -- sale_payments or collection_payments, per source
+    deposited_on DATE,
+    cleared_on DATE,
+    bounced_on DATE,
+    note TEXT,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (source, payment_id)
+);
 CREATE TABLE IF NOT EXISTS sale_lines (
     line_id INTEGER PRIMARY KEY AUTOINCREMENT,
     sale_id INTEGER NOT NULL REFERENCES sales(sale_id),

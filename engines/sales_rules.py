@@ -97,7 +97,12 @@ def customers(search: str = "", affiliates: bool | None = None) -> list[dict]:
         rows = conn.execute(
             """SELECT c.customer_id, c.customer_name, c.customer_type, c.terms, c.contact_person, c.contact_number, c.is_affiliate, c.credit_allowed,
                       (SELECT COALESCE(SUM(s.total), 0) FROM sales s WHERE s.customer_id = c.customer_id AND s.status = 'SAVED'),
-                      (SELECT COALESCE(SUM(p.amount), 0) FROM sale_payments p JOIN sales s ON s.sale_id = p.sale_id WHERE s.customer_id = c.customer_id AND s.status = 'SAVED' AND p.method = 'CHARGE'),
+                      (SELECT COALESCE(SUM(p.amount), 0) FROM sale_payments p JOIN sales s ON s.sale_id = p.sale_id WHERE s.customer_id = c.customer_id AND s.status = 'SAVED' AND p.method = 'CHARGE')
+                      + (SELECT COALESCE(SUM(p.amount), 0) FROM sale_payments p JOIN sales s3 ON s3.sale_id = p.sale_id
+                         JOIN customer_check_state m ON m.source = 'sale' AND m.payment_id = p.payment_id
+                         WHERE s3.customer_id = c.customer_id AND s3.status = 'SAVED' AND p.method = 'CHECK' AND m.bounced_on IS NOT NULL)
+                      - (SELECT COALESCE(SUM(l.amount), 0) FROM collection_lines l JOIN collections k ON k.collection_id = l.collection_id
+                         JOIN sales s2 ON s2.sale_id = l.sale_id WHERE s2.customer_id = c.customer_id AND k.voided_at IS NULL),
                       (SELECT MAX(s.sale_date) FROM sales s WHERE s.customer_id = c.customer_id AND s.status = 'SAVED')
                FROM customers c WHERE c.is_active = 1 ORDER BY c.customer_name COLLATE NOCASE""").fetchall()
     out = []

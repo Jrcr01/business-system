@@ -1,0 +1,102 @@
+{% extends "core/base.html" %}{% load humanize slicks %}
+{% block title %}Collect payments{% endblock %}
+{% block content %}
+{% comment %}Stage B part 1 (owner, 2026-10-11): who owes, their open invoices oldest first, a collection one or several ways, the extra kept as
+their advance, the receipt number optional. Write-off is the System admin's alone. Flags, never blocks.{% endcomment %}
+<h2><span class="ms" style="font-size:28px">payments</span> Collect payments</h2>
+
+{% if tab == "opening" %}
+<p class="note">The notebook's unpaid invoices, typed once before the start. Each becomes a charge invoice whose balance then moves only by collections.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="opening">
+  <div class="scroll-x"><table class="list" style="max-width:760px">
+    <tr><th>Customer</th><th>SI no. (optional)</th><th>Invoice date</th><th class="num">Amount still owed</th></tr>
+    {% for k in op_rows %}<tr><td><input class="inline-input" style="width:220px" name="op_cust_{{ k }}"></td>
+      <td><input class="inline-input" style="width:110px" inputmode="numeric" name="op_si_{{ k }}"></td>
+      <td><input class="inline-input" type="date" name="op_date_{{ k }}"></td>
+      <td><input class="inline-input num" style="width:130px" inputmode="decimal" name="op_amt_{{ k }}"></td></tr>{% endfor %}
+  </table></div>
+  <div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save the opening receivables</button>
+    <a class="btn small ghost" href="/collect/">Back to collecting</a></div>
+</form>
+
+{% else %}
+<div class="actions" style="margin-bottom:10px">
+  <a class="btn small ghost" href="/collect/?view=checks"><span class="ms">price_check</span>Checks to deposit</a>
+  <a class="btn small ghost" href="/customers/"><span class="ms">group</span>Customers</a>
+  {% if is_admin %}<a class="btn small ghost" href="/collect/?tab=opening"><span class="ms">playlist_add</span>Type the opening receivables</a>{% endif %}
+</div>
+{% if not cust %}
+<p class="note">Who is paying? Pick the customer; their open invoices wait oldest first. Partial is fine, the extra stays as their advance, and the
+  receipt number is optional.</p>
+{% if owing %}
+<div class="scroll-x"><table class="list" style="max-width:820px">
+  <tr><th>Customer</th><th class="num">Owed</th><th>Last sale</th><th></th></tr>
+  {% for c in owing %}<tr><td>{{ c.name }}</td><td class="num">{{ c.charged|floatformat:2|intcomma }}</td><td>{{ c.last_sale|dmy }}</td>
+    <td><a class="btn small" href="/collect/?c={{ c.customer_id }}"><span class="ms">payments</span>Collect</a></td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="note"><span class="ms">task_alt</span> Nobody owes anything.</p>{% endif %}
+
+{% else %}
+<div class="grp">{{ cust.name }} — owes ₱{{ bal.owed|floatformat:2|intcomma }}{% if advance %} · advance on hand ₱{{ advance|floatformat:2|intcomma }}{% endif %}</div>
+<p class="hint">Aging: not due ₱{{ aging.current|floatformat:2|intcomma }} · 1–30 ₱{{ aging.d30|floatformat:2|intcomma }} · 31–60 ₱{{ aging.d60|floatformat:2|intcomma }} ·
+  61–90 ₱{{ aging.d90|floatformat:2|intcomma }} · over 90 ₱{{ aging.over|floatformat:2|intcomma }}</p>
+{% if rows %}
+<form method="post" id="collect_form">{% csrf_token %}<input type="hidden" name="action" value="collect"><input type="hidden" name="customer_id" value="{{ cust.customer_id }}">
+  <div class="scroll-x"><table class="list">
+    <tr><th>Invoice</th><th>Date</th><th>Due</th><th class="num">Owed</th><th class="num">Collect now</th><th></th></tr>
+    {% for r in rows %}<tr><td>{{ r.ref }}{% if r.is_opening %} <span class="pill off">opening</span>{% endif %}</td>
+      <td>{{ r.sale_date|dmy }}</td><td>{{ r.due_date|dmy }}{% if r.days_over %} <span class="pill warn">{{ r.days_over }} day{{ r.days_over|pluralize }}</span>{% endif %}</td>
+      <td class="num">{{ r.owed|floatformat:2|intcomma }}</td>
+      <td>{% if not r.written_off %}<input class="inline-input num" style="width:120px" inputmode="decimal" name="amt_{{ r.sale_id }}" aria-label="Collect on {{ r.ref }}">{% endif %}</td>
+      <td>{% if r.written_off %}<span class="pill off">written off</span> <input class="inline-input num" style="width:120px" inputmode="decimal" name="amt_{{ r.sale_id }}" aria-label="Recover on {{ r.ref }}" placeholder="recover">
+          {% elif is_admin %}<details style="display:inline-block"><summary class="hint">Write off</summary>
+            <span class="payrow"><input class="inline-input" name="reason_dummy_{{ r.sale_id }}" form="wo_{{ r.sale_id }}" placeholder="why" aria-label="Why write off {{ r.ref }}">
+            <button class="btn small danger" form="wo_{{ r.sale_id }}" type="submit">Write off</button></span></details>{% endif %}</td></tr>{% endfor %}
+  </table></div>
+  <div class="payrow"><span><label for="cr_no">Receipt no. (optional)</label><input id="cr_no" class="in" style="max-width:140px" name="cr_no"></span>
+    <span><label for="cdate">Date</label><input id="cdate" class="in" type="date" name="collect_date" value="{{ today }}"></span>
+    <span style="flex:1"><label for="cnote">Note (optional)</label><input id="cnote" class="in" style="width:100%" name="note"></span></div>
+  <div class="grp">How it was paid</div>
+  {% for k in "012" %}<div class="payrow">
+    <select name="pay_method_{{ forloop.counter0 }}" aria-label="How, line {{ forloop.counter }}"><option value="">—</option>
+      {% for m, label in methods %}<option value="{{ m }}">{{ label }}</option>{% endfor %}</select>
+    <input class="in num" style="width:130px" inputmode="decimal" name="pay_amount_{{ forloop.counter0 }}" placeholder="amount" aria-label="Amount, line {{ forloop.counter }}">
+    <input class="in" style="width:110px" name="pay_bank_{{ forloop.counter0 }}" placeholder="bank">
+    <input class="in" style="width:120px" name="pay_no_{{ forloop.counter0 }}" placeholder="check no.">
+    <input class="in" type="date" name="pay_date_{{ forloop.counter0 }}" aria-label="Check date, line {{ forloop.counter }}">
+    <input class="in" style="width:130px" name="pay_ref_{{ forloop.counter0 }}" placeholder="reference"></div>{% endfor %}
+  <p class="hint">A post-dated check counts: it waits to be deposited. Paid more than put on invoices: the rest stays as {{ cust.name }}'s advance.</p>
+  <label class="inline" style="display:flex;gap:6px;margin:8px 0"><input type="checkbox" name="white_copy" value="1" checked> The white copy of each invoice fully paid now was handed over</label>
+  <div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save the collection</button></div>
+</form>
+{% for r in rows %}{% if is_admin and not r.written_off %}<form id="wo_{{ r.sale_id }}" method="post" style="display:none">{% csrf_token %}
+  <input type="hidden" name="action" value="write_off"><input type="hidden" name="sale_id" value="{{ r.sale_id }}"><input type="hidden" name="c" value="{{ cust.customer_id }}">
+  <input type="hidden" name="reason" value=""></form>{% endif %}{% endfor %}
+{% else %}<p class="note"><span class="ms">task_alt</span> {{ cust.name }} owes nothing{% if advance %} and has ₱{{ advance|floatformat:2|intcomma }} of advance on hand{% endif %}.</p>{% endif %}
+
+<div class="grp">Receipts</div>
+{% if history %}<div class="scroll-x"><table class="list" style="max-width:860px">
+  <tr><th>Receipt</th><th>Date</th><th class="num">Received</th><th class="num">On invoices</th><th class="num">Kept as advance</th><th>Covers</th><th>By</th><th></th></tr>
+  {% for h in history %}<tr{% if h.void %} style="opacity:.55"{% endif %}><td>{{ h.label }}{% if h.void %} <span class="pill off">taken back</span>{% endif %}</td>
+    <td>{{ h.day|dmy }}</td><td class="num">{{ h.received|floatformat:2|intcomma }}</td><td class="num">{{ h.allocated|floatformat:2|intcomma }}</td>
+    <td class="num">{% if h.extra > 0 %}{{ h.extra|floatformat:2|intcomma }}{% endif %}</td><td>{{ h.covers }}</td><td>{{ h.by }}</td>
+    <td>{% if not h.void %}<form method="post" onsubmit="var r = prompt('Why is {{ h.label }} taken back?'); if (!r) return false; this.reason.value = r;">{% csrf_token %}
+      <input type="hidden" name="action" value="void"><input type="hidden" name="collection_id" value="{{ h.collection_id }}">
+      <input type="hidden" name="c" value="{{ cust.customer_id }}"><input type="hidden" name="reason" value="">
+      <button class="btn small ghost" type="submit">Take back</button></form>{% endif %}</td></tr>{% endfor %}
+</table></div>{% else %}<p class="hint">No receipt yet.</p>{% endif %}
+{% endif %}
+{% endif %}
+<script>
+(function () {                                        /* the write-off asks for its reason in place */
+  document.querySelectorAll("details summary").forEach(function (s) { });
+  document.querySelectorAll("[id^=wo_]").forEach(function (f) {
+    f.addEventListener("submit", function (e) {
+      var inp = document.querySelector('[name="reason_dummy_' + f.sale_id.value + '"]');
+      f.reason.value = inp ? inp.value : "";
+      if (!f.reason.value.trim()) { e.preventDefault(); alert("Say why."); }
+    });
+  });
+})();
+</script>
+{% endblock %}

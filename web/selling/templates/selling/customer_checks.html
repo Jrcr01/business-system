@@ -1,0 +1,38 @@
+{% extends "core/base.html" %}{% load humanize slicks %}
+{% block title %}Checks to deposit{% endblock %}
+{% block content %}
+{% comment %}Stage B part 2 (owner, 2026-10-11): every customer check by its check date. Deposited by hand with the slip; cleared or bounced from
+the bank statement — the statement is the truth. A bounced check on a sale makes the invoice owed again; one on a receipt is settled by taking the
+receipt back on Collect payments.{% endcomment %}
+<h2><span class="ms" style="font-size:28px">price_check</span> Customers' checks to deposit</h2>
+<div class="actions" style="margin-bottom:10px">
+  <a class="btn small ghost" href="/collect/"><span class="ms">payments</span>Collect payments</a>
+  <a class="btn small {% if show == 'open' %}{% else %}ghost{% endif %}" href="/collect/?view=checks">Open</a>
+  <a class="btn small {% if show == 'bounced' %}{% else %}ghost{% endif %}" href="/collect/?view=checks&show=bounced">Bounced</a>
+  <a class="btn small {% if show == 'all' %}{% else %}ghost{% endif %}" href="/collect/?view=checks&show=all">All</a>
+</div>
+{% if rows %}
+<div class="scroll-x"><table class="list">
+  <tr><th>Check date</th><th>Customer</th><th>Bank · check no.</th><th class="num">Amount</th><th>For</th><th>Status</th><th></th></tr>
+  {% for r in rows %}<tr>
+    <td>{{ r.check_date|dmy }}</td><td>{{ r.customer }}</td><td>{{ r.bank }} · {{ r.check_no }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td>
+    <td>{% if r.source == "sale" %}<a href="/sales/{{ r.ref_id }}/">{{ r.ref }}</a>{% else %}{{ r.ref }}{% endif %}</td>
+    <td>{% if r.state == "bounced" %}<span class="pill warn">Bounced {{ r.bounced_on|dmy }}</span>
+        {% elif r.state == "cleared" %}<span class="pill ok">Cleared {{ r.cleared_on|dmy }}</span>
+        {% elif r.state == "deposited" %}<span class="pill">Deposited {{ r.deposited_on|dmy }}</span>
+        {% elif r.state == "postdated" %}<span class="pill off">Post-dated</span>{% else %}<span class="pill">To deposit</span>{% endif %}
+        {% if r.note %}<span class="hint">{{ r.note }}</span>{% endif %}</td>
+    <td><form method="post" style="display:flex;gap:6px;align-items:center">{% csrf_token %}
+      <input type="hidden" name="action" value="mark_check"><input type="hidden" name="source" value="{{ r.source }}">
+      <input type="hidden" name="payment_id" value="{{ r.payment_id }}"><input type="hidden" name="show" value="{{ show }}">
+      {% if r.state == "waiting" or r.state == "postdated" %}<button class="btn small ghost" name="what" value="deposited" type="submit">Deposited</button>{% endif %}
+      {% if r.state != "cleared" and r.state != "bounced" %}<button class="btn small ghost" name="what" value="cleared" type="submit">Cleared</button>
+        <button class="btn small danger" name="what" value="bounced" type="submit"
+          {% if r.source == "sale" %}onclick="return confirm('Bounced? {{ r.ref }} becomes owed again by {{ r.customer|escapejs }}.')"{% endif %}>Bounced</button>
+      {% else %}<button class="btn small ghost" name="what" value="waiting" type="submit" onclick="return confirm('Take this mark back?')">Not so</button>{% endif %}
+    </form></td></tr>{% endfor %}
+</table></div>
+<p class="hint">Cleared and bounced follow the bank statement — the statement is the final word. A bounced check on a sale puts the amount back on
+  what the customer owes; one on a receipt is settled by taking the receipt back on Collect payments, then collecting again without it.</p>
+{% else %}<p class="note"><span class="ms">task_alt</span> No customer checks{% if show != "all" %} here — try All{% endif %}.</p>{% endif %}
+{% endblock %}

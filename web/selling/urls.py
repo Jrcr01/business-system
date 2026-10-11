@@ -1,6 +1,6 @@
 from django.urls import path
 
-from selling import counts, sales, stock
+from selling import collect, counts, sales, stock
 
 urlpatterns = [
     path("stock/", stock.stock, name="stock"),
@@ -16,4 +16,5 @@ urlpatterns = [
     path("sales/<int:sale_id>/", sales.sale, name="sale"),
     path("customers/", sales.customers, name="customers"),
     path("si-booklets/", sales.si_booklets, name="si_booklets"),
+    path("collect/", collect.collect, name="collect"),
 ]

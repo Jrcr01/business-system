@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 REVENUE_PAGES = frozenset({"stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets"})
+STAGE_B_PAGES = frozenset({"collect"})               # collect, deposit, cash in by day (owner's go 2026-10-11); released separately from stage A
 REVENUE_SETTINGS_GROUPS = frozenset({"Stock", "Sell"})
 REVENUE_NOTES = frozenset({"2026-10-13a"})
 
@@ -24,6 +25,20 @@ def revenue_on() -> bool:
     return "TEST" in db.name.upper()
 
 
+def stage_b_on() -> bool:
+    """Stage B (collect and receivables) shows like the revenue cycle: on a TEST database, with WEB_STAGE_B=1, or when stage_b_on.txt sits beside
+    the server's database. Off until the owner's click-through and its own release."""
+    asked = os.environ.get("WEB_STAGE_B")
+    if asked in ("0", "1"):
+        return asked == "1"
+    from engines import common
+    db = Path(common.DB_PATH)
+    return (db.parent / "stage_b_on.txt").exists() or "TEST" in db.name.upper()
+
+
 def off_pages() -> frozenset:
     """The pages this site must not show at all: no menu entry, no Home card, no access row, and a 'not for you' page for the address typed by hand."""
-    return frozenset() if revenue_on() else REVENUE_PAGES
+    off = frozenset() if revenue_on() else REVENUE_PAGES
+    if not (revenue_on() and stage_b_on()):          # stage B needs the revenue cycle on AND its own switch
+        off = off | STAGE_B_PAGES
+    return off
