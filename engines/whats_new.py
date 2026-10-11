@@ -2,7 +2,7 @@
 Newest first. Each entry: (id, date, title, [lines]). The id only has to be new and sort after the earlier ones (date + letter)."""
 
 NOTES = [
-    ("2026-10-13a", "10/13/2026", "New: Stock and Sell", [
+    ("2026-10-13a", "10/11/2026", "New: Stock and Sell", [
         "Stock, Items and stock: what is on hand, at what cost, and everything that happened to each item. Stock goes up when goods are received and down when they are sold or lent. It is never typed over.",
         "Labels and scanning: print labels for a delivery (one per piece) and scan them at the counter, on a count, or when lending. A maker's barcode is learned the first time it is scanned.",
         "Stock counts: count one type or one brand at a time. The sheet does not show what the system expects. Stock changes only when the System admin approves a difference, with a reason.",
