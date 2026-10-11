@@ -218,3 +218,22 @@ def test_a_spoiled_leaf_can_be_taken_back_with_a_reason(web, db):
     assert fetchone(d.DB_PATH, "SELECT COUNT(*) FROM spoiled_checks")[0] == 0
     assert fetchone(d.DB_PATH, "SELECT COUNT(*) FROM audit_logs WHERE user_action = 'CHECK_UNSPOILED'")[0] == 1
     assert b"Not spoiled" not in web.get(f"/booklets/?audit={bid}").content            # nothing spoiled, no button
+
+
+def test_a_gap_already_on_the_list_can_be_confirmed_as_the_banks_jump(web, db):
+    # owner, 2026-10-12: booklets added before the change still showed orange with no way to say "the bank jumped the numbers"
+    _admin(web)
+    _add(web, 4401, 4500)
+    _add(web, 4601, 4650, confirm_gap="1")
+    from engines.common import get_conn
+    with get_conn() as conn:                                                    # as a booklet added before the change: gap never confirmed
+        conn.execute("UPDATE check_booklets SET gap_before_confirmed_at = NULL, gap_before_confirmed_by = NULL")
+    page = web.get("/booklets/").content.decode()
+    assert "are in no booklet" in page and "the bank&#x27;s jump" in page.replace("It is the bank's jump", "the bank&#x27;s jump")
+    bid = _n("SELECT booklet_id FROM check_booklets WHERE start_number = 4601")
+    r = web.post("/booklets/", {"action": "confirm_gap", "booklet_id": bid}, follow=True)
+    page = r.content.decode()
+    assert "numbering jump (confirmed)" in page and "are in no booklet" not in page
+    first = _n("SELECT booklet_id FROM check_booklets WHERE start_number = 4401")
+    r = web.post("/booklets/", {"action": "confirm_gap", "booklet_id": first}, follow=True)
+    assert "no gap to confirm" in r.content.decode()

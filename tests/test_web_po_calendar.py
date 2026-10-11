@@ -128,3 +128,30 @@ def test_new_order_lists_only_suppliers_with_a_price_list(web, db):
     r = web.post("/purchase-orders/new/", {"s": bare, "action": "start", "order_date": "2026-10-01", "delivery": "2026-10-08", "item": "Eagle F1", "qty": "1"}, follow=True)
     assert b"has no price list yet" in r.content and fetchone(_db(), "SELECT COUNT(*) FROM purchase_orders")[0] == 0
     assert _start(web, priced)
+
+
+def test_the_clicked_day_alone_with_estimates_apart_from_what_is_committed(web, db):
+    # owner, 2026-10-12: "keep the breakdown limited to the day clicked and removed daily and weekly view" + "seperate the estimate and actually comitted"
+    from engines.po_rules import day_schedule, expected_pay_date, is_estimate, month_calendar, order_po, save_po
+    cid = make_creditor(db, "Acme Tires", terms="30")
+    delivery = manila_today() + timedelta(days=10)
+    ok, msg, po = save_po(None, cid, manila_today(), delivery, [{"item_name": "Tires", "qty": 3, "est_unit_price": 3000}])
+    assert ok and order_po(po)[0]                                               # an order not received yet: an estimate (9,000)
+    pay = expected_pay_date(cid, delivery)
+    import sqlite3
+    with sqlite3.connect(_db()) as conn:                                        # and a recorded SI due the same day, no check yet: committed (4,000)
+        sid = conn.execute("INSERT INTO order_statements (creditor_id, statement_ref, total_amount, status) VALUES (?, 'OS-T1', 0, 'Draft') RETURNING statement_id",
+                           (cid,)).fetchone()[0]
+        conn.execute("""INSERT INTO invoices (creditor_id, doc_ref, invoice_date, due_date, gross_amount, trade_discounts, amount, status, statement_id)
+                        VALUES (?, 'SI-77', ?, ?, 4000, '[]', 4000, 'Unpaid', ?)""", (cid, str(manila_today()), str(pay), sid))
+    assert is_estimate("Purchase orders", "") and is_estimate("Credit cards", "Card reserve (estimate) · Gold") and not is_estimate("Supplier checks", "SI-77")
+    day = day_schedule(pay)
+    assert day["estimate_total"] == 9000.0 and day["committed_total"] == 4000.0 and day["total"] == 13000.0
+    assert [r["kind"] for r in day["estimates"]] == ["Purchase orders"] and len(day["committed"]) == 1
+    cell = next(c for w in month_calendar(pay, pay)["weeks"] for c in w if c["day"] == pay)
+    assert cell["total"] == 13000.0 and cell["estimate"] == 9000.0 and cell["committed"] == 4000.0
+    _admin(web)
+    po_id = _start(web, _supplier_with_price(web, db))                          # a draft order's page carries the calendar
+    page = web.get(f"/purchase-orders/{po_id}/edit/").content.decode()
+    assert "Payables by pay day" in page and "Actually committed" in page and "Estimates" in page
+    assert ">Daily<" not in page and ">Weekly<" not in page and "The week of" not in page

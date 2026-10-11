@@ -1,6 +1,6 @@
 {% load humanize %}{% comment %}The payables on the day an order falls due (owner, 2026-10-11: "calendar should be seen the first page"): the daily-limit warning, the month calendar
-   (or the daily / weekly bars) and that week's list. On a saved order (stamp) a clicked day is saved (POST); on a new order it only sets the delivery date (GET).
-   Needs: pay, guard, view, cal / bars, weeks, sched, sched_rows, show_ref, cash, total, qs ('' or 's=..&order_date=..&delivery=..&'), supplier_name;
+   and the clicked day's own list, committed apart from estimates (owner, 2026-10-12). On a saved order (stamp) a clicked day is saved (POST); on a new order it only sets the delivery date (GET).
+   Needs: pay, guard, cal, weeks, daysched, show_ref, cash, total, qs ('' or 's=..&order_date=..&delivery=..&'), supplier_name;
    on a saved order also stamp and h; on a new one cid and order_day.{% endcomment %}
 <div class="grp" id="payables">Payables when this order falls due</div>
 {% if not pay %}<p class="note">Pick the expected delivery date to see the payables for that day.</p>
@@ -15,7 +15,6 @@
   </div>
   {% endif %}
   {% if cash %}{% if cash.known %}{% if cash.ok %}<div class="msg success">Fits the cash plan.</div>{% else %}<div class="warnbox">Over the cash plan: when this falls due the balance would drop ₱{{ cash.shortfall|floatformat:2|intcomma }} under the buffer. You can still order it; the owner is told.</div>{% endif %}{% else %}<p class="note">{{ cash.message }}</p>{% endif %}{% endif %}
-  <div class="seg"><a href="?{{ qs }}view=month#payables"{% if view == "month" %} class="on"{% endif %}>Month</a><a href="?{{ qs }}view=daily#payables"{% if view == "daily" %} class="on"{% endif %}>Daily</a><a href="?{{ qs }}view=weekly#payables"{% if view == "weekly" %} class="on"{% endif %}>Weekly</a></div>
   {% if cal %}
   <div class="calhead"><b>Payables by pay day</b>{% if cal.limit %} <span class="note">· limit ₱{{ cal.limit|floatformat:0|intcomma }}/day</span>{% endif %}
     <span class="calnav"><a class="btn small ghost" href="?{{ qs }}view=month&m={{ cal.prev|date:'Y-m-d' }}#payables" aria-label="Previous month"><span class="ms">chevron_left</span></a>
@@ -28,20 +27,14 @@
     <span class="h">Mon</span><span class="h">Tue</span><span class="h">Wed</span><span class="h">Thu</span><span class="h">Fri</span><span class="h">Sat</span><span class="h">Sun</span>
     {% for week in cal.weeks %}{% for c in week %}{% if c.closed or c.past or not c.in_month %}<span class="d{% if c.closed %} closed{% endif %}{% if not c.in_month %} out{% endif %}{% if c.selected %} pick{% endif %}"
         title="{{ c.day|date:'D m/d' }}{% if c.label %}: {{ c.label }}{% endif %}{% if c.total %} · ₱{{ c.total|floatformat:2|intcomma }}: {{ c.payees }}{% endif %}"><span class="n">{{ c.day|date:"j" }}</span>
-        {% if c.label %}<span class="lbl">{{ c.label }}</span>{% elif c.total %}<span class="amt">₱{{ c.total|floatformat:0|intcomma }}</span>{% endif %}</span>
+        {% if c.label %}<span class="lbl">{{ c.label }}</span>{% elif c.total %}<span class="amt">₱{{ c.total|floatformat:0|intcomma }}</span>{% if c.estimate %}<span class="est">est. ₱{{ c.estimate|floatformat:0|intcomma }}</span>{% endif %}{% endif %}</span>
       {% else %}<button type="submit" name="day" value="{{ c.day|date:'Y-m-d' }}" class="d {{ c.level }}{% if c.selected %} pick{% endif %}"
         title="{{ c.day|date:'D m/d' }}{% if c.total %} · ₱{{ c.total|floatformat:2|intcomma }}: {{ c.payees }}{% else %}: nothing due yet{% endif %} — click to make the order fall due this day"><span class="n">{{ c.day|date:"j" }}</span>
-        {% if c.label %}<span class="lbl">{{ c.label }}</span>{% endif %}<span class="amt">{% if c.total %}₱{{ c.total|floatformat:0|intcomma }}{% else %}—{% endif %}</span></button>{% endif %}{% endfor %}{% endfor %}
+        {% if c.label %}<span class="lbl">{{ c.label }}</span>{% endif %}<span class="amt">{% if c.total %}₱{{ c.total|floatformat:0|intcomma }}{% else %}—{% endif %}</span>{% if c.estimate %}<span class="est">est. ₱{{ c.estimate|floatformat:0|intcomma }}</span>{% endif %}</button>{% endif %}{% endfor %}{% endfor %}
   </form>
-  <p class="callegend"><span><i class="sw over"></i>Over limit</span><span><i class="sw near"></i>Near the limit</span><span><i class="sw closed"></i>Weekend, holiday or marked day</span><span><i class="sw pick"></i>This order's pay day</span></p>
-  <p class="hint">Click a day: the delivery date is set so the order falls due that day (by {{ supplier_name }}'s terms). Hold the mouse on a day for who is paid.
+  <p class="callegend"><span><i class="sw over"></i>Over limit</span><span><i class="sw near"></i>Near the limit</span><span><i class="sw closed"></i>Weekend, holiday or marked day</span><span><i class="sw pick"></i>This order's pay day</span><span><b class="est" style="display:inline">est.</b> the part of the day that is an estimate</span></p>
+  <p class="hint">Click a day: the delivery date is set so the order falls due that day (by {{ supplier_name }}'s terms), and that day's list shows below.
     Requests sent to a supplier and not confirmed yet are counted here, so a day already asked for does not look free.</p>
-  {% else %}
-  <div class="bars">{% for b in bars %}<div class="b" title="{{ b.label }}: ₱{{ b.total|floatformat:2|intcomma }} already due{% if b.mine %}, + ₱{{ b.mine|floatformat:2|intcomma }} this order{% endif %}">
-    {% if b.mine %}<div class="add" style="height:{{ b.h_mine }}%"></div>{% endif %}<div class="fill{% if b.selected %} mine{% elif b.lightest %} light{% endif %}" style="height:{{ b.h }}%"></div></div>{% endfor %}</div>
-  <div class="barlabels">{% for b in bars %}<span{% if b.selected %} style="font-weight:700"{% endif %}>{{ b.label }}{% if b.lightest %} ★{% endif %}</span>{% endfor %}</div>
-  <p class="hint">Each bar is what is already due that day (checks, loan and card dues, other orders and requests); light orange on top is this order. ★ = the lightest {% if view == "weekly" %}week{% else %}weekday{% endif %}.
-    Hold the mouse on a bar for its amount.</p>
   {% endif %}
   {% if stamp %}
   <div class="grp" style="margin-top:8px">Move the order to another week</div>
@@ -49,12 +42,20 @@
     <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="week" value="{{ w.week|date:'Y-m-d' }}">
     <button class="btn small{% if not w.selected %} ghost{% endif %}" type="submit"{% if w.selected %} disabled{% endif %} title="{% if w.selected %}The order's week{% else %}Moves the delivery date so the order falls due that week{% endif %}">{{ w.label }}<br>₱{{ w.total|floatformat:0|intcomma }}{% if w.lightest %} ★{% endif %}</button></form>{% endfor %}</div>
   {% endif %}
-  {% if sched %}
-  <details class="manual"{% if stamp %} open{% endif %}><summary><b>The week of {{ sched.week_start|date:"m/d" }} to {{ sched.week_end|date:"m/d" }}: ₱{{ sched.total|floatformat:2|intcomma }} already committed.</b>
-    {% if total %}This order adds ₱{{ total|floatformat:2|intcomma }}.{% endif %}</summary>
-  {% if sched_rows %}<div class="scroll-x"><table class="list"><tr><th>Day</th><th>Pay to</th><th>What</th>{% if show_ref %}<th>Reference</th>{% endif %}<th>Amount</th></tr>
-    {% for r in sched_rows %}<tr{% if r.kind == "Order requests" %} class="tentative"{% endif %}><td>{{ r.day|date:"D m/d" }}</td><td>{{ r.payee }}</td><td>{{ r.kind }}</td>{% if show_ref %}<td>{{ r.reference|default:"" }}</td>{% endif %}<td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>
-  {% else %}<p class="note">Nothing else is committed that week.</p>{% endif %}
-  </details>
+  {% if daysched %}
+  <div class="grp" style="margin-top:10px">{{ daysched.day|date:"l m/d/Y" }}: ₱{{ daysched.committed_total|floatformat:2|intcomma }} actually committed{% if daysched.estimate_total %}
+    · ₱{{ daysched.estimate_total|floatformat:2|intcomma }} estimated{% endif %}{% if total %} · this order adds ₱{{ total|floatformat:2|intcomma }}{% endif %}</div>
+  <div class="two">
+    <div><b>Actually committed</b> <span class="hint">checks, recorded SIs and DRs, loan and card dues</span>
+      {% if daysched.committed %}<div class="scroll-x"><table class="list"><tr><th>Pay to</th><th>What</th>{% if show_ref %}<th>Reference</th>{% endif %}<th>Amount</th></tr>
+        {% for r in daysched.committed %}<tr><td>{{ r.payee }}</td><td>{{ r.kind }}</td>{% if show_ref %}<td>{{ r.reference|default:"" }}</td>{% endif %}<td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}
+        <tr><td colspan="{% if show_ref %}3{% else %}2{% endif %}"><b>Committed</b></td><td class="num"><b>{{ daysched.committed_total|floatformat:2|intcomma }}</b></td></tr></table></div>
+      {% else %}<p class="note">Nothing is committed that day.</p>{% endif %}</div>
+    <div><b>Estimates</b> <span class="hint">orders not received yet, requests waiting for the supplier, card reserves</span>
+      {% if daysched.estimates %}<div class="scroll-x"><table class="list"><tr><th>Pay to</th><th>What</th>{% if show_ref %}<th>Reference</th>{% endif %}<th>Amount</th></tr>
+        {% for r in daysched.estimates %}<tr class="tentative"><td>{{ r.payee }}</td><td>{{ r.kind }}</td>{% if show_ref %}<td>{{ r.reference|default:"" }}</td>{% endif %}<td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}
+        <tr><td colspan="{% if show_ref %}3{% else %}2{% endif %}"><b>Estimated</b></td><td class="num"><b>{{ daysched.estimate_total|floatformat:2|intcomma }}</b></td></tr></table></div>
+      {% else %}<p class="note">No estimate falls on that day.</p>{% endif %}</div>
+  </div>
   {% endif %}
 {% endif %}

@@ -187,6 +187,27 @@ def update_booklet(booklet_id: int, start, end, received, status: str, confirm_g
     return True, f"{code} saved.", gap
 
 
+def confirm_gap(booklet_id: int) -> tuple[bool, str]:
+    """The numbers between this booklet and the one before it are the bank's own jump (owner, 2026-10-12): recorded on the booklet and audited, so the
+    list stops warning about them. Refused when there is no gap to confirm."""
+    ok, why = _may()
+    if not ok:
+        return False, why
+    with write_tx() as conn:
+        row = conn.execute("SELECT bank_account_id, booklet_code, start_number, gap_before_confirmed_at FROM check_booklets WHERE booklet_id = ?", (int(booklet_id),)).fetchone()
+        if not row:
+            return False, "No such booklet."
+        gap = _gap_before(conn, int(row[0]), int(row[2]), but=int(booklet_id))
+        if not gap:
+            return False, f"{row[1]} follows the booklet before it: there is no gap to confirm."
+        if row[3]:
+            return True, f"{row[1]}: already confirmed."
+        conn.execute("UPDATE check_booklets SET gap_before_confirmed_at = CURRENT_TIMESTAMP, gap_before_confirmed_by = acting_user() WHERE booklet_id = ?", (int(booklet_id),))
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BOOKLET_GAP_CONFIRMED', 'check_booklets', ?, ?)",
+                     (int(booklet_id), f"{row[1]}: check numbers {gap[0]}-{gap[1]} are in no booklet -- confirmed as the bank's own numbering jump."))
+    return True, f"{row[1]}: {gap[0]}-{gap[1]} noted as the bank's own jump."
+
+
 def set_status(booklet_id: int, status: str) -> tuple[bool, str]:
     """Archive a booklet (retired stock: out of the number picker), or bring it back."""
     ok, why = _may()

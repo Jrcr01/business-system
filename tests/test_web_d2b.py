@@ -79,8 +79,10 @@ def test_the_daily_limit_warns_and_offers_a_lighter_day(web, db):
     po_id = _start(web, cid)                                                    # 10,000 on one day, over 5,000
     page = web.get(f"/purchase-orders/{po_id}/edit/").content.decode()
     assert "High payables on" in page and "over your daily limit" in page
-    weekly = web.get(f"/purchase-orders/{po_id}/edit/?view=weekly").content.decode()
-    assert "Move the order to another week" in weekly and 'class="bars"' in weekly
+    assert "Move the order to another week" in page
+    # owner, 2026-10-12: the month only -- no Daily / Weekly switch, no bars, even when the old address is typed
+    old = web.get(f"/purchase-orders/{po_id}/edit/?view=weekly").content.decode()
+    assert 'class="bars"' not in old and ">Weekly<" not in old and ">Daily<" not in old and "Payables by pay day" in old
 
 
 def test_order_pdf_receive_match_and_follow_it_to_the_bank(web, db):

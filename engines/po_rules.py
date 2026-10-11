@@ -703,6 +703,27 @@ def _order_screen_rows(end: date, exclude_po_id: int | None = None) -> pd.DataFr
     return loads(today, max(end, today), exclude_po_id, requests=True)
 
 
+def is_estimate(kind, reference) -> bool:
+    """Not yet a document that binds us (owner, 2026-10-12: "seperate the estimate and actually comitted"): an order not received yet (its price is
+    the price list's, and its DR may differ), a request still waiting for the supplier, and a card's reserve before its statement arrives."""
+    return str(kind) in ("Purchase orders", REQUEST_KIND) or str(reference or "").startswith("Card reserve")
+
+
+def day_schedule(pay_date, exclude_po_id: int | None = None) -> dict | None:
+    """One day only (owner, 2026-10-12: "keep the breakdown limited to the day clicked"): {'day', 'committed' and 'estimates' (rows of payee, kind,
+    reference, amount, biggest first), 'committed_total', 'estimate_total', 'total'} from the same list as the calendar's cells."""
+    day = _as_date(pay_date)
+    if day is None:
+        return None
+    rows = _order_screen_rows(day, exclude_po_id)
+    rows = rows[rows["day"] == day].sort_values("amount", ascending=False) if not rows.empty else rows
+    recs = rows.to_dict("records") if not rows.empty else []
+    est = [r for r in recs if is_estimate(r["kind"], r["reference"])]
+    firm = [r for r in recs if not is_estimate(r["kind"], r["reference"])]
+    e, f = round(sum(float(r["amount"]) for r in est), 2), round(sum(float(r["amount"]) for r in firm), 2)
+    return {"day": day, "committed": firm, "estimates": est, "committed_total": f, "estimate_total": e, "total": round(e + f, 2)}
+
+
 def week_schedule(pay_date, exclude_po_id: int | None = None) -> dict | None:
     """The Monday-to-Sunday week of `pay_date`, day by day: {'week_start', 'week_end', 'rows' (day, payee, kind, reference, amount), 'total'}."""
     day = _as_date(pay_date)
@@ -831,11 +852,13 @@ def month_calendar(month, pay_date=None, exclude_po_id: int | None = None) -> di
         for _ in range(7):
             mine = rows[rows["day"] == d] if not rows.empty else rows
             total = float(mine["amount"].sum()) if not mine.empty else 0.0
+            estimate = float(mine[[is_estimate(k, r) for k, r in zip(mine["kind"], mine["reference"])]]["amount"].sum()) if not mine.empty else 0.0
             payees = mine.groupby("payee")["amount"].sum().sort_values(ascending=False) if not mine.empty else pd.Series(dtype=float)
             mark = marks.get(d) or {}
             closed = not is_bank_day(d, blocked)
             level = "over" if limit > 0 and total > limit else ("near" if limit > 0 and total > near else "")
-            week.append({"day": d, "in_month": d.month == first.month, "total": total, "closed": closed, "past": d < today,
+            week.append({"day": d, "in_month": d.month == first.month, "total": total, "estimate": round(estimate, 2),
+                         "committed": round(total - estimate, 2), "closed": closed, "past": d < today,
                          "label": mark.get("label") or ("Holiday" if mark.get("kind") == "holiday" else ""), "level": level, "selected": d == pay,
                          "payees": "; ".join(f"{p} ₱{a:,.0f}" for p, a in payees.head(6).items()) + (f"; +{len(payees) - 6} more" if len(payees) > 6 else "")})
             d += timedelta(days=1)

@@ -431,6 +431,9 @@ table.list tr.tentative td { color: #6b7280; font-style: italic; }
 .tile.long .f .ms { font-size: 24px; }
 @media (max-width: 480px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .tile { height: 146px; padding: 12px; } }      /* a phone: still two across */
 
+/* ---- the order calendar: the part of a day that is an estimate (owner, 2026-10-12) ---- */
+.cal .d .est, .callegend .est { display: block; font-size: .7rem; font-weight: 400; color: #6b7280; }
+
 /* ---- cash in on the payment calendar (stage B, owner 2026-10-11): the other side of each day ---- */
 .cal-day .cin, span.cin { display: block; font-size: .72rem; color: var(--ok, #0b6e4f); }
 

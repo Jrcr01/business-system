@@ -460,39 +460,27 @@ def _edit_ctx(request, po: dict, stamp: str) -> dict:
 
 
 def _calendar_ctx(request, cid: int, delivery, total: float, po_id: int | None) -> dict:
-    """The payables on the day an order would fall due: the month calendar (or the daily / weekly bars), the daily-limit warning and the week's list.
+    """The payables on the day an order would fall due: the month calendar, the daily-limit warning and the clicked day's own list, split into
+    what is actually committed and what is an estimate (owner, 2026-10-12).
     Works before the order is saved (po_id None, total 0): the calendar is the first thing on the screen (owner, 2026-10-11)."""
     from engines.permissions import hide_check_details
-    from engines.po_rules import day_guard, days_strip, expected_pay_date, week_schedule, weeks_strip
+    from engines.po_rules import day_guard, expected_pay_date, week_schedule, weeks_strip
     from engines.settings_registry import forecast_shown
     pay = expected_pay_date(cid, delivery)
     if pay is None:
         return {"pay": None}
     guard = day_guard(cid, delivery, total, po_id)
-    view = request.GET.get("view", "month")
-    cal = None
-    if view == "month":
-        from engines.po_rules import month_calendar
-        cal = month_calendar(_date(request.GET.get("m")) or pay, pay, po_id)
-    if view == "weekly":
-        strip = weeks_strip(pay, exclude_po_id=po_id)
-        bars = [{"label": f"{r.week_start:%m/%d}", "total": float(r.total), "mine": total if r.selected else 0.0, "selected": bool(r.selected), "lightest": bool(r.lightest),
-                 "week": r.week_start, "reachable": True} for r in strip.itertuples()]
-    else:
-        strip = days_strip(pay, before=7, after=14, exclude_po_id=po_id)
-        bars = [{"label": f"{r.day:%m/%d} {r.day:%a}", "total": float(r.total), "mine": total if r.selected else 0.0, "selected": bool(r.selected), "lightest": bool(r.lightest)}
-                for r in strip.itertuples()]
-    top = max([b["total"] + b["mine"] for b in bars] + [1.0])
-    for b in bars:
-        b["h"], b["h_mine"] = round(b["total"] / top * 100, 1), round(b["mine"] / top * 100, 1)
+    from engines.po_rules import day_schedule, month_calendar
+    cal = month_calendar(_date(request.GET.get("m")) or pay, pay, po_id)     # the month only (owner, 2026-10-12: daily and weekly views removed)
     weeks = [{"week": r.week_start, "label": f"{r.week_start:%m/%d}", "total": float(r.total), "selected": bool(r.selected), "lightest": bool(r.lightest)}
              for r in weeks_strip(pay, exclude_po_id=po_id).itertuples()]
     sched = week_schedule(pay, exclude_po_id=po_id)
+    day = day_schedule(pay, exclude_po_id=po_id)
     cash = None
     if forecast_shown() and total > 0:
         from engines.po_rules import cash_check
         cash = cash_check(cid, total, delivery, exclude_po_id=po_id)
-    return {"pay": pay, "guard": guard, "view": view, "bars": bars, "weeks": weeks, "sched": sched, "sched_rows": sched["rows"].to_dict("records") if sched else [],
+    return {"pay": pay, "guard": guard, "weeks": weeks, "sched": sched, "sched_rows": sched["rows"].to_dict("records") if sched else [], "daysched": day,
             "show_ref": not hide_check_details(request.slicks_user["role"]), "cash": cash, "cal": cal}
 
 

@@ -53,18 +53,18 @@
       <button class="btn small" type="submit"><span class="ms">save</span>Save</button> <a class="btn small ghost" href="?tab=guarantees&show={{ g_show }}">Cancel</a>
     </form></td></tr>
   {% else %}
-  <tr><td>{{ g.check_number }}</td><td>{{ g.holder }}</td><td>{{ g.loan_note|default:"—" }}</td>
+  <tr><td style="white-space:nowrap">{{ g.check_number }}</td><td style="white-space:nowrap">{{ g.holder }}</td><td style="white-space:nowrap">{{ g.loan_note|default:"—" }}</td>
     <td class="num">{% if g.face_amount is not None %}{{ g.face_amount|floatformat:2|intcomma }}{% else %}<span class="hint">not stated</span>{% endif %}</td>
-    <td>{{ g.given_on|dmy|default:"—" }}</td>
+    <td style="white-space:nowrap">{{ g.given_on|dmy|default:"—" }}</td>
     <td><span class="pill{% if g.status == 'Presented' %} warn{% elif g.status == 'Returned' %} off{% endif %}">{{ g.status }}</span>
       {% if g.returned_on %}<span class="hint">{{ g.returned_on|dmy }}</span>{% endif %}{% if g.presented_on %}<span class="hint">{{ g.presented_on|dmy }}</span>{% endif %}
       {% if g.note %}<div class="hint">{{ g.note|usdates }}</div>{% endif %}</td>
-    <td>{% if may_write and g.status == "Held" %}<form class="bar" method="post" style="margin:0" onsubmit="return confirm('Mark check {{ g.check_number }} returned by {{ g.holder|escapejs }}?');">{% csrf_token %}
+    <td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:nowrap;white-space:nowrap">{% if may_write and g.status == "Held" %}<form method="post" style="margin:0;display:flex;gap:6px;align-items:center" onsubmit="return confirm('Mark check {{ g.check_number }} returned by {{ g.holder|escapejs }}?');">{% csrf_token %}
         <input type="hidden" name="action" value="gc_return"><input type="hidden" name="guarantee_id" value="{{ g.guarantee_id }}">
-        <input type="date" name="returned_on" value="{{ today|date:'Y-m-d' }}" aria-label="Returned on"><button class="btn small ghost" type="submit">Mark returned</button></form>
+        <input type="date" name="returned_on" value="{{ today|date:'Y-m-d' }}" aria-label="Returned on" style="width:150px"><button class="btn small ghost" type="submit">Mark returned</button></form>
       {% elif may_write and g.status == "Returned" %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="gc_undo">
         <input type="hidden" name="guarantee_id" value="{{ g.guarantee_id }}"><button class="btn small ghost" type="submit">Undo: held again</button></form>{% endif %}
-      {% if may_write and g.status != "Presented" %}<a class="btn small ghost" href="?tab=guarantees&show={{ g_show }}&edit={{ g.guarantee_id }}"><span class="ms">edit</span>Edit</a>{% endif %}</td></tr>
+      {% if may_write and g.status != "Presented" %}<a class="btn small ghost" href="?tab=guarantees&show={{ g_show }}&edit={{ g.guarantee_id }}"><span class="ms">edit</span>Edit</a>{% endif %}</div></td></tr>
   {% endif %}
   {% empty %}<tr><td colspan="7" class="hint">None here.</td></tr>{% endfor %}
 </table></div>

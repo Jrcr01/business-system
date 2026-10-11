@@ -21,7 +21,9 @@
     <th>Next free</th><th>Up to no.</th><th>To account for</th><th></th></tr>
   {% for b in rows %}
   {% if b.gap_before %}{% if b.gap_confirmed %}<tr class="tentative"><td colspan="12" class="hint">{{ b.gap_before.0 }}–{{ b.gap_before.1 }}: the bank's own numbering jump (confirmed)</td></tr>
-  {% else %}<tr class="tentative"><td colspan="12"><span class="ms" style="font-size:16px;color:#b26a00">warning</span> {{ b.gap_before.0 }}–{{ b.gap_before.1 }} are in no booklet</td></tr>{% endif %}{% endif %}
+  {% else %}<tr class="tentative"><td colspan="12"><span class="ms" style="font-size:16px;color:#b26a00">warning</span> {{ b.gap_before.0 }}–{{ b.gap_before.1 }} are in no booklet
+    {% if not request.view_only %}<form method="post" style="display:inline;margin-left:10px">{% csrf_token %}<input type="hidden" name="action" value="confirm_gap">
+      <input type="hidden" name="booklet_id" value="{{ b.booklet_id }}"><button class="btn small ghost" type="submit" title="The bank gave a booklet that does not follow the last one">It is the bank's jump</button></form>{% endif %}</td></tr>{% endif %}{% endif %}
   <tr{% if b.status == "Archived" %} class="tentative"{% endif %}>
     <td><b>{{ b.code }}</b></td>
     <td>{% if b.holder %}{{ b.holder }}{% if b.is_mine %} <span class="pill">me</span>{% endif %}{% else %}<span class="hint">nobody yet</span>{% endif %}</td>
