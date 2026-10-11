@@ -1,0 +1,21 @@
+{% extends "core/base.html" %}{% load humanize slicks %}
+{% block title %}Deposits{% endblock %}
+{% block content %}
+{% comment %}Stage B part 3, deposits-light (owner, 2026-10-11): each day's takings beside what the bank statement shows. The difference is shown,
+never policed -- cash kept for expenses or deposited a day late simply shows, and the owner judges. The statement is the truth.{% endcomment %}
+<h2><span class="ms" style="font-size:28px">savings</span> Deposits</h2>
+<div class="actions" style="margin-bottom:10px">
+  <a class="btn small ghost" href="/collect/?view=checks"><span class="ms">price_check</span>Checks to deposit</a>
+  <a class="btn small ghost" href="/collect/"><span class="ms">payments</span>Collect payments</a>
+  <a class="btn small ghost" href="/bank-cash/"><span class="ms">account_balance</span>Bank and cash</a></div>
+{% if rows %}
+<div class="scroll-x"><table class="list" style="max-width:860px">
+  <tr><th>Day</th><th class="num">Cash taken</th><th class="num">Checks deposited</th><th class="num">On the statement</th><th class="num">Difference</th></tr>
+  {% for r in rows %}<tr><td>{{ r.day|dmy }}</td><td class="num">{{ r.cash|floatformat:2|intcomma }}</td>
+    <td class="num">{{ r.deposited|floatformat:2|intcomma }}</td><td class="num">{{ r.statement|floatformat:2|intcomma }}</td>
+    <td class="num {% if r.diff < 0 %}neg{% elif r.diff > 0 %}pos{% endif %}">{{ r.diff|floatformat:2|intcomma }}</td></tr>{% endfor %}
+</table></div>
+<p class="hint">A difference usually means cash kept for expenses or a deposit made the next banking day — it shows, you judge. The statement side
+  comes from the bank imports on Bank and cash.</p>
+{% else %}<p class="note"><span class="ms">task_alt</span> Nothing taken and nothing on the statement in the last two weeks.</p>{% endif %}
+{% endblock %}

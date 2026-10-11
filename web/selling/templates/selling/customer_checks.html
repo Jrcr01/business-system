@@ -10,6 +10,7 @@ receipt back on Collect payments.{% endcomment %}
   <a class="btn small {% if show == 'open' %}{% else %}ghost{% endif %}" href="/collect/?view=checks">Open</a>
   <a class="btn small {% if show == 'bounced' %}{% else %}ghost{% endif %}" href="/collect/?view=checks&show=bounced">Bounced</a>
   <a class="btn small {% if show == 'all' %}{% else %}ghost{% endif %}" href="/collect/?view=checks&show=all">All</a>
+  <a class="btn small ghost" href="/collect/?view=deposits"><span class="ms">savings</span>Deposits</a>
 </div>
 {% if rows %}
 <div class="scroll-x"><table class="list">

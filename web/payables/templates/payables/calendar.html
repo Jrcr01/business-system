@@ -21,11 +21,16 @@
     <span class="dd">{{ c.d|date:"d" }}</span>{% if c.mark %}<span class="mk" title="{{ c.mark.label }}">{% if c.mark.kind == "holiday" %}holiday{% elif c.mark.kind == "custom" %}no checks{% else %}note{% endif %}</span>{% endif %}
     {% if c.n %}<b>₱{{ c.total|floatformat:0|intcomma }}</b><span class="cnt">{% if c.due_n %}{{ c.due_n }} to pay{% endif %}{% if c.due_n and c.paid_n %} · {% endif %}{% if c.paid_n %}{{ c.paid_n }} paid{% endif %}</span>{% endif %}
     {% if c.plan and not c.out %}<span class="plan lvl-{{ c.lvl }}" title="Planned out (with open orders and card reserves)">plan ₱{{ c.plan|floatformat:0|intcomma }}</span>{% endif %}
+    {% if c.cin and not c.out %}<span class="cin" title="Cash in: customers' checks, invoices falling due, and the weekday's usual takings (an estimate)">in ₱{{ c.cin|floatformat:0|intcomma }}</span>{% endif %}
   </a>{% endfor %}{% endfor %}
 </div>
 
 <div class="grp" id="day">{{ pick|date:"l" }} {{ pick|date:"m/d/Y" }}{% if day_rows %} · ₱{{ day_total|floatformat:2|intcomma }} · {{ day_rows|length }} item{{ day_rows|length|pluralize }}{% endif %}
   {% if pick_mark %}<span class="pill warn">{% if pick_mark.kind == "holiday" %}Holiday{% elif pick_mark.kind == "custom" %}No-check day{% else %}Note{% endif %}{% if pick_mark.label %}: {{ pick_mark.label }}{% endif %}</span>{% endif %}</div>
+{% if pick_in %}<p class="note">Cash in this day: <b class="pos">₱{{ pick_in.total|floatformat:2|intcomma }}</b>
+  — checks ₱{{ pick_in.checks|floatformat:2|intcomma }} · invoices due ₱{{ pick_in.due|floatformat:2|intcomma }}{% if pick_in.usual %} ·
+  usual takings ₱{{ pick_in.usual|floatformat:2|intcomma }} <span class="hint">(an estimate from this weekday's average)</span>{% endif %}{% if pick_plan %}
+  · room <b class="{% if pick_in.room >= 0 %}pos{% else %}neg{% endif %}">₱{{ pick_in.room|floatformat:2|intcomma }}</b>{% endif %}</p>{% endif %}
 {% if pick_plan %}<p class="note">Planned to go out this day: <b class="plan lvl-{{ pick_lvl }}">₱{{ pick_plan|floatformat:2|intcomma }}</b>
   {% if pick_lvl == "over" %}— above the daily limit ₱{{ cap_ceiling|floatformat:2|intcomma }}{% elif pick_lvl == "near" %}— above the target ₱{{ cap_target|floatformat:2|intcomma }}{% endif %}</p>{% endif %}
 {% if day_rows or extra %}

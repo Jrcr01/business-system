@@ -47,6 +47,9 @@ def collect(request):
         _say(request, False, "Unknown action.")
         return redirect("/collect/")
 
+    if request.GET.get("view") == "deposits":               # deposits-light (part 3): takings beside the statement, the difference only shows
+        from engines.cash_in import deposit_days
+        return render(request, "selling/customer_deposits.html", {"page_id": "collect", "rows": deposit_days()})
     if request.GET.get("view") == "checks":                 # the customers' checks, by check date (part 2)
         from engines import customer_checks as cc
         show = request.GET.get("show") if request.GET.get("show") in ("all", "bounced") else "open"

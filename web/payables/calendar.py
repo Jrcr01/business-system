@@ -45,6 +45,11 @@ def payables_calendar(request):
     grid_first, grid_last = weeks[0][0], weeks[-1][-1]
     plan_rows = day_cap.loads(max(grid_first, today), grid_last) if grid_last >= today else None     # the daily rule (owner, 2026-10-09): everything going out
     plan = {} if plan_rows is None or plan_rows.empty else {d: float(v) for d, v in plan_rows.groupby("day")["amount"].sum().items()}
+    from engines.features import stage_b_on
+    cin = {}
+    if stage_b_on() and grid_last >= today:                     # stage B (owner, 2026-10-11): cash IN by day beside the out; hidden until its release
+        from engines.cash_in import in_by_day
+        cin = in_by_day(max(grid_first, today), grid_last)
     cells = []
     for w in weeks:
         row = []
@@ -54,7 +59,8 @@ def payables_calendar(request):
             row.append({"d": d, "out": d.month != first.month, "today": d == today, "pick": d == pick, "n": n, "total": float(f.get("total_amount") or 0),
                         "state": f.get("status") or "", "off": d.weekday() >= 5 or (mk and mk["kind"] in ("holiday", "custom")), "mark": mk,
                         "paid_n": int(f.get("paid_items") or 0), "due_n": int(f.get("due_items") or 0),
-                        "plan": plan.get(d, 0.0), "lvl": day_cap.level(plan.get(d, 0.0)) if plan.get(d) else ""})
+                        "plan": plan.get(d, 0.0), "lvl": day_cap.level(plan.get(d, 0.0)) if plan.get(d) else "",
+                        "cin": cin.get(d, {}).get("total", 0.0), "cin_firm": cin.get(d, {}).get("firm", 0.0)})
         cells.append(row)
     items = get_payment_calendar_items()
     day_rows = []
@@ -78,4 +84,5 @@ def payables_calendar(request):
         "this_m": today.strftime("%Y-%m"), "kinds": list(cm.KINDS.items()), "may_mark": can(request.slicks_user["role"], "calendar.mark"),
         "month_total": sum(c["total"] for w in cells for c in w if not c["out"]),
         "extra": extra, "pick_plan": plan.get(pick, 0.0), "pick_lvl": day_cap.level(plan.get(pick, 0.0)) if plan.get(pick) else "",
+        "pick_in": ({**cin[pick], "room": round(cin[pick]["total"] - plan.get(pick, 0.0), 2)} if pick in cin else None),
         "cap_target": day_cap.target(), "cap_ceiling": day_cap.ceiling()})
