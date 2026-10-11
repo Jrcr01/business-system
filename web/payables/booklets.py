@@ -100,6 +100,10 @@ def booklets(request):
                     errors.append(msg)
             _say(request, not errors and bool(nums), f"{len(nums) - len(errors)} logged as spoiled." + (" " + "; ".join(errors) if errors else ""))
             return redirect(f"/booklets/?audit={bid}" if bid else back)
+        elif what == "unspoil":                                 # a leaf marked spoiled by mistake (owner, 2026-10-12)
+            from engines.check_rules import unspoil_check
+            _say(request, *unspoil_check(p.get("number", ""), p.get("reason", "")))
+            return redirect(f"/booklets/?audit={bid}" if bid else back)
         else:
             _say(request, False, "Unknown action.")
             return redirect(back)

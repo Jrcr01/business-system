@@ -95,7 +95,12 @@
 <details style="margin-top:8px"><summary style="cursor:pointer"><b>Leaf by leaf</b> <a href="/booklets/{{ audit.booklet_id }}/audit.xlsx" style="margin-left:10px">Download (Excel)</a></summary>
   <div class="scroll-x" style="max-height:420px;overflow-y:auto"><table class="list"><tr><th>Check number</th><th>State</th><th style="text-align:right">Amount</th><th>Note</th></tr>
     {% for l in audit.leaves %}<tr><td>{{ l.check_number }}</td><td>{% if "CRITICAL" in l.state %}<span class="pill warn">{{ l.state }}</span>{% else %}{{ l.state }}{% endif %}</td>
-      <td class="num">{% if l.amount %}{{ l.amount|floatformat:2|intcomma }}{% endif %}</td><td>{{ l.note }}</td></tr>{% endfor %}</table></div></details>
+      <td class="num">{% if l.amount %}{{ l.amount|floatformat:2|intcomma }}{% endif %}</td><td>{{ l.note }}
+      {% if not request.view_only and "Spoiled" in l.state %}<form method="post" style="display:inline"
+        onsubmit="var r = prompt('Why is {{ l.check_number }} not spoiled after all?'); if (!r) return false; this.reason.value = r;">{% csrf_token %}
+        <input type="hidden" name="action" value="unspoil"><input type="hidden" name="booklet_id" value="{{ audit.booklet_id }}">
+        <input type="hidden" name="number" value="{{ l.check_number }}"><input type="hidden" name="reason" value="">
+        <button class="btn small ghost" type="submit">Not spoiled</button></form>{% endif %}</td></tr>{% endfor %}</table></div></details>
 {% endif %}
 
 {% if not request.view_only %}

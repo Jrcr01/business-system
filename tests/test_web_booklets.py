@@ -193,3 +193,22 @@ def test_the_menu_and_home_have_check_booklets(web, db):
     home = web.get("/").content.decode()
     assert 'href="/booklets/"' in home and "Check booklets" in home
     assert 'href="/booklets/"' in web.get("/bank-cash/").content.decode()                   # where the Booklets tab was
+
+
+def test_a_spoiled_leaf_can_be_taken_back_with_a_reason(web, db):
+    # owner, 2026-10-12: "is there no way to undo spoiled check?" -- now there is, on the booklet's audit, reason required
+    from conftest import fetchone
+    import engines.db_engine as d
+    from tests.test_web_d0 import _admin
+    _admin(web)
+    web.post("/booklets/", {"action": "add", "start": "3992554201", "end": "3992554300", "received": "2026-10-01"})
+    bid = fetchone(d.DB_PATH, "SELECT booklet_id FROM check_booklets ORDER BY booklet_id DESC LIMIT 1")[0]
+    web.post("/booklets/", {"action": "spoiled", "booklet_id": bid, "numbers": "3992554205", "reason": "torn"})
+    assert fetchone(d.DB_PATH, "SELECT COUNT(*) FROM spoiled_checks")[0] == 1
+    r = web.post("/booklets/", {"action": "unspoil", "booklet_id": bid, "number": "3992554205", "reason": ""}, follow=True)
+    assert fetchone(d.DB_PATH, "SELECT COUNT(*) FROM spoiled_checks")[0] == 1          # no reason, no undo
+    r = web.post("/booklets/", {"action": "unspoil", "booklet_id": bid, "number": "3992554205", "reason": "it was fine after all"}, follow=True)
+    assert b"open again" in r.content
+    assert fetchone(d.DB_PATH, "SELECT COUNT(*) FROM spoiled_checks")[0] == 0
+    assert fetchone(d.DB_PATH, "SELECT COUNT(*) FROM audit_logs WHERE user_action = 'CHECK_UNSPOILED'")[0] == 1
+    assert b"Not spoiled" not in web.get(f"/booklets/?audit={bid}").content            # nothing spoiled, no button

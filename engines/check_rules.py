@@ -771,6 +771,27 @@ def issue_checks_grid(
     return True, f"Parked {len(cleaned)} check(s) totaling {php(total)} — pending (numbers assigned when printed).", check_ids
 
 
+def unspoil_check(check_number: str, reason: str, bank_account_id: int = PRIMARY_BANK_ACCOUNT_ID) -> tuple[bool, str]:
+    """A leaf logged spoiled by mistake (owner, 2026-10-12): the spoiled entry is removed with a reason, audited, and the leaf is open again.
+    Only a spoiled entry goes -- a leaf that is a real check or a guarantee check was never 'spoiled' here."""
+    if not (reason or "").strip():
+        return False, "Say why it was not spoiled after all."
+    canonical, _blocking, _warn = spoiled_check_problems(check_number, bank_account_id)      # only for the canonical spelling
+    if not canonical or not canonical.isdigit():
+        return False, "Type the check number."
+    with get_conn() as conn:
+        cur = conn.cursor()
+        row = cur.execute("SELECT spoiled_id, reason FROM spoiled_checks WHERE bank_account_id = ? AND check_number = ?",
+                          (bank_account_id, canonical)).fetchone()
+        if not row:
+            return False, f"{canonical} is not on the spoiled list."
+        cur.execute("DELETE FROM spoiled_checks WHERE spoiled_id = ?", (row[0],))
+        cur.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CHECK_UNSPOILED', 'spoiled_checks', ?, ?)",
+                    (row[0], f"Check {canonical} taken off the spoiled list (was: {row[1] or 'no reason given'}) — {reason.strip()}"))
+        conn.commit()
+    return True, f"{canonical} is not spoiled: the leaf is open again."
+
+
 def log_spoiled_check(check_number: str, reason: str, bank_account_id: int = PRIMARY_BANK_ACCOUNT_ID) -> tuple[bool, str]:
     canonical, blocking, _warnings = spoiled_check_problems(check_number, bank_account_id)
     if blocking:
