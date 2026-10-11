@@ -218,7 +218,8 @@ def tidy_tire(model: str, size: str, terrain: str, other: str) -> tuple[dict, st
         else:
             pattern_words.append(w)
     pattern = " ".join(pattern_words)
-    if "/" in pattern:
+    if any("/" in w and terrain_of(w[:3]) is None for w in pattern_words):
+        # 'SL305/SL309' is two patterns on one row; Yokohama's own 'H/T4' or 'A/T2' keeps its terrain letters in the name (owner's list, 2026-10-11)
         problems.append(f"Model/Pattern '{_clean(model)}' has two patterns: put each on its own row")
     if not pattern:
         problems.append("Model/Pattern is empty")

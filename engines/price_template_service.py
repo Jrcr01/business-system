@@ -391,8 +391,9 @@ def parse_workbook(file_bytes: bytes, default_date: date | None = None) -> dict:
                 i = idx.get(k)
                 v = row[i] if i is not None and i < len(row) else None
                 return "" if v is None else (v if isinstance(v, (int, float, date)) and not isinstance(v, bool) else str(v).strip())
-            if not any(str(v).strip() for v in row if v is not None):
-                continue
+            filled = {k for k, i in idx.items() if i is not None and i < len(row) and str(row[i] if row[i] is not None else "").strip()}
+            if not filled - {"unit", "changed", "old_price", "effective_date", "remarks", "supplier_code"}:
+                continue            # blank, or only leftovers of the pre-filled columns (a dragged Unit or Old price; owner's list, 2026-10-11): skipped
             n += 1
             where, bad = f"{category} row {rno}", []
             brand = pc._clean(cell("brand"))

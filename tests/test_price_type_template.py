@@ -133,3 +133,26 @@ def test_the_full_words_are_accepted_where_the_short_codes_live(db):
     got = {r["values"]["pattern"]: (r["values"]["terrain"], r["values"].get("tube", "")) for r in parsed["rows"]}
     assert got["SL369"] == ("H/T", "TL") and got["SL309"] == ("A/T", "TT") and got["CL991"][0] == "M/T"
     assert pc.terrain_of("Rugged-Terrain") == "R/T" and pc.tube_of("TUBELESS") == "TL" and pc.tube_of("nonsense") is None
+
+
+def test_leftover_side_columns_are_not_a_half_typed_row(db):
+    # owner's Yokohama list, 2026-10-11: 561 rows below the real ones carried only a dragged-down "Old price" -- 219 complaints for nothing
+    cid = make_creditor(db, "Express Dymans International Corp.")
+    data = _fill(pt.build_type_template(cid), "Tires", [
+        {"Brand": "Yokohama", "Size": "165/60R14", "Ply / load-speed": "75T", "Pattern": "BluEarth ES32", "Type": "PCR", "List price": 5100},
+        {"Old price": 15000, "Unit": "piece"},
+        {"Old price": 16500},
+        {"List price": 4100}])                                 # a price with no item is still a real half-typed row
+    parsed = pt.parse_workbook(data, default_date=date(2026, 9, 15))
+    assert len(parsed["rows"]) == 1 and len(parsed["problems"]) == 1
+    assert "Brand is empty" in parsed["problems"][0] and "row 5" in parsed["problems"][0]
+
+
+def test_a_terrain_inside_the_patterns_own_name_is_not_two_patterns(db):
+    cid = make_creditor(db, "Express Dymans International Corp.")
+    data = _fill(pt.build_type_template(cid), "Tires", [
+        {"Brand": "Yokohama", "Size": "265/65R17", "Ply / load-speed": "112H", "Pattern": "Geolandar H/T4 PH", "Type": "PCR", "List price": 9800},
+        {"Brand": "Westlake", "Size": "185/65R15", "Ply / load-speed": "88H", "Pattern": "SL305/SL309", "Type": "PCR", "List price": 3200}])
+    parsed = pt.parse_workbook(data, default_date=date(2026, 9, 15))
+    assert len(parsed["rows"]) == 1 and parsed["rows"][0]["values"]["pattern"] == "Geolandar H/T4 PH"
+    assert len(parsed["problems"]) == 1 and "two patterns" in parsed["problems"][0] and "SL305/SL309" in parsed["problems"][0]
