@@ -117,7 +117,7 @@ def test_the_mode_values_the_actions_set_are_the_pages_own_constants_and_labels(
     assert {"Browse bank loans", "New bank loan"} == {shared.BL_BROWSE, shared.BL_NEW}
 
 
-def test_only_tiles_with_two_or_more_actions_get_a_panel_and_the_daily_ones_are_in_priority_order():
+def test_only_tiles_with_two_or_more_actions_get_a_panel_and_the_daily_ones_are_in_priority_order(db):   # db: has_panel reads the settings table
     by = {t.page_id: t for t in TILES}
     assert not by["payment-run"].has_panel and not by["checks"].has_panel and not by["creditors"].has_panel
     assert by["add-data"].has_panel and by["order-statements"].has_panel and by["bank-cash"].has_panel
@@ -125,7 +125,7 @@ def test_only_tiles_with_two_or_more_actions_get_a_panel_and_the_daily_ones_are_
     assert all(len(t.actions) != 1 for t in TILES)                                  # one action would just be the page itself
 
 
-def test_a_module_can_bring_its_own_actions(monkeypatch):
+def test_a_module_can_bring_its_own_actions(monkeypatch, db):              # db: has_panel reads the settings table
     from engines.home_tiles import act
     monkeypatch.setattr(home_tiles, "TILES", list(home_tiles.TILES))
     register_tile(Tile("sales", "pay", "Sales", actions=[act("New sale", sales_mode="New"), act("Day sheet", sales_mode="Day")]))
