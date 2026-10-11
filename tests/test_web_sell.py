@@ -179,7 +179,7 @@ def test_the_home_cards_follow_the_order_of_the_work(web, db):
     assert rows["Stock"] == ["Items and stock", "Stock counts", "Affiliates"]
     assert rows["Sell"] == ["Record the day&#x27;s invoices", "Sales today", "Collect payments", "Customers", "Invoice booklets"]
     assert rows["Pay suppliers"] == ["New batch", "Order statements", "Calendar", "Days over the limit", "Daily payables"]
-    assert rows["Bank"] == ["Import bank statement", "Bank and cash", "Check booklets"]
+    assert rows["Bank"] == ["Import bank statement", "Bank and cash", "Check booklets", "Expenses"]
     assert rows["Other payables"] == ["New loan note", "Lenders", "Bank loans", "Credit cards"]
     assert rows["Analytics"] == ["Purchasing", "Payables", "Bank and cash", "Lenders"]
     assert rows["My home"] == ["New order", "Purchase orders", "New batch", "Order statements", "Calendar", "Daily payables", "Checks and review"]

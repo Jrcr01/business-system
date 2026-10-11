@@ -23,7 +23,7 @@ def _menu_pages() -> set[str]:
 
 def test_every_tile_points_at_a_real_page_and_a_known_group():
     pages, groups = _menu_pages(), {g.key for g in GROUPS}
-    assert {t.page_id for t in TILES} <= pages | {"analytics", "calendar", "review", "booklets", "stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets", "collect"}      # Django-only pages (2026-10-09; Check booklets 2026-10-11)
+    assert {t.page_id for t in TILES} <= pages | {"analytics", "calendar", "review", "booklets", "stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets", "collect", "expenses", "income-statement"}      # Django-only pages (2026-10-09; Check booklets 2026-10-11)
     assert {t.group for t in TILES} <= groups
     assert pages - {"home"} <= {t.page_id for t in TILES}          # every menu page has a tile
 

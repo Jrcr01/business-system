@@ -48,6 +48,7 @@ _ROWS: list[tuple[str, str, str, tuple]] = [
     ("committed.view", "Purchasing", "Committed payables by week (totals by kind, no check numbers)", (Y, None, Y, Y, VIEW)),
     ("payables_due.view", "Payables", "See the payables calendar", (Y, None, Y, None, None)),
     ("payables.mark_paid", "Payables", "Mark payables paid on Daily payables: checks, bank-loan payments, card payments", (Y, None, Y, None, None)),
+    ("expenses.use", "Payables", "Record expenses from the drawer or the bank (petty cash)", (Y, Y, Y, None, VIEW)),
     ("invoice.enter", "Payables", "Enter invoices and credit memos; work with batches (order statements)", (Y, None, Y, None, None)),
     ("check.park", "Payables", "Park (prepare) checks", (Y, None, Y, None, None)),
     ("check.issue", "Payables", "Issue and print checks; handwritten and guarantee checks", (Y, None, None, None, None)),
@@ -91,6 +92,7 @@ PAGE_ACTION = {
     "lenders": "loans.use", "bank-loans": "bankloans.use", "credit-cards": "cards.use", "creditors": "creditors.edit",
     "stock": "inventory.use", "stock-counts": "inventory.use", "affiliates": "inventory.use",                   # revenue cycle, stage A (2026-10-11)
     "sales": "sales.use", "customers": "sales.use", "si-booklets": "sales.use", "collect": "collect.use",
+    "expenses": "expenses.use", "income-statement": "reports.use",
     "reports": "reports.use", "analytics": "reports.use", "review": "review.use", "data-health": "health.view",
     "settings": "settings.edit", "admin": "audit.view",
 }
@@ -105,7 +107,7 @@ WORKFLOW: list[tuple[str, list[str]]] = [
     ("Pay suppliers", ["po.receive", "invoice.enter", "payables_due.view", "check.park", "check.issue", "check.void", "creditors.edit", "calendar.mark",
                        "payables.mark_paid"]),
     ("Release", ["check.release"]),
-    ("Bank", ["bank.use", "booklets.use"]),
+    ("Bank", ["bank.use", "booklets.use", "expenses.use"]),
     ("Loans and cards", ["loans.use", "bankloans.use", "cards.use"]),
     ("Records", ["search.use", "reports.use", "health.view"]),
     ("Review", ["review.use", "po.ack_over_plan", "controls.view"]),
@@ -287,11 +289,13 @@ ACCESS_ROWS: list[tuple[str, list[tuple[str, str, list[str], list[tuple[str, str
     ("Bank, loans and cards", [
         ("bank-cash", "Bank and cash", ["bank.use"], []),
         ("booklets", "Check booklets", ["booklets.use"], []),
+        ("expenses", "Expenses (the drawer's and the bank's money out)", ["expenses.use"], []),
         ("lenders", "Lenders", ["loans.use"], []),
         ("bank-loans", "Bank loans", ["bankloans.use"], []),
         ("credit-cards", "Credit cards", ["cards.use"], [])]),
     ("Records", [
         ("reports", "Reports", [], []),
+        ("income-statement", "Income statement (the month's profit)", [], []),
         ("analytics", "Analytics", [], []),
         ("search", "Search everything", [], [])]),
     ("Set-up", [

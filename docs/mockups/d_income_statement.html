@@ -1,0 +1,57 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: the month's Income Statement</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 980px; margin: 0 auto; padding: 18px 20px 60px; }
+h1 { color: var(--blue); font-size: 1.35rem; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 76ch; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+table.list { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: .95rem; font-variant-numeric: tabular-nums; }
+table.list th { text-align: right; color: var(--muted); font-weight: 600; font-size: .8rem; border-bottom: 2px solid var(--line); padding: 6px 10px; }
+table.list th:first-child { text-align: left; }
+table.list td { border-bottom: 1px solid var(--line); padding: 7px 10px; text-align: right; }
+table.list td:first-child { text-align: left; }
+.sub td { color: var(--muted); font-size: .88rem; }
+.sub td:first-child { padding-left: 28px; }
+.tot td { font-weight: 700; border-top: 2px solid var(--ink); }
+.pos { color: var(--ok); } .neg { color: var(--red); }
+.btn { display: inline-flex; align-items: center; gap: 7px; background: #fff; color: var(--blue); border: 1px solid #b9c6d8; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; }
+.payrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.pill { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 1px 8px; background: #fff7e0; color: var(--warn); }
+</style></head><body><main>
+<h1>Records → Income statement (the month's profit)</h1>
+<p class="why">One page, computed straight from the documents the family already types — no GL codes, no debits, nothing to maintain, nobody to hire.
+Every figure clicks through to its list (the sales behind Sales, the expense lines behind each category). October is this month; last month beside it.</p>
+<div class="screen">
+  <div class="payrow">
+    <span class="ms">summarize</span><b style="font-size:1.1rem">October 2026</b>
+    <button class="btn"><span class="ms">chevron_left</span>Sep</button><button class="btn">Nov<span class="ms">chevron_right</span></button>
+    <span style="margin-left:auto"><button class="btn"><span class="ms">download</span>Excel</button> <button class="btn"><span class="ms">print</span>Print</button></span>
+  </div>
+  <table class="list">
+    <tr><th></th><th>October 2026</th><th>September 2026</th></tr>
+    <tr><td><b>Sales of goods</b> <span class="why" style="margin:0">(invoices, net of returns and voids)</span></td><td>742,300.00</td><td>688,150.00</td></tr>
+    <tr><td><b>Service income</b> (mounting, balancing, vulcanizing…)</td><td>18,450.00</td><td>15,200.00</td></tr>
+    <tr><td><b>Cost of goods sold</b> (at moving-average cost)</td><td class="neg">(589,900.00)</td><td class="neg">(548,300.00)</td></tr>
+    <tr class="tot"><td>Gross margin</td><td>170,850.00</td><td>155,050.00</td></tr>
+    <tr><td><b>Expenses</b></td><td class="neg">(48,730.00)</td><td class="neg">(—)</td></tr>
+    <tr class="sub"><td>Wages & helpers</td><td>(24,000.00)</td><td></td></tr>
+    <tr class="sub"><td>Electricity</td><td>(8,350.00)</td><td></td></tr>
+    <tr class="sub"><td>Rent</td><td>(10,000.00)</td><td></td></tr>
+    <tr class="sub"><td>Meals · supplies · fuel · others</td><td>(6,380.00)</td><td></td></tr>
+    <tr><td><b>Shrinkage</b> (approved count differences)</td><td class="neg">(5,600.00)</td><td>—</td></tr>
+    <tr><td><b>Interest paid to lenders</b></td><td class="neg">(14,200.00)</td><td class="neg">(14,200.00)</td></tr>
+    <tr class="tot"><td>Profit for the month</td><td class="pos">102,320.00</td><td class="pos">…</td></tr>
+  </table>
+  <p class="why" style="margin:0"><span class="pill">accrual</span> A charge sale counts in the month it was sold, not when collected (collections live on
+    Collect payments). Bank-loan installments show no interest split — your own choice to keep them date-and-amount only — so they are not an expense line here;
+    card interest joins when a SOA carries it. September shows "—" for expenses because the module starts now.</p>
+</div>
+
+<p class="why" style="margin-top:22px"><b>With the Expenses screen already approved (screen 1 of the previous mock-up), this is the whole build:</b> the
+expenses module (migration, categories in Settings, the page, deposits-page tie-in) + this page under Records. Both behind a gate until your go to show them live.</p>
+</main></body></html>

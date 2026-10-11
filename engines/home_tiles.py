@@ -337,6 +337,22 @@ def _receivables():
     return f"{total:,.0f}", f"owed by {who} customer(s)" if who else "nothing owed", "none"
 
 
+def _expenses_month():
+    from engines.clock import manila_now
+    from engines.common import get_conn
+    with get_conn() as conn:
+        v = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE voided_at IS NULL AND substr(expense_date, 1, 7) = ?",
+                         (manila_now().strftime("%Y-%m"),)).fetchone()[0]
+    return f"{float(v):,.0f}", "spent this month", "none"
+
+
+def _profit_month():
+    from engines.clock import manila_now
+    from engines.income_statement import month_report
+    r = month_report(manila_now().strftime("%Y-%m"))
+    return f"{r['profit']:,.0f}", "profit this month so far", ("alert" if r["profit"] < 0 else "none")
+
+
 def _customers():
     return str(_count("SELECT COUNT(*) FROM customers WHERE is_active = 1")), "customers", "none"
 
@@ -466,6 +482,8 @@ for _t in (
         A("Supplier, booklet or spoiled check", "Records and checkbook", ":material/contacts:", ad_kind="Records and checkbook")]),
     Tile("planner", "pay", "Check-date planner", _planner),
     Tile("booklets", "bank", "Check booklets", _booklets, icon=":material/menu_book:", needs="booklets.use"),
+    Tile("expenses", "bank", "Expenses", _expenses_month, icon=":material/wallet:", needs="expenses.use"),
+    Tile("income-statement", "records", "Income statement", _profit_month, icon=":material/summarize:", needs="reports.use"),
     Tile("stock", "stock", "Items and stock", _stock_items, needs="inventory.use"),
     Tile("stock-counts", "stock", "Stock counts", _stock_counts, needs="inventory.use"),
     Tile("affiliates", "stock", "Affiliates", _affiliates, needs="inventory.use"),

@@ -1,0 +1,39 @@
+{% extends "core/base.html" %}{% load humanize slicks %}
+{% block title %}Income statement{% endblock %}
+{% block content %}
+{% comment %}Owner, 2026-10-11: one page, the month's profit from the documents -- no GL codes, no debits, nothing to maintain. Accrual: a charge
+sale counts in the month it was sold; collections live on Collect payments.{% endcomment %}
+<h2><span class="ms" style="font-size:28px">summarize</span> Income statement — {{ label }}</h2>
+<div class="actions" style="margin-bottom:10px">
+  <a class="btn small ghost" href="/income-statement/?m={{ prev }}"><span class="ms">chevron_left</span>{{ before_label }}</a>
+  {% if nxt %}<a class="btn small ghost" href="/income-statement/?m={{ nxt }}">Next<span class="ms">chevron_right</span></a>{% endif %}
+  <a class="btn small ghost" href="/income-statement/?m={{ m }}&dl=xlsx"><span class="ms">download</span>Excel</a>
+  <a class="btn small ghost" href="javascript:print()"><span class="ms">print</span>Print</a>
+</div>
+<div class="scroll-x"><table class="list" style="max-width:760px;font-variant-numeric:tabular-nums">
+  <tr><th></th><th class="num">{{ label }}</th><th class="num">{{ before_label }}</th></tr>
+  <tr><td><a href="/sales/?view=day">Sales of goods</a> <span class="hint">(net of returns and voids)</span></td>
+    <td class="num">{{ now.sales|floatformat:2|intcomma }}</td><td class="num">{{ before.sales|floatformat:2|intcomma }}</td></tr>
+  <tr><td>Service income</td><td class="num">{{ now.services|floatformat:2|intcomma }}</td><td class="num">{{ before.services|floatformat:2|intcomma }}</td></tr>
+  <tr><td>Cost of goods sold <span class="hint">(at moving-average cost)</span></td>
+    <td class="num">({{ now.cogs|floatformat:2|intcomma }})</td><td class="num">({{ before.cogs|floatformat:2|intcomma }})</td></tr>
+  <tr style="font-weight:700;border-top:2px solid #1c2733"><td>Gross margin</td>
+    <td class="num">{{ now.gross|floatformat:2|intcomma }}</td><td class="num">{{ before.gross|floatformat:2|intcomma }}</td></tr>
+  <tr><td><a href="/expenses/?m={{ m }}">Expenses</a></td>
+    <td class="num">({{ now.expenses_total|floatformat:2|intcomma }})</td><td class="num">({{ before.expenses_total|floatformat:2|intcomma }})</td></tr>
+  {% for c in cats %}<tr class="hint"><td style="padding-left:28px">{{ c.name }}</td>
+    <td class="num">{% if c.now %}({{ c.now|floatformat:2|intcomma }}){% endif %}</td>
+    <td class="num">{% if c.before %}({{ c.before|floatformat:2|intcomma }}){% endif %}</td></tr>{% endfor %}
+  <tr><td><a href="/stock-counts/">Shrinkage</a> <span class="hint">(approved count differences and adjustments)</span></td>
+    <td class="num">({{ now.shrinkage|floatformat:2|intcomma }})</td><td class="num">({{ before.shrinkage|floatformat:2|intcomma }})</td></tr>
+  <tr><td><a href="/lenders/">Interest paid to lenders</a></td>
+    <td class="num">({{ now.lender_interest|floatformat:2|intcomma }})</td><td class="num">({{ before.lender_interest|floatformat:2|intcomma }})</td></tr>
+  <tr><td><a href="/bank-loans/">Interest on bank loans</a> <span class="hint">(the interest portion typed off the bank's document)</span></td>
+    <td class="num">({{ now.bankloan_interest|floatformat:2|intcomma }})</td><td class="num">({{ before.bankloan_interest|floatformat:2|intcomma }})</td></tr>
+  <tr style="font-weight:700;border-top:2px solid #1c2733"><td>Profit for the month</td>
+    <td class="num {% if now.profit >= 0 %}pos{% else %}neg{% endif %}">{{ now.profit|floatformat:2|intcomma }}</td>
+    <td class="num {% if before.profit >= 0 %}pos{% else %}neg{% endif %}">{{ before.profit|floatformat:2|intcomma }}</td></tr>
+</table></div>
+<p class="hint"><span class="pill warn">accrual</span> A charge sale counts in the month it was sold, not when collected. A sale of goods returned
+  later reduces the month of the return. Card interest joins when a statement carries it.</p>
+{% endblock %}

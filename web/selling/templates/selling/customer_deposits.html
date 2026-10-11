@@ -10,8 +10,9 @@ never policed -- cash kept for expenses or deposited a day late simply shows, an
   <a class="btn small ghost" href="/bank-cash/"><span class="ms">account_balance</span>Bank and cash</a></div>
 {% if rows %}
 <div class="scroll-x"><table class="list" style="max-width:860px">
-  <tr><th>Day</th><th class="num">Cash taken</th><th class="num">Checks deposited</th><th class="num">On the statement</th><th class="num">Difference</th></tr>
+  <tr><th>Day</th><th class="num">Cash taken</th><th class="num">Spent from the drawer</th><th class="num">Checks deposited</th><th class="num">On the statement</th><th class="num">Difference</th></tr>
   {% for r in rows %}<tr><td>{{ r.day|dmy }}</td><td class="num">{{ r.cash|floatformat:2|intcomma }}</td>
+    <td class="num">{% if r.spent %}({{ r.spent|floatformat:2|intcomma }}){% endif %}</td>
     <td class="num">{{ r.deposited|floatformat:2|intcomma }}</td><td class="num">{{ r.statement|floatformat:2|intcomma }}</td>
     <td class="num {% if r.diff < 0 %}neg{% elif r.diff > 0 %}pos{% endif %}">{{ r.diff|floatformat:2|intcomma }}</td></tr>{% endfor %}
 </table></div>

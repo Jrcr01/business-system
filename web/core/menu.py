@@ -34,16 +34,18 @@ PAGES: dict[str, Page] = {
     "customers": Page("Customers", "group", "R-A"),
     "si-booklets": Page("Invoice booklets", "receipt_long", "R-A"),
     "collect": Page("Collect payments", "payments", "R-B"),
+    "expenses": Page("Expenses", "wallet", "BK"),
+    "income-statement": Page("Income statement", "summarize", "BK"),
     "booklets": Page("Check booklets", "menu_book", "D7"),          # add, change, hand over, gap audit (owner, 2026-10-11)
     "reports": Page("Reports", "summarize", "D8"),
     "analytics": Page("Analytics", "monitoring", "D8"),
     "review": Page("Checks and review", "fact_check", "D8"),     # Roles and controls + Admin and audit + Data health, combined (owner, 2026-10-09)
 }
 
-BUILT = {"stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets", "collect", "home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "calendar",
+BUILT = {"stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets", "collect", "expenses", "income-statement", "home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "calendar",
          "reports", "checks", "bank-cash", "booklets", "lenders", "analytics", "bank-loans", "credit-cards", "review"}     # drawn by Django (D0-D3; Reports: the schedule of payments first; Checks: waiting for the bank + the cleared tick, 2026-10-08)
 
-STAGE_NAME = {"R-A": "Sell and stock", "R-B": "Collect", "D1": "Masters", "D2": "Buying", "D3": "Payables", "D4": "Paying", "D5": "Release", "D6": "Loans", "D7": "Cards and bank", "D8": "Oversight"}
+STAGE_NAME = {"R-A": "Sell and stock", "R-B": "Collect", "BK": "The books", "D1": "Masters", "D2": "Buying", "D3": "Payables", "D4": "Paying", "D5": "Release", "D6": "Loans", "D7": "Cards and bank", "D8": "Oversight"}
 
 # (label, icon, page id, query, needed action): a shortcut that opens a page already in a mode, shown only to a role allowed that action (a tuple: any of them)
 MENU: dict[str, list] = {
@@ -52,9 +54,9 @@ MENU: dict[str, list] = {
     "Sell": [("Scan out", "barcode_scanner", "sales", "view=scan", "sales.use"), ("Record the day's invoices", "receipt_long", "sales", "", "sales.use"),
              ("Sales today", "today", "sales", "view=day", "sales.use"), "collect", ("Checks to deposit", "price_check", "collect", "view=checks", "collect.use"), "customers", "si-booklets"],
     "Pay suppliers": ["order-statements", "calendar", "checks"],     # Payment run, Release checks and Add data removed (owner, 2026-10-09): its work is in the batch and Daily payables
-    "Bank": ["bank-cash", "booklets"],     # the Check-date planner dropped with /more/ (owner, 2026-10-09)
+    "Bank": ["bank-cash", "booklets", "expenses"],     # the Check-date planner dropped with /more/ (owner, 2026-10-09)
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
-    "Records": ["reports"],
+    "Records": ["reports", "income-statement"],
     "Analytics": [("Purchasing", "shopping_cart", "analytics", "tab=purchasing", "reports.use"), ("Payables", "receipt_long", "analytics", "tab=payables", "reports.use"),
                   ("Bank and cash", "account_balance", "analytics", "tab=bank", "reports.use"), ("Lenders", "handshake", "analytics", "tab=lenders", "reports.use")],
     "Set-up": ["creditors", "settings", "review"],

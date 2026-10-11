@@ -128,14 +128,16 @@ def deposit_days(days: int = 14) -> list[dict]:
             deposited[str(d)] = float(v)
         stmt = {str(d): float(v) for d, v in conn.execute(
             "SELECT txn_date, SUM(credit) FROM bank_transactions WHERE credit > 0 AND txn_date >= ? GROUP BY txn_date", (str(start),)).fetchall()}
+    from engines.expense_rules import drawer_by_day
+    spent = drawer_by_day(start)
     out = []
     d = today
     while d >= start:
         key = str(d)
-        ours = round(cash.get(key, 0.0) + deposited.get(key, 0.0), 2)
+        ours = round(cash.get(key, 0.0) - spent.get(key, 0.0) + deposited.get(key, 0.0), 2)
         bank = round(stmt.get(key, 0.0), 2)
-        if ours or bank:
-            out.append({"day": d, "cash": round(cash.get(key, 0.0), 2), "deposited": round(deposited.get(key, 0.0), 2),
-                        "statement": bank, "diff": round(bank - ours, 2)})
+        if ours or bank or spent.get(key):
+            out.append({"day": d, "cash": round(cash.get(key, 0.0), 2), "spent": round(spent.get(key, 0.0), 2),
+                        "deposited": round(deposited.get(key, 0.0), 2), "statement": bank, "diff": round(bank - ours, 2)})
         d -= timedelta(days=1)
     return out
