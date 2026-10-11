@@ -113,6 +113,10 @@ def menu_for(role: str | None) -> list[dict]:
                 wanted = needs if isinstance(needs, tuple) else (needs,)
                 if pid == "analytics" and query.removeprefix("tab=") not in tabs:     # its page is hidden from this person: so is its dashboard
                     continue
+                if query == "view=scan":                        # owner, 2026-10-11: "hide first the scan thing" -- until Settings says sales start from a scan
+                    from engines.settings_registry import sales_scan_on
+                    if not sales_scan_on():
+                        continue
                 if pid in mine and (needs is None or PAGE_ACTION.get(pid) in wanted or any(can(role, n) for n in wanted)):     # the page's own action: seeing it is enough
                     items.append({"label": label, "icon": icon, "url": page_url(pid, query), "page": pid})
             elif e in mine:

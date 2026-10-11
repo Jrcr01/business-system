@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 REVENUE_PAGES = frozenset({"stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets"})
-REVENUE_SETTINGS_GROUPS = frozenset({"Stock"})
+REVENUE_SETTINGS_GROUPS = frozenset({"Stock", "Sell"})
 REVENUE_NOTES = frozenset({"2026-10-13a"})
 
 

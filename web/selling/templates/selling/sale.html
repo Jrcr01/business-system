@@ -1,14 +1,15 @@
 {% extends "core/base.html" %}
 {% block title %}Type an invoice{% endblock %}
 {% block content %}
-<h2><span class="ms" style="font-size:28px">receipt_long</span> Type an invoice</h2>
+<h2><span class="ms" style="font-size:28px">receipt_long</span> Record the sales</h2>
 <div class="actions" style="margin-bottom:10px">
-  <a class="btn small ghost" href="/sales/"><span class="ms">receipt_long</span>The day's slips{% if open_releases %} ({{ open_releases }}){% endif %}</a>
-  <a class="btn small ghost" href="/sales/?view=scan"><span class="ms">barcode_scanner</span>Scan out</a>
+  {% if open_releases %}<a class="btn small ghost" href="/sales/"><span class="ms">receipt_long</span>The day's slips ({{ open_releases }})</a>{% endif %}
+  {% if scan_on %}<a class="btn small ghost" href="/sales/?view=scan"><span class="ms">barcode_scanner</span>Scan out</a>{% endif %}
   <a class="btn small ghost" href="/sales/?view=day"><span class="ms">today</span>Sales today</a>
 </div>
-<p class="note">For an invoice whose items were <b>not scanned</b> when they left (saving takes the stock now and notes it for review), or for services only.
-  The usual way: <a href="/sales/?view=scan">Scan out</a> during the day, then each slip's invoice from <a href="/sales/">Record the day's invoices</a>.</p>
+<p class="note">Type each invoice from the booklet, one after another{% if not scan_on %} — after closing, or in an idle moment{% endif %}; saving one offers the next number.
+  {% if scan_on %}Goods scanned out during the day are invoiced from <a href="/sales/">their slips</a> instead, so the stock is not taken twice; an
+  invoice typed here without a slip is noted on the Review list.{% endif %}</p>
 {% if no_booklet %}<div class="warnbox"><b>No invoice booklet is in use.</b> <a href="/si-booklets/">Register the booklet</a> so the next number is offered and skipped numbers are seen.
   You can still type a number.</div>{% endif %}
 {% if skipped %}<div class="warnbox"><b>{{ skipped|length }} number{{ skipped|length|pluralize }} skipped:</b> {% for n in skipped %}{{ n|stringformat:"06d" }}{% if not forloop.last %}, {% endif %}{% endfor %}.

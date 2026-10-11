@@ -382,8 +382,10 @@ def save_sale(si_no, sale_date, customer_id: int | None, customer_name: str, lin
             conn.execute("INSERT INTO sale_payments (sale_id, method, amount, bank, check_no, check_date, reference) VALUES (?, ?, ?, ?, ?, ?, ?)",
                          (sale_id, p["method"], p["amount"], p["bank"], p["check_no"], str(p["check_date"]) if p["check_date"] else None, p["reference"]))
         conn.execute("UPDATE sales SET cost_total = ? WHERE sale_id = ?", (round(cost_total, 2), sale_id))
-        if clean and not no_stock_out:
-            # typed straight in, with no scan slip (owner, 2026-10-11: the scan tracks the movement): saved all the same, noted so a missed scan is seen
+        from engines.settings_registry import sales_scan_on
+        if clean and not no_stock_out and sales_scan_on():
+            # typed with no scan slip while sales start from a scan (owner, 2026-10-11): saved all the same, noted so a missed scan is seen.
+            # Before the routine starts the switch is off and recording after close asks no questions: "the important for now is recording of sales".
             from engines.review_flags import flag
             flag(conn, "SALE_NOT_SCANNED", "sales", int(sale_id),
                  f"{si_text(n)}: {sum(ln['qty'] for ln in clean):g} pc(s) typed without a scan slip. The usual way: Scan out when the goods leave, then write the invoice on the slip.")

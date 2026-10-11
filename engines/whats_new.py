@@ -7,9 +7,9 @@ NOTES = [
         "Labels and scanning: print labels for a delivery (one per piece) and scan them at the counter, on a count, or when lending. A maker's barcode is learned the first time it is scanned.",
         "Stock counts: count one type or one brand at a time. The sheet does not show what the system expects. Stock changes only when the System admin approves a difference, with a reason.",
         "Affiliates: lend tires to, or borrow them from, the relatives' businesses. It stays on their balance until it is returned, paid for at cost, or set off.",
-        "Sell, Scan out: scan the customer's tires as they leave (on the phone, with a wireless scanner, or by typing) and tap Done. The stock moves that moment; the SI number can be typed at the scan or later.",
+        "Sell, Record the sales: after closing, or in an idle moment, type each invoice from the booklet one after another; saving one offers the next number. Saving takes the stock.",
         "Nothing is refused for being below cost, above stock or on charge. It is saved and noted on the Review list.",
-        "Record the day's invoices: after closing, each scanned slip becomes one invoice with its items already filled in; add the prices, the customer and how it was paid. A slip with no invoice by the next day, and an invoice whose items were never scanned, are noted on the Review list.",
+        "Scan out (hidden until Settings says sales start from a scan): the day the scanning routine begins, what leaves is scanned on the phone and the stock moves that moment; in the evening each slip becomes its invoice with the items already filled in.",
         "Sales today: the day's sales in the notebook's order, with the day's money by how it was paid.",
     ]),
     ("2026-10-12b", "10/11/2026", "Sign-in: Google Authenticator for everyone", [

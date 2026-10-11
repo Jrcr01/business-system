@@ -34,7 +34,7 @@ def _sale(web, a, si="004501", qty="4", price="3600", **extra):
 def test_the_counter_sale_offers_the_next_number_and_saves_in_one_step(web, db):
     _admin(web)
     a, name = _ready(web)
-    page = web.get("/sales/?view=new").content.decode()                        # typing an invoice (owner, 2026-10-11: recorded after close)
+    page = web.get("/sales/").content.decode()                                 # recording sales is the page (owner, 2026-10-11: after close or idle time)
     assert 'name="si_no" value="004501"' in page and 'id="scanlines"' in page and "Save the sale" in page and "Release now, invoice later" in page
     r = _sale(web, a, pay_amount_0="5000", pay_method_1="CHECK", pay_amount_1="10000", pay_bank_1="BDO", pay_no_1="0048812", pay_date_1="2026-12-25",
               svc_desc_0="Mounting and balancing", svc_amt_0="600")
@@ -153,7 +153,7 @@ def test_home_and_the_menu_have_stock_and_sell(web, db):
     _admin(web)
     _ready(web)
     home = web.get("/").content.decode()
-    for word in ("Items and stock", "Stock counts", "Affiliates", "Scan out", "Customers", "Invoice booklets", "Sales today", "Record the day"):
+    for word in ("Items and stock", "Stock counts", "Affiliates", "Customers", "Invoice booklets", "Sales today"):
         assert word in home, word
     assert 'href="/sales/?view=day"' in home and 'href="/stock/"' in home
     payables = _sign_in_new("ap@slicks.test", "payables")
@@ -177,10 +177,10 @@ def test_the_home_cards_follow_the_order_of_the_work(web, db):
     assert list(rows)[:6] == ["My home", "Buy", "Stock", "Sell", "Pay suppliers", "Bank"]
     assert rows["Buy"] == ["Import a price list", "Price lists", "New order", "Purchase orders", "Receive"]
     assert rows["Stock"] == ["Items and stock", "Stock counts", "Affiliates"]
-    assert rows["Sell"] == ["Scan out", "Record the day&#x27;s invoices", "Sales today", "Customers", "Invoice booklets"]
+    assert rows["Sell"] == ["Record the day&#x27;s invoices", "Sales today", "Customers", "Invoice booklets"]
     assert rows["Pay suppliers"] == ["New batch", "Order statements", "Calendar", "Days over the limit", "Daily payables"]
     assert rows["Bank"] == ["Import bank statement", "Bank and cash", "Check booklets"]
     assert rows["Other payables"] == ["New loan note", "Lenders", "Bank loans", "Credit cards"]
     assert rows["Analytics"] == ["Purchasing", "Payables", "Bank and cash", "Lenders"]
     assert rows["My home"] == ["New order", "Purchase orders", "New batch", "Order statements", "Calendar", "Daily payables", "Checks and review"]
-    assert 'href="/sales/?view=scan"' in page and "the next SI no." in page
+    assert 'href="/sales/?view=scan"' not in page and "the next SI no." in page    # the scan thing is hidden until its switch is on

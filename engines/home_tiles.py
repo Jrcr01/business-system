@@ -51,6 +51,7 @@ class Tile:
     actions: list = field(default_factory=list)      # Action buttons; two or more make the tile open a panel, fewer open the page straight away
     key: str = ""                                    # a tile of its own on a page that already has a tile (Receive goods opens Purchase orders): its unique id; empty = the page id
     state: tuple = ()                                # ((widget key, value), ...) pre-set on the page when the tile is pressed (the same keys the actions use)
+    when: object = None                              # None = always; else a callable -- the tile shows only while it returns True (a Settings switch)
     needs: str | None = None                         # the access-matrix action behind the tile: the tile is left out for a role without it
 
     @property
@@ -137,7 +138,7 @@ def layout(installed_pages: set[str]) -> list[tuple[str, list[Tile]]]:
     """[(group key, tiles)] in group order, tiles in registration order, leaving out tiles whose page is not installed and groups left empty."""
     rows = []
     for g in GROUPS:
-        tiles = [t for t in TILES if t.group == g.key and t.page_id in installed_pages and _tile_allowed(t)]
+        tiles = [t for t in TILES if t.group == g.key and t.page_id in installed_pages and _tile_allowed(t) and (t.when is None or t.when())]
         if tiles:
             rows.append((g.key, tiles))
     return rows
@@ -295,6 +296,11 @@ def _stock_counts():
 def _affiliates():
     n = _count("SELECT COUNT(*) FROM affiliate_move_lines WHERE qty - qty_settled > 0.0000001")
     return _waiting(n, "lent or borrowed, open")
+
+
+def _scan_on():
+    from engines.settings_registry import sales_scan_on
+    return sales_scan_on()
 
 
 def _scan_out():
@@ -457,7 +463,7 @@ for _t in (
     Tile("stock", "stock", "Items and stock", _stock_items, needs="inventory.use"),
     Tile("stock-counts", "stock", "Stock counts", _stock_counts, needs="inventory.use"),
     Tile("affiliates", "stock", "Affiliates", _affiliates, needs="inventory.use"),
-    Tile("sales", "sell", "Scan out", _scan_out, key="scan-out", icon=":material/barcode_scanner:", state=(("sales_view", "scan"),), needs="sales.use"),
+    Tile("sales", "sell", "Scan out", _scan_out, key="scan-out", icon=":material/barcode_scanner:", state=(("sales_view", "scan"),), needs="sales.use", when=_scan_on),
     Tile("sales", "sell", "Record the day's invoices", _to_record, needs="sales.use"),
     Tile("sales", "sell", "Sales today", _sales_today, key="sales-today", icon=":material/today:", state=(("sales_view", "day"),), needs="sales.use"),
     Tile("customers", "sell", "Customers", _customers, needs="sales.use"),

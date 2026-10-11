@@ -26,7 +26,7 @@ def test_off_the_pages_are_gone_for_the_system_admin_too(web, db, off):
     home = web.get("/").content.decode()
     for link in LINKS:
         assert link not in home, link
-    assert "Scan out" not in home and "Items and stock" not in home and "New: Stock and Sell" not in home
+    assert "Record the day" not in home and "Items and stock" not in home and "New: Stock and Sell" not in home
     assert 'href="/purchase-orders/' in home                                     # the rest of the system is as before
 
 

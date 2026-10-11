@@ -57,6 +57,10 @@ NUMBERS = [
      "0 (owner, 2026-10-11: \"since we have now a PO we can ask them to give 1 dr or si per PO\"): an order should come on ONE delivery receipt or sales invoice. "
      "A delivery that leaves part of the order asks first: the rest will not come (the order is closed), or keep it open for another DR (noted on the Review list). "
      "1: an order may be filled by several DRs with no question. Either way nothing is blocked, and every DR is its own payable."),
+    ("sale_scan_first", "Sell", "Sales start from a scan (1 = yes, 0 = not yet)", 0, 0, 1, 0, "",
+     "0 (owner, 2026-10-11: \"the important for now is recording of sales\" ... \"hide first the scan thing\"): the Scan out page, its menu entry "
+     "and its Home card are hidden, and invoices typed after close ask no questions. 1 (the day the scanning routine starts): Scan out appears, goods "
+     "are scanned out when they leave, and an invoice typed without a scan slip is noted on the Review list. Either way nothing is blocked."),
     ("stock_old_years", "Stock", "A tire this old (by its DOT) is old stock", 3, 1, 15, 0, "years",
      "Tires at or above this age show as Old stock, to be sold first. The age comes from the DOT week and year typed when the tires are received."),
     ("affiliate_open_days", "Stock", "Flag tires lent or borrowed and still open after", 30, 1, 365, 0, "days",
@@ -299,6 +303,11 @@ def reset_shortcuts() -> tuple[bool, str]:
         if had:
             _audit(conn, "SHORTCUTS_RESET", SHORTCUT_KEY, "Keyboard shortcuts back to the defaults")
     return True, "Keyboard shortcuts are back to the defaults."
+
+
+def sales_scan_on() -> bool:
+    """Has the scanning routine started (owner, 2026-10-11)? Off: Scan out is hidden everywhere and recording sales asks no scan questions."""
+    return int_value("sale_scan_first") == 1
 
 
 def forecast_shown() -> bool:

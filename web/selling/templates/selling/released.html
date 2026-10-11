@@ -5,8 +5,7 @@
 each becoming one invoice with its items already on it. The stock left with the scan and is never taken twice.{% endcomment %}
 <h2><span class="ms" style="font-size:28px">receipt_long</span> Record the day's invoices</h2>
 <div class="actions" style="margin-bottom:10px">
-  <a class="btn small ghost" href="/sales/?view=scan"><span class="ms">barcode_scanner</span>Scan out</a>
-  <a class="btn small ghost" href="/sales/?view=new"><span class="ms">receipt_long</span>Invoice without a scan</a>
+  <a class="btn small ghost" href="/sales/?view=new"><span class="ms">receipt_long</span>Type an invoice</a>
   <a class="btn small ghost" href="/sales/?view=day"><span class="ms">today</span>Sales today</a></div>
 {% if rows %}
 <div class="warnbox"><b>{{ rows|length }} slip{{ rows|length|pluralize }} still need{{ rows|length|pluralize:"s," }} an invoice.</b>

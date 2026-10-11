@@ -72,6 +72,10 @@ def sales(request):
         p = request.POST
         cust, name = _customer(p)
         if p.get("action") == "slip":                           # the Scan out page (owner, 2026-10-11): Done -- the stock is out, the invoice after close
+            from engines.settings_registry import sales_scan_on
+            if not sales_scan_on():
+                _say(request, False, "Scanning is switched off: Settings > Sell > Sales start from a scan.")
+                return redirect("/sales/")
             ok, msg, sale_id = sr.release(cust, name, _lines(p), p.get("note", ""), si_hint=p.get("si_hint", ""))
             _say(request, ok, msg)
             if ok:
@@ -99,13 +103,19 @@ def sales(request):
         sheet = sr.day_sheet(day)
         return render(request, "selling/day_sheet.html", {"page_id": "sales", "d": sheet, "prev": day - timedelta(days=1), "next": day + timedelta(days=1) if day < manila_today() else None,
                                                           "is_today": day == manila_today(), "methods": sr.METHODS, "skipped": sr.skipped() if day == manila_today() else []})
+    from engines.settings_registry import sales_scan_on
     if view == "scan":                                      # the day: scan what leaves, Done per customer (owner, 2026-10-11)
+        if not sales_scan_on():                             # hidden until the scanning routine starts ("hide first the scan thing")
+            return redirect("/sales/")
         return render(request, "selling/scan.html", _scan_ctx(request, None, "[]"))
-    if view == "new":                                           # an invoice typed with no slip: allowed, noted on the Review list
+    if view == "new":                                           # an invoice typed with no slip
         return render(request, "selling/sale.html", _sale_ctx(request, None, "[]"))
-    sr.flag_open_releases()                                     # the page itself: the day's slips, each becoming its invoice after close
+    sr.flag_open_releases()                                     # the page: the day's slips, each becoming its invoice after close
+    rows = sr.open_releases()
+    if not rows and view != "released":                         # nothing scanned (or scanning off): recording the sales IS the page (owner, 2026-10-11)
+        return render(request, "selling/sale.html", _sale_ctx(request, None, "[]"))
     nxt = sr.next_si_no()
-    return render(request, "selling/released.html", {"page_id": "sales", "rows": sr.open_releases(), "next_si": f"{nxt:06d}" if nxt else ""})
+    return render(request, "selling/released.html", {"page_id": "sales", "rows": rows, "next_si": f"{nxt:06d}" if nxt else ""})
 
 
 def _sale_ctx(request, p, start: str) -> dict:
@@ -115,7 +125,8 @@ def _sale_ctx(request, p, start: str) -> dict:
     return {"page_id": "sales", "si_no": (p.get("si_no") if p else (f"{nxt:06d}" if nxt else "")), "today": manila_today(), "sale_date": p.get("sale_date") if p else manila_today().isoformat(),
             "customer": p.get("customer", "") if p else "", "names": [c["name"] for c in sr.customers()], "scan_lines": json.loads(start), "pays": _pay_ctx(p), "methods": list(sr.METHODS.items()),
             "services": [{"k": k, **s} for k, s in enumerate(_services(p) if p else [{"description": "", "amount": ""}] * 4)], "below_reason": p.get("below_reason", "") if p else "",
-            "no_booklet": nxt is None, "skipped": sr.skipped(), "open_releases": len(sr.open_releases())}
+            "no_booklet": nxt is None, "skipped": sr.skipped(), "open_releases": len(sr.open_releases()),
+            "scan_on": __import__("engines.settings_registry", fromlist=["sales_scan_on"]).sales_scan_on()}
 
 
 @page_needed("sales")
