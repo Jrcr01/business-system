@@ -109,3 +109,27 @@ def test_the_books_hide_behind_their_switch(web, db, monkeypatch):
     assert 'href="/expenses/"' not in home and 'href="/income-statement/"' not in home
     monkeypatch.setenv("WEB_BOOKS", "1")
     assert web.get("/expenses/").status_code == 200 and web.get("/income-statement/").status_code == 200
+
+
+def test_lender_interest_counts_when_its_check_clears_by_the_systems_own_rule(web, db):
+    # found 2026-10-12: a cleared check keeps status 'Active' and carries a clearing mark (engines/clearing.py) -- there is no 'Cleared' status,
+    # so the statement must read the marks, in the month the check cleared
+    from conftest import make_creditor
+    from engines.clock import manila_today
+    from engines.common import get_conn
+    from engines.income_statement import month_report
+    _admin(web)
+    lender = make_creditor(db, "Neth Canlas")
+    today = manila_today()
+    with get_conn() as conn:
+        note = conn.execute("""INSERT INTO loan_notes (creditor_id, note_ref, issue_date, principal_amount, total_payable, status)
+                               VALUES (?, 'LN-T1', ?, 100000, 103000, 'Active') RETURNING loan_note_id""", (lender, str(today))).fetchone()[0]
+        ids = []
+        for no, mark in ((1, "manual_cleared_at"), (2, None)):                    # one ticked cleared, one still waiting for the bank
+            chk = conn.execute(f"""INSERT INTO checks_issued (creditor_id, bank_account_id, loan_note_id, check_number, check_date, amount, status
+                                   {', ' + mark if mark else ''}) VALUES (?, 1, ?, ?, ?, 11500, 'Active' {', ?' if mark else ''}) RETURNING check_id""",
+                               (lender, note, f"39925700{no:02d}", str(today), *([str(today) + " 09:00:00"] if mark else []))).fetchone()[0]
+            conn.execute("""INSERT INTO loan_installments (loan_note_id, installment_no, due_date, principal, interest, outstanding_balance, status, check_id)
+                            VALUES (?, ?, ?, 10000, 1500, 90000, 'Active', ?)""", (note, no, str(today), chk))
+    r = month_report(today.strftime("%Y-%m"))
+    assert r["lender_interest"] == 1500.0                                         # only the cleared one; the waiting one is not paid yet

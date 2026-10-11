@@ -20,7 +20,8 @@
   <tr><th>Booklet</th><th>Holder</th><th>Check numbers</th><th>Received</th><th>Status</th><th style="text-align:right">Used</th><th style="text-align:right">Spoiled</th><th style="text-align:right">Open</th>
     <th>Next free</th><th>Up to no.</th><th>To account for</th><th></th></tr>
   {% for b in rows %}
-  {% if b.gap_before %}<tr class="tentative"><td colspan="12"><span class="ms" style="font-size:16px;color:#b26a00">warning</span> {{ b.gap_before.0 }}–{{ b.gap_before.1 }} are in no booklet</td></tr>{% endif %}
+  {% if b.gap_before %}{% if b.gap_confirmed %}<tr class="tentative"><td colspan="12" class="hint">{{ b.gap_before.0 }}–{{ b.gap_before.1 }}: the bank's own numbering jump (confirmed)</td></tr>
+  {% else %}<tr class="tentative"><td colspan="12"><span class="ms" style="font-size:16px;color:#b26a00">warning</span> {{ b.gap_before.0 }}–{{ b.gap_before.1 }} are in no booklet</td></tr>{% endif %}{% endif %}
   <tr{% if b.status == "Archived" %} class="tentative"{% endif %}>
     <td><b>{{ b.code }}</b></td>
     <td>{% if b.holder %}{{ b.holder }}{% if b.is_mine %} <span class="pill">me</span>{% endif %}{% else %}<span class="hint">nobody yet</span>{% endif %}</td>
@@ -131,7 +132,8 @@
 <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="gap_title"><div class="dialog">
   <h3 id="gap_title"><span class="ms" style="color:#b26a00">warning</span> Numbers in no booklet</h3>
   <p>Check numbers <b>{{ ask.gap.0 }}–{{ ask.gap.1 }}</b> are in no booklet: this one does not follow the booklet before it.</p>
-  <p class="hint">Is a booklet missing, or is the first number mistyped? If the supplier of checkbooks skipped these numbers, add it anyway: it is noted on the Review list.</p>
+  <p class="hint">Is a booklet missing, or is the first number mistyped? If the bank simply jumped the numbers (you cannot control the sequences
+    it gives), confirm it: the jump is recorded on the booklet, these numbers stop being warned about, and nothing goes on the Review list.</p>
   <form method="post">{% csrf_token %}{% for k, v in ask.carry %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}<input type="hidden" name="confirm_gap" value="1">
     <div class="actions" style="justify-content:flex-end"><a class="btn ghost" href="/booklets/">Go back and change it</a>
       <button class="btn warn" type="submit" autofocus>{{ ask.what }}</button></div></form>

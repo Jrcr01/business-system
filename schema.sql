@@ -262,6 +262,8 @@ CREATE TABLE IF NOT EXISTS check_booklets (
     -- migration 086 (2026-10-11): who holds the booklet -- a person with an account, or a typed name ("Mama") -- and since when
     holder_user_id INTEGER,
     holder_name TEXT,
+    gap_before_confirmed_at DATETIME,  -- migration 093: the gap to the booklet before was confirmed as the bank's own numbering jump
+    gap_before_confirmed_by TEXT,
     held_since DATE,
     FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(bank_account_id),
     CHECK(end_number >= start_number),

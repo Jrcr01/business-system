@@ -5,7 +5,12 @@ interest, when its check cleared) and on bank loans (the interest portion typed 
 Accrual by nature: a charge sale counts in the month it was sold."""
 from __future__ import annotations
 
+from engines.clearing import bank_loan_cleared_sql, cleared_sql
 from engines.common import get_conn
+
+# the month a payment counts in: the day it cleared (the bank's date, else the tick, else settled outside the bank)
+_CHECK_DAY = "COALESCE(c.bank_cleared_date, c.manual_cleared_at, c.settled_outside_at)"
+_LOAN_DAY = "COALESCE(bli.cleared_at, (SELECT MIN(t.txn_date) FROM bank_transactions t WHERE t.matched_installment_id = bli.installment_id))"
 
 
 def _one(conn, sql: str, params=()) -> float:
@@ -26,10 +31,11 @@ def month_report(month: str) -> dict:
                                      WHERE substr(r.returned_on, 1, 7) = ?""", (month,))
         shrinkage = -_one(conn, """SELECT COALESCE(SUM(qty * unit_cost), 0) FROM stock_ledger
                                    WHERE kind = 'ADJ' AND ref_type IN ('stock_count_lines', 'items') AND substr(moved_on, 1, 7) = ?""", (month,))
-        lender_interest = _one(conn, """SELECT COALESCE(SUM(i.interest), 0) FROM loan_installments i JOIN checks_issued c ON c.check_id = i.check_id
-                                        WHERE c.status = 'Cleared' AND substr(COALESCE(c.bank_cleared_date, i.due_date), 1, 7) = ?""", (month,))
-        bankloan_interest = _one(conn, """SELECT COALESCE(SUM(interest_portion), 0) FROM bank_loan_installments
-                                          WHERE cleared_at IS NOT NULL AND substr(cleared_at, 1, 7) = ?""", (month,))
+        # paid = cleared, by the one rule every report uses (engines/clearing.py): a cleared check keeps status 'Active' and carries its mark
+        lender_interest = _one(conn, f"""SELECT COALESCE(SUM(i.interest), 0) FROM loan_installments i JOIN checks_issued c ON c.check_id = i.check_id
+                                         WHERE c.status = 'Active' AND {cleared_sql('c')} AND substr({_CHECK_DAY}, 1, 7) = ?""", (month,))
+        bankloan_interest = _one(conn, f"""SELECT COALESCE(SUM(bli.interest_portion), 0) FROM bank_loan_installments bli
+                                           WHERE {bank_loan_cleared_sql('bli')} AND substr({_LOAN_DAY}, 1, 7) = ?""", (month,))
         expense_rows = conn.execute("""SELECT c.name, COALESCE(SUM(e.amount), 0) FROM expenses e JOIN expense_categories c ON c.category_id = e.category_id
                                        WHERE substr(e.expense_date, 1, 7) = ? AND e.voided_at IS NULL GROUP BY c.name ORDER BY 2 DESC""", (month,)).fetchall()
     expenses = [(a, round(float(b), 2)) for a, b in expense_rows]

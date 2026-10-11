@@ -129,9 +129,12 @@ def add_booklet(start, end, received=None, holder_user_id: int | None = None, ho
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BOOKLET_ADDED', 'check_booklets', ?, ?)",
                      (bid, f"{code}: {start}-{end}, received {day:%m/%d/%Y}" + (f", held by {who}" if who else "")))
         if gap:
-            from engines.review_flags import flag
-            flag(conn, "BOOKLET_SEQUENCE_GAP", "check_booklets", bid, f"{code} starts at {start}: check numbers {gap[0]}-{gap[1]} are in no booklet (added anyway)")
-    return True, f"{code} registered: {start}-{end}." + (f" Numbers {gap[0]}-{gap[1]} are in no booklet: noted on the Review list." if gap else ""), int(bid), gap
+            # the owner confirmed it: the bank's own jump (2026-10-12: "I cannot control what sequence will give to us when we order").
+            # Recorded on the booklet and in the audit -- no Review flag, and the list shows it quietly from now on.
+            conn.execute("UPDATE check_booklets SET gap_before_confirmed_at = CURRENT_TIMESTAMP, gap_before_confirmed_by = acting_user() WHERE booklet_id = ?", (bid,))
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BOOKLET_GAP_CONFIRMED', 'check_booklets', ?, ?)",
+                         (bid, f"{code} starts at {start}: check numbers {gap[0]}-{gap[1]} are in no booklet -- confirmed as the bank's own numbering jump."))
+    return True, f"{code} registered: {start}-{end}." + (f" Numbers {gap[0]}-{gap[1]}: noted as the bank's own jump." if gap else ""), int(bid), gap
 
 
 def update_booklet(booklet_id: int, start, end, received, status: str, confirm_gap: bool = False) -> tuple[bool, str, tuple[int, int] | None]:
@@ -178,8 +181,9 @@ def update_booklet(booklet_id: int, start, end, received, status: str, confirm_g
             conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values, new_values) VALUES (acting_user(), 'BOOKLET_CHANGED', 'check_booklets', ?, ?, ?)",
                          (booklet_id, f"{code}: {old}", f"{code}: {new}"))
         if gap:
-            from engines.review_flags import flag
-            flag(conn, "BOOKLET_SEQUENCE_GAP", "check_booklets", booklet_id, f"{code} now starts at {start}: check numbers {gap[0]}-{gap[1]} are in no booklet (kept anyway)")
+            conn.execute("UPDATE check_booklets SET gap_before_confirmed_at = CURRENT_TIMESTAMP, gap_before_confirmed_by = acting_user() WHERE booklet_id = ?", (booklet_id,))
+            conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BOOKLET_GAP_CONFIRMED', 'check_booklets', ?, ?)",
+                         (booklet_id, f"{code} now starts at {start}: check numbers {gap[0]}-{gap[1]} are in no booklet -- confirmed as the bank's own numbering jump."))
     return True, f"{code} saved.", gap
 
 
@@ -285,7 +289,8 @@ def listing(include_archived: bool = False, bank_account_id: int = PRIMARY) -> l
                     "used": len(states) - open_n - a["spoiled_count"] - a["missing_gaps_count"], "spoiled": a["spoiled_count"], "open": open_n,
                     "next_free": free[0] if free else None, "unrecorded": len(missing), "unrecorded_text": compress_leaf_ranges(missing) if missing else "",
                     "skipped": a["missing_gaps_count"], "duplicates": a["duplicate_numbers_count"],
-                    "gap_before": (prev_end + 1, start - 1) if (prev_end is not None and not archived and start > prev_end + 1) else None})
+                    "gap_before": (prev_end + 1, start - 1) if (prev_end is not None and not archived and start > prev_end + 1) else None,
+                    "gap_confirmed": bool(b.get("gap_before_confirmed_at"))})
         if not archived:
             prev_end = max(end, prev_end or end)
     return out

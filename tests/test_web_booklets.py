@@ -54,8 +54,14 @@ def test_a_booklet_that_does_not_follow_asks_first_and_is_flagged(web, db):
     assert r.status_code == 200 and "Numbers in no booklet" in page and "4501–4600" in page and "Add anyway" in page
     assert _n("SELECT COUNT(*) FROM check_booklets") == 1                                    # nothing saved yet
     _add(web, 4601, 4650, confirm_gap="1")
-    assert _n("SELECT COUNT(*) FROM check_booklets") == 2 and _n("SELECT COUNT(*) FROM review_flags WHERE kind = 'BOOKLET_SEQUENCE_GAP'") == 1
-    assert "4501–4600 are in no booklet" in web.get("/booklets/").content.decode()        # the list shows the hole between the two
+    assert _n("SELECT COUNT(*) FROM check_booklets") == 2
+    # owner, 2026-10-12: "I cannot control what sequence will give to us when we order" -- a confirmed jump is recorded, not flagged
+    assert _n("SELECT COUNT(*) FROM review_flags WHERE kind = 'BOOKLET_SEQUENCE_GAP'") == 0
+    assert _n("SELECT COUNT(*) FROM audit_logs WHERE user_action = 'BOOKLET_GAP_CONFIRMED'") == 1
+    assert _n("SELECT COUNT(*) FROM check_booklets WHERE gap_before_confirmed_at IS NOT NULL") == 1
+    page = web.get("/booklets/").content.decode()
+    assert "numbering jump (confirmed)" in page and "are in no booklet" not in page
+    assert "4501–4600" in page                                                            # the hole still shows, quietly
     r = web.post("/booklets/", {"action": "add", "start": "4640", "end": "4700", "received": "2026-10-01", "holder": ""}, follow=True)
     assert "Overlaps BK-0002" in r.content.decode() and _n("SELECT COUNT(*) FROM check_booklets") == 2      # an overlap is refused, never asked
 
