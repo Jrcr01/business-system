@@ -170,7 +170,7 @@ def build_type_template(creditor_id: int | None = None, on: date | None = None) 
     for category in pc.CATEGORIES:
         for fld in pc.CATEGORY_FIELDS[category]:
             if fld["choices"]:
-                named[f"{category}.{fld['key']}"] = list(fld["choices"])
+                named[f"{category}.{fld['key']}"] = [pc.shown_choice(c) for c in fld["choices"]]     # the full words; stored back as the short codes
     ref = {}
     for j, (name, values) in enumerate(named.items(), start=1):
         col = get_column_letter(j)
@@ -205,7 +205,7 @@ def build_type_template(creditor_id: int | None = None, on: date | None = None) 
             if not fld["choices"]:
                 continue
             dv = DataValidation(type="list", formula1=ref[f"{category}.{fld['key']}"], allow_blank=True, errorStyle="stop", showErrorMessage=True,
-                                errorTitle=fld["label"], error=f"Pick one from the list: {', '.join(fld['choices'])}.")
+                                errorTitle=fld["label"], error=f"Pick one from the list: {', '.join(pc.shown_choice(c) for c in fld['choices'])}.")
             ws.add_data_validation(dv)
             dv.add(f"{col_of[fld['key']]}2:{col_of[fld['key']]}{last}")
         dv = DataValidation(type="decimal", operator="greaterThan", formula1="0", allow_blank=True, errorStyle="stop", showErrorMessage=True,
@@ -223,6 +223,9 @@ def build_type_template(creditor_id: int | None = None, on: date | None = None) 
                     ws.cell(row=r, column=j, value=f'=IF(AND({col_of["list_price"]}{r}<>"",{col_of["list_price"]}{r}<>{col_of["old_price"]}{r}),"changed","")')
                     continue
                 v = rowvals.get("list_price") if key == "old_price" else (rowvals.get("item_remark", "") if key == "remarks" else rowvals.get(key, ""))
+                fld = next((f for f in pc.CATEGORY_FIELDS[category] if f["key"] == key), None)
+                if v and fld and fld["choices"]:
+                    v = pc.shown_choice(v)                       # the cell reads as the drop-down does
                 if key == "effective_date":
                     v = ""                                            # left empty on purpose: a new price takes the date picked when uploading (the old date already has its price)
                 cell = ws.cell(row=r, column=j, value=v if v != "" else None)
@@ -552,19 +555,34 @@ def compare(creditor_id: int, parsed: dict, on: date | None = None) -> pd.DataFr
     return pd.DataFrame(lines, columns=["category", "row", "name", "old_price", "new_price", "change_pct", "status"])
 
 
-def one_row(creditor_id: int, fields: dict) -> dict:
-    """Manual entry (owner, 2026-10-09: "aligned with the template"): one row typed on the screen, read exactly like a row of the standard sheet --
-    the same columns, checks and product key -- by putting it in a one-row sheet. fields: the STANDARD keys (category, brand, model, size, terrain, other,
-    unit, supplier_code, list_price, effective_date). Returns parse_workbook's result (rows / problems)."""
+def manual_fields(category: str) -> list[dict]:
+    """The Add-a-price screen's fields: the category's own columns, exactly as its template sheet has them (owner, 2026-10-11: "align this with
+    the template"). [{'key', 'label', 'required', 'choices' (the full words, empty = typed), 'note'}] in the sheet's column order."""
+    out = []
+    for key, label, required in _headers(category):
+        fld = next((f for f in pc.CATEGORY_FIELDS[category] if f["key"] == key), None)
+        out.append({"key": key, "label": label, "required": required, "note": (fld["note"] if fld else ""),
+                    "choices": [pc.shown_choice(c) for c in fld["choices"]] if fld and fld["choices"] else []})
+    return out
+
+
+def one_row(creditor_id: int, category: str, fields: dict) -> dict:
+    """Manual entry (owner, 2026-10-09: "aligned with the template"; 2026-10-11: the template's own columns per type): one row typed on the screen,
+    put into a one-row sheet with the category's columns and read by parse_workbook -- the same checks and the same product key as a file's row.
+    fields: the manual_fields keys. Returns parse_workbook's result (rows / problems)."""
     import io
     from openpyxl import Workbook
+    if category not in pc.CATEGORIES:
+        return {"rows": [], "problems": ["Pick the category."]}
     wb = Workbook()
-    ws = wb.active
-    ws.title = SHEET
-    ws.append([_title(label, req) for _, label, req in STANDARD])
-    vals = dict(fields)
-    vals["supplier"] = _supplier_name(creditor_id)
-    ws.append([vals.get(key, "") or "" for key, _, _ in STANDARD])
+    guide = wb.active
+    guide.title = "How to fill"
+    guide["A1"] = TYPE_HOW_TO[0]
+    guide["A2"] = SUPPLIER_LINE + _supplier_name(creditor_id)
+    ws = wb.create_sheet(category)
+    heads = _headers(category)
+    ws.append([_title(label, req) for _, label, req in heads])
+    ws.append([fields.get(key, "") or "" for key, _, _ in heads])
     buf = io.BytesIO()
     wb.save(buf)
     return parse_workbook(buf.getvalue())

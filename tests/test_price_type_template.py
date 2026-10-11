@@ -40,7 +40,8 @@ def test_one_sheet_per_type_with_its_own_fields_and_drop_downs(db):
     assert len(lists) == 4                                                          # Brand, Terrain, Type, Tube
     cols = {wb["Lists"].cell(row=1, column=j).value: [wb["Lists"].cell(row=i, column=j).value for i in range(2, 12) if wb["Lists"].cell(row=i, column=j).value]
             for j in range(1, wb["Lists"].max_column + 1)}
-    assert cols["Tires.terrain"] == ["A/T", "M/T", "H/T", "R/T", "Lug", "Rib", "Mix"] and cols["Battery.terminal"] == ["L", "R"]
+    assert cols["Tires.terrain"] == ["All-Terrain", "Mud-Terrain", "Highway-Terrain", "Rugged-Terrain", "Lug", "Rib", "Mix"]     # plain words (owner, 2026-10-11)
+    assert cols["Tires.tube"] == ["Tubeless", "Tube type"] and cols["Battery.terminal"] == ["L", "R"]
     assert all(dv.showDropDown in (None, False) for dv in lists)           # the arrow shows (showDropDown=True would HIDE it)
 
 

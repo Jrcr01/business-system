@@ -93,6 +93,14 @@ CATEGORY_WORDS = {"tire": "Tires", "tires": "Tires", "tyre": "Tires", "tyres": "
 _TUBE_WORDS = {"tl": "TL", "tubeless": "TL", "tt": "TT", "tubetype": "TT", "tube type": "TT", "tube-type": "TT", "with tube": "TT"}
 
 
+SHOWN_CHOICE = {"TL": "Tubeless", "TT": "Tube type", "A/T": "All-Terrain", "M/T": "Mud-Terrain", "H/T": "Highway-Terrain", "R/T": "Rugged-Terrain"}
+
+
+def shown_choice(code: str) -> str:
+    """The word people read for a stored short code (owner, 2026-10-11: the drop-downs say the full words; TL and A/T stay what is stored)."""
+    return SHOWN_CHOICE.get(code, code)
+
+
 def tube_of(text) -> str | None:
     """'Tubeless' / 'tl' / 'Tube type' -> 'TL' / 'TT'; '' -> ''; anything else -> None (owner's list, 2026-10-11: the full words are typed too)."""
     t = " ".join(_clean(text).lower().split())

@@ -92,12 +92,19 @@ def _prices_ctx(request, cid: int) -> dict:
 
 
 def _add_ctx(request, cid: int) -> dict:
+    from engines import price_template_service as pts
     from engines import product_catalog as pc
-    from engines.price_list_service import item_names
-    names = sorted(set(item_names(cid)) | set(pc.list_products()["name"]), key=str.lower)
-    from engines.price_template_service import STANDARD                     # the template's columns, for manual entry (2026-10-09)
-    return {"names": names, "categories": pc.CATEGORIES, "terrains": pc.TERRAIN, "all_brands": pc.brands(), "today_iso": __import__("engines.clock", fromlist=["manila_today"]).manila_today().isoformat(),
-            "typed": request.session.pop("price_typed", None) if request is not None else None}
+    today = __import__("engines.clock", fromlist=["manila_today"]).manila_today().isoformat()
+    typed = (request.session.pop("price_typed", None) if request is not None else None) or {}
+    cats = []
+    for c in pc.CATEGORIES:                                     # each category's own columns, as the template sheet has them (owner, 2026-10-11)
+        flds = pts.manual_fields(c)
+        for f in flds:
+            f["value"] = typed.get(f"f_{f['key']}", "") if typed.get("category") == c else ""
+            if not f["value"]:
+                f["value"] = "pc" if f["key"] == "unit" else today if f["key"] == "effective_date" else ""
+        cats.append({"name": c, "fields": flds})
+    return {"categories": pc.CATEGORIES, "cat_fields": cats, "all_brands": pc.brands(), "today_iso": today, "typed_category": typed.get("category", "")}
 
 
 def _import_ctx(request, cid: int) -> dict:
@@ -177,20 +184,22 @@ def _post(request, cid: int, tab: str):
     from engines.price_reconcile import update_to_invoice
     p, action = request.POST, request.POST.get("action", "")
     say = lambda ok, msg: (messages.success if ok else messages.error)(request, msg)      # noqa: E731
-    if action == "add_row":                                      # manual entry, the template's columns (owner, 2026-10-09)
+    if action == "add_row":                                      # manual entry, the category's own columns (owner, 2026-10-11: "align this with the template")
         from engines import price_template_service as pts
-        fields = {k: p.get(k, "").strip() for k in ("category", "brand", "model", "size", "terrain", "other", "unit", "supplier_code", "list_price", "effective_date")}
-        parsed = pts.one_row(cid, fields)
+        category = p.get("category", "")
+        keys = [f["key"] for f in pts.manual_fields(category)] if category in pc.CATEGORIES else []
+        fields = {k: p.get(f"f_{k}", "").strip() for k in keys}
+        parsed = pts.one_row(cid, category, fields)
         problems = [x.split(": ", 1)[-1] for x in parsed.get("problems", [])]
         if problems or not parsed.get("rows"):
-            request.session["price_typed"] = fields
+            request.session["price_typed"] = {"category": category, **{f"f_{k}": v for k, v in fields.items()}}
             say(False, "Not saved: " + ("; ".join(problems) if problems else "fill the row."))
             return redirect(_back(cid, "add"))
         ok, msg, _ = pts.import_workbook(cid, parsed, "replace" if p.get("replace") == "1" else "skip")
         if ok:
             msg = f"{parsed['rows'][0]['name']}: " + msg
         else:
-            request.session["price_typed"] = fields
+            request.session["price_typed"] = {"category": category, **{f"f_{k}": v for k, v in fields.items()}}
         say(ok, msg)
         return redirect(_back(cid, "prices" if ok else "add"))
     if action == "add_price":
