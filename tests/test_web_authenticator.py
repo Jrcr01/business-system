@@ -203,3 +203,34 @@ def test_every_sign_in_is_kept_and_a_new_device_goes_on_the_review_list(web):
     assert "Signed in: password and code" in page and "Not signed in: wrong code" in page and "new device" in page
     assert "Safari on iPhone" in page and "Baliuag, PH" in page and "203.0.113.7" in page
     assert "Signed in on a device not used before" in web.get("/review/").content.decode()
+
+
+def test_the_code_can_be_switched_off_and_then_cloudflare_stands_in(web, monkeypatch):
+    # owner, 2026-10-12: "turnoff google authenticator but instead i will lower session duration" -> "for now disable google authenticator"
+    from django.conf import settings
+    from core import cfaccess
+    from engines.common import get_conn
+    _admin(web)
+    _new()
+
+    def switch(v):
+        with get_conn() as conn:
+            conn.execute("DELETE FROM settings WHERE key = 'signin_authenticator'")
+            conn.execute("INSERT INTO settings (key, value, category, description) VALUES ('signin_authenticator', ?, 'Sign-in', '')", (str(v),))
+            conn.commit()
+
+    switch(0)
+    alone = Client()
+    assert _password(alone)["Location"] .startswith("/2fa/")                              # no Cloudflare in front: the code is still asked
+    monkeypatch.setattr(settings, "CF_ACCESS_TEAM", "team")
+    monkeypatch.setattr(settings, "CF_ACCESS_AUD", "aud")
+    monkeypatch.setattr(cfaccess, "verify", lambda token, team, aud: "someone.else@example.com")
+    other = _password(Client())                                                 # Cloudflare checked another email: never signed in by the password alone
+    assert other.status_code != 302 or other["Location"].startswith("/2fa/")
+    monkeypatch.setattr(cfaccess, "verify", lambda token, team, aud: FAMILY)
+    c = Client()
+    assert _password(c)["Location"] == "/" and c.get("/").status_code == 200    # Cloudflare checked this very person: the password is enough
+    assert _n("SELECT COUNT(*) FROM sign_in_log WHERE result = 'CLOUDFLARE'") == 1
+    switch(1)
+    assert c.get("/")["Location"].startswith("/login/")                         # the code is asked again: that sign-in is over
+    assert _password(c)["Location"] .startswith("/2fa/")

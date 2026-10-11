@@ -126,3 +126,23 @@ def test_a_guarantee_check_can_be_edited_but_not_once_the_bank_paid_it(web, db):
         conn.execute("UPDATE guarantee_checks SET status = 'Presented' WHERE guarantee_id = ?", (gid,))
     web.post("/lenders/", {"action": "gc_edit", "guarantee_id": gid, "amount": "1", "given_on": "2026-04-10", "note": ""})
     assert fetchone(_db(), "SELECT face_amount FROM guarantee_checks WHERE guarantee_id = ?", (gid,))[0] == 500000.0
+
+
+def test_a_written_lender_check_with_no_number_can_be_deleted(web, db):
+    # owner, 2026-10-12: "why i cannot edit to lenders? its so restrictive" -- a check whose number was taken back kept its "written" mark, so
+    # it could be neither deleted nor its payment edited. Only a number makes a check one that must be voided.
+    _admin(web)
+    _note(web, db)
+    lnid = _lnid()
+    web.post(f"/lenders/{lnid}/", {"action": "park_all"})
+    a, b = _inst(lnid)[0][5], _inst(lnid)[1][5]
+    from engines.common import get_conn
+    with get_conn() as conn:
+        conn.execute("UPDATE checks_issued SET printed_at = CURRENT_TIMESTAMP WHERE check_id = ?", (a,))
+        conn.execute("UPDATE checks_issued SET printed_at = CURRENT_TIMESTAMP, check_number = '7700001' WHERE check_id = ?", (b,))
+        conn.commit()
+    assert "Delete (no number)" in web.get(f"/lenders/{lnid}/?tab=checks").content.decode()
+    web.post(f"/lenders/{lnid}/", {"action": "chk_delete", f"tick_{a}": "1"})
+    assert _inst(lnid)[0][5] is None and _inst(lnid)[0][4] == "Pending"
+    r = web.post(f"/lenders/{lnid}/", {"action": "chk_delete", f"tick_{b}": "1"}, follow=True)
+    assert "has its number" in r.content.decode() and _inst(lnid)[1][5] == b                   # a numbered check is voided, never deleted

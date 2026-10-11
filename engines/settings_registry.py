@@ -61,6 +61,10 @@ NUMBERS = [
      "0 (owner, 2026-10-11: \"the important for now is recording of sales\" ... \"hide first the scan thing\"): the Scan out page, its menu entry "
      "and its Home card are hidden, and invoices typed after close ask no questions. 1 (the day the scanning routine starts): Scan out appears, goods "
      "are scanned out when they leave, and an invoice typed without a scan slip is noted on the Review list. Either way nothing is blocked."),
+    ("signin_authenticator", "Sign-in", "Ask for the Google Authenticator code (1 = yes, 0 = no)", 1, 0, 1, 0, "",
+     "1: after the password, the 6-digit code from the phone, once a day per device. 0 (owner, 2026-10-12: \"turnoff google authenticator but instead i "
+     "will lower session duration\"): the code is skipped for a person Cloudflare has already checked under the same email, so sign-in is Cloudflare plus "
+     "the password. Without Cloudflare in front the code is still asked. Turning it back on ends every sign-in that was made without a code."),
     ("stock_old_years", "Stock", "A tire this old (by its DOT) is old stock", 3, 1, 15, 0, "years",
      "Tires at or above this age show as Old stock, to be sold first. The age comes from the DOT week and year typed when the tires are received."),
     ("affiliate_open_days", "Stock", "Flag tires lent or borrowed and still open after", 30, 1, 365, 0, "days",
@@ -303,6 +307,11 @@ def reset_shortcuts() -> tuple[bool, str]:
         if had:
             _audit(conn, "SHORTCUTS_RESET", SHORTCUT_KEY, "Keyboard shortcuts back to the defaults")
     return True, "Keyboard shortcuts are back to the defaults."
+
+
+def authenticator_on() -> bool:
+    """Is the Google Authenticator code asked at sign-in (owner, 2026-10-12)? On unless the System admin switched it off in Settings."""
+    return int_value("signin_authenticator") == 1
 
 
 def sales_scan_on() -> bool:

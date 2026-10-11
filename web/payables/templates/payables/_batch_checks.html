@@ -102,7 +102,7 @@
       <button class="btn small ghost" type="submit" formmethod="get" name="hand" value="1"><span class="ms">edit</span>Write by hand…</button>
     {% endif %}
     {% if may_write and n_unnumbered %}<button class="btn small ghost" type="submit" formmethod="get" name="number" value="1"><span class="ms">pin</span>Give numbers…</button>{% endif %}
-    {% if may_park and n_parked %}<button class="btn small danger" type="submit" name="action" value="chk_delete" onclick="return confirm('Delete the ticked parked checks? Only checks with no number that aren\'t written can go.');"><span class="ms">delete</span>Delete parked</button>{% endif %}
+    {% if may_park %}{% if n_parked or n_unnumbered %}<button class="btn small danger" type="submit" name="action" value="chk_delete" onclick="return confirm('Delete the ticked checks? Only checks with no number can go.');"><span class="ms">delete</span>Delete (no number)</button>{% endif %}{% endif %}
     {% if may_release and n_to_release %}<span style="flex:1"></span>
       <div><label for="r_to">Collected by</label><input id="r_to" type="text" name="released_to" placeholder="e.g. Goodyear rider Jun"></div>
       <div><label for="r_date">On</label><input id="r_date" type="date" name="released_date" value="{{ today|date:'Y-m-d' }}"></div>
@@ -110,7 +110,7 @@
     {% endif %}
   </div>
   <input type="hidden" name="tab" value="checks">
-  <p class="hint">Tick checks, then choose. Parked checks can be written, or deleted while they have no number. Written checks with a number can be released.</p>{% endif %}
+  <p class="hint">Tick checks, then choose. Parked checks can be written. Any check with no number can be deleted. Written checks with a number can be released.</p>{% endif %}
 </form>
 {% for c in checks %}{% if c.stage == "Released" %}<form id="unrel_{{ c.check_id }}" method="post" onsubmit="return confirm('Take back the release of this check?');">{% csrf_token %}
   <input type="hidden" name="action" value="chk_unrelease"><input type="hidden" name="check_id" value="{{ c.check_id }}"></form>{% endif %}{% endfor %}

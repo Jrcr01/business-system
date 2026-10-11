@@ -334,24 +334,28 @@ KIND_COLORS = {"Supplier checks": "#16305B", "Lender checks": "#4C78A8", "Bank l
 DAILY_SHOWS = [("due", "Today + overdue"), ("week", "Next 7 days"), ("ticked", "Ticked, waiting for the bank"), ("all", "All")]
 
 
-def _daily(df, show: str, today) -> dict:
-    """The daily payables checklist, grouped by day (owner, 2026-10-09): items stay on their day until cleared; days before today are overdue."""
+def _daily(df, show: str, today, by: str = "bank") -> dict:
+    """The daily payables checklist, grouped by day (owner, 2026-10-09): items stay on their day until cleared; days before today are overdue.
+    By default the day is the banking day (owner, 2026-10-12: "if it falls weekends consider it in the next business day ... deafult this. then
+    optional is per day"): a Saturday, a Sunday or a marked day off counts on the next banking day. by="date" is each item's own date."""
     from datetime import timedelta
     show = show if show in dict(DAILY_SHOWS) else "due"
+    by = "date" if by == "date" else "bank"
     if df.empty:
-        return {"days": [], "shows": DAILY_SHOWS, "show": show, "counts": {k: 0 for k, _ in DAILY_SHOWS}, "n_overdue": 0, "total_due": 0.0}
+        return {"days": [], "shows": DAILY_SHOWS, "show": show, "by": by, "counts": {k: 0 for k, _ in DAILY_SHOWS}, "n_overdue": 0, "total_due": 0.0}
+    df = df.assign(group=df["pay_day"] if by == "bank" else df["day"])
     open_ = df[df["ticked"].isna()]
     week = (today + timedelta(days=7)).isoformat()
-    sets = {"due": open_[open_["due"]], "week": open_[open_["day"] <= week], "ticked": df[df["ticked"].notna()], "all": df}
+    sets = {"due": open_[open_["group"] <= today.isoformat()], "week": open_[open_["group"] <= week], "ticked": df[df["ticked"].notna()], "all": df}
     rows = sets[show].astype(object).where(sets[show].notna(), None)       # no NaN reaching the page (a NaN "ticked" would read as ticked)
     days = []
-    for day, part in rows.groupby("day", sort=True):
+    for day, part in rows.groupby("group", sort=True):
         items = part.to_dict("records")
         days.append({"day": day, "overdue": day < today.isoformat() and show != "ticked", "today": day == today.isoformat(), "items": items,
                      "total": float(sum(float(x or 0) for x in part["amount"])), "n_open": sum(1 for x in part["ticked"] if x is None)})
     due = sets["due"]
-    return {"days": days, "shows": DAILY_SHOWS, "show": show, "counts": {k: len(x) for k, x in sets.items()},
-            "n_overdue": int((due["day"] < today.isoformat()).sum()), "total_due": float(due["amount"].sum())}
+    return {"days": days, "shows": DAILY_SHOWS, "show": show, "by": by, "counts": {k: len(x) for k, x in sets.items()},
+            "n_overdue": int((due["group"] < today.isoformat()).sum()), "total_due": float(due["amount"].sum())}
 
 
 @page_needed("checks")
@@ -391,7 +395,7 @@ def checks(request):
             else:
                 ok, msg = not refused, f"{done} marked paid." + (" Not marked: " + " · ".join(refused) if refused else "")
             _say(request, ok, msg)
-            return redirect("/checks/?show=" + request.POST.get("show", "due"))
+            return redirect("/checks/?show=" + request.POST.get("show", "due") + ("&by=date" if request.POST.get("by") == "date" else ""))
         if what == "unpay_card" and may_tick:
             _say(request, *clearing.unpay_card(int(request.POST.get("item_id") or 0)))
             return redirect("/checks/?show=ticked")
@@ -421,7 +425,7 @@ def checks(request):
     ctx = {"page_id": "checks", "tab": tab, "may_tick": may_tick, "is_admin": is_admin, "today": today, "today_iso": today.isoformat(),
            "more": _more_page("checks") if can(role, "more.use") else ""}
     if tab != "cutoff":
-        ctx.update(_daily(clearing.daily_payables(), request.GET.get("show", "due"), today))
+        ctx.update(_daily(clearing.daily_payables(), request.GET.get("show", "due"), today, request.GET.get("by", "bank")))
     if is_admin:
         from engines.common import get_conn
         with get_conn() as conn:

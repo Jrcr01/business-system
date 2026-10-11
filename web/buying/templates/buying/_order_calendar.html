@@ -44,7 +44,8 @@
   {% endif %}
   {% if daysched %}
   <div class="grp" style="margin-top:10px">{{ daysched.day|date:"l m/d/Y" }}: ₱{{ daysched.committed_total|floatformat:2|intcomma }} actually committed{% if daysched.estimate_total %}
-    · ₱{{ daysched.estimate_total|floatformat:2|intcomma }} estimated{% endif %}{% if total %} · this order adds ₱{{ total|floatformat:2|intcomma }}{% endif %}</div>
+    · ₱{{ daysched.estimate_total|floatformat:2|intcomma }} estimated{% endif %}{% if total and looked_is_pay %} · this order adds ₱{{ total|floatformat:2|intcomma }}{% endif %}</div>
+  {% if not looked_is_pay %}<p class="hint" style="margin:2px 0 6px">You are looking at this day only. The order still falls due {{ pay|date:"D m/d/Y" }}: no delivery date makes it fall due on the day clicked.</p>{% endif %}
   <div class="two">
     <div><b>Actually committed</b> <span class="hint">checks, recorded SIs and DRs, loan and card dues</span>
       {% if daysched.committed %}<div class="scroll-x"><table class="list"><tr><th>Pay to</th><th>What</th>{% if show_ref %}<th>Reference</th>{% endif %}<th>Amount</th></tr>

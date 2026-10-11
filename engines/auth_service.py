@@ -469,9 +469,9 @@ def sign_out_everywhere(user_id: int) -> tuple[bool, str]:
     return True, f"{row[0]} is signed out everywhere. Every device asks for the password and the code again."
 
 
-SIGNED_IN = ("CODE", "REMEMBERED", "SET_UP")
+SIGNED_IN = ("CODE", "REMEMBERED", "SET_UP", "CLOUDFLARE")
 SIGN_IN_RESULTS = {"CODE": "Signed in: password and code", "REMEMBERED": "Signed in: password (code given earlier that day on this device)",
-                   "SET_UP": "Authenticator set up, signed in", "PASSWORD_REFUSED": "Not signed in: wrong password, locked or switched off",
+                   "SET_UP": "Authenticator set up, signed in", "CLOUDFLARE": "Signed in: Cloudflare and password (the code is switched off)", "PASSWORD_REFUSED": "Not signed in: wrong password, locked or switched off",
                    "WRONG_CODE": "Not signed in: wrong code", "SETUP_REFUSED": "Not signed in: authenticator set-up not allowed"}
 
 

@@ -155,3 +155,27 @@ def test_the_clicked_day_alone_with_estimates_apart_from_what_is_committed(web, 
     page = web.get(f"/purchase-orders/{po_id}/edit/").content.decode()
     assert "Payables by pay day" in page and "Actually committed" in page and "Estimates" in page
     assert ">Daily<" not in page and ">Weekly<" not in page and "The week of" not in page
+
+
+def test_the_list_under_the_calendar_follows_the_day_clicked(web, db):
+    # owner, 2026-10-12: "when i click day from the calendar. committed and estimate are not changing" -- a day the order cannot fall due on
+    # (before order date + terms) left the list on the order's own pay day
+    from datetime import date
+    from engines.po_rules import day_schedule
+    from web.buying.orders import _calendar_ctx
+
+    class R:
+        slicks_user = {"role": "admin"}
+
+        def __init__(self, **get):
+            self.GET = get
+    from tests.test_web_d0 import _admin
+    from tests.test_web_d2b import _supplier_with_price
+    _admin(web)
+    cid = _supplier_with_price(web, db)
+    ctx = _calendar_ctx(R(), cid, date(2026, 11, 2), 0.0, None)
+    assert ctx["daysched"]["day"] == ctx["pay"] and ctx["looked_is_pay"]
+    other = date(2026, 10, 14)
+    ctx = _calendar_ctx(R(day=other.isoformat()), cid, date(2026, 11, 2), 0.0, None)
+    assert ctx["daysched"]["day"] == other and not ctx["looked_is_pay"] and ctx["daysched"]["total"] == day_schedule(other)["total"]
+    assert _calendar_ctx(R(look=other.isoformat()), cid, date(2026, 11, 2), 0.0, None)["daysched"]["day"] == other

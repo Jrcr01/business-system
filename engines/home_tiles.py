@@ -212,8 +212,9 @@ def _checks():
     df = daily_payables()
     if df.empty:
         return "0", "nothing due today", "none"
-    due = df[df["ticked"].isna() & df["due"]]
-    overdue = int((due["day"] < manila_today().isoformat()).sum())
+    today = manila_today().isoformat()                      # by banking day, as Daily payables shows it by default (owner, 2026-10-12)
+    due = df[df["ticked"].isna() & (df["pay_day"] <= today)]
+    overdue = int((due["pay_day"] < today).sum())
     return str(len(due)), f"{peso_short(float(due['amount'].sum()))} due · {overdue} overdue", ("warn" if overdue else ("ok" if len(due) else "none"))
 
 

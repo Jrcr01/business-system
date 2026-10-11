@@ -288,8 +288,11 @@ def daily_payables() -> pd.DataFrame:
         cards = cards.drop(columns=["paid_so_far"])
     df = pd.concat([checks, loans, cards, card_paid], ignore_index=True)
     if df.empty:
-        return df.assign(due=pd.Series(dtype=bool))
+        return df.assign(due=pd.Series(dtype=bool), pay_day=pd.Series(dtype=str))
     df["day"] = df["day"].astype(str).str[:10]
+    from engines.reports_service import next_banking_day
+    bank = {d: next_banking_day(d).isoformat() for d in df["day"].unique()}
+    df["pay_day"] = df["day"].map(bank)                     # a weekend or marked day off is paid the next banking day (owner, 2026-10-12); "day" stays the item's own date
     df["ticked"] = df["ticked"].where(df["ticked"].notna(), None)
     df["due"] = df["day"] <= today.isoformat()
     order = {"Lender": 0, "Bank loan": 1, "Supplier": 2, "Card": 3}

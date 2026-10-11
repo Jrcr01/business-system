@@ -16,12 +16,15 @@
   <div><span>Overdue (before today)</span><b>{{ n_overdue }}</b></div>
   <div><span>Ticked, waiting for the bank</span><b>{{ counts.ticked }}</b></div>
 </div>
+<p class="hint" style="margin:0 0 6px">Group by:
+  <a class="chip{% if by != 'date' %} on{% endif %}" href="?show={{ show }}" title="A Saturday, a Sunday or a marked day off counts on the next banking day">Banking day</a>
+  <a class="chip{% if by == 'date' %} on{% endif %}" href="?show={{ show }}&by=date" title="Each item on its own date, weekends included">Each date</a></p>
 <div class="chips">
-  {% for k, label in shows %}<a class="chip{% if k == show %} on{% endif %}" href="?show={{ k }}">{{ label }} <b>{% for ck, n in counts.items %}{% if ck == k %}{{ n }}{% endif %}{% endfor %}</b></a>{% endfor %}
+  {% for k, label in shows %}<a class="chip{% if k == show %} on{% endif %}" href="?show={{ k }}{% if by == 'date' %}&by=date{% endif %}">{{ label }} <b>{% for ck, n in counts.items %}{% if ck == k %}{{ n }}{% endif %}{% endfor %}</b></a>{% endfor %}
   <input id="dp-search" type="search" placeholder="Search payee or check / reference" aria-label="Search payee or reference">
 </div>
 {% if days %}
-<form method="post" id="dp-form">{% csrf_token %}<input type="hidden" name="action" value="clear_many"><input type="hidden" name="show" value="{{ show }}">
+<form method="post" id="dp-form">{% csrf_token %}<input type="hidden" name="action" value="clear_many"><input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="by" value="{{ by }}">
 <div class="scroll-x"><table class="list dp">
   <tr><th style="width:34px">{% if may_tick and show != "ticked" %}<input type="checkbox" id="dp-all" aria-label="Tick every item shown that is due">{% endif %}</th>
       <th>Date</th><th>Pay to</th><th>Check / reference</th><th style="text-align:right">Amount</th><th></th></tr>

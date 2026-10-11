@@ -54,6 +54,11 @@ def current_user(request) -> dict | None:
     if request.session.get("mfa") != MFA_MARK:                  # a sign-in from before the code was asked of everyone (2026-10-11): sign in again, with it
         request.session.flush()
         return None
+    if request.session.get("code") == 0:                        # signed in while the code was switched off: over once it is asked again
+        from engines.settings_registry import authenticator_on
+        if authenticator_on():
+            request.session.flush()
+            return None
     user = get_user(int(uid))
     if (not user or not user["is_active"] or request.session.get("pw") != password_stamp(int(uid))
             or int(request.session.get("ep") or 0) != int(user.get("device_epoch") or 0)):      # "Sign out everywhere" was pressed since

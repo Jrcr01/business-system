@@ -401,7 +401,7 @@ def order_edit(request, po_id: int):
             d = delivery_for_day(cid, _date(p.get("day")), order_day)
             if d is None:
                 _say(request, False, "No delivery date makes the order fall due that day (it is before the order could be paid, or not a bank day).")
-                return redirect(f"/purchase-orders/{po_id}/edit/?view=month&m={p.get('m', '')}#payables")
+                return redirect(f"/purchase-orders/{po_id}/edit/?view=month&m={p.get('m', '')}&look={p.get('day', '')}#payables")
             delivery = d
         elif what == "order":                                    # no shortcut (owner, 2026-10-11): a PO only once the supplier confirmed
             _say(request, False, "Send this draft to the supplier first. It becomes a purchase order when they confirm the items are available.")
@@ -475,12 +475,13 @@ def _calendar_ctx(request, cid: int, delivery, total: float, po_id: int | None) 
     weeks = [{"week": r.week_start, "label": f"{r.week_start:%m/%d}", "total": float(r.total), "selected": bool(r.selected), "lightest": bool(r.lightest)}
              for r in weeks_strip(pay, exclude_po_id=po_id).itertuples()]
     sched = week_schedule(pay, exclude_po_id=po_id)
-    day = day_schedule(pay, exclude_po_id=po_id)
+    looked = _date(request.GET.get("look") or request.GET.get("day")) or pay     # the day clicked, even when the order cannot fall due on it (owner, 2026-10-12)
+    day = day_schedule(looked, exclude_po_id=po_id)
     cash = None
     if forecast_shown() and total > 0:
         from engines.po_rules import cash_check
         cash = cash_check(cid, total, delivery, exclude_po_id=po_id)
-    return {"pay": pay, "guard": guard, "weeks": weeks, "sched": sched, "sched_rows": sched["rows"].to_dict("records") if sched else [], "daysched": day,
+    return {"pay": pay, "guard": guard, "weeks": weeks, "sched": sched, "sched_rows": sched["rows"].to_dict("records") if sched else [], "daysched": day, "looked_is_pay": looked == pay,
             "show_ref": not hide_check_details(request.slicks_user["role"]), "cash": cash, "cal": cal}
 
 

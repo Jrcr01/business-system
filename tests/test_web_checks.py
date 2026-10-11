@@ -82,3 +82,33 @@ def test_a_card_can_be_paid_in_part_and_each_payment_is_on_its_statement(web, db
     web.post("/checks/", {"action": "unpay_card", "item_id": pay_id})
     assert fetchone(db, "SELECT status, amount_paid FROM cc_statements WHERE cc_statement_id = ?", (csid,)) == ("Unpaid", 0.0)   # taken back: owed again
     assert 'name="amt_card_%d"' % csid in web.get("/checks/").content.decode()
+
+
+def test_daily_payables_counts_a_weekend_on_the_next_banking_day(db):
+    # owner, 2026-10-12: "if it falls weekends consider it in the next business day have a toggle instead. deafult this. then optional is per day"
+    import pandas as pd
+    from datetime import date
+    from web.payables.views import _daily
+    rows = [{"day": "2026-10-09", "pay_day": "2026-10-09", "amount": 100.0, "ticked": None, "due": True},     # Friday
+            {"day": "2026-10-10", "pay_day": "2026-10-12", "amount": 20.0, "ticked": None, "due": True},      # Saturday
+            {"day": "2026-10-11", "pay_day": "2026-10-12", "amount": 3.0, "ticked": None, "due": True},       # Sunday
+            {"day": "2026-10-12", "pay_day": "2026-10-12", "amount": 0.5, "ticked": None, "due": True}]       # Monday
+    bank = _daily(pd.DataFrame(rows), "due", date(2026, 10, 12))
+    assert [(d["day"], len(d["items"]), d["overdue"]) for d in bank["days"]] == [("2026-10-09", 1, True), ("2026-10-12", 3, False)]
+    assert bank["by"] == "bank" and bank["n_overdue"] == 1 and bank["total_due"] == 123.5
+    each = _daily(pd.DataFrame(rows), "due", date(2026, 10, 12), "date")
+    assert [d["day"] for d in each["days"]] == ["2026-10-09", "2026-10-10", "2026-10-11", "2026-10-12"] and each["n_overdue"] == 3
+    sunday = _daily(pd.DataFrame(rows), "due", date(2026, 10, 11))               # on the Sunday itself the weekend items wait for Monday
+    assert [d["day"] for d in sunday["days"]] == ["2026-10-09"] and sunday["counts"]["week"] == 4
+
+
+def test_daily_payables_rows_carry_their_banking_day(web, db):
+    _admin(web)
+    _issued(db)
+    from engines import clearing
+    from engines.reports_service import next_banking_day
+    df = clearing.daily_payables()
+    assert "pay_day" in df.columns and len(df)
+    assert all(p == next_banking_day(d).isoformat() for d, p in zip(df["day"], df["pay_day"]))
+    page = web.get("/checks/").content.decode()
+    assert "Banking day" in page and "Each date" in page and "by=date" in page

@@ -393,7 +393,9 @@ def change_installment_date(installment_id: int, new_date: date) -> tuple[bool, 
 
 
 def delete_parked_loan_checks(loan_note_id: int, check_ids: list[int]) -> tuple[bool, str]:
-    """Deletes parked lender checks (no number, not written) as if never made: their payments are back to having no check. All or nothing; audited."""
+    """Deletes lender checks that have no number as if never made: their payments are back to having no check. All or nothing; audited.
+    A check written but not numbered yet (or one whose number was taken back) goes too, as on a supplier batch (owner, 2026-10-12: "why i cannot
+    edit to lenders? its so restrictive") -- only a number makes a check one that must be voided."""
     from engines.permissions import require
     ok, why = require("check.park")
     if not ok:
@@ -408,8 +410,8 @@ def delete_parked_loan_checks(loan_note_id: int, check_ids: list[int]) -> tuple[
             r = cur.execute("SELECT loan_note_id, status, check_number, printed_at, amount, check_date FROM checks_issued WHERE check_id = ?", (cid,)).fetchone()
             if not r or r[0] != loan_note_id:
                 return False, f"Check {cid} isn't part of this loan note."
-            if r[1] != "Active" or r[2] or r[3]:
-                return False, f"Check {r[2] or cid} is {'written' if r[2] or r[3] else r[1].lower()}: only parked checks can be deleted (void it instead)."
+            if r[1] != "Active" or r[2]:
+                return False, f"Check {r[2] or cid} {'has its number' if r[2] else 'is ' + r[1].lower()}: only checks with no number can be deleted (void it instead)."
             found.append((cid, r[4], str(r[5])[:10]))
         for cid, amount, day in found:
             unlink_installment_for_check(cur, cid)
@@ -418,7 +420,7 @@ def delete_parked_loan_checks(loan_note_id: int, check_ids: list[int]) -> tuple[
                         (cid, f"parked lender check {amount:,.2f} dated {day} removed from loan note {loan_note_id}"))
         _recompute_schedule(cur, loan_note_id)
         conn.commit()
-    return True, f"{len(found)} parked check(s) deleted; their payments have no check now."
+    return True, f"{len(found)} check(s) with no number deleted; their payments have no check now."
 
 
 def issue_all_pdcs(loan_note_id: int) -> tuple[bool, str, int]:

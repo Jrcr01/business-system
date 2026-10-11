@@ -45,14 +45,16 @@ def _page_notice() -> str:
         return ""
 
 
-def _sign_in(request, user: dict) -> None:
-    """Signed in: only after the password AND the 6-digit code (owner, 2026-10-08)."""
+def _sign_in(request, user: dict, code: bool = True) -> None:
+    """Signed in: only after the password AND the 6-digit code (owner, 2026-10-08) -- or, while the code is switched off in Settings (owner,
+    2026-10-12), after the password of a person Cloudflare already checked. Such a sign-in is marked, and ends when the code is switched back on."""
     request.session.cycle_key()
     request.session.pop("pending", None)
     request.session["uid"] = int(user["user_id"])
     request.session["pw"] = password_stamp(int(user["user_id"]))
     request.session["ep"] = int(user.get("device_epoch") or 0)
     request.session["mfa"] = MFA_MARK
+    request.session["code"] = 1 if code else 0
 
 
 # --- this device (owner, 2026-10-11): the 6-digit code is asked once a day per device. A signed cookie keeps the browser's own number (so a device not used
@@ -116,6 +118,13 @@ def _half_signed_in(request, user: dict, nxt: str = "/"):
     not stand in for the code any more (owner, 2026-10-11: a hacked inbox passes Cloudflare's email check; the phone is what proves it is them). The
     code is asked once a day per device: a device that gave this person's code today signs in with the password."""
     from engines.auth_service import note_password_sign_in, totp_enabled_at
+    from engines.settings_registry import authenticator_on
+    cf = getattr(request, "cf_email", None)
+    if not authenticator_on() and cf and cf == str(user.get("email") or "").strip().lower():
+        note_password_sign_in(int(user["user_id"]))             # the code is switched off (owner, 2026-10-12): Cloudflare's check of this very email is the second step
+        _sign_in(request, user, code=False)
+        _log(request, int(user["user_id"]), "CLOUDFLARE")
+        return redirect(nxt or "/")
     if _code_given_today(request, user):
         note_password_sign_in(int(user["user_id"]))
         _sign_in(request, user)
