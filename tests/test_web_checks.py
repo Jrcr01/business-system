@@ -117,3 +117,16 @@ def test_daily_payables_rows_carry_their_banking_day(web, db):
     assert all(p == next_banking_day(d).isoformat() for d, p in zip(df["day"], df["pay_day"]))
     page = web.get("/checks/").content.decode()
     assert "Banking day" in page and "Each date" in page and "by=date" in page
+
+
+def test_a_card_statement_can_be_paid_before_its_due_date(web, db):
+    # owner, 2026-10-12: "allow credit cards can be paid in advance"; checks and loan payments still wait for their day
+    _admin(web)
+    iid, csid = _loan_and_card(db, TODAY + timedelta(days=6))
+    page = web.get("/checks/?show=week").content.decode()
+    assert f'name="tick_card_{csid}" value="1" data-amt="3000.0" aria-label' in page            # the card's tick is live
+    assert f'name="tick_loan_{iid}" value="1" data-amt="20000.0" disabled' in page             # the loan's is not
+    assert "can be paid early" in page
+    r = web.post("/checks/", {"action": "clear_many", f"tick_card_{csid}": "1", f"amt_card_{csid}": "", "on": str(TODAY)})
+    assert r.status_code == 302
+    assert fetchone(db, "SELECT status, amount_paid FROM cc_statements WHERE cc_statement_id = ?", (csid,)) == ("Paid", 3000.0)

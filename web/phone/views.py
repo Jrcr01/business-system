@@ -224,14 +224,16 @@ def sale(request):
         services = [{"description": p.get(f"svc_desc_{k}", ""), "amount": p.get(f"svc_amt_{k}", "")} for k in range(3)]
         payment = {"method": p.get("method", "CASH"), "reference": p.get("reference", ""), "bank": p.get("bank", ""), "check_no": p.get("check_no", ""), "check_date": p.get("check_date", "")}
         rel = int(p.get("release_id")) if str(p.get("release_id", "")).isdigit() else None
+        surplus = [{"item_id": p.get(f"sp_item_{k}", ""), "qty": p.get(f"sp_qty_{k}", ""), "cost": p.get(f"sp_cost_{k}", "")} for k in range(2)]
         ok, msg, sale_id = pos_sale.record(p.get("si_no"), p.get("sale_date") or today.isoformat(), cust, name, _lines(p), p.get("receipt"), services, payment, rel,
-                                           p.get("below_reason", ""))
+                                           p.get("below_reason", ""), surplus)
         _say(request, ok, msg)
         if ok:
             return redirect("/phone/sale/")
         start = json.dumps([{"id": int(ln["item_id"]), "qty": float(ln["qty"] or 0), "price": ""} for ln in _lines(p) if str(ln["item_id"]).isdigit()])
         ctx = dict(si_no=p.get("si_no", ""), sale_date=p.get("sale_date") or today.isoformat(), customer=p.get("customer", ""), receipt=p.get("receipt", ""),
-                   services=[{"k": k, **s} for k, s in enumerate(services)], method=p.get("method", "CASH"), reference=p.get("reference", ""), release_id=rel or "")
+                   services=[{"k": k, **s} for k, s in enumerate(services)], method=p.get("method", "CASH"), reference=p.get("reference", ""), release_id=rel or "",
+                   surplus_rows=[{"k": k, **s} for k, s in enumerate(surplus)])
     else:
         rel = int(request.GET.get("slip")) if request.GET.get("slip", "").isdigit() else None
         start, pre = "[]", {}
@@ -244,9 +246,12 @@ def sale(request):
                 rel = None
         nxt = sr.next_si_no()
         ctx = dict(si_no=pre.get("si_no") or (f"{nxt:06d}" if nxt else ""), sale_date=today.isoformat(), customer=pre.get("customer", ""), receipt="",
-                   services=[{"k": k, "description": "", "amount": ""} for k in range(3)], method="CASH", reference="", release_id=rel or "")
+                   services=[{"k": k, "description": "", "amount": ""} for k in range(3)], method="CASH", reference="", release_id=rel or "",
+                   surplus_rows=[{"k": k, "item_id": "", "qty": "", "cost": ""} for k in range(2)])
+    from engines.stock_rules import surplus_items
     return render(request, "phone/sale.html", _ctx(request, "Record a sale", scan_lines=json.loads(start), scan_mode="out", names=[c["name"] for c in sr.customers()],
-                                                    slips=slips, methods=list(sr.METHODS.items()), today=today, no_booklet=sr.next_si_no() is None, **ctx))
+                                                    slips=slips, methods=list(sr.METHODS.items()), today=today, no_booklet=sr.next_si_no() is None,
+                                                    surplus_items=surplus_items() if not rel else [], **ctx))
 
 
 @phone_page("sale")

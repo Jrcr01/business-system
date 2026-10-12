@@ -13,6 +13,12 @@ Scan what was sold, type the amount received; profit shows at once. A slip of th
     {% for s in slips %}<div class="ph-card" style="background:#f7f9fc"><div class="kv"><span><b>{{ s.release_no }}</b> · {{ s.pcs|floatformat:"-2" }} pcs{% if s.customer != "Walk-in" %} · {{ s.customer }}{% endif %}{% if s.old %} · <span class="pill warn">{{ s.day|dmy }}</span>{% endif %}</span>
       <a class="btn small" href="/phone/sale/?slip={{ s.sale_id }}">Use it</a></div><span class="hint">{{ s.items }}</span></div>{% endfor %}{% endif %}
   <div style="margin-top:10px">{% include "selling/_scan_lines.html" %}</div>
+  {% if surplus_items %}<details class="manual"{% for s in surplus_rows %}{% if s.qty %} open{% endif %}{% endfor %}><summary class="hint" style="cursor:pointer"><span class="ms">recycling</span> Surplus or trade-in sold (not in stock): state its cost</summary>
+    {% for s in surplus_rows %}<div class="ph-row" style="margin-top:6px"><select class="ph-field sp-item" style="flex:1 1 130px" name="sp_item_{{ s.k }}" aria-label="Surplus item {{ forloop.counter }}"><option value="">—</option>{% for it in surplus_items %}<option value="{{ it.id }}"{% if it.id|stringformat:"s" == s.item_id %} selected{% endif %}>{{ it.name }}</option>{% endfor %}</select>
+      <input class="ph-field sp-qty" style="width:64px;text-align:center" type="text" inputmode="decimal" name="sp_qty_{{ s.k }}" value="{{ s.qty }}" placeholder="qty" aria-label="Surplus qty {{ forloop.counter }}">
+      <input class="ph-field sp-cost" style="width:110px;text-align:right" type="text" inputmode="decimal" name="sp_cost_{{ s.k }}" value="{{ s.cost }}" placeholder="cost each" aria-label="Surplus cost {{ forloop.counter }}"></div>{% endfor %}
+    <p class="hint">Taken into stock at that cost and sold on this invoice; the receipt less that cost is the profit.</p>
+  </details>{% endif %}
   <details class="manual"{% for s in services %}{% if s.description %} open{% endif %}{% endfor %}><summary class="hint" style="cursor:pointer"><span class="ms">build</span> Add a service (mounting, balancing, labor)</summary>
     {% for s in services %}<div class="ph-row" style="margin-top:6px"><input class="ph-field" style="flex:1 1 150px" type="text" name="svc_desc_{{ s.k }}" value="{{ s.description }}" placeholder="what was done" aria-label="Service {{ forloop.counter }}">
       <input class="ph-field svc-a" style="width:110px;text-align:right" type="text" inputmode="decimal" name="svc_amt_{{ s.k }}" value="{{ s.amount }}" placeholder="amount" aria-label="Amount of service {{ forloop.counter }}"></div>{% endfor %}
@@ -39,19 +45,20 @@ document.addEventListener("DOMContentLoaded", function () {
   var cost = 0, lines = [], peso = function (n) { return n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
   var num = function (t) { var n = parseFloat(String(t).replace(/,/g, "")); return isNaN(n) ? 0 : n; };
   function svc() { var t = 0; document.querySelectorAll(".svc-a").forEach(function (i) { t += num(i.value); }); return t; }
+  function surplusCost() { var t = 0; document.querySelectorAll(".sp-qty").forEach(function (q, k) { var c = document.querySelectorAll(".sp-cost")[k]; t += num(q.value) * num(c.value); }); return t; }
   function redo() {
-    var rec = num(receipt.value), goods = rec - svc(), profit = rec - cost;
-    document.getElementById("ps_cost").textContent = peso(cost);
+    var rec = num(receipt.value), goods = rec - svc(), all = cost + surplusCost(), profit = rec - all;
+    document.getElementById("ps_cost").textContent = peso(all);
     var p = document.getElementById("ps_profit"); p.textContent = peso(profit); p.className = "n " + (profit < 0 ? "neg" : "pos");
     document.getElementById("ps_total").textContent = peso(rec);
-    var notes = [], below = rec > 0 && goods < cost - 0.005;
-    if (below) notes.push("Below cost by ₱" + peso(cost - goods) + ".");
+    var notes = [], below = rec > 0 && goods < all - 0.005;
+    if (below) notes.push("Below cost by ₱" + peso(all - goods) + ".");
     lines.forEach(function (l) { if (l.qty > l.it.on_hand) notes.push(l.it.name + ": the system shows " + l.it.on_hand + " on hand."); });
     document.getElementById("ps_warn").hidden = !notes.length; document.getElementById("ps_warn_list").innerHTML = notes.map(function (n) { return "<div>" + n + "</div>"; }).join("");
     document.getElementById("ps_below").hidden = !below;
   }
   box.addEventListener("lines", function (e) { lines = e.detail.lines; cost = 0; lines.forEach(function (l) { cost += l.qty * (l.it.cost || 0); }); redo(); });
-  receipt.addEventListener("input", redo); document.querySelectorAll(".svc-a").forEach(function (i) { i.addEventListener("input", redo); });
+  receipt.addEventListener("input", redo); document.querySelectorAll(".svc-a, .sp-qty, .sp-cost").forEach(function (i) { i.addEventListener("input", redo); });
   si.addEventListener("input", function () { document.getElementById("ps_si").textContent = si.value; });
   var methods = document.getElementById("ps_methods");
   methods.addEventListener("change", function () {

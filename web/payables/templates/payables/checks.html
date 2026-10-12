@@ -50,18 +50,18 @@
     <span class="hint">· {{ d.items|length }} item{{ d.items|length|pluralize }} · ₱{{ d.total|floatformat:2|intcomma }}{% if d.n_open and show == "all" %} · {{ d.n_open }} not paid{% endif %}</span></td></tr>
   {% for r in d.items %}
   <tr class="dp-row" data-q="{{ r.payee|lower }} {{ r.ref|lower }}">
-    <td class="c-k">{% if not r.ticked and may_tick %}<input type="checkbox" name="tick_{{ r.kind }}_{{ r.item_id }}" value="1" data-amt="{{ r.amount }}"{% if not r.due %} disabled title="Not due yet: it can't be paid before its date"{% endif %} aria-label="Paid: {{ r.payee }} {{ r.ref }}">{% endif %}</td>
+    <td class="c-k">{% if not r.ticked and may_tick %}<input type="checkbox" name="tick_{{ r.kind }}_{{ r.item_id }}" value="1" data-amt="{{ r.amount }}"{% if not r.due and r.kind != "card" %} disabled title="Not due yet: it can't be paid before its date"{% endif %} aria-label="Paid: {{ r.payee }} {{ r.ref }}">{% endif %}</td>
     <td class="c-t">{{ r.payee }}</td><td class="c-big num">{{ r.amount|floatformat:2|intcomma }}</td>
     <td>{{ r.day|dmy }}</td>
     <td>{{ r.ref|default:"—" }} <span class="kind">{{ r.track }}</span></td>
-    <td class="c-h num">{% if r.kind == "card" and not r.ticked and may_tick and r.due %}<input type="hidden" class="card-amt"
+    <td class="c-h num">{% if r.kind == "card" and not r.ticked and may_tick %}<input type="hidden" class="card-amt"
           name="amt_card_{{ r.item_id }}" value="" data-max="{{ r.amount }}" data-ref="{{ r.ref }}">{% endif %}</td>
     <td class="c-r">{% if r.ticked %}<span class="pill">paid {{ r.ticked|dmy }}</span>{% if r.note %} <span class="hint">{{ r.note|usdates }}</span>{% endif %}
           {% if may_tick and r.kind == "check" %}<button class="btn small ghost" type="submit" form="undo-c{{ r.item_id }}">Undo</button>
           {% elif may_tick and r.kind == "loan" %}<button class="btn small ghost" type="submit" form="undo-l{{ r.item_id }}">Undo</button>
           {% elif may_tick and r.kind == "cardpay" %}<button class="btn small ghost" type="submit" form="undo-p{{ r.item_id }}">Undo</button>{% endif %}
         {% elif r.note %}<span class="hint">{{ r.note|usdates }}</span>
-        {% elif not r.due %}<span class="hint">not due yet</span>{% endif %}</td>
+        {% elif not r.due %}<span class="hint">{% if r.kind == "card" %}not due yet · can be paid early{% else %}not due yet{% endif %}</span>{% endif %}</td>
   </tr>{% endfor %}
   {% endfor %}
 </table></div>

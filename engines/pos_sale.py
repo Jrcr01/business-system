@@ -45,7 +45,7 @@ def costs_of(item_ids: list[int]) -> dict[int, float]:
 
 
 def record(si_no, sale_date, customer_id, customer_name: str, lines: list[dict], receipt, services: list[dict], payment: dict,
-           release_id: int | None = None, below_cost_reason: str = "") -> tuple[bool, str, int | None]:
+           release_id: int | None = None, below_cost_reason: str = "", surplus: list[dict] | None = None) -> tuple[bool, str, int | None]:
     """The phone's sale: lines [{'item_id', 'qty'}] (priced here from the receipt), one payment {'method', 'reference', 'bank', 'check_no',
     'check_date'} for the whole receipt. With release_id, the goods already left on that slip: its lines are invoiced instead (stock not taken twice)."""
     from engines import sales_rules as sr
@@ -67,9 +67,25 @@ def record(si_no, sale_date, customer_id, customer_name: str, lines: list[dict],
         ok, msg = sr.invoice_release(int(release_id), si_no, sale_date, {ln["line_id"]: ln["price"] for ln in priced}, svc, pay, below_cost_reason)
         return ok, msg, int(release_id) if ok else None
     clean = [{"item_id": int(ln["item_id"]), "qty": _num(ln.get("qty"))} for ln in lines if str(ln.get("item_id", "")).isdigit() and _num(ln.get("qty")) > 0]
-    if not clean:
+    extra = [{"item_id": int(s["item_id"]), "qty": _num(s.get("qty")), "cost": _num(s.get("cost"))} for s in (surplus or [])
+             if str(s.get("item_id", "")).isdigit() and _num(s.get("qty")) > 0]
+    if not clean and not extra:
         return False, "Scan or pick what was sold.", None
+    for s in extra:                                              # a surplus tire sold on the spot: taken in at the cost typed, then sold (owner, 2026-10-12)
+        if s["cost"] < 0:
+            return False, "A surplus item's cost cannot be below zero.", None
+        from engines.stock_rules import take_in
+        ok, why = take_in(s["item_id"], s["qty"], s["cost"], f"sold on SI {si_no}, cost as typed at the sale")
+        if not ok:
+            return False, why, None
     costs = costs_of([ln["item_id"] for ln in clean])
+    for s in extra:
+        same = next((ln for ln in clean if ln["item_id"] == s["item_id"]), None)
+        if same:
+            same["qty"] += s["qty"]
+        else:
+            clean.append({"item_id": s["item_id"], "qty": s["qty"]})
+        costs[s["item_id"]] = s["cost"]
     priced = spread([{**ln, "cost": costs.get(ln["item_id"], 0.0)} for ln in clean], rec, svc_total)
     return sr.save_sale(si_no, sale_date, customer_id, customer_name, [{"item_id": ln["item_id"], "qty": ln["qty"], "price": ln["price"]} for ln in priced],
                         svc, pay, below_cost_reason)

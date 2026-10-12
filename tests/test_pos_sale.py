@@ -89,3 +89,22 @@ def test_the_staff_phone_does_not_record_sales(web, db):
     page = staff.get("/phone/").content.decode()
     assert 'href="/phone/sale/"' not in page and 'href="/phone/out/"' in page
     assert staff.get("/phone/sale/").status_code == 403
+
+
+def test_a_surplus_tire_sold_on_the_spot_is_taken_in_at_the_cost_typed(web, db):
+    # owner, 2026-10-12: "include the surplus then let the user state the cost"
+    _admin(web)
+    _on()
+    _booklet(web)
+    from engines.stock_rules import surplus_items
+    tire = next(s for s in surplus_items() if s["name"] == "Surplus tire")
+    page = web.get("/phone/sale/").content.decode()
+    assert "Surplus or trade-in sold" in page and f'value="{tire["id"]}"' in page
+    r = web.post("/phone/sale/", {"si_no": "004501", "sale_date": "", "customer": "", "receipt": "2,500", "method": "CASH",
+                                  "sp_item_0": tire["id"], "sp_qty_0": "1", "sp_cost_0": "800"})
+    assert r.status_code == 302, r.content[:300]
+    assert fetchone(_db(), "SELECT on_hand FROM items WHERE id = ?", (tire["id"],)) == (0,)                  # in at 800, out on the sale
+    assert _n("SELECT COUNT(*) FROM stock_ledger WHERE item_id = ? AND ref_type = 'take_in'", (tire["id"],)) == 1
+    assert fetchone(_db(), "SELECT total, cost_total FROM sales") == (2500.0, 800.0)                            # profit 1,700
+    r = web.post("/phone/sale/", {"si_no": "004502", "sale_date": "", "customer": "", "receipt": "100", "method": "CASH"})
+    assert r.status_code == 200 and "Scan or pick what was sold" in r.content.decode()                       # nothing sold: refused
