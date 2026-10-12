@@ -10,10 +10,23 @@
   ph.camera = function (btn, video, onCode) {
     if (!btn || !("BarcodeDetector" in window) || !navigator.mediaDevices) return;
     btn.hidden = false;
-    var stream = null, timer = null;
+    var stream = null, timer = null, liveFailed = false;
+    function liveAllowed() { try { return !document.featurePolicy || document.featurePolicy.allowsFeature("camera"); } catch (e) { return true; } }
+    function snap(onCode, fail) {                                /* the phone's own camera app: take a photo, the barcode is read from it */
+      var pick = document.createElement("input"); pick.type = "file"; pick.accept = "image/*"; pick.capture = "environment";
+      pick.addEventListener("change", function () {
+        var f = pick.files && pick.files[0]; if (!f) return;
+        createImageBitmap(f).then(function (bmp) { return new BarcodeDetector().detect(bmp); })
+          .then(function (found) { if (found.length) onCode(found[0].rawValue); else fail("No barcode was read in that photo. Hold the phone closer, keep it steady, and try again."); })
+          .catch(function () { fail("That photo could not be read. Try again."); });
+      });
+      pick.click();
+    }
+    
     function stop() { if (timer) clearInterval(timer); if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; timer = null; video.hidden = true; }
     btn.addEventListener("click", function () {
       if (stream) { stop(); return; }
+      if (liveFailed || !liveAllowed()) { snap(onCode, function (m) { alert(m); }); return; }
       navigator.mediaDevices.getUserMedia({video: {facingMode: "environment"}}).then(function (s) {
         stream = s; video.srcObject = s; video.hidden = false; video.play();
         var det = new BarcodeDetector(), last = "", when = 0;
@@ -25,7 +38,7 @@
             last = code; when = now; onCode(code);
           }).catch(function () {});
         }, 400);
-      }).catch(function () { alert("The camera could not be opened."); });
+      }).catch(function () { liveFailed = true; snap(onCode, function (m) { alert(m); }); });       /* no live camera here: the camera app instead */
     });
     window.addEventListener("pagehide", stop);
   };
