@@ -62,6 +62,16 @@ def home(request):
                                                     slips=len(slips_today()) if mine["out"] else 0))
 
 
+def manifest_ops(request):
+    """The second app on the phone (owner, 2026-10-12: "Can we have seperate shortcut for on the phone? This will be used primarily for operations"):
+    its own id, so Chrome installs it beside the whole-site app; it opens the phone pages and stays within them."""
+    from django.contrib.staticfiles import finders
+    path = finders.find("phone/manifest-ops.webmanifest")
+    if not path:
+        raise Http404
+    return FileResponse(open(path, "rb"), content_type="application/manifest+json")
+
+
 def manifest(request):
     """The web app manifest, so 'Add to Home screen' gives an icon that opens /phone/ full-screen."""
     from django.contrib.staticfiles import finders

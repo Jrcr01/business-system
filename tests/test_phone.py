@@ -186,3 +186,18 @@ def test_the_site_is_installable_from_any_page_and_the_service_worker_is_served(
     r = web.get("/phone/manifest.webmanifest")
     r2 = b"".join(r.streaming_content).decode(); r = web.get("/phone/manifest.webmanifest")
     assert '"id": "/"' in b"".join(r.streaming_content).decode() and '"scope": "/"' in r2
+
+
+def test_the_phone_pages_are_their_own_app_beside_the_whole_site(web, db):
+    # owner, 2026-10-12: "Can we have seperate shortcut for on the phone? This will be used primarily for operations"
+    _admin(web)
+    _on()
+    r = web.get("/phone/manifest-ops.webmanifest")
+    ops = b"".join(r.streaming_content).decode()
+    assert r.status_code == 200 and '"id": "/phone/"' in ops and '"scope": "/phone/"' in ops and "Slick's Ops" in ops and "icon-ops-192" in ops
+    whole = b"".join(web.get("/phone/manifest.webmanifest").streaming_content).decode()
+    assert '"id": "/"' in whole                                                 # two ids: Chrome installs them as two apps
+    assert 'href="/phone/manifest-ops.webmanifest"' in web.get("/phone/").content.decode()
+    assert 'href="/phone/manifest.webmanifest"' in web.get("/").content.decode()
+    web.post("/logout/")
+    assert web.get("/phone/manifest-ops.webmanifest").status_code == 200       # readable before sign-in, like the other one
