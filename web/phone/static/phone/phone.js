@@ -62,7 +62,6 @@
     var pressed = null;
     form.addEventListener("click", function (e) { var b = e.target.closest("button[type=submit]"); if (b) pressed = b; });
     form.addEventListener("submit", function (e) {
-      if (form.dataset.sending) return;                          /* the real send, after the checks below */
       e.preventDefault();
       var data = new FormData(form);
       if (pressed && pressed.name) data.append(pressed.name, pressed.value);
@@ -70,14 +69,17 @@
       note.hidden = true;
       fetch(form.getAttribute("action") || location.href, {method: "POST", body: data, credentials: "same-origin", redirect: "follow"})
         .then(function (r) {
-          if (r.status >= 500) throw new Error("server " + r.status);
+          if (!r.ok) throw new Error("server " + r.status);                       /* any refusal (4xx, 5xx): keep the page */
+          if (/^\/login\//.test(new URL(r.url).pathname)) throw new Error("signed out");   /* the sign-in page came back: the send never landed */
           return r.text().then(function (html) {              /* the page the server answered with (after its redirect), its notes included */
             history.replaceState(null, "", r.url); document.open(); document.write(html); document.close();
           });
         })
-        .catch(function () {
+        .catch(function (err) {
           buttons.forEach(function (b) { b.disabled = false; });
-          note.textContent = "Could not send: nothing was saved. Check the signal and press again; everything typed and scanned is still here.";
+          note.textContent = String(err && err.message) === "signed out"
+            ? "You were signed out meanwhile: nothing was saved. Sign in again in another tab, come back and press again; everything typed and scanned is still here."
+            : "Could not send: nothing was saved. Check the signal and press again; everything typed and scanned is still here.";
           note.hidden = false; note.scrollIntoView({block: "center"});
         });
     });

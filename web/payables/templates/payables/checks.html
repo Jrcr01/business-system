@@ -50,7 +50,7 @@
     <span class="hint">· {{ d.items|length }} item{{ d.items|length|pluralize }} · ₱{{ d.total|floatformat:2|intcomma }}{% if d.n_open and show == "all" %} · {{ d.n_open }} not paid{% endif %}</span></td></tr>
   {% for r in d.items %}
   <tr class="dp-row" data-q="{{ r.payee|lower }} {{ r.ref|lower }}">
-    <td class="c-k">{% if not r.ticked and may_tick %}<input type="checkbox" name="tick_{{ r.kind }}_{{ r.item_id }}" value="1" data-amt="{{ r.amount }}"{% if not r.due and r.kind != "card" %} disabled title="Not due yet: it can't be paid before its date"{% endif %} aria-label="Paid: {{ r.payee }} {{ r.ref }}">{% endif %}</td>
+    <td class="c-k">{% if not r.ticked and may_tick %}<input type="checkbox" name="tick_{{ r.kind }}_{{ r.item_id }}" value="1" data-amt="{{ r.amount }}" data-due="{% if r.due %}1{% else %}0{% endif %}"{% if not r.due and r.kind != "card" %} disabled title="Not due yet: it can't be paid before its date"{% endif %} aria-label="Paid: {{ r.payee }} {{ r.ref }}">{% endif %}</td>
     <td class="c-t">{{ r.payee }}</td><td class="c-big num">{{ r.amount|floatformat:2|intcomma }}</td>
     <td>{{ r.day|dmy }}</td>
     <td>{{ r.ref|default:"—" }} <span class="kind">{{ r.track }}</span></td>
@@ -138,7 +138,7 @@
     })(0);
   });
   if (all) all.addEventListener("change", function () {
-    boxes.forEach(function (b) { if (!b.disabled && b.closest("tr").style.display !== "none") b.checked = all.checked; }); update();
+    boxes.forEach(function (b) { if (!b.disabled && b.dataset.due !== "0" && b.closest("tr").style.display !== "none") b.checked = all.checked; }); update();   /* a card not due yet is ticked by hand only */
   });
   var q = document.getElementById("dp-search");
   if (q) q.addEventListener("input", function () {

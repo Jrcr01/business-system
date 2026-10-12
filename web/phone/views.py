@@ -64,7 +64,13 @@ def home(request):
     return render(request, "phone/home.html", _ctx(request, "Slick's", waiting=len(waiting_orders()) if mine["in"] else 0,
                                                     slips=len(slips_today()) if mine["out"] else 0,
                                                     to_invoice=len(__import__("engines.sales_rules", fromlist=["open_releases"]).open_releases()) if mine["sale"] else 0,
-                                                    counting=sum(1 for c in __import__("engines.count_rules", fromlist=["listing"]).listing() if c["status"] == "COUNTING") if mine["count"] else 0))
+                                                    counting=_open_counts() if mine["count"] else 0))
+
+
+def _open_counts() -> int:
+    from engines.common import get_conn
+    with get_conn() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM stock_counts WHERE status = 'COUNTING'").fetchone()[0])
 
 
 def manifest_ops(request):

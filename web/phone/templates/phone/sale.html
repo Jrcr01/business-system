@@ -34,7 +34,7 @@ Scan what was sold, type the amount received; profit shows at once. A slip of th
   <div class="ph-row" id="ps_check" hidden><div style="flex:1 1 120px"><label for="check_no">Check no.</label><input class="ph-field" id="check_no" type="text" name="check_no" inputmode="numeric"></div>
     <div style="flex:1 1 120px"><label for="check_date">Check date</label><input class="ph-field" id="check_date" type="date" name="check_date"></div>
     <div style="flex:1 1 120px"><label for="bank">Bank</label><input class="ph-field" id="bank" type="text" name="bank"></div></div>
-  <label for="reference">Reference (optional: GCash ref, card slip)</label><input class="ph-field" id="reference" type="text" name="reference" value="{{ reference }}">
+  <label for="reference" id="ref_label">Reference <span id="ref_hint">(optional)</span></label><input class="ph-field" id="reference" type="text" name="reference" value="{{ reference }}">
   <button class="btn main" type="submit"><span class="ms">save</span>Save SI <span id="ps_si">{{ si_no }}</span> — ₱<span id="ps_total">0.00</span></button>
   <p class="hint">Saving records the sale and the payment{% if not release_id %} and takes the stock out{% endif %}; the next number is offered at once. Nothing is refused for being below cost, over stock or on charge: it is saved and noted for review.</p>
 </form>
@@ -63,9 +63,15 @@ document.addEventListener("DOMContentLoaded", function () {
   var methods = document.getElementById("ps_methods");
   methods.addEventListener("change", function () {
     methods.querySelectorAll("label").forEach(function (l) { var on = l.querySelector("input").checked; l.classList.toggle("main", on); l.classList.toggle("ghost", !on); });
-    document.getElementById("ps_check").hidden = !methods.querySelector('input[value="CHECK"]').checked;
+    method();
   });
-  document.getElementById("ps_check").hidden = !methods.querySelector('input[value="CHECK"]').checked;
+  function method() {                                           /* a transfer or a card needs its reference; a check its number, date and bank */
+    var m = methods.querySelector("input:checked"), v = m ? m.value : "CASH", ref = document.getElementById("reference");
+    document.getElementById("ps_check").hidden = v !== "CHECK";
+    var needs = v === "TRANSFER" || v === "CARD";
+    ref.required = needs; document.getElementById("ref_hint").textContent = needs ? "(needed: the GCash / Maya reference or the card approval number)" : "(optional)";
+  }
+  method();
   new MutationObserver(function () {
     document.querySelectorAll("#sl_rows .inline-input").forEach(function (i) { if (!i.dataset.step) { i.dataset.step = "1"; i.dataset.min = "0"; window.phone.steppers(document.getElementById("sl_rows")); } });
   }).observe(document.getElementById("sl_rows"), {childList: true});

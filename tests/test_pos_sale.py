@@ -108,3 +108,40 @@ def test_a_surplus_tire_sold_on_the_spot_is_taken_in_at_the_cost_typed(web, db):
     assert fetchone(_db(), "SELECT total, cost_total FROM sales") == (2500.0, 800.0)                            # profit 1,700
     r = web.post("/phone/sale/", {"si_no": "004502", "sale_date": "", "customer": "", "receipt": "100", "method": "CASH"})
     assert r.status_code == 200 and "Scan or pick what was sold" in r.content.decode()                       # nothing sold: refused
+
+
+def test_a_receipt_that_does_not_divide_evenly_still_saves_to_the_centavo(web, db):
+    # review 2026-10-12: 3 pieces for 1,000.00 -> 333.33 each left 0.01 and the payment was refused; a 'Rounding' service carries the centavo
+    _admin(web)
+    _on()
+    _booklet(web)
+    a, name = _item()
+    _stock(a, 12, cost=100.0)
+    r = web.post("/phone/sale/", {"si_no": "004501", "sale_date": "", "customer": "", "ln_item_0": a, "ln_qty_0": "3", "ln_price_0": "", "receipt": "1,000", "method": "CASH"})
+    assert r.status_code == 302, r.content[:300]
+    assert fetchone(_db(), "SELECT total FROM sales") == (1000.0,)
+    assert fetchone(_db(), "SELECT qty, unit_price, amount FROM sale_lines WHERE item_id = ?", (a,)) == (3.0, 333.33, 999.99)
+    assert fetchone(_db(), "SELECT description, amount FROM sale_lines WHERE item_id IS NULL") == ("Rounding", 0.01)
+
+
+def test_a_refused_sale_leaves_no_surplus_behind(web, db):
+    # review 2026-10-12: the surplus was taken in before the sale was checked, so a used SI number left ghost stock and a retry doubled it
+    _admin(web)
+    _on()
+    _booklet(web)
+    a, name = _item()
+    _stock(a, 2)
+    from engines.stock_rules import surplus_items
+    tire = next(s for s in surplus_items() if s["name"] == "Surplus tire")
+    assert web.post("/phone/sale/", {"si_no": "004501", "sale_date": "", "customer": "", "ln_item_0": a, "ln_qty_0": "1", "ln_price_0": "", "receipt": "500", "method": "CASH"}).status_code == 302
+    r = web.post("/phone/sale/", {"si_no": "004501", "sale_date": "", "customer": "", "receipt": "2,500", "method": "CASH", "sp_item_0": tire["id"], "sp_qty_0": "1", "sp_cost_0": "800"})
+    assert r.status_code == 200 and "already used" in r.content.decode()                       # refused before anything is written
+    assert fetchone(_db(), "SELECT on_hand FROM items WHERE id = ?", (tire["id"],)) == (0,)
+    assert _n("SELECT COUNT(*) FROM stock_ledger WHERE item_id = ?", (tire["id"],)) == 0
+    r = web.post("/phone/sale/", {"si_no": "", "sale_date": "", "customer": "", "receipt": "2,500", "method": "CASH", "sp_item_0": tire["id"], "sp_qty_0": "1", "sp_cost_0": "800"})
+    assert r.status_code == 200 and _n("SELECT COUNT(*) FROM stock_ledger WHERE item_id = ?", (tire["id"],)) == 0     # a blank number: nothing written either
+    r = web.post("/phone/sale/", {"si_no": "004502", "sale_date": "", "customer": "", "receipt": "2,500", "method": "TRANSFER", "reference": "",
+                                  "sp_item_0": tire["id"], "sp_qty_0": "1", "sp_cost_0": "800"})
+    assert r.status_code == 200 and "reference" in r.content.decode()                           # refused by the payment check, after the take-in: put back
+    assert fetchone(_db(), "SELECT on_hand FROM items WHERE id = ?", (tire["id"],)) == (0,)
+    assert _n("SELECT COUNT(*) FROM audit_logs WHERE user_action = 'STOCK_TAKE_IN_UNDONE'") == 1
