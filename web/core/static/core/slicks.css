@@ -414,6 +414,8 @@ table.list tr.tentative td { color: #6b7280; font-style: italic; }
 .scanbox input[type=text] { flex: 1 1 260px; }
 .scanbox .ms { font-size: 26px; color: var(--blue); }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+.two > * { min-width: 0; }                                   /* a grid cell never grows past the screen for a wide table inside it: the table scrolls (2026-10-12) */
+.scroll-x { min-width: 0; max-width: 100%; }
 .dlg { border: 1px solid #cbd5e1; border-radius: 12px; padding: 14px 16px; background: #fff; }
 .payrow { display: grid; grid-template-columns: 220px 150px 1fr; gap: 10px; align-items: end; margin: 6px 0; } @media (max-width: 800px) { .payrow { grid-template-columns: 1fr 1fr; } }
 .payrow[hidden] { display: none; }
@@ -437,6 +439,33 @@ table.list tr.tentative td { color: #6b7280; font-style: italic; }
   .tile .f { margin-left: auto; }
   .tile .f b, .tile.long .f b { font-size: 1.5rem; }
   .tile .f .ms, .tile.long .f .ms { font-size: 24px; }
+  /* the rest of the site on a phone (owner, 2026-10-12: "not only phone but for all pages"): the order calendar's figures fit their cells, forms go one
+     column, tick boxes are thumb-sized, the headings and tabs a little smaller */
+  h2 { font-size: 1.3rem; }
+  .cal { gap: 3px; }
+  .cal .d { padding: 3px 3px; min-height: 46px; overflow: hidden; min-width: 0; }
+  .cal .d .n { font-size: .78rem; }
+  .cal .d .amt { font-size: .6rem; letter-spacing: -.01em; }
+  .cal .d .est, .cal .d .lbl { font-size: .54rem; }
+  .cal .cell { padding: 4px 3px; min-height: 56px; overflow: hidden; min-width: 0; }
+  .cal .cell b { font-size: .62rem; white-space: normal; overflow-wrap: anywhere; line-height: 1.15; }
+  .cal .cell .plan, .cal .cell .cin { font-size: .56rem; padding: 1px 2px; overflow-wrap: anywhere; }
+  .cal-head { font-size: 1rem; flex-wrap: wrap; }
+  .formgrid { grid-template-columns: 1fr !important; }        /* one field per line on a phone */
+  .formgrid > * { grid-column: auto !important; }             /* a field that spans two columns on a laptop ("grid-column:span 2") would force a second, tiny column here */
+  .payrow { grid-template-columns: 1fr; }
+  .dmy-wrap { display: flex; width: 100%; } .dmy-text { flex: 1 1 auto; min-width: 0; }
+  input[type=checkbox], table.dp input[type=checkbox] { width: 22px; height: 22px; }
+  .list td, .list th { padding: 8px 8px; }
+  .facts { gap: 10px 18px; }
+  .tabs a { padding: 8px 10px; }
+  .dp-bar { padding: 8px 10px; gap: 8px; }
+  .chips .chip { padding: 6px 12px; }
+  .callegend { gap: 8px 12px; }
+  .cap-key { display: inline-block; margin: 2px 0; }
+  .bar > div { flex: 1 1 150px; min-width: 0; }               /* a date box beside another field: never squeezed to its icon */
+  .bar input[type=date], input[type=date] { min-width: 150px; }
+  .cal .d .amt, .cal .d .est { white-space: normal; overflow-wrap: anywhere; line-height: 1.15; }
 }
 
 /* ---- Daily payables: the card payment box, full or in part (owner, 2026-10-12) ---- */
