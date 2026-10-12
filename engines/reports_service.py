@@ -25,6 +25,12 @@ def next_banking_day(d) -> date:
     return d
 
 
+def _banking_days(dates):
+    """next_banking_day for a whole column: each different date is worked out once (a schedule repeats the same few dates hundreds of times)."""
+    known = {d: next_banking_day(d) for d in dates.unique()}
+    return dates.map(known)
+
+
 def get_uncleared_checks_report() -> pd.DataFrame:
     """Every not-yet-cleared check (status='Active', check_date in the future -- same 'cleared'
     convention as v_effective_checks elsewhere in this app), one row per check: due date
@@ -54,7 +60,7 @@ def get_uncleared_checks_report() -> pd.DataFrame:
     with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(query, conn)
     if not df.empty:
-        df["actual_payment_date"] = df["due_date"].apply(next_banking_day)
+        df["actual_payment_date"] = _banking_days(df["due_date"])
     return df
 
 
@@ -96,7 +102,7 @@ def get_parked_checks_report() -> pd.DataFrame:
     with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(query, conn)
     if not df.empty:
-        df["actual_payment_date"] = df["due_date"].apply(next_banking_day)
+        df["actual_payment_date"] = _banking_days(df["due_date"])
     return df
 
 
@@ -197,7 +203,7 @@ def get_payment_schedule_all_tracks() -> pd.DataFrame:
     if not extra.empty:
         df = pd.concat([df, extra], ignore_index=True) if not df.empty else extra
     if not df.empty:
-        df["actual_payment_date"] = df["due_date"].apply(next_banking_day)
+        df["actual_payment_date"] = _banking_days(df["due_date"])
         today = next_banking_day(manila_today())                     # a past-dated check (or SI) not paid yet can go out any day: it counts from today
         df["actual_payment_date"] = df["actual_payment_date"].apply(lambda d: max(d, today))
         # Within each payment day: by track (Lender, Bank Loan, Supplier, Credit Card), then smallest amount first.
@@ -225,7 +231,7 @@ def get_payment_calendar_items() -> pd.DataFrame:
         past = pd.read_sql_query(f"SELECT * FROM ({_PAYMENT_PAST_UNION}) ORDER BY due_date ASC, track ASC", conn)
     due = get_payment_schedule_all_tracks()
     if not past.empty:
-        past["actual_payment_date"] = past["due_date"].apply(next_banking_day)
+        past["actual_payment_date"] = _banking_days(past["due_date"])
         past["state"] = "Paid"
     if not due.empty:
         due["state"] = "Due"

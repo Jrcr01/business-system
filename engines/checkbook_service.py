@@ -86,9 +86,11 @@ def audit_booklet_gaps(booklet_id: int) -> dict:
 
     inventory_breakdown, missing_gaps, duplicate_numbers, spoiled_leaves = [], [], [], []
 
+    by_leaf = {int(k): g for k, g in df_recorded.groupby('check_num_int')}     # one pass, not one search of every check per leaf (speed, 2026-10-13)
+    none = df_recorded.iloc[0:0]
     for num in range(start_num, end_num + 1):
         num_str = str(num).zfill(10)
-        matches = df_recorded[df_recorded['check_num_int'] == num]
+        matches = by_leaf.get(num, none)
         if num in spoiled_by_leaf and len(matches) >= 1:
             inventory_breakdown.append({
                 'check_number': num_str, 'state': 'CRITICAL: SPOILED AND ISSUED',

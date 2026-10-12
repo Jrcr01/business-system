@@ -9,7 +9,7 @@ self.addEventListener("push", function (e) {
   var d = {};
   try { d = e.data ? e.data.json() : {}; } catch (x) { d = {body: e.data ? e.data.text() : ""}; }
   e.waitUntil(self.registration.showNotification(d.title || "Slick's ERP", {body: d.body || "", tag: d.tag || undefined, data: {url: d.url || "/"},
-    icon: "/static/phone/icon-erp-192.png", badge: "/static/phone/icon-erp-192.png"}));
+    icon: "/static/phone/icon-erp-192.png", badge: "/static/phone/badge-96.png"}));
 });
 self.addEventListener("notificationclick", function (e) {
   e.notification.close();

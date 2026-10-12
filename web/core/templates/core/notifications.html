@@ -14,6 +14,7 @@
 <p class="hint" style="max-width:640px">If the phone's box says "Block", notifications stay off until you allow them again in the phone's settings for this app.
   A test that does not appear: check that the phone is not on Do Not Disturb and that battery saving is not stopping the app.</p>
 <form id="nt_form">{% csrf_token %}</form>
+<style>#nt_on[hidden], #nt_off[hidden], #nt_test[hidden] { display: none; }</style>
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   var state = document.getElementById("nt_state"), on = document.getElementById("nt_on"), off = document.getElementById("nt_off"), test = document.getElementById("nt_test");
@@ -27,7 +28,8 @@ document.addEventListener("DOMContentLoaded", function () {
     state.textContent = blocked ? "blocked in the phone's settings" : (sub ? "allowed" : "not allowed yet");
     on.hidden = !!sub || blocked; off.hidden = !sub; test.hidden = !sub;
   }
-  navigator.serviceWorker.register("/sw.js").then(function () { return navigator.serviceWorker.ready; }).then(function (reg) {
+  navigator.serviceWorker.register("/sw.js?v=3").then(function () { return navigator.serviceWorker.ready; }).then(function (reg) {
+    reg.update().catch(function () {});                                    /* this phone may still hold yesterday's copy, which cannot show a notification */
     reg.pushManager.getSubscription().then(function (sub) {
       show(sub);
       if (sub) post({action: "on", subscription: sub.toJSON()});          /* keep the server's copy fresh */

@@ -202,7 +202,7 @@ def set_cost(line_id: int, cost) -> tuple[bool, str]:
 
 def get_count(count_id: int) -> dict | None:
     with get_conn() as conn:
-        row = conn.execute("""SELECT count_id, count_no, scope, status, counted_by, started_by, started_at, finished_by, finished_at, closed_at,
+        row = conn.execute("""SELECT count_id, count_no, scope, status, counted_by, started_by, datetime(started_at, '+8 hours'), finished_by, datetime(finished_at, '+8 hours'), closed_at,
                                      (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = c.count_id),
                                      (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = c.count_id AND l.counted IS NOT NULL), opening
                               FROM stock_counts c WHERE count_id = ?""", (int(count_id),)).fetchone()

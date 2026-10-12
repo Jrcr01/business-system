@@ -1,0 +1,97 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: supplier statement check</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --bad: #b3261e; --yellow: #F3E03B; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 22px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1120px; margin: 0 auto; padding: 18px 16px 60px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 90ch; }
+.lap { background: #fff; border: 8px solid #1c2733; border-radius: 14px; padding: 16px 18px; margin-bottom: 22px; }
+.num { display: inline-flex; width: 26px; height: 26px; border-radius: 50%; background: var(--yellow); color: var(--navy); font-weight: 800; align-items: center; justify-content: center; margin-right: 6px; }
+h2 { font-size: 1.1rem; margin: 0 0 10px; color: var(--navy); }
+.bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
+label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 3px; }
+.field { border: 1px solid #b9c6d8; border-radius: 10px; padding: 7px 10px; font: inherit; background: #fff; }
+.btn { display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; border: 1px solid var(--blue); border-radius: 10px; padding: 8px 14px; font: inherit; font-weight: 600; }
+.btn.ghost { background: #fff; color: var(--blue); border-color: #b9c6d8; }
+table { border-collapse: collapse; width: 100%; font-size: .94rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--muted); font-size: .8rem; border-bottom: 2px solid var(--line); padding: 6px 8px; } td { border-bottom: 1px solid var(--line); padding: 6px 8px; }
+.r { text-align: right; } .hint { color: var(--muted); font-size: .85rem; }
+.tick { width: 22px; height: 22px; border-radius: 5px; border: 2px solid #94a3b8; display: inline-block; vertical-align: middle; }
+.tick.on { background: var(--blue); border-color: var(--blue); position: relative; } .tick.on::after { content: "✓"; color: #fff; position: absolute; left: 3px; top: -3px; font-weight: 800; }
+.amt { width: 120px; text-align: right; } .amt.diff { border-color: var(--bad); background: #fdecea; }
+.pill { display: inline-block; font-size: .74rem; border-radius: 999px; padding: 1px 9px; background: var(--soft); color: var(--muted); white-space: nowrap; }
+.pill.ok { background: #e3f5ec; color: var(--ok); } .pill.bad { background: #fdecea; color: var(--bad); } .pill.warn { background: #fff7e0; color: var(--warn); }
+.facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 12px 0; }
+.facts div { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; } .facts span { display: block; font-size: .8rem; color: var(--muted); } .facts b { font-size: 1.15rem; }
+.zero { color: var(--ok); } .off { color: var(--bad); }
+.grp { font-weight: 700; color: var(--navy); margin: 16px 0 6px; }
+.q { background: #fff7e0; border: 1px solid #f1d38a; border-radius: 10px; padding: 12px 16px; max-width: 920px; }
+@media (max-width: 760px) { .facts { grid-template-columns: 1fr 1fr; } }
+</style></head><body><main>
+<p class="why"><b>Sample figures, not your data.</b> Statements come as photos and paper, in a different layout from each supplier, but every line is a
+<b>document number, a date and an amount</b>. So nothing is uploaded or read by the system. Instead the page lists what <b>your</b> records say you owe that
+supplier, and you go down the paper ticking what is on it. Only the lines that are on their paper and not in your records are typed.</p>
+
+<div class="lap">
+  <h2><span class="num">1</span>Payables → Supplier statement check: go down their paper and tick</h2>
+  <div class="bar">
+    <div><label>Supplier</label><select class="field" style="min-width:260px"><option>New Century City Marketing</option></select></div>
+    <div><label>Their statement is dated</label><input class="field" value="12/02/2026" style="width:130px"></div>
+    <div><label>The total on their paper</label><input class="field r" value="1,612,371.35" style="width:160px"></div>
+    <div><label>Find a number</label><input class="field" placeholder="type or scan the DR no." style="width:200px"></div>
+  </div>
+  <p class="hint" style="margin:0 0 8px">Your records: every delivery from this supplier not yet paid by a cleared check, oldest first. Type a DR number in "Find" and press Enter to tick it without scrolling.</p>
+  <table>
+    <tr><th style="width:40px">On theirs</th><th>Date</th><th>DR / SI no.</th><th class="r">Your amount</th><th class="r">Their amount</th><th></th></tr>
+    <tr><td><span class="tick on"></span></td><td>10/08/2026</td><td><b>216420</b></td><td class="r">90,168.77</td><td class="r"><input class="field amt" value="90,168.77"></td><td><span class="pill ok">matches</span></td></tr>
+    <tr><td><span class="tick on"></span></td><td>10/13/2026</td><td><b>216838</b></td><td class="r">48,426.65</td><td class="r"><input class="field amt" value="48,426.65"></td><td><span class="pill ok">matches</span></td></tr>
+    <tr><td><span class="tick on"></span></td><td>10/15/2026</td><td><b>217074</b></td><td class="r">122,690.81</td><td class="r"><input class="field amt diff" value="126,290.81"></td><td><span class="pill bad">theirs is 3,600.00 more</span></td></tr>
+    <tr><td><span class="tick on"></span></td><td>10/17/2026</td><td><b>217331</b></td><td class="r">193,031.21</td><td class="r"><input class="field amt" value="193,031.21"></td><td><span class="pill ok">matches</span> <span class="pill warn">check 0004498 dated 11/20, not cleared yet</span></td></tr>
+    <tr><td><span class="tick"></span></td><td>10/17/2026</td><td><b>217332</b></td><td class="r">341,240.66</td><td class="r"><input class="field amt" placeholder="—" disabled></td><td><span class="pill warn">in your records, not on their paper</span></td></tr>
+    <tr><td><span class="tick on"></span></td><td>10/22/2026</td><td><b>217653</b></td><td class="r">299,701.74</td><td class="r"><input class="field amt" value="299,701.74"></td><td><span class="pill ok">matches</span></td></tr>
+    <tr><td colspan="6" class="hint">… 9 more lines …</td></tr>
+  </table>
+  <div class="grp">On their paper, not in your records <span class="hint" style="font-weight:400">(type these)</span></div>
+  <table>
+    <tr><th>Date</th><th>DR / SI no.</th><th class="r">Their amount</th><th></th></tr>
+    <tr><td><input class="field" value="11/15/2026" style="width:120px"></td><td><input class="field" value="219386" style="width:120px"></td><td class="r"><input class="field amt" value="315,371.85"></td>
+      <td><span class="pill bad">not recorded</span> <span class="hint">was it delivered? If yes, record it on Receive.</span></td></tr>
+    <tr><td><input class="field" value="10/29/2026" style="width:120px"></td><td><input class="field" value="218147" style="width:120px"></td><td class="r"><input class="field amt" value="344,392.19"></td>
+      <td><span class="pill ok">paid</span> <span class="hint">your check 0004471 cleared 11/28: they have not posted it. Tell them.</span></td></tr>
+    <tr><td><input class="field" placeholder="mm/dd/yyyy" style="width:120px"></td><td><input class="field" placeholder="number" style="width:120px"></td><td class="r"><input class="field amt" placeholder="amount"></td><td><span class="hint">a new line appears as you type</span></td></tr>
+  </table>
+  <div class="facts">
+    <div><span>Total on their paper</span><b>1,612,371.35</b></div>
+    <div><span>Ticked and typed so far</span><b>1,612,371.35</b></div>
+    <div><span>Still to find on the paper</span><b class="zero">0.00</b></div>
+    <div><span>Your records say you owe</span><b>1,290,220.38</b></div>
+  </div>
+  <p class="hint">"Still to find" reaches zero when every line of their paper is ticked or typed: then nothing was missed or mistyped.</p>
+  <div class="bar"><button class="btn"><span class="ms">save</span>Save this check</button><button class="btn ghost"><span class="ms">print</span>Print the differences</button></div>
+</div>
+
+<div class="lap">
+  <h2><span class="num">2</span>What it tells you (the page to print or send to the supplier)</h2>
+  <table>
+    <tr><th>What</th><th class="r">Lines</th><th class="r">Amount</th><th>What to do</th></tr>
+    <tr><td><span class="pill ok">Matches</span></td><td class="r">13</td><td class="r">948,979.31</td><td class="hint">nothing</td></tr>
+    <tr><td><span class="pill bad">Same number, different amount</span></td><td class="r">1</td><td class="r">+3,600.00</td><td class="hint">DR 217074: check the DR paper; correct yours or ask them to correct theirs</td></tr>
+    <tr><td><span class="pill bad">On theirs, not recorded by you</span></td><td class="r">1</td><td class="r">315,371.85</td><td class="hint">DR 219386: if it was delivered, record it on Receive</td></tr>
+    <tr><td><span class="pill ok">On theirs, already paid by you</span></td><td class="r">1</td><td class="r">344,392.19</td><td class="hint">DR 218147: send them the check number and clearing date</td></tr>
+    <tr><td><span class="pill warn">In your records, not on theirs</span></td><td class="r">1</td><td class="r">341,240.66</td><td class="hint">DR 217332: they may not have billed it yet, or it is on another statement</td></tr>
+  </table>
+  <p class="hint" style="margin-top:10px">Nothing in your records is changed by this page. It only compares. Each saved check is kept with its date, so next month you can see what was settled.</p>
+</div>
+
+<div class="q"><b>What I assumed, and the questions still open</b>
+<ol style="margin:8px 0 0">
+  <li><b>No upload, no reading of photos.</b> You tick and type from the paper. Right for "mostly photos and paper"?</li>
+  <li><b>The amount compared is the one you recorded for the DR</b> (after any discount). For a statement like Express Dymans, you would type their "Total amount" column, not the DR amount before the 40%.</li>
+  <li><b>The supplier's number is matched against both your DR no. and your SI no.</b>, since some suppliers list invoices and others delivery receipts.</li>
+  <li><b>RPG Battery and RPG Distribution:</b> one supplier in your system, or two? If two, each is checked on its own.</li>
+  <li><b>Who uses it:</b> everyone who can open Order statements, or only you?</li>
+</ol></div>
+</main></body></html>

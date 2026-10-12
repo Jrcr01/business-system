@@ -166,6 +166,7 @@ def service_worker(request):
         raise Http404
     resp = FileResponse(open(path, "rb"), content_type="application/javascript")
     resp["Service-Worker-Allowed"] = "/"
+    resp["Cache-Control"] = "no-cache"                       # a phone must never keep an old one: the push handler lives here (2026-10-13)
     resp["Cache-Control"] = "no-cache"
     return resp
 

@@ -56,7 +56,7 @@ def flag(conn, kind: str, ref_type: str, ref_id: int | None, detail: str) -> Non
 
 def open_flags() -> pd.DataFrame:
     with get_conn() as conn:
-        return pd.read_sql_query("SELECT flag_id, kind, detail, raised_by, raised_at FROM review_flags WHERE reviewed_at IS NULL ORDER BY flag_id", conn)
+        return pd.read_sql_query("SELECT flag_id, kind, detail, raised_by, datetime(raised_at, '+8 hours') AS raised_at FROM review_flags WHERE reviewed_at IS NULL ORDER BY flag_id", conn)
 
 
 def open_count() -> int:
