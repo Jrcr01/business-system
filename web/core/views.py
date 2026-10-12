@@ -157,6 +157,19 @@ def _pending_user(request) -> dict | None:
     return user
 
 
+def service_worker(request):
+    """The phone app's service worker, at the site's root so its scope is the whole site (phone/static/phone/sw.js; it keeps nothing offline)."""
+    from django.contrib.staticfiles import finders
+    from django.http import FileResponse
+    path = finders.find("phone/sw.js")
+    if not path:
+        raise Http404
+    resp = FileResponse(open(path, "rb"), content_type="application/javascript")
+    resp["Service-Worker-Allowed"] = "/"
+    resp["Cache-Control"] = "no-cache"
+    return resp
+
+
 def health(request):
     """For the server's watchdog and the load test: the database answers."""
     from engines.common import get_conn

@@ -93,6 +93,8 @@ class SignInMiddleware:
             return self.get_response(request) if path == "/setup/" else redirect("/setup/")
         user = current_user(request)
         if user is None:
+            if path in ("/sw.js", "/phone/manifest.webmanifest"):   # what Chrome reads to install the phone app, from the sign-in page too (2026-10-12)
+                return self.get_response(request)
             if path == "/login/" or (path in ("/2fa/", "/2fa/setup/") and request.session.get("pending")):     # the code step, after a right password
                 return self.get_response(request)
             return redirect("/login/" + (f"?next={quote(path)}" if path not in ("/", "/logout/") else ""))

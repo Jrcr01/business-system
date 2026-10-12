@@ -31,7 +31,7 @@ def test_off_until_the_switch_and_then_the_four_buttons(web, db):
     assert 'rel="manifest"' in page and "apple-mobile-web-app-capable" in page
     r = web.get("/phone/manifest.webmanifest")
     assert r.status_code == 200 and r["Content-Type"].startswith("application/manifest+json")
-    assert '"start_url": "/phone/"' in b"".join(r.streaming_content).decode()
+    assert '"start_url": "/"' in b"".join(r.streaming_content).decode()          # the whole site is the app (owner, 2026-10-12: "can we have this")
     assert "On the phone" in web.get("/").content.decode()                     # the laptop's person menu links to it
 
 
@@ -171,3 +171,18 @@ def test_a_page_hidden_from_a_person_is_hidden_on_the_phone_too(web, db):
     page = co.get("/phone/").content.decode()
     assert 'href="/phone/prices/"' not in page and 'href="/phone/stock/"' in page
     assert co.get("/phone/prices/").status_code == 403
+
+
+def test_the_site_is_installable_from_any_page_and_the_service_worker_is_served(web, db):
+    # owner, 2026-10-12: Chrome on the phone said "This app cannot be installed" on the sign-in page: no manifest there, no service worker anywhere
+    _admin(web)
+    assert 'rel="manifest"' in web.get("/").content.decode()
+    web.post("/logout/")
+    page = web.get("/login/").content.decode()                                  # the sign-in page too: Install is pressed there
+    assert 'rel="manifest" href="/phone/manifest.webmanifest"' in page and "serviceWorker" in page
+    r = web.get("/sw.js")
+    assert r.status_code == 200 and r["Content-Type"].startswith("application/javascript") and r["Service-Worker-Allowed"] == "/"
+    assert b"addEventListener(\"fetch\"" in b"".join(r.streaming_content)
+    r = web.get("/phone/manifest.webmanifest")
+    r2 = b"".join(r.streaming_content).decode(); r = web.get("/phone/manifest.webmanifest")
+    assert '"id": "/"' in b"".join(r.streaming_content).decode() and '"scope": "/"' in r2

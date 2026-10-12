@@ -1,8 +1,9 @@
 {
-  "name": "Slick's on the phone",
+  "id": "/",
+  "name": "Slick's Tire Supply",
   "short_name": "Slick's",
-  "description": "Price list, stock, stock in and stock out for Slick's Tire Supply",
-  "start_url": "/phone/",
+  "description": "Slick's business system",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

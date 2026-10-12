@@ -6,6 +6,7 @@ urlpatterns = [
     path("", views.home, name="home"),
     path("home/", views.home),
     path("health/", views.health, name="health"),
+    path("sw.js", views.service_worker, name="service_worker"),
     path("setup/", views.setup, name="setup"),
     path("login/", views.login, name="login"),
     path("logout/", views.logout, name="logout"),
