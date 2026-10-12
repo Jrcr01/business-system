@@ -2,7 +2,7 @@
 {% block content %}
 {% comment %}Owner, 2026-10-12: the same slip as Scan out (the stock is out the moment Done is pressed; the invoice is written by hand and recorded after
 close), reached from the phone whether or not the laptop's "Sales start from a scan" is on.{% endcomment %}
-<form method="post" id="out_form">{% csrf_token %}<input type="hidden" name="action" value="slip">
+<form method="post" id="out_form" data-guard>{% csrf_token %}<input type="hidden" name="action" value="slip">
   {% include "selling/_scan_lines.html" %}
   <label for="si_hint">SI no. (optional, if the invoice is already written)</label><input class="ph-field" id="si_hint" type="text" inputmode="numeric" name="si_hint" value="{{ si_hint }}" placeholder="004503">
   <label for="customer">Customer (optional)</label><input class="ph-field" id="customer" type="text" name="customer" value="{{ customer }}" list="cust_names" placeholder="Walk-in" autocomplete="off">

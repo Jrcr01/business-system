@@ -3,7 +3,7 @@
 {% comment %}Owner, 2026-10-12: the invoice is still written by hand; the phone records it whenever, from the cash receipt ("just workback the profit").
 Scan what was sold, type the amount received; profit shows at once. A slip of the day can be picked so goods already out are not taken twice.{% endcomment %}
 {% if no_booklet %}<div class="ph-bad">No invoice booklet is in use: register it on the laptop (Sell → Invoice booklets). You can still type a number.</div>{% endif %}
-<form method="post" id="ps_form">{% csrf_token %}<input type="hidden" name="release_id" value="{{ release_id }}">
+<form method="post" id="ps_form" data-guard>{% csrf_token %}<input type="hidden" name="release_id" value="{{ release_id }}">
   <div class="ph-row"><div style="flex:1 1 120px"><label for="si_no">SI no. (from the booklet)</label><input class="ph-field" id="si_no" type="text" inputmode="numeric" name="si_no" value="{{ si_no }}" required></div>
     <div style="flex:1 1 140px"><label for="sale_date">Date</label><input class="ph-field" id="sale_date" type="date" name="sale_date" value="{{ sale_date }}" max="{{ today|date:'Y-m-d' }}"></div></div>
   <label for="customer">Customer</label><input class="ph-field" id="customer" type="text" name="customer" value="{{ customer }}" list="cust_names" placeholder="Walk-in" autocomplete="off">

@@ -1,0 +1,16 @@
+{% extends "phone/base.html" %}{% load humanize slicks %}
+{% block content %}
+{% comment %}Owner, 2026-10-12: stock counts on the phone -- walk the rack and scan. The open counts, then Start a count.{% endcomment %}
+{% for c in rows %}<a class="ph-big" href="/phone/count/{{ c.count_id }}/" style="flex-wrap:wrap"><span class="ms">fact_check</span><span>{{ c.count_no }} · {{ c.scope }}<br>
+  <span class="hint" style="font-weight:400">{% if c.status == "COUNTING" %}counting · {{ c.typed }} of {{ c.items }} typed{% else %}finished · {{ c.open }} to approve on the laptop{% endif %}{% if c.counted_by %} · {{ c.counted_by }}{% endif %}</span></span></a>
+{% empty %}<p class="note">No count is open. Start one below: a brand at a time is easiest.</p>{% endfor %}
+<details class="ph-card" style="margin-top:12px"{% if not rows %} open{% endif %}><summary style="font-weight:700;cursor:pointer"><span class="ms">add_box</span> Start a count</summary>
+  <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="start">
+    <label for="ct_cat">Type</label><select class="ph-field" id="ct_cat" name="category"><option value="">All types</option>{% for k, label in categories %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select>
+    <label for="ct_brand">Brand</label><select class="ph-field" id="ct_brand" name="brand"><option value="">All brands</option>{% for b in brands %}<option value="{{ b }}">{{ b }}</option>{% endfor %}</select>
+    <label style="display:flex;gap:8px;align-items:center;font-size:.95rem;color:var(--ink)"><input type="checkbox" name="uncounted" value="1" style="width:22px;height:22px"> Only items not counted in 90 days</label>
+    <label for="ct_by">Counted by</label><input class="ph-field" id="ct_by" type="text" name="counted_by" value="{{ me_name }}">
+    <button class="btn main" type="submit" style="margin-top:8px"><span class="ms">play_arrow</span>Start</button>
+    <p class="hint">The sheet is blind: it never shows what the system expects. Up to 600 items per count.</p>
+  </form></details>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "phone/base.html" %}{% load humanize slicks %}
+{% block content %}
+{% comment %}Owner, 2026-10-12: the count sheet on the phone. Every scan adds 1 to its item; Save keeps the figures; Finish hands the differences to the laptop.{% endcomment %}
+<div class="ph-card" style="background:#f7f9fc"><b class="t">{{ c.count_no }} · {{ c.scope }}</b><span class="hint">{% if counting %}counting · <span id="ct_done">{{ done }}</span> of {{ rows|length }} typed{% if c.counted_by %} · {{ c.counted_by }}{% endif %}{% else %}finished: the differences wait for approval on the laptop{% endif %}</span></div>
+{% if counting %}
+<div class="ph-scan"><input type="text" id="ct_scan" placeholder="Scan each piece: every scan adds 1" autocomplete="off" aria-label="Scan" autofocus>
+  <button type="button" id="ct_cam" hidden aria-label="Camera"><span class="ms">photo_camera</span></button></div>
+<video id="ct_video" playsinline hidden></video>
+<div id="ct_msg" class="hint" style="min-height:1.2em"></div>
+<form method="post" id="ct_form" data-guard>{% csrf_token %}<input type="hidden" name="counted_by" value="{{ c.counted_by|default:'' }}">
+  {% for r in rows %}
+  <div class="ph-card" id="ln_{{ r.line_id }}"><b class="t">{{ r.name }}</b><span class="hint">{{ r.code }}</span>
+    <div class="ph-row" style="margin-top:6px"><span class="hint">Counted</span>
+      <input type="text" inputmode="decimal" class="ct_q" name="c_{{ r.line_id }}" value="{% if r.counted is not None %}{{ r.counted|floatformat:'-2' }}{% endif %}" data-step="1" data-min="0" aria-label="Counted: {{ r.name }}">
+      <input class="ph-field" style="flex:1 1 120px" type="text" name="n_{{ r.line_id }}" value="{{ r.note }}" placeholder="note" aria-label="Note: {{ r.name }}"></div>
+  </div>
+  {% endfor %}
+  <div class="ph-row" style="margin-top:10px"><button class="btn" type="submit" name="action" value="save" style="flex:1"><span class="ms">save</span>Save</button>
+    <button class="btn main" type="submit" name="action" value="finish" style="flex:2;margin-top:0" onclick="return confirm('Finish the count? Items left empty are not part of it.');"><span class="ms">send</span>Finish</button></div>
+  <p class="hint">Save keeps the figures (the laptop shows the same sheet); the page also saves by itself every 20 scans. Finish hands the differences to the System admin.</p>
+</form>
+<form method="post" style="margin-top:14px" onsubmit="return confirm('Cancel {{ c.count_no }}? The figures typed are dropped.');">{% csrf_token %}<input type="hidden" name="action" value="cancel">
+  <button class="btn small ghost" type="submit">Cancel this count</button></form>
+{{ codes_json|json_script:"ct_codes" }}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var codes = JSON.parse(document.getElementById("ct_codes").textContent || "{}"), scan = document.getElementById("ct_scan"), msg = document.getElementById("ct_msg");
+  var form = document.getElementById("ct_form"), since = 0;
+  function done() { var n = 0; document.querySelectorAll(".ct_q").forEach(function (i) { if (i.value.trim() !== "") n++; }); document.getElementById("ct_done").textContent = n; }
+  document.querySelectorAll(".ct_q").forEach(function (i) { i.addEventListener("input", done); });
+  function autosave() {                                        /* quietly, so a dropped phone loses little */
+    var data = new FormData(form); data.append("action", "save"); data.append("quiet", "1");
+    fetch(location.pathname, {method: "POST", body: data, credentials: "same-origin"}).then(function (r) { return r.json(); })
+      .then(function (d) { if (d.ok) { msg.textContent = "saved"; msg.style.color = "#0b6e4f"; } }).catch(function () {});
+  }
+  function scanned(code) {
+    code = code.trim().toUpperCase(); if (!code) return;
+    for (var lid in codes) { if (codes[lid].indexOf(code) >= 0) {
+      var inp = form.querySelector('input[name="c_' + lid + '"]'); inp.value = (parseFloat(inp.value) || 0) + 1; inp.dispatchEvent(new Event("input", {bubbles: true}));
+      var card = document.getElementById("ln_" + lid); card.scrollIntoView({block: "center"}); card.style.background = "#e7f6ee"; setTimeout(function () { card.style.background = ""; }, 600);
+      msg.textContent = "+1 " + card.querySelector(".t").textContent + " = " + inp.value; msg.style.color = "#0b6e4f"; window.phone.beep();
+      if (++since >= 20) { since = 0; autosave(); }
+      return; } }
+    msg.textContent = "No item on this sheet has the code " + code + "."; msg.style.color = "#b3261e";
+  }
+  scan.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); scanned(scan.value); scan.value = ""; } });
+  window.phone.camera(document.getElementById("ct_cam"), document.getElementById("ct_video"), scanned);
+  window.addEventListener("pagehide", function () { if (since) { var data = new FormData(form); data.append("action", "save"); data.append("quiet", "1"); navigator.sendBeacon(location.pathname, data); } });
+});
+</script>
+{% else %}
+{% for r in rows %}<div class="ph-card"><b class="t">{{ r.name }}</b><span class="hint">{{ r.code }} · counted {% if r.counted is not None %}{{ r.counted|floatformat:"-2" }}{% else %}—{% endif %}</span></div>{% endfor %}
+{% endif %}
+<p style="margin-top:12px"><a class="btn small ghost" href="/phone/count/">All counts</a></p>
+{% endblock %}

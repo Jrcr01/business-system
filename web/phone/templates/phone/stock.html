@@ -7,7 +7,7 @@
 <video id="st_video" playsinline hidden></video>
 {% if may_do %}
 <details class="ph-card" style="margin-bottom:10px"{% if take_in %} open{% endif %}><summary style="font-weight:700;cursor:pointer"><span class="ms">add_box</span> Take in (trade-in, surplus, found)</summary>
-  <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="take_in">
+  <form method="post" style="margin-top:8px" data-guard>{% csrf_token %}<input type="hidden" name="action" value="take_in">
     <label for="ti_item">What</label><select class="ph-field" id="ti_item" name="item_id">{% for s in surplus %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}{% if item %}<option value="{{ item.id }}" selected>{{ item.name }}</option>{% endif %}</select>
     <div class="ph-row"><div style="flex:1 1 100px"><label for="ti_qty">How many</label><input class="ph-field" id="ti_qty" type="text" inputmode="decimal" name="qty" value="1" required></div>
       <div style="flex:1 1 140px"><label for="ti_cost">Estimated cost each (0 if free)</label><input class="ph-field" id="ti_cost" type="text" inputmode="decimal" name="cost" value="0"></div></div>

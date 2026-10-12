@@ -29,7 +29,8 @@ def _mine(request) -> dict:
     return {"prices": "price-lists" in see, "stock": "stock" in see, "stock_do": "stock" in do,
             "in": may_receive(role)[0] and "purchase-orders" not in hidden_for(acting_email()), "out": "sales" in see and "sales" in do,
             "sale": "sales" in see and "sales" in do and role != "scanner",       # the family records the sale; the staff phone only moves stock (2026-10-12)
-            "sale_do": "sales" in do and role != "scanner"}
+            "sale_do": "sales" in do and role != "scanner",
+            "count": "stock-counts" in see, "count_do": "stock-counts" in do}
 
 
 def phone_page(key: str | None, write: bool = False):
@@ -62,7 +63,8 @@ def home(request):
     mine = request.phone_mine
     return render(request, "phone/home.html", _ctx(request, "Slick's", waiting=len(waiting_orders()) if mine["in"] else 0,
                                                     slips=len(slips_today()) if mine["out"] else 0,
-                                                    to_invoice=len(__import__("engines.sales_rules", fromlist=["open_releases"]).open_releases()) if mine["sale"] else 0))
+                                                    to_invoice=len(__import__("engines.sales_rules", fromlist=["open_releases"]).open_releases()) if mine["sale"] else 0,
+                                                    counting=sum(1 for c in __import__("engines.count_rules", fromlist=["listing"]).listing() if c["status"] == "COUNTING") if mine["count"] else 0))
 
 
 def manifest_ops(request):
@@ -176,7 +178,7 @@ def stock_in(request):
                     cs = [row[1]] + [c[0].upper() for c in conn.execute("SELECT barcode FROM item_barcodes WHERE item_id = ?", (row[0],))]
                     codes[int(ln["line_id"])] = cs
     return render(request, "phone/in.html", _ctx(request, "Stock in", orders=orders, order=order, lines=lines, ask=ask, today=manila_today(), many=many_drs(),
-                                                  codes_json=json.dumps(codes), doc=request.POST.get("doc", ""), dr=request.POST.get("dr", "")))
+                                                  codes_json=codes, doc=request.POST.get("doc", ""), dr=request.POST.get("dr", "")))
 
 
 @phone_page("out", write=True)
@@ -266,3 +268,62 @@ def day(request):
         s["items"].append(f"{r['qty']:g} × {r['item']}")
     return render(request, "phone/day.html", _ctx(request, "Sales today", d=d, sheet=sheet, sales=list(by_sale.values()), prev=d - timedelta(days=1),
                                                    nxt=d + timedelta(days=1) if d < manila_today() else None, slips=[s for s in sr.open_releases() if str(s["day"])[:10] == d.isoformat()]))
+
+
+@phone_page("count", write=True)
+def count(request):
+    """Stock counts on the phone (owner, 2026-10-12): the open counts, and Start a count by type / brand. The same counts as the laptop page."""
+    from engines import count_rules as cr
+    from engines.common import get_conn
+    from engines.stock_rules import CATEGORY_LABEL
+    if request.method == "POST" and request.POST.get("action") == "start":
+        p = request.POST
+        ok, msg, cid = cr.start_count(p.get("category", ""), p.get("brand", ""), p.get("uncounted") == "1", "", p.get("counted_by", ""))
+        _say(request, ok, msg)
+        return redirect(f"/phone/count/{cid}/" if ok else "/phone/count/")
+    with get_conn() as conn:
+        brands = [r[0] for r in conn.execute("SELECT DISTINCT brand FROM items WHERE is_active = 1 AND brand != '' ORDER BY brand COLLATE NOCASE")]
+    rows = [c for c in cr.listing() if c["status"] in ("COUNTING", "WAITING")]
+    return render(request, "phone/count.html", _ctx(request, "Stock count", rows=rows, brands=brands, categories=list(CATEGORY_LABEL.items()),
+                                                      me_name=request.slicks_user.get("name", "")))
+
+
+@phone_page("count", write=True)
+def count_sheet(request, count_id: int):
+    """One count on the phone: scan each piece (every scan adds 1 to its item), or type; Save keeps the figures (the laptop sheet shows the same);
+    Finish hands the differences to the System admin on the laptop. Autosave posts here too (action=save, from the page's own script)."""
+    from engines import count_rules as cr
+    c = cr.get_count(count_id)
+    if not c:
+        raise Http404
+    if request.method == "POST":
+        p, what = request.POST, request.POST.get("action", "")
+        if what in ("save", "finish"):
+            typed, bad = {}, None
+            for row in cr.sheet_rows(count_id):
+                raw = str(p.get(f"c_{row['line_id']}", "")).replace(",", "").strip()
+                if raw == "":
+                    n = None
+                else:
+                    try:
+                        n = float(raw)
+                    except ValueError:
+                        bad = f"{row['name']}: '{raw}' is not a quantity."
+                        break
+                typed[row["line_id"]] = (n, p.get(f"n_{row['line_id']}", ""))
+            ok, msg = (False, bad) if bad else cr.save_counted(count_id, typed, p.get("counted_by") if p.get("counted_by") is not None else None)
+            if ok and what == "finish":
+                ok, msg = cr.finish(count_id)
+        elif what == "cancel":
+            ok, msg = cr.cancel(count_id)
+        else:
+            ok, msg = False, "Unknown action."
+        if p.get("quiet") == "1":                                # the autosave: a plain answer, no page
+            from django.http import JsonResponse
+            return JsonResponse({"ok": ok, "msg": msg})
+        _say(request, ok, msg)
+        return redirect("/phone/count/" if (what in ("cancel", "finish") and ok) else f"/phone/count/{count_id}/")
+    rows = cr.sheet_rows(count_id)
+    done = sum(1 for r in rows if r["counted"] is not None)
+    return render(request, "phone/count_sheet.html", _ctx(request, c["count_no"], c=c, rows=rows, done=done, counting=c["status"] == "COUNTING",
+                                                           codes_json={r["line_id"]: [x.upper() for x in r["codes"]] for r in rows}))

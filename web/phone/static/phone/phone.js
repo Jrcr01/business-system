@@ -50,3 +50,39 @@
   };
   document.addEventListener("DOMContentLoaded", function () { ph.steppers(document); });
 })();
+/* guard(form): a form marked data-guard is sent by the page itself; when the send fails (no signal, the server down) nothing is lost: every field
+   and every scanned line stays as it was, with a note to press again (owner, 2026-10-12: the did-not-send guard). On success the page goes where
+   the server says, as a plain send would. */
+(function () {
+  function guard(form) {
+    if (form.dataset.guarded) return;
+    form.dataset.guarded = "1";
+    var note = document.createElement("div"); note.className = "ph-bad"; note.hidden = true; note.setAttribute("role", "alert");
+    form.insertBefore(note, form.firstChild);
+    var pressed = null;
+    form.addEventListener("click", function (e) { var b = e.target.closest("button[type=submit]"); if (b) pressed = b; });
+    form.addEventListener("submit", function (e) {
+      if (form.dataset.sending) return;                          /* the real send, after the checks below */
+      e.preventDefault();
+      var data = new FormData(form);
+      if (pressed && pressed.name) data.append(pressed.name, pressed.value);
+      var buttons = form.querySelectorAll("button[type=submit]"); buttons.forEach(function (b) { b.disabled = true; });
+      note.hidden = true;
+      fetch(form.getAttribute("action") || location.href, {method: "POST", body: data, credentials: "same-origin", redirect: "follow"})
+        .then(function (r) {
+          if (r.status >= 500) throw new Error("server " + r.status);
+          return r.text().then(function (html) {              /* the page the server answered with (after its redirect), its notes included */
+            history.replaceState(null, "", r.url); document.open(); document.write(html); document.close();
+          });
+        })
+        .catch(function () {
+          buttons.forEach(function (b) { b.disabled = false; });
+          note.textContent = "Could not send: nothing was saved. Check the signal and press again; everything typed and scanned is still here.";
+          note.hidden = false; note.scrollIntoView({block: "center"});
+        });
+    });
+  }
+  window.phone = window.phone || {};
+  window.phone.guard = guard;
+  document.addEventListener("DOMContentLoaded", function () { document.querySelectorAll("form[data-guard]").forEach(guard); });
+})();

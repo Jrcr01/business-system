@@ -28,7 +28,7 @@
     <button type="button" id="in_cam" hidden aria-label="Camera"><span class="ms">photo_camera</span></button></div>
   <video id="in_video" playsinline hidden></video>
   <div id="in_msg" class="hint"></div>
-  <form method="post" id="in_form">{% csrf_token %}<input type="hidden" name="po" value="{{ order.po_id }}"><input type="hidden" name="inv_date" value="{{ today|date:'Y-m-d' }}">
+  <form method="post" id="in_form" data-guard>{% csrf_token %}<input type="hidden" name="po" value="{{ order.po_id }}"><input type="hidden" name="inv_date" value="{{ today|date:'Y-m-d' }}">
     {% for ln in lines %}
     <div class="ph-card" id="line_{{ ln.line_id }}"><b class="t">{{ ln.item_name }}</b>
       <div class="kv"><span>Still to come</span><b>{{ ln.remaining|floatformat:"-2" }}{% if ln.unit %} {{ ln.unit }}{% endif %}</b></div>
