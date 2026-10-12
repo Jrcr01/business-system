@@ -320,6 +320,11 @@ input.sw:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
                    background: linear-gradient(90deg, rgba(10,18,36,.82) 0%, rgba(10,18,36,.55) 30%, rgba(10,18,36,.08) 55%, rgba(10,18,36,0) 100%); }
 .login-wrap { position: relative; z-index: 1; min-height: 100vh; display: flex; align-items: center; padding: 0 0 0 6vw; }
 main:has(.login-wrap) { padding-top: 0; padding-bottom: 0; }     /* the sign-in page fills the window exactly: nothing to scroll (owner, 2026-10-12) */
+/* on a phone the page itself is locked to the screen (owner, 2026-10-12: "For mobile login page, it also scroll"): the browser's own bar, the keyboard
+   or an Android over-scroll can no longer drag the photo; if the card is ever taller than the screen, the card area scrolls, not the page */
+html:has(.login-wrap), body:has(.login-wrap) { height: 100%; overflow: hidden; overscroll-behavior: none; }
+main:has(.login-wrap) { height: 100vh; height: 100dvh; overflow: hidden; }
+.login-wrap { height: 100%; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .login-card { width: 100%; max-width: 380px; background: #fff; border-radius: 14px; padding: 30px 32px 22px; box-shadow: 0 24px 60px rgba(0,0,0,.40); }
 .login-card h2 { margin: 18px 0 14px; font-size: 1.45rem; color: #0f172a; }
 .login-card label { font-weight: 600; color: #334155; }
@@ -339,7 +344,7 @@ main:has(.login-wrap) { position: relative; }
 @media (max-width: 760px) {
   .login-bg { background-position: 78% center; }
   .login-bg::after { background: linear-gradient(180deg, rgba(10,18,36,0) 0%, rgba(10,18,36,.35) 40%, rgba(10,18,36,.85) 100%); }
-  .login-wrap { padding: 0 16px; align-items: flex-end; min-height: 100vh; min-height: 100dvh; padding-bottom: 24px; }
+  .login-wrap { padding: 0 16px; align-items: flex-end; padding-bottom: 24px; }
   .login-card { margin: 0 auto; padding: 24px 22px 18px; }
   main:has(.login-wrap) > .msg { left: 16px; right: 16px; max-width: none; }
 }
