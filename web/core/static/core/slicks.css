@@ -314,14 +314,15 @@ input.sw:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .search-hits a { text-decoration: none; }
 .search-hits a:hover { text-decoration: underline; }
 
-/* Sign-in page over the shop photo (owner, 2026-10-09): a dark band on the left carries the box, so the shop's sign stays in view */
-.login-bg { position: fixed; inset: 0; z-index: 0; background: #0f172a 70% center / cover no-repeat; }
-.login-bg::after { content: ""; position: absolute; inset: 0;
-                   background: linear-gradient(90deg, rgba(10,18,36,.82) 0%, rgba(10,18,36,.55) 30%, rgba(10,18,36,.08) 55%, rgba(10,18,36,0) 100%); }
-.login-wrap { position: relative; z-index: 1; min-height: 100vh; display: flex; align-items: center; padding: 0 0 0 6vw; }
+/* Sign-in page (owner, 2026-10-12: "A, centered"): plain navy, the logo and the name above the card, everything centred, no photo to load */
+.login-bg { position: fixed; inset: 0; z-index: 0; background: linear-gradient(180deg, #0f2a4a 0%, #0b3a66 60%, #0f2a4a 100%); }
+.login-wrap { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 16px; }
+.login-big { color: #fff; text-align: center; }
+.login-big img { width: 64px; height: 64px; object-fit: cover; border-radius: 12px; display: block; margin: 0 auto 8px; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+.login-big b { display: block; font-size: 1.25rem; } .login-big span { color: #cbd5e1; font-size: .85rem; }
 main:has(.login-wrap) { padding-top: 0; padding-bottom: 0; }     /* the sign-in page fills the window exactly: nothing to scroll (owner, 2026-10-12) */
 /* on a phone the page itself is locked to the screen (owner, 2026-10-12: "For mobile login page, it also scroll"): the browser's own bar, the keyboard
-   or an Android over-scroll can no longer drag the photo; if the card is ever taller than the screen, the card area scrolls, not the page */
+   or an Android over-scroll can no longer drag the page; if the card is ever taller than the screen, the card area scrolls, not the page */
 html:has(.login-wrap), body:has(.login-wrap) { height: 100%; overflow: hidden; overscroll-behavior: none; }
 main:has(.login-wrap) { height: 100vh; height: 100dvh; overflow: hidden; }
 .login-wrap { height: 100%; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
@@ -339,12 +340,10 @@ main:has(.login-wrap) { height: 100vh; height: 100dvh; overflow: hidden; }
 .login-help { font-size: .88rem; color: #64748b; margin: 14px 0 0; }
 .login-foot { display: flex; align-items: center; gap: 6px; margin: 16px 0 0; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: .8rem; color: #94a3b8; }
 .login-foot .ms { font-size: 16px; }
-main:has(.login-wrap) > .msg { position: absolute; top: 16px; left: 6vw; z-index: 2; max-width: 380px; margin: 0; }   /* over the photo: adds no height */
+main:has(.login-wrap) > .msg { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 2; width: calc(100% - 32px); max-width: 380px; margin: 0; }   /* over the page: adds no height */
 main:has(.login-wrap) { position: relative; }
 @media (max-width: 760px) {
-  .login-bg { background-position: 78% center; }
-  .login-bg::after { background: linear-gradient(180deg, rgba(10,18,36,0) 0%, rgba(10,18,36,.35) 40%, rgba(10,18,36,.85) 100%); }
-  .login-wrap { padding: 0 16px; align-items: flex-end; padding-bottom: 24px; }
+  .login-wrap { gap: 14px; } .login-big img { width: 54px; height: 54px; } .login-big b { font-size: 1.1rem; }
   .login-card { margin: 0 auto; padding: 16px 18px 12px; }   /* compact, so the whole card fits one phone screen (owner, 2026-10-12) */
   .login-card h2 { margin: 12px 0 10px; font-size: 1.25rem; }
   .login-brand { padding-bottom: 10px; gap: 10px; } .login-brand img { height: 38px; width: 38px; } .login-brand b { font-size: .98rem; } .login-brand span { font-size: .8rem; }
@@ -354,7 +353,7 @@ main:has(.login-wrap) { position: relative; }
   .login-card .btn.wide { margin-top: 12px; padding: 11px; }
   .login-help { font-size: .82rem; margin: 10px 0 0; }
   .login-foot { margin: 10px 0 0; padding-top: 8px; font-size: .75rem; }
-  main:has(.login-wrap) > .msg { left: 16px; right: 16px; max-width: none; }
+  main:has(.login-wrap) > .msg { top: 10px; }
 }
 
 /* View-only pages (owners, 2026-10-09): every form that saves is hidden; the server refuses saves anyway */

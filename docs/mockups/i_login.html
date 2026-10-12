@@ -1,0 +1,83 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: the sign-in page</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --yellow: #F3E03B; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1180px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 26px 0 6px; }
+.why { color: var(--muted); margin: 0 0 12px; max-width: 86ch; }
+.phones { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.phone { width: 340px; height: 700px; border: 10px solid #1c2733; border-radius: 34px; overflow: hidden; box-shadow: 0 6px 20px rgba(16,24,40,.25); position: relative; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.lap { width: 100%; max-width: 1080px; height: 520px; border: 8px solid #1c2733; border-radius: 14px; overflow: hidden; position: relative; display: flex; align-items: center; padding: 0 0 0 6vw; margin-top: 10px; }
+.card { width: 100%; max-width: 340px; background: #fff; border-radius: 14px; padding: 18px 20px 12px; box-shadow: 0 18px 50px rgba(0,0,0,.35); position: relative; z-index: 1; }
+.brand { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #e2e8f0; }
+.brand .logo { width: 38px; height: 38px; border-radius: 8px; background: var(--navy); color: var(--yellow); font-weight: 800; font-size: .7rem; display: flex; align-items: center; justify-content: center; }
+.brand b { display: block; font-size: .98rem; } .brand span { font-size: .8rem; color: #64748b; }
+h2 { margin: 12px 0 10px; font-size: 1.25rem; color: #0f172a; }
+.who { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: .85rem; padding: 8px 10px; border-radius: 8px; background: #ecfdf5; color: #065f46; margin-bottom: 10px; }
+.who b { flex: 0 0 100%; font-size: .95rem; }
+label { display: block; font-weight: 600; color: #334155; margin-bottom: 4px; }
+.in { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; }
+.btn { width: 100%; margin-top: 12px; padding: 11px; border-radius: 8px; background: var(--blue); color: #fff; border: 0; font: inherit; font-weight: 700; }
+.help { font-size: .82rem; color: #64748b; margin: 10px 0 0; }
+.foot { display: flex; gap: 6px; margin: 10px 0 0; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: .75rem; color: #94a3b8; }
+/* A: plain navy, the logo big above the card */
+.bgA { background: linear-gradient(180deg, #0f2a4a 0%, #0b3a66 60%, #0f2a4a 100%); flex-direction: column; gap: 18px; }
+.bgA .big { color: #fff; text-align: center; } .bgA .big .logo { width: 64px; height: 64px; margin: 0 auto 8px; font-size: 1rem; }
+.bgA .big b { display: block; font-size: 1.2rem; } .bgA .big span { color: #cbd5e1; font-size: .85rem; }
+/* B: tread pattern (drawn by the page, no photo) */
+.bgB { background-color: #0f2a4a; background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.06) 0 14px, transparent 14px 34px), repeating-linear-gradient(45deg, rgba(255,255,255,.05) 0 10px, transparent 10px 40px); }
+.bgB::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 30%, rgba(243,224,59,.18), transparent 55%); }
+/* C: the shop photo, blurred and darkened, the card in the middle */
+.bgC { background: #0f172a url('../../assets/storefront.webp') 70% center / cover; }
+.bgC::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(6px); background: rgba(10,18,36,.55); }
+.q { background: #fff7e0; border: 1px solid #f1d38a; border-radius: 10px; padding: 12px 16px; margin-top: 26px; max-width: 900px; }
+</style></head><body><main>
+<p class="why">Three looks for the sign-in page, each shown on a phone. The card is the same on all three (the compact one now live); only what is behind it changes.
+On a laptop the card sits to the left of the same background, as now.</p>
+<div class="phones">
+<div class="phone bgA">
+  <div class="big"><div class="logo">SLICK'S</div><b>Slick's Tire Supply</b><span>Business system</span></div>
+  <div class="card">
+    <h2 style="margin-top:0">Sign in</h2>
+    <div class="who"><span><span class="ms">verified_user</span> Verified by Cloudflare as</span><b>v.jrcroxas@gmail.com</b></div>
+    <label>Password</label><input class="in" type="password" value="password"><button class="btn">Sign in</button>
+    <p class="help">Forgot your password? Ask the System admin to reset it.</p>
+    <p class="foot"><span class="ms">lock</span>For authorized users only. Every action is recorded.</p>
+  </div>
+  <p style="position:absolute;bottom:8px;color:#fff;font-weight:700;margin:0">A · Plain navy</p>
+</div>
+<div class="phone bgB">
+  <div class="card">
+    <div class="brand"><div class="logo">SLICK'S</div><div><b>Slick's Tire Supply</b><span>Business system</span></div></div>
+    <h2>Sign in</h2>
+    <div class="who"><span><span class="ms">verified_user</span> Verified by Cloudflare as</span><b>v.jrcroxas@gmail.com</b></div>
+    <label>Password</label><input class="in" type="password" value="password"><button class="btn">Sign in</button>
+    <p class="help">Forgot your password? Ask the System admin to reset it.</p>
+    <p class="foot"><span class="ms">lock</span>For authorized users only. Every action is recorded.</p>
+  </div>
+  <p style="position:absolute;bottom:8px;color:#fff;font-weight:700;margin:0;z-index:1">B · Tread pattern, drawn by the page</p>
+</div>
+<div class="phone bgC">
+  <div class="card">
+    <div class="brand"><div class="logo">SLICK'S</div><div><b>Slick's Tire Supply</b><span>Business system</span></div></div>
+    <h2>Sign in</h2>
+    <div class="who"><span><span class="ms">verified_user</span> Verified by Cloudflare as</span><b>v.jrcroxas@gmail.com</b></div>
+    <label>Password</label><input class="in" type="password" value="password"><button class="btn">Sign in</button>
+    <p class="help">Forgot your password? Ask the System admin to reset it.</p>
+    <p class="foot"><span class="ms">lock</span>For authorized users only. Every action is recorded.</p>
+  </div>
+  <p style="position:absolute;bottom:8px;color:#fff;font-weight:700;margin:0;z-index:1">C · The shop photo, blurred, card centred</p>
+</div>
+</div>
+<div class="q"><b>Notes</b>
+<ul style="margin:8px 0 0">
+  <li><b>A</b> is the lightest: no picture to load, the real logo (not the placeholder square) above the card, the card centred on every screen.</li>
+  <li><b>B</b> is drawn by the page, so it also loads nothing; a faint tread with a warm glow, in the shop's navy and yellow.</li>
+  <li><b>C</b> keeps the shop photo but blurred and dimmed, so the card never competes with the signage; the card is centred, not at the bottom.</li>
+  <li>Any of the three can take a real photo later (the shop front shot straight, or the family's choice) by swapping one file.</li>
+</ul></div>
+</main></body></html>
