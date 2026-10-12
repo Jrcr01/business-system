@@ -8,6 +8,8 @@ urlpatterns = [
     path("stock/", views.stock, name="phone_stock"),
     path("in/", views.stock_in, name="phone_in"),
     path("out/", views.stock_out, name="phone_out"),
+    path("sale/", views.sale, name="phone_sale"),
+    path("day/", views.day, name="phone_day"),
     path("manifest.webmanifest", views.manifest, name="phone_manifest"),
     path("manifest-ops.webmanifest", views.manifest_ops, name="phone_manifest_ops"),
 ]

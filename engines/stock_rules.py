@@ -140,6 +140,8 @@ def _document(conn, ref_type, ref_id) -> tuple[str, str]:
     if ref_type == "stock_counts":
         row = conn.execute("SELECT count_no FROM stock_counts WHERE count_id = ?", (ref_id,)).fetchone()
         return (row[0], f"/stock-counts/{ref_id}/") if row else ("a count", "")
+    if ref_type == "take_in":                                   # a trade-in or surplus lot taken in on the phone (2026-10-12)
+        return ("taken in", f"/stock/{ref_id}/")
     return "", ""
 
 
@@ -265,3 +267,56 @@ def picker_items() -> list[dict]:
                     "unit": unit or "", "find": text + " " + re.sub(r"[^a-z0-9]", "", text) + " " + re.sub(r"\D", "", name),
                     "codes": [code.upper()] + codes.get(int(iid), [])})
     return out
+
+
+# ---- goods that did not come from a supplier (owner, 2026-10-12: surplus and trade-in tires, "catchall name surplus tire, rim, estimate cost") ----
+
+SURPLUS = (("tire", "Surplus tire"), ("rims", "Surplus rim"))
+
+
+def surplus_items() -> list[dict]:
+    """The two catch-all items, made the first time they are asked for: [{'id', 'code', 'name'}]."""
+    from engines.product_catalog import get_or_create_product
+    out = []
+    for category, name in SURPLUS:
+        with get_conn() as conn:
+            row = conn.execute("SELECT id, code, name FROM items WHERE lower(name) = ? AND category = ?", (name.lower(), category)).fetchone()
+        if not row:
+            iid, full, _ = get_or_create_product("Tires" if category == "tire" else "Rims", "Surplus", size_model=name.split(" ", 1)[1])
+            with write_tx() as conn:
+                conn.execute("UPDATE items SET name = ? WHERE id = ?", (name, int(iid)))
+                row = conn.execute("SELECT id, code, name FROM items WHERE id = ?", (int(iid),)).fetchone()
+        out.append({"id": int(row[0]), "code": row[1], "name": row[2]})
+    return out
+
+
+def take_in(item_id: int, qty, cost, note: str) -> tuple[bool, str]:
+    """Pieces that came without a supplier's delivery -- a trade-in, a surplus lot, a tire found -- taken into stock at an estimated cost (0 when
+    free), with a note of where they came from. The phone's Stock page does this; the ledger and the audit show it."""
+    allowed, why = require_permission("inventory.use")
+    if not allowed:
+        return False, why
+    try:
+        n = float(str(qty).replace(",", ""))
+    except (TypeError, ValueError):
+        return False, "Type how many came in."
+    if n <= 0:
+        return False, "Type how many came in."
+    try:
+        c = float(str(cost or 0).replace(",", "") or 0)
+    except (TypeError, ValueError):
+        return False, "Type the estimated cost each (0 if free)."
+    if c < 0:
+        return False, "The cost cannot be below zero."
+    note = " ".join(str(note or "").split())
+    if not note:
+        return False, "Say where they came from (e.g. 'trade-in from RVC', 'surplus from Jun')."
+    from engines.stock_ledger import stock_in
+    with write_tx() as conn:
+        row = conn.execute("SELECT name FROM items WHERE id = ? AND is_active = 1", (int(item_id),)).fetchone()
+        if not row:
+            return False, "Item not found."
+        stock_in(conn, int(item_id), n, c, "take_in", int(item_id), note=f"taken in: {note}")
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'STOCK_TAKEN_IN', 'items', ?, ?)",
+                     (int(item_id), f"{n:g} x {row[0]} taken in at {c:,.2f} each: {note}"))
+    return True, f"{n:g} × {row[0]} taken in at ₱{c:,.2f} each."

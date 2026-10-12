@@ -5,6 +5,17 @@
   <button type="button" id="st_cam" hidden aria-label="Camera"><span class="ms">photo_camera</span></button>
   <button type="submit" aria-label="Search"><span class="ms">search</span></button></form>
 <video id="st_video" playsinline hidden></video>
+{% if may_do %}
+<details class="ph-card" style="margin-bottom:10px"{% if take_in %} open{% endif %}><summary style="font-weight:700;cursor:pointer"><span class="ms">add_box</span> Take in (trade-in, surplus, found)</summary>
+  <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="take_in">
+    <label for="ti_item">What</label><select class="ph-field" id="ti_item" name="item_id">{% for s in surplus %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}{% if item %}<option value="{{ item.id }}" selected>{{ item.name }}</option>{% endif %}</select>
+    <div class="ph-row"><div style="flex:1 1 100px"><label for="ti_qty">How many</label><input class="ph-field" id="ti_qty" type="text" inputmode="decimal" name="qty" value="1" required></div>
+      <div style="flex:1 1 140px"><label for="ti_cost">Estimated cost each (0 if free)</label><input class="ph-field" id="ti_cost" type="text" inputmode="decimal" name="cost" value="0"></div></div>
+    <label for="ti_note">Where from</label><input class="ph-field" id="ti_note" type="text" name="note" placeholder="e.g. trade-in from RVC, SI 005523" required>
+    <button class="btn main" type="submit" style="margin-top:8px"><span class="ms">add_box</span>Take in</button>
+    <p class="hint">New stock keeps its real cost; a surplus or trade-in tire goes on the catch-all item at your estimate, so the whole amount received less that estimate is profit.</p>
+  </form></details>
+{% endif %}
 <div class="chips">
   <a class="chip{% if not show %} on{% endif %}" href="/phone/stock/">Find</a>
   <a class="chip{% if show == 'low' %} on{% endif %}" href="/phone/stock/?show=low">Low stock {{ counts.low }}</a>

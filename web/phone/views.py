@@ -27,7 +27,9 @@ def _mine(request) -> dict:
     see, do = pages_for(role), doable_pages(role)
     # Stock in goes by the receiving switch alone (the Scanner may receive without seeing Purchase orders), unless that page is hidden from the person
     return {"prices": "price-lists" in see, "stock": "stock" in see, "stock_do": "stock" in do,
-            "in": may_receive(role)[0] and "purchase-orders" not in hidden_for(acting_email()), "out": "sales" in see and "sales" in do}
+            "in": may_receive(role)[0] and "purchase-orders" not in hidden_for(acting_email()), "out": "sales" in see and "sales" in do,
+            "sale": "sales" in see and "sales" in do and role != "scanner",       # the family records the sale; the staff phone only moves stock (2026-10-12)
+            "sale_do": "sales" in do and role != "scanner"}
 
 
 def phone_page(key: str | None, write: bool = False):
@@ -59,7 +61,8 @@ def home(request):
     from engines.phone_lookup import slips_today, waiting_orders
     mine = request.phone_mine
     return render(request, "phone/home.html", _ctx(request, "Slick's", waiting=len(waiting_orders()) if mine["in"] else 0,
-                                                    slips=len(slips_today()) if mine["out"] else 0))
+                                                    slips=len(slips_today()) if mine["out"] else 0,
+                                                    to_invoice=len(__import__("engines.sales_rules", fromlist=["open_releases"]).open_releases()) if mine["sale"] else 0))
 
 
 def manifest_ops(request):
@@ -98,6 +101,8 @@ def stock(request):
         iid = int(request.POST.get("item_id") or 0)
         if what == "barcode":
             ok, msg = sr.learn_barcode(request.POST.get("barcode"), iid)
+        elif what == "take_in":                                  # a trade-in or a surplus lot (owner, 2026-10-12)
+            ok, msg = sr.take_in(iid, request.POST.get("qty"), request.POST.get("cost"), request.POST.get("note", ""))
         elif what == "level":
             ok, msg = sr.set_reorder_level(iid, request.POST.get("level"))
         else:
@@ -117,7 +122,8 @@ def stock(request):
     elif show in ("low", "negative"):
         rows = sr.stock_list("", show)[:80]
     counts = sr.summary()
-    return render(request, "phone/stock.html", _ctx(request, "Stock", q=q, show=show, item=item, found=found, rows=rows, counts=counts, may_do=request.phone_mine["stock_do"]))
+    return render(request, "phone/stock.html", _ctx(request, "Stock", q=q, show=show, item=item, found=found, rows=rows, counts=counts, may_do=request.phone_mine["stock_do"],
+                                                     surplus=sr.surplus_items() if request.phone_mine["stock_do"] else [], take_in=request.GET.get("take") == "1"))
 
 
 @phone_page("in", write=True)
@@ -197,3 +203,66 @@ def stock_out(request):
                                                        names=[c["name"] for c in sr.customers()], slips=slips_today(), scan_mode="out"))
     return render(request, "phone/out.html", _ctx(request, "Stock out", customer="", si_hint="", scan_lines=[], names=[c["name"] for c in sr.customers()],
                                                    slips=slips_today(), scan_mode="out"))
+
+
+@phone_page("sale", write=True)
+def sale(request):
+    """Record a sale from the cash receipt (owner, 2026-10-12: "The input amount is cash receipts just workback the profit"): the invoice is written
+    by hand; this records it whenever -- at the counter, idle, or at night. The receipt is spread over the scanned lines by cost (engines/pos_sale);
+    a slip of the day can be picked so goods already out are invoiced, not taken twice. One payment for the whole receipt."""
+    from engines import pos_sale
+    from engines import sales_rules as sr
+    from engines.clock import manila_today
+    from selling.sales import _customer, _lines
+    today = manila_today()
+    slips = sr.open_releases()
+    if request.method == "POST":
+        p = request.POST
+        cust, name = _customer(p)
+        services = [{"description": p.get(f"svc_desc_{k}", ""), "amount": p.get(f"svc_amt_{k}", "")} for k in range(3)]
+        payment = {"method": p.get("method", "CASH"), "reference": p.get("reference", ""), "bank": p.get("bank", ""), "check_no": p.get("check_no", ""), "check_date": p.get("check_date", "")}
+        rel = int(p.get("release_id")) if str(p.get("release_id", "")).isdigit() else None
+        ok, msg, sale_id = pos_sale.record(p.get("si_no"), p.get("sale_date") or today.isoformat(), cust, name, _lines(p), p.get("receipt"), services, payment, rel,
+                                           p.get("below_reason", ""))
+        _say(request, ok, msg)
+        if ok:
+            return redirect("/phone/sale/")
+        start = json.dumps([{"id": int(ln["item_id"]), "qty": float(ln["qty"] or 0), "price": ""} for ln in _lines(p) if str(ln["item_id"]).isdigit()])
+        ctx = dict(si_no=p.get("si_no", ""), sale_date=p.get("sale_date") or today.isoformat(), customer=p.get("customer", ""), receipt=p.get("receipt", ""),
+                   services=[{"k": k, **s} for k, s in enumerate(services)], method=p.get("method", "CASH"), reference=p.get("reference", ""), release_id=rel or "")
+    else:
+        rel = int(request.GET.get("slip")) if request.GET.get("slip", "").isdigit() else None
+        start, pre = "[]", {}
+        if rel:                                                  # the slip's goods, already out: shown, not scanned again
+            head = sr.get_sale(rel)
+            if head and head["status"] == "RELEASED":
+                start = json.dumps([{"id": int(ln["item_id"]), "qty": float(ln["qty"]), "price": ""} for ln in head["lines"] if ln["item_id"]])
+                pre = {"customer": head["customer"] if head["customer"] != "Walk-in" else "", "si_no": f"{int(head['si_hint']):06d}" if str(head.get("si_hint") or "").isdigit() else ""}
+            else:
+                rel = None
+        nxt = sr.next_si_no()
+        ctx = dict(si_no=pre.get("si_no") or (f"{nxt:06d}" if nxt else ""), sale_date=today.isoformat(), customer=pre.get("customer", ""), receipt="",
+                   services=[{"k": k, "description": "", "amount": ""} for k in range(3)], method="CASH", reference="", release_id=rel or "")
+    return render(request, "phone/sale.html", _ctx(request, "Record a sale", scan_lines=json.loads(start), scan_mode="out", names=[c["name"] for c in sr.customers()],
+                                                    slips=slips, methods=list(sr.METHODS.items()), today=today, no_booklet=sr.next_si_no() is None, **ctx))
+
+
+@phone_page("sale")
+def day(request):
+    """Sales today, phone-sized: what was invoiced, and the slips still waiting for their invoice."""
+    from datetime import date, timedelta
+    from engines import sales_rules as sr
+    from engines.clock import manila_today
+    try:
+        d = date.fromisoformat(request.GET.get("d", ""))
+    except ValueError:
+        d = manila_today()
+    sheet = sr.day_sheet(d)
+    by_sale: dict = {}
+    for r in sheet["rows"]:
+        s = by_sale.setdefault(r["sale_id"], {"sale_id": r["sale_id"], "ref": r["ref"], "customer": r["customer"], "amount": 0.0, "profit": 0.0, "items": []})
+        s["amount"] = round(s["amount"] + float(r["amount"]), 2)
+        s["profit"] = round(s["profit"] + float(r["profit"] or 0), 2)
+        s["items"].append(f"{r['qty']:g} × {r['item']}")
+    return render(request, "phone/day.html", _ctx(request, "Sales today", d=d, sheet=sheet, sales=list(by_sale.values()), prev=d - timedelta(days=1),
+                                                   nxt=d + timedelta(days=1) if d < manila_today() else None, slips=[s for s in sr.open_releases() if str(s["day"])[:10] == d.isoformat()]))

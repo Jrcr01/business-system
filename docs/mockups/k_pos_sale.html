@@ -1,0 +1,91 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: Record a sale on the phone</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 22px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1180px; margin: 0 auto; padding: 18px 16px 60px; }
+.why { color: var(--muted); margin: 0 0 12px; max-width: 86ch; }
+.phones { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.phone { width: 360px; background: #fff; border: 10px solid #1c2733; border-radius: 34px; overflow: hidden; box-shadow: 0 6px 20px rgba(16,24,40,.25); }
+.bar { background: var(--navy); color: #fff; padding: 12px 14px; display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.bar .ms { font-size: 24px; } .bar small { margin-left: auto; font-weight: 400; opacity: .85; font-size: .8rem; }
+.body { padding: 12px 14px 18px; }
+.big { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px; margin: 0 0 10px; border: 1px solid #b9c6d8; border-radius: 14px; background: #f7f9fc; font: inherit; font-size: 1.1rem; font-weight: 700; color: var(--blue); text-align: left; }
+.big .ms { font-size: 28px; } .big .pill { margin-left: auto; }
+.scan { display: flex; gap: 8px; margin-bottom: 10px; }
+.scan input { flex: 1; font: inherit; font-size: 1.05rem; padding: 12px; border: 2px solid var(--blue); border-radius: 12px; }
+.scan button { font: inherit; border: 1px solid #b9c6d8; background: #fff; border-radius: 12px; padding: 0 12px; color: var(--blue); }
+.card { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
+.card b.t { display: block; font-size: 1.02rem; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.qty { display: inline-flex; align-items: center; border: 1px solid #b9c6d8; border-radius: 12px; overflow: hidden; }
+.qty button { width: 40px; height: 40px; font-size: 1.3rem; border: 0; background: #f7f9fc; color: var(--blue); }
+.qty input { width: 48px; height: 40px; text-align: center; font: inherit; border: 0; border-left: 1px solid #b9c6d8; border-right: 1px solid #b9c6d8; }
+.field { border: 1px solid #b9c6d8; border-radius: 12px; padding: 9px 12px; font: inherit; width: 100%; background: #fff; }
+label { display: block; font-size: .8rem; color: var(--muted); margin: 8px 0 3px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pill { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 1px 8px; background: var(--soft); color: var(--muted); }
+.pill.warn { background: #fff7e0; color: var(--warn); } .pill.ok { background: #e3f5ec; color: var(--ok); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: #fff; color: var(--blue); border: 1px solid #b9c6d8; border-radius: 12px; padding: 10px 14px; font: inherit; font-weight: 600; }
+.btn.main { background: var(--blue); color: #fff; border-color: var(--blue); width: 100%; font-size: 1.1rem; padding: 14px; margin-top: 10px; }
+.tot { display: flex; justify-content: space-between; font-weight: 700; font-size: 1.1rem; padding: 8px 0; border-top: 2px solid var(--ink); margin-top: 6px; }
+.hint { color: var(--muted); font-size: .85rem; }
+.warn { background: #fff4e5; border-left: 4px solid #C26A00; border-radius: 4px; padding: 8px 10px; font-size: .85rem; margin-top: 8px; }
+.q { background: #fff7e0; border: 1px solid #f1d38a; border-radius: 10px; padding: 12px 16px; margin-top: 26px; max-width: 900px; }
+</style></head><body><main>
+<p class="why"><b>Sample figures, not your data.</b> The invoice is still written by hand. This screen records it in the system <b>whenever you like</b>: right at the
+counter on the phone, in an idle moment, or at night; the laptop's "Record the day's invoices" stays as it is. One invoice = one screen; saving offers the next number.
+It is the same sale as on the laptop (same rules, same review notes); only the layout is the phone's.</p>
+
+<div class="phones">
+
+<div class="phone"><div class="bar"><span class="ms">home</span>Slick's POS<small>Jeane Ravin</small></div><div class="body">
+  <button class="big"><span class="ms">sell</span>Price list</button>
+  <button class="big"><span class="ms">inventory_2</span>Stock</button>
+  <button class="big"><span class="ms">move_to_inbox</span>Stock in <span class="pill warn">1 order waiting</span></button>
+  <button class="big"><span class="ms">outbox</span>Stock out <span class="pill">3 slips today</span></button>
+  <button class="big" style="border-color:var(--blue)"><span class="ms">receipt_long</span>Record a sale <span class="pill warn">3 slips to invoice</span></button>
+  <p class="hint">A fifth button. The badge counts the day's slips (goods out, invoice not yet recorded).</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">arrow_back</span>Record a sale<small>SI 005523 next</small></div><div class="body">
+  <div class="two"><div><label>SI no. (from the booklet)</label><input class="field" value="005523"></div><div><label>Date</label><input class="field" value="10/12/2026"></div></div>
+  <label>Customer</label><input class="field" placeholder="Walk-in" value="RVC Trucking">
+  <label>From a slip? <span class="hint">(goods already scanned out today)</span></label>
+  <div class="card" style="background:#f7f9fc"><div class="row"><b>RL-0032</b> <span class="hint">11:05 · 2 pcs · RVC Trucking</span><button class="btn" style="margin-left:auto;padding:6px 10px">Use it</button></div></div>
+  <div class="scan"><input placeholder="Scan or type the item" autofocus><button><span class="ms">photo_camera</span></button></div>
+  <div class="card"><b class="t">Sunny 11R22.5 16PR SN-801</b><span class="hint">on hand 14 · cost 13,900.00</span>
+    <div class="row"><span class="qty"><button>−</button><input value="2"><button>+</button></span><span class="hint">×</span><input class="field" style="width:120px;text-align:right" value="14,500.00" placeholder="price each"><b style="margin-left:auto">29,000.00</b></div></div>
+  <div class="card"><b class="t">Mounting and balancing</b><span class="hint">service, not stocked</span>
+    <div class="row"><input class="field" style="width:120px;text-align:right" value="600.00"><b style="margin-left:auto">600.00</b></div></div>
+  <div class="row"><button class="btn" style="flex:1"><span class="ms">build</span>Add a service</button></div>
+  <div class="tot"><span>Total</span><span>₱29,600.00</span></div>
+  <label>Paid how</label>
+  <div class="row"><button class="btn" style="flex:1;background:#e8f0fa">Cash</button><button class="btn" style="flex:1">GCash / transfer</button><button class="btn" style="flex:1">Check</button><button class="btn" style="flex:1">Charge</button></div>
+  <div class="two"><div><label>Amount</label><input class="field" value="29,600.00"></div><div><label>Reference (optional)</label><input class="field" placeholder="GCash ref, check no."></div></div>
+  <div class="warn"><b>To note, you can still save:</b> RVC Trucking is not allowed to buy on charge. Saved and noted for review.</div>
+  <button class="btn main"><span class="ms">save</span>Save SI 005523 — ₱29,600.00</button>
+  <p class="hint">Saving takes the stock out (unless it came from a slip, then it is already out) and records the payment. Next number offered at once.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">arrow_back</span>Sales today<small>10/12/2026</small></div><div class="body">
+  <div class="card"><div class="row"><b>SI 005523</b><span class="hint">RVC Trucking</span><b style="margin-left:auto">29,600.00</b></div><span class="hint">11:40 · 2 × Sunny 11R22.5 · charge</span></div>
+  <div class="card"><div class="row"><b>SI 005522</b><span class="hint">walk-in</span><b style="margin-left:auto">9,900.00</b></div><span class="hint">09:52 · 2 × Westlake 205/55R16 · cash</span></div>
+  <div class="card" style="border-color:#f1d38a"><div class="row"><b>RL-0033</b><span class="pill warn">no invoice yet</span><b style="margin-left:auto">—</b></div><span class="hint">14:10 · 4 × Jianxin 12.00R20 · <a href="#">record it</a></span></div>
+  <div class="tot"><span>Today</span><span>2 invoices · ₱39,500.00</span></div>
+  <p class="hint">The day sheet, phone-sized: what was invoiced and what still waits for its invoice.</p>
+</div></div>
+
+</div>
+
+<div class="q"><b>Questions</b>
+<ol style="margin:8px 0 0">
+  <li>Price each: start empty (as on the laptop) or pre-fill the last price this item sold at, to be changed if needed?</li>
+  <li>Payment: one payment per invoice on the phone (cash / GCash-transfer / check / charge, as drawn), with split payments left to the laptop? Or allow two?</li>
+  <li>Should the staff phone (Scanner account) see Record a sale, or is it family only?</li>
+  <li>"Sales today" on the phone: wanted, or is the laptop's day sheet enough?</li>
+</ol></div>
+</main></body></html>

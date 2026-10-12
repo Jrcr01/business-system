@@ -4,6 +4,7 @@
 {% if mine.stock %}<a class="ph-big" href="/phone/stock/"><span class="ms">inventory_2</span>Stock</a>{% endif %}
 {% if mine.in %}<a class="ph-big" href="/phone/in/"><span class="ms">move_to_inbox</span>Stock in{% if waiting %}<span class="pill warn">{{ waiting }} order{{ waiting|pluralize }} waiting</span>{% endif %}</a>{% endif %}
 {% if mine.out %}<a class="ph-big" href="/phone/out/"><span class="ms">outbox</span>Stock out{% if slips %}<span class="pill">{{ slips }} slip{{ slips|pluralize }} today</span>{% endif %}</a>{% endif %}
+{% if mine.sale %}<a class="ph-big" href="/phone/sale/"><span class="ms">receipt_long</span>Record a sale{% if to_invoice %}<span class="pill warn">{{ to_invoice }} slip{{ to_invoice|pluralize }} to invoice</span>{% endif %}</a>{% endif %}
 {% if not mine.prices and not mine.stock and not mine.in and not mine.out %}<p class="note">None of the phone pages is switched on for you. Ask the System admin.</p>{% endif %}
 <p class="hint" style="text-align:center;margin-top:30px">Install this page from Chrome's menu and it becomes "Slick's POS" on the home screen, apart from the whole system.
   {% if me.role != "scanner" %}<br><a href="/">Open the laptop site</a>{% endif %}</p>
