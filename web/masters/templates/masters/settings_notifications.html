@@ -1,0 +1,28 @@
+{% extends "core/base.html" %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+{% include "masters/_settings_tabs.html" %}
+{% comment %}Owner, 2026-10-13: credit card reminders only -- statement out, due today, annual fee. Who receives them, per person.{% endcomment %}
+<p class="note" style="max-width:820px">Credit card reminders on the phone, at <b>{{ hour }}:00</b> Manila time; the due-today reminder again at <b>{{ second }}:00</b> if the card is still not marked paid.
+  Nothing else is sent. The switches and the two hours are on the <a href="/settings/#notify_card_statement">Numbers</a> tab, under Notifications.</p>
+<div class="facts" style="max-width:820px">{% for label, on, key in kinds %}<div><span>{{ label }}</span><b>{% if on %}<span class="pill">on</span>{% else %}<span class="pill off">off</span>{% endif %}</b></div>{% endfor %}</div>
+<div class="grp">Who receives them</div>
+<div class="scroll-x"><table class="list cards">
+  <tr><th>Person</th><th>Phones allowed</th><th>Receives</th><th>Is the cardholder</th><th></th></tr>
+  {% for p in people %}<tr>
+    <td class="c-t">{{ p.name }}<div class="hint">{{ p.email }}</div></td>
+    <td data-l="phones">{% if p.phones %}<span class="pill">{{ p.phones }} phone{{ p.phones|pluralize }}</span>{% else %}<span class="pill off">not allowed yet</span>{% endif %}</td>
+    <td colspan="3" class="c-r"><form method="post" class="bar" style="margin:0">{% csrf_token %}<input type="hidden" name="email" value="{{ p.email }}">
+      <div><select name="scope" aria-label="Receives: {{ p.name }}"><option value="off"{% if p.scope == "off" %} selected{% endif %}>None</option>
+        <option value="own"{% if p.scope == "own" %} selected{% endif %}>Own cards</option><option value="all"{% if p.scope == "all" %} selected{% endif %}>All cards</option></select></div>
+      <div><select name="cardholder_id" aria-label="Cardholder: {{ p.name }}"><option value="">not a cardholder</option>{% for hid, hname in holders %}<option value="{{ hid }}"{% if hid == p.cardholder_id %} selected{% endif %}>{{ hname }}</option>{% endfor %}</select></div>
+      <button class="btn small ghost" type="submit">Save</button></form></td>
+  </tr>{% endfor %}
+</table></div>
+<p class="hint" style="max-width:820px">"Own cards" needs the cardholder beside it. Each person allows it once on their own phone: in the Slick's ERP app, the person menu → Notifications on this phone → Allow.
+  A person with no phone allowed receives nothing, whatever is chosen here.</p>
+{% if missing %}<details class="manual" style="margin-top:14px;max-width:820px"><summary>{{ missing|length }} card{{ missing|length|pluralize }} with no statement day or no annual-fee month</summary>
+<table class="list" style="margin-top:8px"><tr><th>Card</th><th>Missing</th></tr>
+  {% for c in missing %}<tr><td>{{ c.name }}</td><td>{% if c.no_statement_day %}<span class="pill warn">statement day</span> {% endif %}{% if c.no_fee_month %}<span class="pill warn">annual-fee month</span>{% endif %}</td></tr>{% endfor %}
+</table><p class="hint">Fill these in on <a href="/credit-cards/">Credit cards</a>. The due-today reminder needs neither: it goes by the recorded statement's due date.</p></details>{% endif %}
+{% endblock %}

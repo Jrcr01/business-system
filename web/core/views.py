@@ -493,3 +493,33 @@ def whoami(request):
     """For the load test: who the business rules think is acting during this request (what every save made now would be recorded as)."""
     from engines.acting_user import acting_email, acting_role
     return JsonResponse({"email": acting_email(), "role": acting_role()})
+
+
+def notifications(request):
+    """Notifications on this phone (owner, 2026-10-13: credit card reminders): the page where a person allows them on the phone in their hand,
+    switches them off again, or sends themselves a test. The phone's own Allow box does the allowing; this keeps the address it gives."""
+    import json
+
+    from django.http import JsonResponse
+
+    from engines import card_reminders as cr, web_push
+    me = request.slicks_user
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body or b"{}")
+        except ValueError:
+            data = {}
+        what = data.get("action")
+        if what == "on":
+            ok, msg = web_push.subscribe(me["email"], data.get("subscription") or {}, request.META.get("HTTP_USER_AGENT", ""))
+        elif what == "off":
+            web_push.unsubscribe(me["email"], str(data.get("endpoint") or ""))
+            ok, msg = True, "Notifications are off for this phone."
+        elif what == "test":
+            n = web_push.send(me["email"], "Slick's ERP · test", "Notifications work on this phone.", "/notifications/", tag="test")
+            ok, msg = (True, f"Sent to {n} phone(s). It should appear in a few seconds.") if n else (False, "No phone took it. Press Allow on this phone first.")
+        else:
+            ok, msg = False, "Unknown action."
+        return JsonResponse({"ok": ok, "msg": msg})
+    mine = next((p for p in cr.people() if p["email"].lower() == me["email"].lower()), None)
+    return render(request, "core/notifications.html", {"key": web_push.public_key(), "phones": web_push.phones(me["email"]), "mine": mine})

@@ -72,6 +72,17 @@ NUMBERS = [
      "Owner, 2026-10-12: \"We need pricelist, inventory. Stock in, stock out. Those items need mobility without using a laptop.\" 1: /phone/ opens -- "
      "Price list, Stock, Stock in and Stock out on a phone, added to its home screen -- for everyone allowed those pages, and the Scanner role signs in "
      "straight to it. 0: /phone/ goes to Home."),
+    ("notify_card_statement", "Notifications", "Card reminder: the statement is out (1 = yes, 0 = no)", 1, 0, 1, 0, "",
+     "Owner, 2026-10-13: credit card reminders on the phone. Sent two days after the card's statement day, \"when the bank has usually sent it\", "
+     "while that month's statement is not recorded. Who receives them: Settings > Notifications."),
+    ("notify_card_due", "Notifications", "Card reminder: the payment is due today (1 = yes, 0 = no)", 1, 0, 1, 0, "",
+     "Sent on the due date only, twice that day (the two hours below), while the statement is not marked paid in full."),
+    ("notify_card_fee", "Notifications", "Card reminder: the annual fee is next month (1 = yes, 0 = no)", 1, 0, 1, 0, "",
+     "Sent on the 1st of the month before the card's annual-fee month, so there is time to ask the bank for a waiver."),
+    ("notify_hour", "Notifications", "Reminders are sent at (hour of the day, Manila)", 8, 5, 12, 0, "o'clock",
+     "Owner, 2026-10-13: 8 AM. The morning hour for every card reminder."),
+    ("notify_second_hour", "Notifications", "The second due-date reminder is sent at (hour of the day, Manila)", 14, 12, 20, 0, "o'clock",
+     "Owner, 2026-10-13: 2 PM. Only the due-today reminder is repeated, and only if the card is still not marked paid."),
     ("stock_old_years", "Stock", "A tire this old (by its DOT) is old stock", 3, 1, 15, 0, "years",
      "Tires at or above this age show as Old stock, to be sold first. The age comes from the DOT week and year typed when the tires are received."),
     ("affiliate_open_days", "Stock", "Flag tires lent or borrowed and still open after", 30, 1, 365, 0, "days",

@@ -128,7 +128,7 @@ def _settings_tabs(role: str) -> list[tuple[str, str]]:
     from engines.permissions import can
     tabs = [("/settings/", "Numbers")]
     if can(role, "users.manage"):
-        tabs += [("/settings/users/", "Users"), ("/settings/audit/", "Audit log"), ("/settings/backup/", "Backup")]          # "Who can do what" dropped (owner, 2026-10-09): each person's page says what they may do
+        tabs += [("/settings/users/", "Users"), ("/settings/notifications/", "Notifications"), ("/settings/audit/", "Audit log"), ("/settings/backup/", "Backup")]          # "Who can do what" dropped (owner, 2026-10-09): each person's page says what they may do
     return tabs
 
 
@@ -266,3 +266,23 @@ def _switch_ctx(request, u: dict, user_id: int) -> dict:
             "presets": [(k, label) for k, (label, _) in ACCESS_PRESETS.items()], "presets_json": json.dumps({k: v for k, (_, v) in ACCESS_PRESETS.items()})}
 
 
+
+
+@page_needed("settings")
+@_admin_only
+def settings_notifications(request):
+    """Settings > Notifications (owner, 2026-10-13): who receives the credit card reminders -- none, their own cards, or all cards -- and which
+    cardholder each person is. The switches and the two hours are numbers on the first tab."""
+    from engines import card_reminders as cr, settings_registry as sr
+    from engines.common import get_conn
+    if request.method == "POST":
+        p = request.POST
+        ok, msg = cr.set_pref(p.get("email", ""), p.get("scope", ""), p.get("cardholder_id", ""))
+        (messages.success if ok else messages.error)(request, msg)
+        return redirect("/settings/notifications/")
+    with get_conn() as conn:
+        holders = conn.execute("SELECT cardholder_id, name FROM cardholders WHERE is_active = 1 ORDER BY name").fetchall()
+    kinds = [(sr._meta(k)["label"].split(" (")[0].split(": ", 1)[-1].capitalize(), sr.int_value(k) == 1, k) for k in ("notify_card_statement", "notify_card_due", "notify_card_fee")]
+    return render(request, "masters/settings_notifications.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/notifications/",
+                                                                   "people": cr.people(), "holders": holders, "missing": cr.missing(), "kinds": kinds,
+                                                                   "hour": sr.int_value("notify_hour"), "second": sr.int_value("notify_second_hour")})

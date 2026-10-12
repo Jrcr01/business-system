@@ -36,6 +36,7 @@
     <div class="tb-menu">
       <div class="who"><b>{{ role_label }}</b>{{ me.email }}</div>
       {% if phone_on %}<a href="/phone/"><span class="ms">smartphone</span>On the phone</a>{% endif %}
+      <a href="/notifications/"><span class="ms">notifications</span>Notifications on this phone</a>
       <a href="/password/"><span class="ms">key</span>Change password</a>
       <form method="post" action="/logout/">{% csrf_token %}<button type="submit"><span class="ms">logout</span>Sign out</button></form>
     </div>
