@@ -429,7 +429,15 @@ table.list tr.tentative td { color: #6b7280; font-style: italic; }
 .tile .f b { font-size: 2.15rem; }
 .tile.long .f b { font-size: 1.55rem; }
 .tile.long .f .ms { font-size: 24px; }
-@media (max-width: 480px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .tile { height: 146px; padding: 12px; } }      /* a phone: still two across */
+@media (max-width: 480px) {                                   /* a phone: still two across; the caption on its own line above the figure (owner, 2026-10-12: "text are overlapping") */
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .tile { height: auto; min-height: 120px; padding: 12px; }
+  .tile .b { flex-wrap: wrap; align-items: flex-end; }
+  .tile .u { flex: 1 1 100%; }
+  .tile .f { margin-left: auto; }
+  .tile .f b, .tile.long .f b { font-size: 1.5rem; }
+  .tile .f .ms, .tile.long .f .ms { font-size: 24px; }
+}
 
 /* ---- Daily payables: the card payment box, full or in part (owner, 2026-10-12) ---- */
 .card-dlg { border: 1px solid #d5dbe3; border-radius: 12px; padding: 18px 20px; max-width: 440px; width: calc(100vw - 32px); box-shadow: 0 10px 30px rgba(16,24,40,.3); font: inherit; color: var(--ink); }
