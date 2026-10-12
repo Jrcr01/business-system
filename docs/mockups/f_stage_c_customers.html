@@ -1,0 +1,121 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: Stage C, the customer side</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1080px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.35rem; margin-top: 30px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 82ch; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+.scroll-x { overflow-x: auto; }
+table.list { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: .93rem; font-variant-numeric: tabular-nums; }
+table.list th { text-align: left; color: var(--muted); font-weight: 600; font-size: .8rem; border-bottom: 2px solid var(--line); padding: 6px 9px; white-space: nowrap; }
+table.list td { border-bottom: 1px solid var(--line); padding: 7px 9px; white-space: nowrap; }
+table.list .num { text-align: right; }
+.tot td { font-weight: 700; border-top: 2px solid var(--ink); }
+.btn { display: inline-flex; align-items: center; gap: 7px; background: #fff; color: var(--blue); border: 1px solid #b9c6d8; border-radius: 8px; padding: 7px 12px; font: inherit; font-weight: 600; }
+.btn.main { background: var(--blue); color: #fff; border-color: var(--blue); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.chip { display: inline-block; border: 1px solid #b9c6d8; border-radius: 999px; padding: 4px 12px; font-size: .9rem; color: var(--blue); background: #fff; }
+.chip.on { background: #e3eefb; font-weight: 700; }
+.pill { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 1px 8px; background: var(--soft); color: var(--muted); }
+.pill.warn { background: #fff7e0; color: var(--warn); } .pill.ok { background: #e3f5ec; color: var(--ok); } .pill.red { background: #fde8e8; color: var(--red); }
+.field { display: inline-block; border: 1px solid #b9c6d8; border-radius: 8px; padding: 7px 10px; min-width: 150px; background: #fff; }
+label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 2px; }
+.stats { display: flex; gap: 26px; flex-wrap: wrap; margin: 6px 0 12px; }
+.stats span { display: block; color: var(--muted); font-size: .82rem; } .stats b { font-size: 1.15rem; }
+.tl { border-left: 3px solid var(--line); margin: 8px 0 0 8px; padding-left: 14px; }
+.tl div { margin: 0 0 10px; } .tl small { color: var(--muted); display: block; }
+a { color: var(--blue); }
+.q { background: #fff7e0; border: 1px solid #f1d38a; border-radius: 10px; padding: 12px 16px; margin-top: 26px; }
+</style></head><body><main>
+<p class="why"><b>Sample figures, not your data.</b> Stage C is four small things on top of what is already live: a quotation that becomes a sale,
+prices agreed with a customer, a follow-up list, and one page that tells a customer's whole story. Nothing here blocks a sale.</p>
+
+<h1>1 · Sell → Quotations</h1>
+<p class="why">The same idea as Request → PO on the buying side: a quotation is written, sent, and when the customer says yes it becomes the sale, so nothing is typed twice.
+A quotation moves no stock and is not money owed.</p>
+<div class="screen">
+  <div class="row"><span class="chip on">Waiting for the customer 4</span><span class="chip">Accepted 2</span><span class="chip">Lapsed 3</span><span class="chip">All</span>
+    <span style="margin-left:auto"><button class="btn main"><span class="ms">add</span>New quotation</button></span></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Quotation</th><th>Customer</th><th>Date</th><th>Good until</th><th class="num">Amount</th><th>Where it stands</th><th></th></tr>
+    <tr><td><a href="#">QT 0014</a></td><td>RVC Trucking</td><td>10/09/2026</td><td>10/16/2026</td><td class="num">186,400.00</td><td><span class="pill warn">waiting · 3 days</span></td><td><button class="btn">Make it a sale</button></td></tr>
+    <tr><td><a href="#">QT 0013</a></td><td>Baliuag Transit</td><td>10/08/2026</td><td>10/15/2026</td><td class="num">92,000.00</td><td><span class="pill warn">waiting · 4 days</span></td><td><button class="btn">Make it a sale</button></td></tr>
+    <tr><td><a href="#">QT 0011</a></td><td>Walk-in · Mr. Santos</td><td>10/03/2026</td><td>10/10/2026</td><td class="num">23,600.00</td><td><span class="pill red">lapsed 2 days ago</span></td><td><button class="btn">Quote again</button></td></tr>
+    <tr><td><a href="#">QT 0010</a></td><td>RVC Trucking</td><td>10/01/2026</td><td>10/08/2026</td><td class="num">74,800.00</td><td><span class="pill ok">sold · SI 5521</span></td><td></td></tr>
+  </table></div>
+</div>
+<p class="why" style="margin-top:14px">Writing one (the same item box as Record the sales; prices come in by themselves):</p>
+<div class="screen">
+  <div class="row"><div><label>Customer</label><span class="field">RVC Trucking</span></div><div><label>Date</label><span class="field" style="min-width:110px">10/12/2026</span></div>
+    <div><label>Good until</label><span class="field" style="min-width:110px">10/19/2026</span></div>
+    <span class="pill ok" style="align-self:flex-end;margin-bottom:8px">agreed prices apply</span></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Item</th><th class="num">Qty</th><th class="num">On hand</th><th class="num">Regular price</th><th class="num">This customer</th><th class="num">Amount</th></tr>
+    <tr><td>Sunny 11R22.5 16PR SN-801</td><td class="num">8</td><td class="num">12</td><td class="num">14,500.00</td><td class="num"><b>13,900.00</b> <span class="pill ok">agreed</span></td><td class="num">111,200.00</td></tr>
+    <tr><td>Yokohama 205/65R15 BluEarth</td><td class="num">4</td><td class="num">2 <span class="pill warn">short 2</span></td><td class="num">4,950.00</td><td class="num">4,950.00</td><td class="num">19,800.00</td></tr>
+    <tr class="tot"><td colspan="5">Total</td><td class="num">131,000.00</td></tr>
+  </table></div>
+  <div class="row"><button class="btn main">Save</button><button class="btn"><span class="ms">print</span>Print / PDF for the customer</button></div>
+</div>
+
+<h1>2 · Customers → Agreed prices</h1>
+<p class="why">For a fleet or a dealer you have a standing deal with. Set once per customer; the price then comes in by itself on quotations and on Record the sales.
+A sale typed at another price is still saved, and is noted on the Review list.</p>
+<div class="screen">
+  <div class="row"><b style="font-size:1.1rem">RVC Trucking</b> <span class="pill">fleet</span>
+    <span style="margin-left:auto"><button class="btn"><span class="ms">add</span>Add an agreed price</button></span></div>
+  <div class="row"><div><label>Everything, unless listed below</label><span class="field">3% off the regular price</span></div></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Item or brand</th><th class="num">Regular price</th><th class="num">Agreed</th><th>Since</th><th>Until</th><th></th></tr>
+    <tr><td>Sunny 11R22.5 16PR SN-801</td><td class="num">14,500.00</td><td class="num"><b>13,900.00</b></td><td>09/01/2026</td><td>no end</td><td><a href="#">Change</a></td></tr>
+    <tr><td>All Yokohama</td><td class="num">—</td><td class="num"><b>5% off</b></td><td>10/01/2026</td><td>12/31/2026</td><td><a href="#">Change</a></td></tr>
+  </table></div>
+</div>
+
+<h1>3 · Sell → Follow-ups</h1>
+<p class="why">One list of who to call or message today. It builds itself from what the system already knows; nobody types a reminder unless they want to.</p>
+<div class="screen">
+  <div class="row"><span class="chip on">To do 7</span><span class="chip">Done this week 5</span></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th>Customer</th><th>Why</th><th class="num">Amount</th><th>Last contact</th><th></th></tr>
+    <tr><td><a href="#">RVC Trucking</a></td><td>Quotation QT 0014 waiting 3 days</td><td class="num">186,400.00</td><td>10/09 · sent the quotation</td><td><button class="btn">Note a contact</button></td></tr>
+    <tr><td><a href="#">Baliuag Transit</a></td><td>Invoices overdue 14 days</td><td class="num">64,300.00</td><td>10/02 · "will pay on the 15th"</td><td><button class="btn">Note a contact</button></td></tr>
+    <tr><td><a href="#">Mr. Santos</a></td><td>Quotation QT 0011 lapsed</td><td class="num">23,600.00</td><td>none</td><td><button class="btn">Note a contact</button></td></tr>
+    <tr><td><a href="#">JMD Hauling</a></td><td>Usually buys every 30 days; last bought 47 days ago</td><td class="num">—</td><td>08/26 · sale</td><td><button class="btn">Note a contact</button></td></tr>
+    <tr><td><a href="#">RVC Trucking</a></td><td>Your own reminder: "ask about the 6 new trucks"</td><td class="num">—</td><td>10/09</td><td><button class="btn">Note a contact</button></td></tr>
+  </table></div>
+  <p class="why" style="margin:6px 0 0">"Note a contact" is one line of free text and, if you like, a date to be reminded again. It is a note only: it is not a promise the system tracks or chases.</p>
+</div>
+
+<h1>4 · Customers → one customer's page</h1>
+<p class="why">Everything about one customer in date order, so anyone in the family can pick up the conversation.</p>
+<div class="screen">
+  <div class="row"><b style="font-size:1.15rem">RVC Trucking</b> <span class="pill">fleet</span> <span class="pill ok">agreed prices</span>
+    <span style="margin-left:auto"><button class="btn">New quotation</button> <button class="btn">Note a contact</button></span></div>
+  <div class="stats">
+    <div><span>Owes now</span><b>₱74,800.00</b></div><div><span>Overdue</span><b>₱0.00</b></div>
+    <div><span>Bought, last 12 months</span><b>₱1,284,500.00</b></div><div><span>Usually buys every</span><b>24 days</b></div><div><span>Open quotations</span><b>1 · ₱186,400.00</b></div>
+  </div>
+  <div class="tl">
+    <div><b>10/09/2026 · Quotation QT 0014</b> ₱186,400.00, waiting<small>Jeane Ravin: sent by Viber to Mr. Cruz</small></div>
+    <div><b>10/08/2026 · Sale SI 5521</b> ₱74,800.00, charge, from QT 0010<small>8 × Sunny 11R22.5</small></div>
+    <div><b>10/02/2026 · Collected CR-0031</b> ₱120,000.00 by check, cleared 10/05</div>
+    <div><b>09/28/2026 · Note</b><small>Rhodora: they are adding 6 trucks in November</small></div>
+    <div><b>09/14/2026 · Sale SI 5390</b> ₱120,000.00, charge</div>
+  </div>
+</div>
+
+<div class="q"><b>Questions before I build</b>
+<ol style="margin:8px 0 0">
+  <li>Quotations: do you give written quotations today, and should the system number them (QT 0001…) and print one for the customer?</li>
+  <li>"Good until": is 7 days the usual, or another number?</li>
+  <li>Agreed prices: do you have customers with a standing price or discount today? If none, this screen can wait.</li>
+  <li>Follow-ups: are the four reasons right (waiting quotation, overdue invoices, a regular who stopped buying, your own reminder)? Any to drop?</li>
+  <li>Customer types: is "fleet / dealer / walk-in" the right set?</li>
+</ol></div>
+</main></body></html>

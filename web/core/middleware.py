@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import hashlib
 import time
+
+from django.conf import settings
 from urllib.parse import quote
 
 from django.http import HttpResponse
@@ -54,6 +56,14 @@ def current_user(request) -> dict | None:
     if request.session.get("mfa") != MFA_MARK:                  # a sign-in from before the code was asked of everyone (2026-10-11): sign in again, with it
         request.session.flush()
         return None
+    if not settings.SANDBOX_NO_SIGNIN:                          # no activity for the time set in Settings (owner, 2026-10-12): signed out
+        import time
+        from engines.settings_registry import idle_minutes
+        now, seen = int(time.time()), request.session.get("seen")
+        if seen and now - int(seen) > idle_minutes() * 60:
+            request.session.flush()
+            return None
+        request.session["seen"] = now
     if request.session.get("code") == 0:                        # signed in while the code was switched off: over once it is asked again
         from engines.settings_registry import authenticator_on
         if authenticator_on():

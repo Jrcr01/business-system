@@ -18,6 +18,7 @@ def page_frame(request) -> dict:
     user = getattr(request, "slicks_user", None)
     return {
         "me": user,
+        "idle_seconds": _idle_seconds() if user else 0,
         "role_label": ROLE_LABEL.get(user["role"], user["role"]) if user else "",
         "topbar": menu_for(user["role"]) if user else [],
         "is_sandbox": settings.IS_SANDBOX,
@@ -27,6 +28,14 @@ def page_frame(request) -> dict:
         "page_notice": _page_notice() if user else "",
         "over_confirm": _over_confirm(request) if user else None,
     }
+
+
+def _idle_seconds() -> int:
+    """For the page's own countdown: 0 on the laptop sandbox, where nobody is signed out."""
+    if settings.SANDBOX_NO_SIGNIN:
+        return 0
+    from engines.settings_registry import idle_minutes
+    return idle_minutes() * 60
 
 
 def _over_confirm(request):
@@ -179,6 +188,9 @@ def login(request):
     if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
         nxt = "/"
     email, cf = "", getattr(request, "cf_email", None)
+    if request.method == "GET" and request.GET.get("idle") == "1":
+        from engines.settings_registry import idle_minutes
+        messages.info(request, f"You were signed out after {idle_minutes()} minutes of no activity. Sign in to carry on where you were.")
     if settings.SANDBOX_NO_SIGNIN:                              # the laptop sandbox: pick a person, no password, no code
         from engines.auth_service import list_users, get_user
         if request.method == "POST" and request.POST.get("uid"):

@@ -65,6 +65,9 @@ NUMBERS = [
      "1: after the password, the 6-digit code from the phone, once a day per device. 0 (owner, 2026-10-12: \"turnoff google authenticator but instead i "
      "will lower session duration\"): the code is skipped for a person Cloudflare has already checked under the same email, so sign-in is Cloudflare plus "
      "the password. Without Cloudflare in front the code is still asked. Turning it back on ends every sign-in that was made without a code."),
+    ("signin_idle_minutes", "Sign-in", "Sign out after no activity for", 30, 5, 120, 0, "minutes",
+     "Owner, 2026-10-12: \"30 minutes with the warning\". A person who opens no page and touches nothing for this long is signed out; a minute before, "
+     "the page says so and offers to stay. Typing or clicking on an open page counts as activity. Two hours is the most the server allows."),
     ("stock_old_years", "Stock", "A tire this old (by its DOT) is old stock", 3, 1, 15, 0, "years",
      "Tires at or above this age show as Old stock, to be sold first. The age comes from the DOT week and year typed when the tires are received."),
     ("affiliate_open_days", "Stock", "Flag tires lent or borrowed and still open after", 30, 1, 365, 0, "days",
@@ -307,6 +310,11 @@ def reset_shortcuts() -> tuple[bool, str]:
         if had:
             _audit(conn, "SHORTCUTS_RESET", SHORTCUT_KEY, "Keyboard shortcuts back to the defaults")
     return True, "Keyboard shortcuts are back to the defaults."
+
+
+def idle_minutes() -> int:
+    """How long a sign-in lasts with no activity (owner, 2026-10-12)."""
+    return int_value("signin_idle_minutes")
 
 
 def authenticator_on() -> bool:

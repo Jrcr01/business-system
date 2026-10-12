@@ -159,5 +159,28 @@ if (window.matchMedia("(hover: none)").matches) {
   all(); new MutationObserver(all).observe(document.body, {childList: true, subtree: true});
 })();
 </script>
+{% if idle_seconds %}
+<div id="idle-warn" class="msg info" role="alert" style="display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:50;box-shadow:0 4px 18px rgba(16,24,40,.25);max-width:92vw">
+  You will be signed out in <b id="idle-left">60</b> seconds: nothing has been touched for a while.
+  <button class="btn small" type="button" id="idle-stay" style="margin-left:10px">Stay signed in</button></div>
+<script>
+(function () {   // owner, 2026-10-12: signed out after no activity, with a warning a minute before. The server decides; this only shows it.
+  var total = {{ idle_seconds }}, deadline = Date.now() + total * 1000, touched = false, lastPing = Date.now();
+  var box = document.getElementById("idle-warn"), left = document.getElementById("idle-left");
+  function ping() {
+    lastPing = Date.now(); touched = false;
+    fetch("/whoami/", {credentials: "same-origin"}).then(function (r) { if (r.ok && !r.redirected) { deadline = Date.now() + total * 1000; box.style.display = "none"; } });
+  }
+  ["keydown", "pointerdown", "input"].forEach(function (e) { document.addEventListener(e, function () { touched = true; }, {passive: true}); });
+  document.getElementById("idle-stay").addEventListener("click", ping);
+  setInterval(function () {
+    var secs = Math.round((deadline - Date.now()) / 1000);
+    if (touched && (Date.now() - lastPing > 240000 || secs < 90)) { ping(); return; }       // working on the page counts as activity
+    if (secs <= 0) { location.href = "/login/?idle=1&next=" + encodeURIComponent(location.pathname + location.search); return; }
+    if (secs <= 60) { left.textContent = secs; box.style.display = "block"; }
+  }, 1000);
+})();
+</script>
+{% endif %}
 </body>
 </html>

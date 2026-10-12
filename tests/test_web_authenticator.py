@@ -234,3 +234,20 @@ def test_the_code_can_be_switched_off_and_then_cloudflare_stands_in(web, monkeyp
     switch(1)
     assert c.get("/")["Location"].startswith("/login/")                         # the code is asked again: that sign-in is over
     assert _password(c)["Location"] .startswith("/2fa/")
+
+
+def test_no_activity_signs_a_person_out_after_the_minutes_in_settings(web, monkeypatch):
+    # owner, 2026-10-12: "is it possible to auto logout for inactivity?" -> "30 minutes with the warning, go"
+    import time
+    from engines.settings_registry import idle_minutes
+    _admin(web)
+    assert idle_minutes() == 30
+    page = web.get("/").content.decode()
+    assert 'id="idle-warn"' in page and "total = 1800" in page                  # the page counts down from the same 30 minutes
+    real = time.time
+    monkeypatch.setattr(time, "time", lambda: real() + 29 * 60)
+    assert web.get("/").status_code == 200                                      # 29 minutes: still in, and the clock starts again
+    monkeypatch.setattr(time, "time", lambda: real() + 29 * 60 + 31 * 60)
+    r = web.get("/creditors/")
+    assert r.status_code == 302 and r["Location"].startswith("/login/")         # 31 minutes with nothing touched: signed out
+    assert "signed out after 30 minutes" in web.get("/login/?idle=1").content.decode()
