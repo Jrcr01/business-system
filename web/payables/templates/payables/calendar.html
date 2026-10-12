@@ -19,9 +19,9 @@
   <a class="cell{% if c.out %} out{% endif %}{% if c.off %} off{% endif %}{% if c.n and c.state == 'Paid' %} paid{% elif c.n %} due{% endif %}{% if c.today %} today{% endif %}{% if c.pick %} pick{% endif %}"
      href="?m={{ m }}&day={{ c.d|date:'Y-m-d' }}#day">
     <span class="dd">{{ c.d|date:"d" }}</span>{% if c.mark %}<span class="mk" title="{{ c.mark.label }}">{% if c.mark.kind == "holiday" %}holiday{% elif c.mark.kind == "custom" %}no checks{% else %}note{% endif %}</span>{% endif %}
-    {% if c.n %}<b>₱{{ c.total|floatformat:0|intcomma }}</b><span class="cnt">{% if c.due_n %}{{ c.due_n }} to pay{% endif %}{% if c.due_n and c.paid_n %} · {% endif %}{% if c.paid_n %}{{ c.paid_n }} paid{% endif %}</span>{% endif %}
-    {% if c.plan and not c.out %}<span class="plan lvl-{{ c.lvl }}" title="Planned out (with open orders and card reserves)">plan ₱{{ c.plan|floatformat:0|intcomma }}</span>{% endif %}
-    {% if c.cin and not c.out %}<span class="cin" title="Cash in: customers' checks, invoices falling due, and the weekday's usual takings (an estimate)">in ₱{{ c.cin|floatformat:0|intcomma }}</span>{% endif %}
+    {% if c.n %}<b>{{ c.total|pw }}</b><span class="cnt">{% if c.due_n %}{{ c.due_n }} to pay{% endif %}{% if c.due_n and c.paid_n %} · {% endif %}{% if c.paid_n %}{{ c.paid_n }} paid{% endif %}</span>{% endif %}
+    {% if c.plan and not c.out %}<span class="plan lvl-{{ c.lvl }}" title="Planned out (with open orders and card reserves)">plan {{ c.plan|pw }}</span>{% endif %}
+    {% if c.cin and not c.out %}<span class="cin" title="Cash in: customers' checks, invoices falling due, and the weekday's usual takings (an estimate)">in {{ c.cin|pw }}</span>{% endif %}
   </a>{% endfor %}{% endfor %}
 </div>
 

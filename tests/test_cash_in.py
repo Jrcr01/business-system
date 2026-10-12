@@ -79,7 +79,7 @@ def test_the_calendar_shows_cash_in_only_while_stage_b_is_on(web, db, monkeypatc
     with get_conn() as conn:
         conn.execute("UPDATE sale_payments SET check_date = ? WHERE payment_id = ?", (str(manila_today() + timedelta(days=2)), pid))
     page = web.get("/calendar/").content.decode()
-    assert "in ₱10,000" in page.replace(",", ",")                                # the day's in-line, green
+    assert "in <span class=\"pw\"><span class=\"pw-full\">₱10,000<" in page.replace(",", ",")                                # the day's in-line, green
     monkeypatch.setenv("WEB_STAGE_B", "0")
     page = web.get("/calendar/").content.decode()
     assert "in ₱" not in page                                                    # hidden with the rest of stage B

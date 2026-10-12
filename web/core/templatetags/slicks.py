@@ -43,3 +43,30 @@ def dmy(value) -> str:
     out = d.strftime("%m/%d/%Y")
     rest = text[10:].strip().lstrip("T")
     return out + (" " + rest[:5] if len(rest) >= 5 and rest[2] == ":" else "")
+
+
+def peso_short(amount) -> str:
+    """₱1.2M, ₱600K, ₱850: the short form of a figure for a phone's calendar cell (owner, 2026-10-12: "1M, 1.2M, 600K")."""
+    try:
+        a = float(amount)
+    except (TypeError, ValueError):
+        return ""
+    sign, a = ("-" if a < 0 else ""), abs(a)
+    if a < 1000:
+        return f"{sign}₱{a:,.0f}"
+    if a < 1_000_000:
+        return f"{sign}₱{a / 1000:.0f}K"
+    m = f"{a / 1_000_000:.1f}".rstrip("0").rstrip(".")
+    return f"{sign}₱{m}M"
+
+
+@register.filter(name="pw")
+def peso_wide_and_short(amount) -> str:
+    """The full figure for a laptop and the short one for a phone, side by side; core/slicks.css shows one of them by the screen's width."""
+    from django.utils.html import format_html
+    from django.contrib.humanize.templatetags.humanize import intcomma
+    try:
+        full = "₱" + intcomma(f"{float(amount):,.0f}".replace(",", ""))
+    except (TypeError, ValueError):
+        return ""
+    return format_html('<span class="pw"><span class="pw-full">{}</span><span class="pw-short">{}</span></span>', full, peso_short(amount))

@@ -468,6 +468,10 @@ table.list tr.tentative td { color: #6b7280; font-style: italic; }
   .cal .d .amt, .cal .d .est { white-space: normal; overflow-wrap: anywhere; line-height: 1.15; }
 }
 
+/* ---- a figure in two forms: the full one on a laptop, the short one (₱1.2M, ₱600K) on a phone (owner, 2026-10-12) ---- */
+.pw-short { display: none; }
+@media (max-width: 480px) { .pw-full { display: none; } .pw-short { display: inline; } .cal .d .amt, .cal .cell b { font-size: .8rem; white-space: nowrap; } .cal .d .est, .cal .cell .plan, .cal .cell .cin { font-size: .64rem; white-space: normal; line-height: 1.15; } }   /* "plan ₱9.7M" may take two lines */
+
 /* ---- Daily payables: the card payment box, full or in part (owner, 2026-10-12) ---- */
 .card-dlg { border: 1px solid #d5dbe3; border-radius: 12px; padding: 18px 20px; max-width: 440px; width: calc(100vw - 32px); box-shadow: 0 10px 30px rgba(16,24,40,.3); font: inherit; color: var(--ink); }
 .card-dlg::backdrop { background: rgba(15,42,74,.45); }

@@ -196,3 +196,11 @@ def test_a_day_the_order_cannot_fall_due_on_gives_a_plain_note(web, db):
     page = web.get(f"/purchase-orders/new/?s={cid}&order_date={today.isoformat()}&day={early.isoformat()}").content.decode()
     assert "No delivery date makes" not in page and 'class="msg error"' not in page
     assert 'class="msg info"' in page and "cannot" in page and "is shown below" in page
+
+
+def test_calendar_figures_carry_a_short_form_for_the_phone():
+    # owner, 2026-10-12: "For phone purposes, it is possible to just roundoff the amount? For example 1M, 1.2M, 600K"
+    from core.templatetags.slicks import peso_short, peso_wide_and_short
+    assert [peso_short(x) for x in (1_000_000, 1_234_567, 600_000, 2_162_964, 850, -1_500_000)] == ["₱1M", "₱1.2M", "₱600K", "₱2.2M", "₱850", "-₱1.5M"]
+    html = str(peso_wide_and_short(1_234_567))
+    assert 'class="pw-full">₱1,234,567<' in html and 'class="pw-short">₱1.2M<' in html
