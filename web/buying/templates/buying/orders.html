@@ -22,14 +22,14 @@
   </form>
   {% if rows %}
   <p class="note">{{ rows|length }} order(s), estimated ₱{{ total|floatformat:2|intcomma }}.{% if late %} <b>{{ late }} past the expected delivery date and not yet received.</b>{% endif %}</p>
-  <div class="scroll-x"><table class="list">
+  <div class="scroll-x"><table class="list cards">
     <tr><th>No.</th><th>Supplier</th><th>Ordered</th><th>Delivery</th><th>Falls due</th><th>Estimated</th><th>Status</th><th></th></tr>
     {% for r in rows %}<tr>
-      <td><a href="/purchase-orders/{{ r.po_id }}/">{% if r.is_sent %}{{ r.request_no }}{% elif r.is_draft %}Draft{% else %}{{ r.po_no }}{% endif %}</a></td><td>{{ r.supplier }}</td>
-      <td>{{ r.order_date|dmy }}</td><td>{{ r.expected_delivery_date|default:"—"|dmy }}</td><td>{{ r.expected_pay_date|default:"—"|dmy }}</td>
-      <td class="num">{{ r.total|floatformat:2|intcomma }}</td>
+      <td class="c-t"><a href="/purchase-orders/{{ r.po_id }}/">{% if r.is_sent %}{{ r.request_no }}{% elif r.is_draft %}Draft{% else %}{{ r.po_no }}{% endif %}</a></td><td>{{ r.supplier }}</td>
+      <td data-l="ordered">{{ r.order_date|dmy }}</td><td data-l="delivery">{{ r.expected_delivery_date|default:"—"|dmy }}</td><td data-l="due">{{ r.expected_pay_date|default:"—"|dmy }}</td>
+      <td class="num c-big">{{ r.total|floatformat:2|intcomma }}</td>
       <td><span class="pill{% if r.is_sent %} warn{% elif r.is_draft or r.status == 'CANCELLED' %} off{% endif %}">{{ r.status_label }}</span></td>
-      <td>{% if r.delivery_overdue %}<span class="pill warn">Late</span>{% endif %}{% if r.is_sent %}<span class="hint">{% if r.waiting %}waiting {{ r.waiting }} day{{ r.waiting|pluralize }}{% else %}sent today{% endif %}</span>{% endif %}</td></tr>{% endfor %}
+      <td class="c-r">{% if r.delivery_overdue %}<span class="pill warn">Late</span>{% endif %}{% if r.is_sent %}<span class="hint">{% if r.waiting %}waiting {{ r.waiting }} day{{ r.waiting|pluralize }}{% else %}sent today{% endif %}</span>{% endif %}</td></tr>{% endfor %}
   </table></div>
   {% else %}<p class="note">No orders here yet.{% if may_create %} Make one under New order.{% endif %}</p>{% endif %}
 

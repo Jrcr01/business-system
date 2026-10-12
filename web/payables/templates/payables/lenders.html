@@ -38,8 +38,8 @@
     <option value="Held"{% if g_show == "Held" %} selected{% endif %}>Held</option><option value="Presented"{% if g_show == "Presented" %} selected{% endif %}>Presented</option>
     <option value="Returned"{% if g_show == "Returned" %} selected{% endif %}>Returned</option><option value="all"{% if g_show == "all" %} selected{% endif %}>All</option></select></div>
 </form>
-<div class="scroll-x"><table class="list">
-  <tr><th>Check no.</th><th>Held by</th><th>Loan note</th><th style="text-align:right">Amount</th><th>Given on</th><th>Status</th><th></th></tr>
+<div class="scroll-x"><table class="list cards">
+  <tr><th>Held by</th><th>Check no.</th><th>Loan note</th><th style="text-align:right">Amount</th><th>Given on</th><th>Status</th><th></th></tr>
   {% for g in g_rows %}
   {% if may_write and g_edit == g.guarantee_id and g.status != "Presented" %}
   <tr><td>{{ g.check_number }}</td><td>{{ g.holder }}</td><td colspan="5">
@@ -53,13 +53,13 @@
       <button class="btn small" type="submit"><span class="ms">save</span>Save</button> <a class="btn small ghost" href="?tab=guarantees&show={{ g_show }}">Cancel</a>
     </form></td></tr>
   {% else %}
-  <tr><td style="white-space:nowrap">{{ g.check_number }}</td><td style="white-space:nowrap">{{ g.holder }}</td><td style="white-space:nowrap">{{ g.loan_note|default:"—" }}</td>
-    <td class="num">{% if g.face_amount is not None %}{{ g.face_amount|floatformat:2|intcomma }}{% else %}<span class="hint">not stated</span>{% endif %}</td>
-    <td style="white-space:nowrap">{{ g.given_on|dmy|default:"—" }}</td>
+  <tr><td class="c-t" style="white-space:nowrap">{{ g.holder }}</td><td data-l="check" style="white-space:nowrap">{{ g.check_number }}</td><td data-l="note" style="white-space:nowrap">{{ g.loan_note|default:"—" }}</td>
+    <td class="num c-big">{% if g.face_amount is not None %}{{ g.face_amount|floatformat:2|intcomma }}{% else %}<span class="hint">not stated</span>{% endif %}</td>
+    <td data-l="given" style="white-space:nowrap">{{ g.given_on|dmy|default:"—" }}</td>
     <td><span class="pill{% if g.status == 'Presented' %} warn{% elif g.status == 'Returned' %} off{% endif %}">{{ g.status }}</span>
       {% if g.returned_on %}<span class="hint">{{ g.returned_on|dmy }}</span>{% endif %}{% if g.presented_on %}<span class="hint">{{ g.presented_on|dmy }}</span>{% endif %}
       {% if g.note %}<div class="hint">{{ g.note|usdates }}</div>{% endif %}</td>
-    <td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:nowrap;white-space:nowrap">{% if may_write and g.status == "Held" %}<form method="post" style="margin:0;display:flex;gap:6px;align-items:center" onsubmit="return confirm('Mark check {{ g.check_number }} returned by {{ g.holder|escapejs }}?');">{% csrf_token %}
+    <td class="c-r"><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:nowrap;white-space:nowrap">{% if may_write and g.status == "Held" %}<form method="post" style="margin:0;display:flex;gap:6px;align-items:center" onsubmit="return confirm('Mark check {{ g.check_number }} returned by {{ g.holder|escapejs }}?');">{% csrf_token %}
         <input type="hidden" name="action" value="gc_return"><input type="hidden" name="guarantee_id" value="{{ g.guarantee_id }}">
         <input type="date" name="returned_on" value="{{ today|date:'Y-m-d' }}" aria-label="Returned on" style="width:150px"><button class="btn small ghost" type="submit">Mark returned</button></form>
       {% elif may_write and g.status == "Returned" %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="gc_undo">
@@ -162,13 +162,13 @@
   <button class="btn small ghost" type="submit"><span class="ms">search</span>Search</button>
 </form>
 {% if rows %}
-<div class="scroll-x"><table class="list">
+<div class="scroll-x"><table class="list cards">
   <tr><th>Loan note</th><th>Lender</th><th>Status</th><th>Loan date</th><th>Principal</th><th>Rate / month</th><th>Total payable</th><th>Outstanding</th><th>Next payment</th></tr>
   {% for r in rows %}<tr>
-    <td><a href="/lenders/{{ r.loan_note_id }}/">{{ r.note_ref|default:"(draft)" }}</a></td><td>{{ r.creditor_name }}</td>
+    <td><a href="/lenders/{{ r.loan_note_id }}/">{{ r.note_ref|default:"(draft)" }}</a></td><td class="c-t"><a href="/lenders/{{ r.loan_note_id }}/">{{ r.creditor_name }}</a></td>
     <td><span class="pill{% if r.status == 'Cancelled' or r.status == 'Settled' %} off{% elif r.status != 'Active' %} warn{% endif %}">{{ r.status }}</span></td>
-    <td>{{ r.issue_date|dmy }}</td><td class="num">{{ r.principal_amount|floatformat:2|intcomma }}</td><td class="num">{{ r.monthly_interest_rate|floatformat:2 }}%</td>
-    <td class="num">{{ r.total_payable|floatformat:2|intcomma }}</td><td class="num">{{ r.outstanding|floatformat:2|intcomma }}</td><td>{{ r.next_day|dmy|default:"—" }}</td></tr>{% endfor %}
+    <td data-l="dated">{{ r.issue_date|dmy }}</td><td class="num" data-l="principal">{{ r.principal_amount|floatformat:2|intcomma }}</td><td class="num" data-l="rate">{{ r.monthly_interest_rate|floatformat:2 }}%</td>
+    <td class="num" data-l="total">{{ r.total_payable|floatformat:2|intcomma }}</td><td class="num c-big">{{ r.outstanding|floatformat:2|intcomma }}</td><td data-l="next">{{ r.next_day|dmy|default:"—" }}</td></tr>{% endfor %}
 </table></div>
 <p class="hint">{{ rows|length }} loan note(s) · outstanding on the active ones ₱{{ outstanding|floatformat:2|intcomma }}. Outstanding = total payable less the checks cleared.</p>
 {% else %}<p class="note">No loan notes here.</p>{% endif %}

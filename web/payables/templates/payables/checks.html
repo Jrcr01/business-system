@@ -41,21 +41,22 @@
   <div class="actions" style="margin-top:12px"><button class="btn small ghost cd-cancel" type="button">Cancel</button></div>
 </dialog>
 <form method="post" id="dp-form">{% csrf_token %}<input type="hidden" name="action" value="clear_many"><input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="by" value="{{ by }}">
-<div class="scroll-x"><table class="list dp">
+<div class="scroll-x"><table class="list dp cards">
   <tr><th style="width:34px">{% if may_tick and show != "ticked" %}<input type="checkbox" id="dp-all" aria-label="Tick every item shown that is due">{% endif %}</th>
-      <th>Date</th><th>Pay to</th><th>Check / reference</th><th style="text-align:right">Amount</th><th></th></tr>
+      <th>Pay to</th><th style="text-align:right">Amount</th><th>Date</th><th>Check / reference</th><th></th><th></th></tr>
   {% for d in days %}
   <tr class="dp-day{% if d.overdue %} overdue{% elif d.today %} today{% endif %}"><td colspan="6">
     <b>{{ d.day|dmy }}</b>{% if d.today %} · today{% elif d.overdue %} · <span class="pill warn">overdue</span>{% endif %}
     <span class="hint">· {{ d.items|length }} item{{ d.items|length|pluralize }} · ₱{{ d.total|floatformat:2|intcomma }}{% if d.n_open and show == "all" %} · {{ d.n_open }} not paid{% endif %}</span></td></tr>
   {% for r in d.items %}
   <tr class="dp-row" data-q="{{ r.payee|lower }} {{ r.ref|lower }}">
-    <td>{% if not r.ticked and may_tick %}<input type="checkbox" name="tick_{{ r.kind }}_{{ r.item_id }}" value="1" data-amt="{{ r.amount }}"{% if not r.due %} disabled title="Not due yet: it can't be paid before its date"{% endif %} aria-label="Paid: {{ r.payee }} {{ r.ref }}">{% endif %}</td>
-    <td>{{ r.day|dmy }}</td><td>{{ r.payee }}</td>
+    <td class="c-k">{% if not r.ticked and may_tick %}<input type="checkbox" name="tick_{{ r.kind }}_{{ r.item_id }}" value="1" data-amt="{{ r.amount }}"{% if not r.due %} disabled title="Not due yet: it can't be paid before its date"{% endif %} aria-label="Paid: {{ r.payee }} {{ r.ref }}">{% endif %}</td>
+    <td class="c-t">{{ r.payee }}</td><td class="c-big num">{{ r.amount|floatformat:2|intcomma }}</td>
+    <td>{{ r.day|dmy }}</td>
     <td>{{ r.ref|default:"—" }} <span class="kind">{{ r.track }}</span></td>
-    <td class="num">{{ r.amount|floatformat:2|intcomma }}{% if r.kind == "card" and not r.ticked and may_tick and r.due %}<input type="hidden" class="card-amt"
+    <td class="c-h num">{% if r.kind == "card" and not r.ticked and may_tick and r.due %}<input type="hidden" class="card-amt"
           name="amt_card_{{ r.item_id }}" value="" data-max="{{ r.amount }}" data-ref="{{ r.ref }}">{% endif %}</td>
-    <td>{% if r.ticked %}<span class="pill">paid {{ r.ticked|dmy }}</span>{% if r.note %} <span class="hint">{{ r.note|usdates }}</span>{% endif %}
+    <td class="c-r">{% if r.ticked %}<span class="pill">paid {{ r.ticked|dmy }}</span>{% if r.note %} <span class="hint">{{ r.note|usdates }}</span>{% endif %}
           {% if may_tick and r.kind == "check" %}<button class="btn small ghost" type="submit" form="undo-c{{ r.item_id }}">Undo</button>
           {% elif may_tick and r.kind == "loan" %}<button class="btn small ghost" type="submit" form="undo-l{{ r.item_id }}">Undo</button>
           {% elif may_tick and r.kind == "cardpay" %}<button class="btn small ghost" type="submit" form="undo-p{{ r.item_id }}">Undo</button>{% endif %}
@@ -68,7 +69,7 @@
 <div class="dp-bar">
   <b id="dp-sum">0 ticked · ₱0.00</b>
   <label for="dp-on">Paid on</label><input id="dp-on" type="date" name="on" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}">
-  <input type="text" name="note" placeholder="Note, e.g. seen in online banking" aria-label="Note" style="flex:1;min-width:180px">
+  <details class="dp-notefold" open><summary>note</summary><input type="text" name="note" placeholder="Note, e.g. seen in online banking" aria-label="Note" style="flex:1;min-width:180px"></details>
   <button class="btn" type="submit" id="dp-go" disabled><span class="ms">task_alt</span><span id="dp-go-t">Mark paid</span></button>
 </div>
 <p class="hint">A check or bank-loan payment ticked here is confirmed by the next bank statement. A card line records a card payment on its statement, dated the day
@@ -86,6 +87,7 @@
 <script>
 (function () {
   var form = document.getElementById("dp-form"); if (!form) return;
+  var fold = form.querySelector(".dp-notefold"); if (fold && innerWidth <= 480) fold.removeAttribute("open");     /* a phone: the note folds (owner, 2026-10-12) */
   var boxes = [].slice.call(form.querySelectorAll('input[type=checkbox][name^="tick_"]')), all = document.getElementById("dp-all");
   var sum = document.getElementById("dp-sum"), go = document.getElementById("dp-go"), goT = document.getElementById("dp-go-t");
   var peso = function (v) { return v.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };

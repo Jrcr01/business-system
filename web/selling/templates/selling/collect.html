@@ -29,10 +29,10 @@ their advance, the receipt number optional. Write-off is the System admin's alon
 <p class="note">Who is paying? Pick the customer; their open invoices wait oldest first. Partial is fine, the extra stays as their advance, and the
   receipt number is optional.</p>
 {% if owing %}
-<div class="scroll-x"><table class="list" style="max-width:820px">
+<div class="scroll-x"><table class="list cards" style="max-width:820px">
   <tr><th>Customer</th><th class="num">Owed</th><th>Last sale</th><th></th></tr>
-  {% for c in owing %}<tr><td>{{ c.name }}</td><td class="num">{{ c.charged|floatformat:2|intcomma }}</td><td>{{ c.last_sale|dmy }}</td>
-    <td><a class="btn small" href="/collect/?c={{ c.customer_id }}"><span class="ms">payments</span>Collect</a></td></tr>{% endfor %}
+  {% for c in owing %}<tr><td class="c-t">{{ c.name }}</td><td class="num c-big">{{ c.charged|floatformat:2|intcomma }}</td><td data-l="last sale">{{ c.last_sale|dmy }}</td>
+    <td class="c-r"><a class="btn small" href="/collect/?c={{ c.customer_id }}"><span class="ms">payments</span>Collect</a></td></tr>{% endfor %}
 </table></div>
 {% else %}<p class="note"><span class="ms">task_alt</span> Nobody owes anything.</p>{% endif %}
 
@@ -42,13 +42,13 @@ their advance, the receipt number optional. Write-off is the System admin's alon
   61–90 ₱{{ aging.d90|floatformat:2|intcomma }} · over 90 ₱{{ aging.over|floatformat:2|intcomma }}</p>
 {% if rows %}
 <form method="post" id="collect_form">{% csrf_token %}<input type="hidden" name="action" value="collect"><input type="hidden" name="customer_id" value="{{ cust.customer_id }}">
-  <div class="scroll-x"><table class="list">
+  <div class="scroll-x"><table class="list cards">
     <tr><th>Invoice</th><th>Date</th><th>Due</th><th class="num">Owed</th><th class="num">Collect now</th><th></th></tr>
-    {% for r in rows %}<tr><td>{{ r.ref }}{% if r.is_opening %} <span class="pill off">opening</span>{% endif %}</td>
-      <td>{{ r.sale_date|dmy }}</td><td>{{ r.due_date|dmy }}{% if r.days_over %} <span class="pill warn">{{ r.days_over }} day{{ r.days_over|pluralize }}</span>{% endif %}</td>
-      <td class="num">{{ r.owed|floatformat:2|intcomma }}</td>
-      <td>{% if not r.written_off %}<input class="inline-input num" style="width:120px" inputmode="decimal" name="amt_{{ r.sale_id }}" aria-label="Collect on {{ r.ref }}">{% endif %}</td>
-      <td>{% if r.written_off %}<span class="pill off">written off</span> <input class="inline-input num" style="width:120px" inputmode="decimal" name="amt_{{ r.sale_id }}" aria-label="Recover on {{ r.ref }}" placeholder="recover">
+    {% for r in rows %}<tr><td class="c-t">{{ r.ref }}{% if r.is_opening %} <span class="pill off">opening</span>{% endif %}</td>
+      <td data-l="dated">{{ r.sale_date|dmy }}</td><td data-l="due">{{ r.due_date|dmy }}{% if r.days_over %} <span class="pill warn">{{ r.days_over }} day{{ r.days_over|pluralize }}</span>{% endif %}</td>
+      <td class="num c-big">{{ r.owed|floatformat:2|intcomma }}</td>
+      <td class="c-r" data-l="collect now">{% if not r.written_off %}<input class="inline-input num" style="width:120px" inputmode="decimal" name="amt_{{ r.sale_id }}" aria-label="Collect on {{ r.ref }}">{% endif %}</td>
+      <td class="c-r">{% if r.written_off %}<span class="pill off">written off</span> <input class="inline-input num" style="width:120px" inputmode="decimal" name="amt_{{ r.sale_id }}" aria-label="Recover on {{ r.ref }}" placeholder="recover">
           {% elif is_admin %}<details style="display:inline-block"><summary class="hint">Write off</summary>
             <span class="payrow"><input class="inline-input" name="reason_dummy_{{ r.sale_id }}" form="wo_{{ r.sale_id }}" placeholder="why" aria-label="Why write off {{ r.ref }}">
             <button class="btn small danger" form="wo_{{ r.sale_id }}" type="submit">Write off</button></span></details>{% endif %}</td></tr>{% endfor %}

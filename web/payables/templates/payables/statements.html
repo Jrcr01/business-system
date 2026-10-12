@@ -30,15 +30,15 @@
   <button class="btn small ghost" type="submit"><span class="ms">search</span>Search</button>
 </form>
 {% if rows %}
-<div class="scroll-x"><table class="list">
+<div class="scroll-x"><table class="list cards">
   <tr><th>Order statement</th><th>Supplier</th><th>Status</th><th>Gross</th><th>Credit memos</th><th>Net</th><th>Outstanding</th><th>Changed</th><th></th></tr>
   {% for r in rows %}<tr>
-    <td><a href="/order-statements/{{ r.statement_id }}/">{% if r.is_draft %}Draft · {{ r.created_at|dmy }}{% else %}{{ r.statement_ref }}{% endif %}</a></td>
+    <td class="c-t"><a href="/order-statements/{{ r.statement_id }}/">{% if r.is_draft %}Draft · {{ r.created_at|dmy }}{% else %}{{ r.statement_ref }}{% endif %}</a></td>
     <td>{{ r.creditor_name }}</td>
     <td><span class="pill{% if r.stage == 'Draft' or r.stage == 'Cancelled' %} off{% elif r.stage == 'Parked' %} warn{% endif %}">{{ r.stage }}</span></td>
-    <td class="num">{{ r.total_amount|floatformat:2|intcomma }}</td><td class="num">{% if r.credit_memo_total %}{{ r.credit_memo_total|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
-    <td class="num">{{ r.net_total|floatformat:2|intcomma }}</td><td class="num">{{ r.outstanding|floatformat:2|intcomma }}</td><td>{{ r.last_modified|dmy }}</td>
-    <td>{% if r.is_locked and r.stage != "Cancelled" %}<span class="pill">Locked</span>{% endif %}{% if r.needs_reprint %} <span class="pill warn">Needs reprint</span>{% endif %}</td></tr>{% endfor %}
+    <td class="num" data-l="gross">{{ r.total_amount|floatformat:2|intcomma }}</td><td class="num" data-l="memos">{% if r.credit_memo_total %}{{ r.credit_memo_total|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num c-big">{{ r.net_total|floatformat:2|intcomma }}</td><td class="num" data-l="outstanding">{{ r.outstanding|floatformat:2|intcomma }}</td><td data-l="changed">{{ r.last_modified|dmy }}</td>
+    <td class="c-r">{% if r.is_locked and r.stage != "Cancelled" %}<span class="pill">Locked</span>{% endif %}{% if r.needs_reprint %} <span class="pill warn">Needs reprint</span>{% endif %}</td></tr>{% endfor %}
 </table></div>
 <p class="hint">{{ rows|length }} batch(es). Draft = no checks yet · Parked = checks parked, none printed · Issued = at least one check printed.</p>
 {% else %}<p class="note">No batches here yet.</p>{% endif %}

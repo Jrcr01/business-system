@@ -1,0 +1,150 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: list pages as cards on a phone</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1180px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 26px 0 6px; }
+.why { color: var(--muted); margin: 0 0 12px; max-width: 86ch; }
+.phones { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.phone { width: 360px; background: #fff; border: 10px solid #1c2733; border-radius: 34px; overflow: hidden; box-shadow: 0 6px 20px rgba(16,24,40,.25); }
+.bar { background: var(--navy); color: #fff; padding: 10px 14px; display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: .95rem; }
+.body { padding: 10px 12px 18px; min-height: 420px; }
+h2 { color: var(--blue); font-size: 1.15rem; margin: 4px 0 8px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.chip { font-size: .85rem; padding: 5px 12px; border: 1px solid #cbd5e1; border-radius: 999px; color: var(--ink); }
+.chip.on { background: #e8f0fa; border-color: var(--blue); color: var(--blue); font-weight: 700; }
+.card { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fff; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; }
+.card .t { font-weight: 700; font-size: 1.02rem; }
+.card .t a { color: var(--ink); text-decoration: none; }
+.card .big { font-weight: 700; font-size: 1.05rem; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.card .s { color: var(--muted); font-size: .85rem; grid-column: 1 / -1; }
+.card .r { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.card.tick { grid-template-columns: 28px 1fr auto; }
+.card.tick input { width: 22px; height: 22px; margin-top: 2px; }
+.card.tick .s, .card.tick .r { grid-column: 2 / -1; }
+.pill { display: inline-block; font-size: .72rem; border-radius: 999px; padding: 1px 8px; background: var(--soft); color: var(--muted); white-space: nowrap; }
+.pill.warn { background: #fff7e0; color: var(--warn); } .pill.ok { background: #e3f5ec; color: var(--ok); } .pill.red { background: #fde8e8; color: var(--red); } .pill.blue { background: #e8f0fa; color: var(--blue); }
+.btn { display: inline-flex; align-items: center; gap: 6px; background: #fff; color: var(--blue); border: 1px solid #b9c6d8; border-radius: 10px; padding: 7px 12px; font: inherit; font-weight: 600; font-size: .9rem; }
+.btn.main { background: var(--blue); color: #fff; border-color: var(--blue); }
+.neg { color: var(--red); } .pos { color: var(--ok); }
+.day { background: #eef3fa; border-radius: 8px; padding: 6px 10px; margin: 10px 0 6px; font-weight: 700; display: flex; justify-content: space-between; }
+.sticky { position: sticky; bottom: 0; background: #fff; border: 1px solid #d6dde7; border-radius: 12px; padding: 8px 10px; display: flex; gap: 8px; align-items: center; margin-top: 10px; box-shadow: 0 -4px 14px rgba(16,24,40,.08); }
+.sticky input { font: inherit; padding: 8px; border: 1px solid #cbd5e1; border-radius: 8px; min-width: 0; }
+.q { background: #fff7e0; border: 1px solid #f1d38a; border-radius: 10px; padding: 12px 16px; margin-top: 26px; max-width: 900px; }
+.hint { color: var(--muted); font-size: .85rem; }
+.rule { margin: 0 0 14px; font-size: .9rem; color: var(--muted); }
+</style></head><body><main>
+<p class="why"><b>Sample figures, not your data.</b> On a laptop these seven pages stay as they are (the tables). Under a phone width each table row becomes
+a card: <b>two or three things big, the rest small</b>, and the row's button on the card. Same page, same data, same rules; only the layout changes.
+Pages you read rather than act on (a batch's invoices, Bank and cash, Analytics, Reports, Income statement) keep scrolling sideways.</p>
+
+<div class="phones">
+
+<div class="phone"><div class="bar"><span class="ms">fact_check</span>Daily payables</div><div class="body">
+  <div class="chips"><span class="chip on">Today + overdue 8</span><span class="chip">Next 7 days 60</span></div>
+  <div class="day"><span>10/12/2026 · today</span><span>₱580,543.23</span></div>
+  <div class="card tick"><input type="checkbox"><span class="t">Neth Canlas</span><span class="big">10,000.00</span>
+    <span class="s">10/10/2026 · 3992565292 <span class="pill">Lender</span></span></div>
+  <div class="card tick"><input type="checkbox"><span class="t">Buenaventura Associates</span><span class="big">22,664.25</span>
+    <span class="s">10/10/2026 · 3992575914 <span class="pill">Supplier</span></span></div>
+  <div class="card tick"><input type="checkbox"><span class="t">Bank of the Philippine Islands</span><span class="big">7,746.73</span>
+    <span class="s">10/11/2026 · Every 11th - RAP BPI <span class="pill">Bank loan</span></span></div>
+  <div class="card tick"><input type="checkbox" checked><span class="t">RCBC</span><span class="big">115,700.00</span>
+    <span class="s">Platinum - 4006 · Julian Ralph Roxas <span class="pill blue">Card</span></span></div>
+  <div class="sticky"><b style="white-space:nowrap">1 · ₱115,700</b><input type="date" value="2026-10-12" style="flex:1"><button class="btn main">Mark paid</button></div>
+  <p class="hint">Big: who and how much. Small: date, reference, kind. The tick is on the card; the Paid-on date and note sit in the bar at the bottom as now (the note folds under a "note" link to save height).</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">description</span>Order statements</div><div class="body">
+  <div class="chips"><span class="chip on">With a balance 2</span><span class="chip">All 70</span></div>
+  <div class="card"><span class="t"><a href="#">2026 - OS 0023</a></span><span class="big">₱992,197.90</span>
+    <span class="s">Battery Depot of Central Luzon · 33 invoices · <span class="pill ok">Issued</span> <span class="pill">Locked</span></span>
+    <span class="s">net ₱992,197.90 · credit memos ₱0 · outstanding <b>₱0.00</b> · changed 10/09</span></div>
+  <div class="card"><span class="t"><a href="#">2026 - OS 0024</a></span><span class="big neg">₱48,120.00</span>
+    <span class="s">Express Dymans · 4 invoices · <span class="pill warn">Draft</span></span>
+    <span class="s">net ₱48,120.00 · outstanding <b class="neg">₱48,120.00</b> · changed today</span>
+    <span class="r"><button class="btn">Park checks</button></span></div>
+  <p class="hint">Big: the batch number and its net. The second line is what the table's eight columns said. The row button comes along.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">shopping_cart</span>Purchase orders</div><div class="body">
+  <div class="chips"><span class="chip on">Open 1</span><span class="chip">Requests 2</span><span class="chip">All</span></div>
+  <div class="card"><span class="t"><a href="#">2026 - PO 0016</a></span><span class="big">₱184,500.00</span>
+    <span class="s">New Century City Marketing · <span class="pill warn">Ordered</span></span>
+    <span class="s">ordered 10/09 · delivery 10/16 · falls due <b>11/15/2026</b></span>
+    <span class="r"><button class="btn">Receive</button><button class="btn">PDF</button></span></div>
+  <div class="card"><span class="t"><a href="#">RQ-0003</a></span><span class="big">₱62,400.00</span>
+    <span class="s">Express Dymans · <span class="pill">Sent to supplier</span> · sent 10/11</span>
+    <span class="r"><button class="btn main">Supplier confirmed</button></span></div>
+  <p class="hint">Big: the number and the estimate. Dates on one small line. The step that comes next is the button.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">handshake</span>Lenders</div><div class="body">
+  <div class="chips"><span class="chip on">Loan notes</span><span class="chip">Guarantee checks</span></div>
+  <div class="card"><span class="t"><a href="#">Ramon Mendoza</a></span><span class="big">₱4,414,000</span>
+    <span class="s">PENDING-13 · beginning balance · 0% · 46 payments, next 10/18</span></div>
+  <div class="card"><span class="t"><a href="#">Daisy</a></span><span class="big">₱1,013,700</span>
+    <span class="s">PENDING-160 · beginning balance · 17 payments, next 11/18</span></div>
+  <div class="card"><span class="t"><a href="#">Neth Canlas</a></span><span class="big">₱1,782,967</span>
+    <span class="s">PENDING-10 · beginning balance · 31 payments, next 10/14</span>
+    <span class="s">+ LN 0003, LN 0004, LN 0005 · ₱1,500,000</span></div>
+  <p class="hint">Big: the lender and what is still owed. Small: the note numbers and the next payment. Guarantee checks: card per check, the holder big.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">credit_card</span>Credit cards</div><div class="body">
+  <div class="chips"><span class="chip on">Statements</span><span class="chip">Cards</span><span class="chip">Missing 2</span></div>
+  <div class="card"><span class="t">Platinum - 4006</span><span class="big">₱115,700.00</span>
+    <span class="s">RCBC · Julian Ralph Roxas · due <b>10/12/2026</b> · <span class="pill warn">Unpaid</span></span>
+    <span class="r"><button class="btn">Statement</button></span></div>
+  <div class="card"><span class="t">Jcb Luckycat - 2108</span><span class="big">₱11,900.00</span>
+    <span class="s">RCBC · Jeane Ravin Roxas · due 10/15/2026 · <span class="pill ok">paid in part</span> 5,000.00</span></div>
+  <div class="card"><span class="t">PNB Mastercard - 3703</span><span class="big neg">no statement</span>
+    <span class="s">PNB · Jessie Roxas · expected by 10/09 · <span class="pill red">missing 3 days</span></span>
+    <span class="r"><button class="btn main">Add the statement</button></span></div>
+  <p class="hint">Big: the card and the amount due. Small: issuer, holder, due date, state. The Cards tab: one card per card with limit and statement day.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">group</span>Customers</div><div class="body">
+  <div class="chips"><span class="chip on">All 12</span><span class="chip">Owe us 3</span><span class="chip">Affiliates 2</span></div>
+  <div class="card"><span class="t"><a href="#">RVC Trucking</a></span><span class="big neg">owes ₱74,800</span>
+    <span class="s">fleet · 30 days · 0917 555 1234 · sold ₱1,284,500 · last sale 10/08</span>
+    <span class="r"><span class="pill ok">charge allowed</span></span></div>
+  <div class="card"><span class="t"><a href="#">Baliuag Transit</a></span><span class="big neg">owes ₱64,300</span>
+    <span class="s">fleet · 15 days · sold ₱612,000 · last sale 09/30</span></div>
+  <div class="card"><span class="t"><a href="#">Mr. Santos</a></span><span class="big pos">nothing owed</span>
+    <span class="s">walk-in · sold ₱23,600 · last sale 08/26</span></div>
+  <p class="hint">Big: the name and what they owe. Small: kind, terms, contact, sold to date, last sale.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">payments</span>Collect payments</div><div class="body">
+  <div class="chips"><span class="chip on">Who owes 3</span><span class="chip">Opening balances</span></div>
+  <div class="card"><span class="t"><a href="#">RVC Trucking</a></span><span class="big neg">₱74,800.00</span>
+    <span class="s">2 invoices · oldest due 10/15 · last sale 10/08</span>
+    <span class="r"><button class="btn main">Collect</button></span></div>
+  <p class="hint" style="margin:10px 0 6px">After tapping Collect, the customer's invoices, each a card:</p>
+  <div class="card"><span class="t">SI 005521</span><span class="big">₱74,800.00</span>
+    <span class="s">10/08/2026 · due 10/15 · owed ₱74,800.00</span>
+    <span class="r"><span class="hint">Collect now</span><input style="font:inherit;padding:8px;border:1px solid #cbd5e1;border-radius:8px;width:130px;text-align:right" value="74,800.00"></span></div>
+  <div class="sticky"><b>₱74,800</b><button class="btn" style="margin-left:auto">Cash ▾</button><button class="btn main">Receive</button></div>
+  <p class="hint">Big: customer and owed; then invoice and owed. The amount to collect is typed on the card; method and the receipt button sit in the bar.</p>
+</div></div>
+
+</div>
+
+<div class="q"><b>What stays the same everywhere</b>
+<ul style="margin:8px 0 0">
+  <li>The laptop pages do not change at all; cards appear only under a phone width.</li>
+  <li>Every figure, date and button of the table is on the card, just arranged; nothing is dropped.</li>
+  <li>Search boxes, the chips and the sticky bars stay where they are.</li>
+</ul>
+<b style="display:block;margin-top:10px">Questions</b>
+<ol style="margin:8px 0 0">
+  <li>Is the big pair right on each page (who + amount), or should any page lead with the date or the number instead?</li>
+  <li>Daily payables: fold the note under a "note" link to keep the bottom bar short, or keep it always visible?</li>
+  <li>Any page to add to the seven, or to drop?</li>
+</ol></div>
+</main></body></html>

@@ -135,14 +135,14 @@
     <option value="all"{% if show == "all" %} selected{% endif %}>All</option></select></div>
 </form>
 {% if stmts %}
-<div class="scroll-x"><table class="list">
+<div class="scroll-x"><table class="list cards">
   <tr><th>Card</th><th>Month</th><th>Due</th><th style="text-align:right">Total due</th><th style="text-align:right">Paid</th><th>Payments (posting date)</th><th>Status</th><th>SOA</th><th></th></tr>
-  {% for s in stmts %}<tr><td>{{ s.card }}{% if s.holder %} <span class="hint">· {{ s.holder }}</span>{% endif %}</td><td>{{ s.statement_month|default:"—" }}</td><td>{{ s.due_date|dmy }}</td>
-    <td class="num">{{ s.total_amount_due|floatformat:2|intcomma }}</td><td class="num">{{ s.amount_paid|floatformat:2|intcomma }}</td>
-    <td>{% for p in s.payments %}{{ p.payment_date|dmy }} · {{ p.amount|floatformat:2|intcomma }}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="hint">—</span>{% endfor %}</td>
+  {% for s in stmts %}<tr><td class="c-t">{{ s.card }}{% if s.holder %} <span class="hint">· {{ s.holder }}</span>{% endif %}</td><td data-l="month">{{ s.statement_month|default:"—" }}</td><td data-l="due">{{ s.due_date|dmy }}</td>
+    <td class="num c-big">{{ s.total_amount_due|floatformat:2|intcomma }}</td><td class="num" data-l="paid">{{ s.amount_paid|floatformat:2|intcomma }}</td>
+    <td data-l="payments">{% for p in s.payments %}{{ p.payment_date|dmy }} · {{ p.amount|floatformat:2|intcomma }}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="hint">—</span>{% endfor %}</td>
     <td><span class="pill{% if s.status != 'Paid' %} warn{% endif %}">{{ s.status }}</span></td>
-    <td>{% if s.paid_confirmed %}confirmed{% else %}<span class="hint">not yet confirmed</span>{% endif %}</td>
-    <td>{% if may_write and s.is_latest %}<form method="post" style="display:inline" onsubmit="return confirm('Delete this statement of {{ s.total_amount_due|floatformat:2 }} due {{ s.due_date|dmy }}? Only the latest statement of a card can be deleted.');">{% csrf_token %}
+    <td data-l="SOA">{% if s.paid_confirmed %}confirmed{% else %}<span class="hint">not yet confirmed</span>{% endif %}</td>
+    <td class="c-r">{% if may_write and s.is_latest %}<form method="post" style="display:inline" onsubmit="return confirm('Delete this statement of {{ s.total_amount_due|floatformat:2 }} due {{ s.due_date|dmy }}? Only the latest statement of a card can be deleted.');">{% csrf_token %}
       <input type="hidden" name="action" value="delete_statement"><input type="hidden" name="statement_id" value="{{ s.cc_statement_id }}"><button class="btn small ghost" type="submit">Delete</button></form>{% endif %}</td></tr>{% endfor %}
 </table></div>
 <p class="hint">{{ stmts|length }} statement(s). Pay a card on <a href="/checks/">Daily payables</a>, in full or in part; the next SOA confirms it.</p>

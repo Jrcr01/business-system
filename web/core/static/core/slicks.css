@@ -318,7 +318,8 @@ input.sw:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .login-bg { position: fixed; inset: 0; z-index: 0; background: #0f172a 70% center / cover no-repeat; }
 .login-bg::after { content: ""; position: absolute; inset: 0;
                    background: linear-gradient(90deg, rgba(10,18,36,.82) 0%, rgba(10,18,36,.55) 30%, rgba(10,18,36,.08) 55%, rgba(10,18,36,0) 100%); }
-.login-wrap { position: relative; z-index: 1; min-height: calc(100vh - 40px); display: flex; align-items: center; padding: 0 0 0 6vw; }
+.login-wrap { position: relative; z-index: 1; min-height: 100vh; display: flex; align-items: center; padding: 0 0 0 6vw; }
+main:has(.login-wrap) { padding-top: 0; padding-bottom: 0; }     /* the sign-in page fills the window exactly: nothing to scroll (owner, 2026-10-12) */
 .login-card { width: 100%; max-width: 380px; background: #fff; border-radius: 14px; padding: 30px 32px 22px; box-shadow: 0 24px 60px rgba(0,0,0,.40); }
 .login-card h2 { margin: 18px 0 14px; font-size: 1.45rem; color: #0f172a; }
 .login-card label { font-weight: 600; color: #334155; }
@@ -333,13 +334,14 @@ input.sw:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .login-help { font-size: .88rem; color: #64748b; margin: 14px 0 0; }
 .login-foot { display: flex; align-items: center; gap: 6px; margin: 16px 0 0; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: .8rem; color: #94a3b8; }
 .login-foot .ms { font-size: 16px; }
-main:has(.login-wrap) > .msg { position: relative; z-index: 2; max-width: 380px; margin: 16px 0 0 6vw; }
+main:has(.login-wrap) > .msg { position: absolute; top: 16px; left: 6vw; z-index: 2; max-width: 380px; margin: 0; }   /* over the photo: adds no height */
+main:has(.login-wrap) { position: relative; }
 @media (max-width: 760px) {
   .login-bg { background-position: 78% center; }
   .login-bg::after { background: linear-gradient(180deg, rgba(10,18,36,0) 0%, rgba(10,18,36,.35) 40%, rgba(10,18,36,.85) 100%); }
-  .login-wrap { padding: 0 16px; align-items: flex-end; min-height: calc(100vh - 32px); padding-bottom: 24px; }
+  .login-wrap { padding: 0 16px; align-items: flex-end; min-height: 100vh; min-height: 100dvh; padding-bottom: 24px; }
   .login-card { margin: 0 auto; padding: 24px 22px 18px; }
-  main:has(.login-wrap) > .msg { margin: 12px auto 0; }
+  main:has(.login-wrap) > .msg { left: 16px; right: 16px; max-width: none; }
 }
 
 /* View-only pages (owners, 2026-10-09): every form that saves is hidden; the server refuses saves anyway */
@@ -508,3 +510,28 @@ table.list tr.tentative td { color: #6b7280; font-style: italic; }
   .topbar.menu-open > .tb-sec:not(.tb-user):hover .tb-menu { display: none; }            /* a list, not a hover menu: only the section tapped opens */
   .topbar.menu-open > .tb-sec.open .tb-menu, .topbar.menu-open > .tb-sec:focus-within .tb-menu { display: block !important; }
 }
+
+/* ---- list tables as cards on a phone (owner, 2026-10-12: "Understood. Go" on docs/mockups/h_phone_cards.html) ----
+   A table marked .cards keeps its columns on a laptop. Under a phone width each row is a card: the cell marked .c-t is the title (big, left),
+   .c-big the figure (big, right), .c-r the row's buttons (their own line); every other cell is small print, with its data-l word in front. */
+@media (max-width: 480px) {
+  table.cards, table.cards tbody { display: block; width: 100%; }
+  table.cards tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
+  table.cards tr:has(th) { display: none; }
+  table.cards td { display: inline; border: 0; padding: 0; font-size: .85rem; color: var(--muted); }
+  table.cards td:empty { display: none; }
+  table.cards td.c-t { order: -2; flex: 1 1 40%; font-weight: 700; font-size: 1.02rem; color: var(--ink); }
+  table.cards td.c-t a { color: var(--ink); text-decoration: none; }
+  table.cards td.c-big { order: -1; flex: 1 1 45%; margin-left: auto; font-weight: 700; font-size: 1.05rem; color: var(--ink); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  table.cards td.c-k { order: -3; flex: 0 0 26px; align-self: center; }
+  table.cards td.c-r { order: 9; flex: 0 0 100%; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+  table.cards td.c-r:empty { display: none; }
+  table.cards td[data-l]:not(:empty)::before { content: attr(data-l) " "; }
+  table.cards td[data-l]:not(:empty)::after { content: " ·"; color: #cbd5e1; }
+  table.cards td.c-big::after, table.cards td.c-t::after { content: none; }
+  table.cards tr.dp-day { display: block; background: #eef3fa; border: 0; border-radius: 8px; padding: 6px 10px; }
+  table.cards tr.dp-day td { display: block; color: var(--ink); font-size: .95rem; }
+  table.cards tr.sel { outline: 2px solid var(--blue); }
+  .dp-notefold summary { color: var(--blue); cursor: pointer; font-size: .9rem; }
+}
+@media (min-width: 481px) { .dp-notefold summary { display: none; } .dp-notefold { display: contents; } }

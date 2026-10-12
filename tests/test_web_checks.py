@@ -76,7 +76,7 @@ def test_a_card_can_be_paid_in_part_and_each_payment_is_on_its_statement(web, db
         hid = conn.execute("INSERT INTO cardholders (name) VALUES ('Jeane Ravin')").lastrowid
         conn.execute("UPDATE credit_cards SET cardholder_id = ?", (hid,))
     page = web.get("/checks/").content.decode()
-    assert ">3,000.00<input" in page and "Gold - 1234 · Jeane Ravin" in page   # the total due is shown, not typed (owner, 2026-10-12); the holder is named
+    assert 'class="c-big num">3,000.00<' in page and "Gold - 1234 · Jeane Ravin" in page   # the total due is shown, not typed (owner, 2026-10-12); the holder is named
     web.post("/checks/", {"action": "clear_many", f"tick_card_{csid}": "1", f"amt_card_{csid}": "1,000", "on": str(TODAY - timedelta(days=1))})
     assert fetchone(db, "SELECT status, amount_paid, unpaid_balance_next FROM cc_statements WHERE cc_statement_id = ?", (csid,)) == ("Partially Paid", 1000.0, 2000.0)
     assert fetchone(db, "SELECT payment_date, amount FROM cc_payments WHERE cc_statement_id = ?", (csid,)) == (str(TODAY - timedelta(days=1)), 1000.0)
