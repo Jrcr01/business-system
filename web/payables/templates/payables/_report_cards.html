@@ -2,4 +2,6 @@
 <div class="grid rep-cards">
   <a class="tile{% if r == 'schedule' %} on{% endif %}" href="/reports/"><div class="t">Schedule of payments</div><div class="b"><span class="u">Everything still owed, by pay day</span><span class="f"><span class="ms">event_upcoming</span></span></div></a>
   <a class="tile{% if r == 'soa' %} on{% endif %}" href="/reports/?r=soa"><div class="t">Statement of account</div><div class="b"><span class="u">A supplier, lender, bank loan or card</span><span class="f"><span class="ms">history</span></span></div></a>
+  <a class="tile{% if r == 'po' %} on{% endif %}" href="/reports/?r=po"><div class="t">PO follow-through</div><div class="b"><span class="u">Ordered, billed, with a check, paid</span><span class="f"><span class="ms">conversion_path</span></span></div></a>
+  <a class="tile{% if r == 'nopo' %} on{% endif %}" href="/reports/?r=nopo"><div class="t">With and without a PO</div><div class="b"><span class="u">How much goes through an order first</span><span class="f"><span class="ms">rule</span></span></div></a>
 </div>

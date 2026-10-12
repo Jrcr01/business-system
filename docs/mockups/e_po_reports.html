@@ -1,0 +1,80 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: the PO reports</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1080px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.35rem; margin-top: 28px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 80ch; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+.scroll-x { overflow-x: auto; }
+table.list { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: .93rem; font-variant-numeric: tabular-nums; }
+table.list th { text-align: right; color: var(--muted); font-weight: 600; font-size: .8rem; border-bottom: 2px solid var(--line); padding: 6px 9px; white-space: nowrap; }
+table.list td { border-bottom: 1px solid var(--line); padding: 7px 9px; text-align: right; white-space: nowrap; }
+table.list th.l, table.list td.l { text-align: left; }
+.tot td { font-weight: 700; border-top: 2px solid var(--ink); }
+.pos { color: var(--ok); } .neg { color: var(--red); }
+.btn { display: inline-flex; align-items: center; gap: 7px; background: #fff; color: var(--blue); border: 1px solid #b9c6d8; border-radius: 8px; padding: 7px 12px; font: inherit; font-weight: 600; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.chip { display: inline-block; border: 1px solid #b9c6d8; border-radius: 999px; padding: 4px 12px; font-size: .9rem; color: var(--blue); background: #fff; }
+.chip.on { background: #e3eefb; font-weight: 700; }
+.pill { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 1px 8px; background: var(--soft); color: var(--muted); }
+.pill.warn { background: #fff7e0; color: var(--warn); } .pill.ok { background: #e3f5ec; color: var(--ok); } .pill.red { background: #fde8e8; color: var(--red); }
+.stats { display: flex; gap: 26px; flex-wrap: wrap; margin: 6px 0 12px; }
+.stats span { display: block; color: var(--muted); font-size: .82rem; } .stats b { font-size: 1.15rem; }
+.bar { display: inline-block; height: 10px; border-radius: 5px; background: var(--blue); vertical-align: middle; }
+.bar.no { background: #e0a23a; }
+a { color: var(--blue); }
+</style></head><body><main>
+<p class="why"><b>Sample figures, not your data.</b> Two new pages under Records. Supplier aging is already on Analytics and the supplier statement (SOA) is already under
+Reports, so those two are not redrawn here.</p>
+
+<h1>1 · Records → PO follow-through (ordered → received → paid)</h1>
+<p class="why">One line per purchase order: what was ordered, what the supplier's DR / SI actually billed, what has a check, and what the bank has paid.
+It answers "which orders are still hanging, and at which step".</p>
+<div class="screen">
+  <div class="row">
+    <span class="chip on">Open orders 6</span><span class="chip">All this month 14</span><span class="chip">Billed differs from ordered 2</span>
+    <span style="margin-left:auto"><select class="btn"><option>All suppliers</option></select> <button class="btn"><span class="ms">download</span>Excel</button></span>
+  </div>
+  <div class="stats">
+    <div><span>Ordered, not received yet</span><b>₱412,600.00</b></div>
+    <div><span>Received, no check yet</span><b>₱188,240.00</b></div>
+    <div><span>Checks written, not yet paid by the bank</span><b>₱526,900.00</b></div>
+  </div>
+  <div class="scroll-x"><table class="list">
+    <tr><th class="l">PO</th><th class="l">Supplier</th><th class="l">Ordered on</th><th>Ordered</th><th>Billed (DR / SI)</th><th>Difference</th><th>With a check</th><th>Paid by the bank</th><th>Still owed</th><th class="l">Where it stands</th></tr>
+    <tr><td class="l"><a href="#">PO 0012</a></td><td class="l">New Century City Marketing</td><td class="l">10/02/2026</td><td>184,500.00</td><td>184,500.00</td><td>—</td><td>184,500.00</td><td>92,250.00</td><td>92,250.00</td><td class="l"><span class="pill">checks written</span></td></tr>
+    <tr><td class="l"><a href="#">PO 0013</a></td><td class="l">Express Dymans</td><td class="l">10/03/2026</td><td>96,800.00</td><td>98,240.00</td><td class="neg">+1,440.00</td><td>—</td><td>—</td><td>98,240.00</td><td class="l"><span class="pill warn">received, no check</span></td></tr>
+    <tr><td class="l"><a href="#">PO 0014</a></td><td class="l">New Century City Marketing</td><td class="l">10/05/2026</td><td>240,000.00</td><td>90,000.00</td><td>—</td><td>—</td><td>—</td><td>90,000.00</td><td class="l"><span class="pill warn">part received</span> <span class="why" style="margin:0;font-size:.82rem">150,000.00 still to come</span></td></tr>
+    <tr><td class="l"><a href="#">PO 0015</a></td><td class="l">Goodyear</td><td class="l">10/07/2026</td><td>262,600.00</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="l"><span class="pill red">not received · 5 days</span></td></tr>
+    <tr><td class="l"><a href="#">PO 0009</a></td><td class="l">Express Dymans</td><td class="l">09/24/2026</td><td>342,400.00</td><td>342,400.00</td><td>—</td><td>342,400.00</td><td>—</td><td>342,400.00</td><td class="l"><span class="pill">checks written</span></td></tr>
+    <tr><td class="l"><a href="#">PO 0008</a></td><td class="l">Goodyear</td><td class="l">09/20/2026</td><td>118,300.00</td><td>117,900.00</td><td class="pos">−400.00</td><td>117,900.00</td><td>117,900.00</td><td>—</td><td class="l"><span class="pill ok">paid</span></td></tr>
+    <tr class="tot"><td class="l" colspan="3">Total</td><td>1,244,600.00</td><td>833,040.00</td><td>+1,040.00</td><td>644,800.00</td><td>210,150.00</td><td>622,890.00</td><td></td></tr>
+  </table></div>
+  <p class="why" style="margin:6px 0 0">"Billed" is the DR / SI recorded on Receive. "Paid by the bank" follows the bank statement, as everywhere else. Click a PO to open it.</p>
+</div>
+
+<h1>2 · Records → Purchases with and without a PO</h1>
+<p class="why">How much of what you buy goes through an order first. A purchase recorded with the "No PO" tag counts on the right. Nothing is blocked; this only shows the habit.</p>
+<div class="screen">
+  <div class="row"><span class="chip on">By month</span><span class="chip">By supplier</span>
+    <span style="margin-left:auto"><button class="btn"><span class="ms">download</span>Excel</button></span></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th class="l">Month</th><th>Purchases</th><th>Amount</th><th>With a PO</th><th>No PO</th><th>Through a PO</th><th class="l"></th></tr>
+    <tr><td class="l">October 2026 <span class="pill">so far</span></td><td>18</td><td>1,104,300.00</td><td>14 · 921,800.00</td><td>4 · 182,500.00</td><td><b>83%</b></td><td class="l"><span class="bar" style="width:100px"></span><span class="bar no" style="width:20px"></span></td></tr>
+    <tr><td class="l">September 2026</td><td>41</td><td>2,860,450.00</td><td>12 · 742,100.00</td><td>29 · 2,118,350.00</td><td><b>26%</b></td><td class="l"><span class="bar" style="width:31px"></span><span class="bar no" style="width:89px"></span></td></tr>
+  </table></div>
+  <p style="margin:14px 0 4px"><b>The No PO purchases of October 2026</b></p>
+  <div class="scroll-x"><table class="list">
+    <tr><th class="l">Date</th><th class="l">Supplier</th><th class="l">SI / DR</th><th>Amount</th><th class="l">Recorded by</th></tr>
+    <tr><td class="l">10/03/2026</td><td class="l">Buenaventura</td><td class="l">SI 44871</td><td>62,400.00</td><td class="l">Rhodora</td></tr>
+    <tr><td class="l">10/06/2026</td><td class="l">Express Dymans</td><td class="l">DR 10233</td><td>48,900.00</td><td class="l">Jeane Ravin</td></tr>
+    <tr><td class="l">10/08/2026</td><td class="l">Buenaventura</td><td class="l">SI 44920</td><td>31,200.00</td><td class="l">Rhodora</td></tr>
+    <tr><td class="l">10/09/2026</td><td class="l">New Century City Marketing</td><td class="l">DR 77102</td><td>40,000.00</td><td class="l">Rhodora</td></tr>
+  </table></div>
+</div>
+</main></body></html>

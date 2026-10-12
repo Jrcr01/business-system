@@ -1,0 +1,39 @@
+{% extends "core/base.html" %}{% load humanize slicks %}
+{% block title %}PO follow-through{% endblock %}
+{% block content %}
+{% include "payables/_report_cards.html" %}
+{% comment %}Owner, 2026-10-12: one line per purchase order -- ordered, billed on its DRs / SIs, with a check, paid by the bank -- and where it stands.{% endcomment %}
+<p class="note">One line per purchase order: what was ordered, what its DRs / SIs billed, what has a check, and what the bank has paid. "Paid by the bank"
+  follows the bank statement (or a tick on Daily payables), as everywhere else.</p>
+<div class="facts">
+  <div><span>Ordered, not received yet</span><b>₱{{ not_received|floatformat:2|intcomma }}</b></div>
+  <div><span>Received, no check yet</span><b>₱{{ no_check|floatformat:2|intcomma }}</b></div>
+  <div><span>Checks written, not yet paid by the bank</span><b>₱{{ waiting_bank|floatformat:2|intcomma }}</b></div>
+</div>
+<div class="chips">
+  {% for k, label in shows %}<a class="chip{% if k == show %} on{% endif %}" href="?r=po&show={{ k }}{% if supplier %}&supplier={{ supplier }}{% endif %}">{{ label }} <b>{% for ck, n in counts.items %}{% if ck == k %}{{ n }}{% endif %}{% endfor %}</b></a>{% endfor %}
+  <form method="get" style="margin-left:auto;display:flex;gap:8px;align-items:center"><input type="hidden" name="r" value="po"><input type="hidden" name="show" value="{{ show }}">
+    <select name="supplier" aria-label="Supplier" onchange="this.form.submit()"><option value="">All suppliers</option>
+      {% for i, name in suppliers %}<option value="{{ i }}"{% if i == supplier %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+    <a class="btn small ghost" href="?r=po&show={{ show }}{% if supplier %}&supplier={{ supplier }}{% endif %}&download=xlsx"><span class="ms">download</span>Excel</a></form>
+</div>
+{% if rows %}
+<div class="scroll-x"><table class="list" style="font-variant-numeric:tabular-nums;white-space:nowrap">
+  <tr><th>PO</th><th>Supplier</th><th>Ordered on</th><th class="num">Ordered</th><th class="num">Billed (DR / SI)</th><th class="num">Difference</th>
+      <th class="num">With a check</th><th class="num">Paid by the bank</th><th class="num">Still owed</th><th>Where it stands</th></tr>
+  {% for r in rows %}
+  <tr><td><a href="/purchase-orders/{{ r.po_id }}/">{{ r.po_no }}</a></td><td>{{ r.supplier }}</td><td>{{ r.day|dmy }}</td>
+    <td class="num">{{ r.ordered|floatformat:2|intcomma }}</td><td class="num">{% if r.billed %}{{ r.billed|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num">{% if r.diff > 0 %}+{% endif %}{% if r.diff %}{{ r.diff|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num">{% if r.written %}{{ r.written|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num">{% if r.paid %}{{ r.paid|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num">{% if r.owed %}{{ r.owed|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td><span class="pill{% if r.tone == 'warn' or r.tone == 'red' %} warn{% elif r.tone == '' %} off{% endif %}">{{ r.stage }}</span>{% if r.to_come and r.billed %} <span class="hint">{{ r.to_come|floatformat:2|intcomma }} still to come</span>{% endif %}</td></tr>
+  {% endfor %}
+  <tr><th colspan="3">Total</th><th class="num">{{ total.ordered|floatformat:2|intcomma }}</th><th class="num">{{ total.billed|floatformat:2|intcomma }}</th>
+    <th class="num">{% if total.diff > 0 %}+{% endif %}{{ total.diff|floatformat:2|intcomma }}</th><th class="num">{{ total.written|floatformat:2|intcomma }}</th>
+    <th class="num">{{ total.paid|floatformat:2|intcomma }}</th><th class="num">{{ total.owed|floatformat:2|intcomma }}</th><th></th></tr>
+</table></div>
+<p class="hint">"Difference" is what the DRs / SIs billed against what the order estimated for the goods that came. Drafts, requests still with the supplier and cancelled orders are not listed.</p>
+{% else %}<p class="note">No purchase order to show here.</p>{% endif %}
+{% endblock %}

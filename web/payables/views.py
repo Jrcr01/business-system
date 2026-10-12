@@ -475,6 +475,9 @@ def reports(request):
     if request.GET.get("r") == "soa":                           # the reports kept after the review (owner, 2026-10-09; Decision reports dropped too)
         from payables import report_more
         return report_more.soa(request)
+    if request.GET.get("r") in ("po", "nopo"):                  # the PO reports (owner, 2026-10-12)
+        from payables import report_po
+        return report_po.follow_through(request) if request.GET.get("r") == "po" else report_po.with_and_without(request)
     df, f, payees = _schedule(request)
     what = request.GET.get("download")
     show_ref = not hide_check_details(request.slicks_user["role"])
