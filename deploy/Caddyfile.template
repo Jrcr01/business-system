@@ -9,7 +9,7 @@ __SITE__ {
 	}
 	header {
 		-Server
-		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Permissions-Policy "camera=(self), microphone=(), geolocation=()"
 	}
 	log {
 		output file /var/log/caddy/slicks-erp.log {
