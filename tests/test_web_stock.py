@@ -152,3 +152,21 @@ def test_who_sees_stock_and_who_changes_it(web, db):
     assert seller.get("/stock/").status_code == 200
     seller.post(f"/stock/{a}/", {"action": "level", "level": "9"})
     assert _n("SELECT reorder_level FROM items WHERE id = ?", (a,)) == 9
+
+
+def test_labels_for_a_whole_brand_in_one_print_out(web, db):
+    # owner, 2026-10-12: "better to have it ready" -> labels for a whole brand
+    _admin(web)
+    a, name = _item()
+    b, _ = _item(size="195/65R15", pattern="RP18")
+    _stock(a, 3)
+    page = web.get("/stock/").content.decode()
+    assert "Print labels for a whole brand" in page and '<option value="Westlake">' in page
+    pdf = web.get("/stock/labels/?brand=westlake&per=onhand&size=sheet24")
+    assert pdf.status_code == 200 and pdf["Content-Type"] == "application/pdf" and pdf.content[:4] == b"%PDF"       # 3 labels: only the item in stock
+    each = web.get("/stock/labels/?brand=Westlake&per=each&n=2&size=sheet24")
+    assert each.status_code == 200 and len(each.content) > len(pdf.content) * 0.9                                   # 4 labels: both items, 2 each
+    none = web.get("/stock/labels/?brand=Nobody&per=each&n=1")
+    assert none.status_code == 404 and b"no item of that brand" in none.content
+    many = web.get("/stock/labels/?brand=Westlake&category=battery&per=onhand")
+    assert many.status_code == 404

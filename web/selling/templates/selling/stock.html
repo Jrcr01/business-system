@@ -14,6 +14,17 @@
   <button class="btn small" type="submit"><span class="ms">search</span>Find</button>
   <span class="hint">A scanned label opens its item.</span>
 </form>
+<details class="manual" style="margin:0 0 10px"><summary><span class="ms">label</span> Print labels for a whole brand</summary>
+  <form class="bar" method="get" action="/stock/labels/" target="_blank" style="margin-top:8px">
+    <div><label for="lb_brand">Brand</label><select id="lb_brand" name="brand" required><option value="">Pick the brand</option>{% for b in brands %}<option value="{{ b }}">{{ b }}</option>{% endfor %}</select></div>
+    <div><label for="lb_cat">Type</label><select id="lb_cat" name="category"><option value="">All types</option>{% for k, label in categories %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></div>
+    <div><label for="lb_per">How many</label><select id="lb_per" name="per"><option value="onhand">One per piece on hand</option><option value="each">This many of each item</option></select></div>
+    <div><label for="lb_n">of each</label><input id="lb_n" type="number" name="n" value="1" min="1" max="50" style="width:80px"></div>
+    <div><label for="lb_size">Label size</label><select id="lb_size" name="size">{% for k, label in label_sizes %}<option value="{{ k }}"{% if k == label_size %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <button class="btn small" type="submit"><span class="ms">print</span>Print labels</button>
+  </form>
+  <p class="hint">Every piece of an item carries the same label. "One per piece on hand" prints as many of each as the system shows in stock; "this many of each" prints a fixed number, whatever is on hand (for a first labelling, or a test sheet).</p>
+</details>
 <div class="seg">{% for k, label in tabs %}<a href="?show={{ k }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}"{% if k == show %} class="on"{% endif %}>{{ label }}</a>{% endfor %}</div>
 {% if rows %}
 <div class="scroll-x"><table class="list cards">

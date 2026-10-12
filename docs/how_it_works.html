@@ -1,0 +1,89 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>How Slick's system works</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #d9e0e8; --yellow: #F3E03B; --soft: #f4f7fb; --ok: #0b6e4f; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; line-height: 1.35; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; width: 1em; height: 1em; overflow: hidden; font-size: 22px; }
+.page { max-width: 1060px; margin: 18px auto; background: #fff; border-radius: 14px; padding: 26px 30px 24px; box-shadow: 0 4px 18px rgba(16,24,40,.12); }
+header { display: flex; align-items: center; gap: 14px; border-bottom: 3px solid var(--yellow); padding-bottom: 12px; }
+header .mark { background: var(--navy); color: var(--yellow); font-weight: 800; border-radius: 10px; padding: 10px 12px; font-size: 1.05rem; letter-spacing: .02em; }
+header h1 { margin: 0; font-size: 1.55rem; color: var(--navy); }
+header p { margin: 2px 0 0; color: var(--muted); }
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 22px; margin: 20px 0 6px; }
+.step { position: relative; border: 1px solid var(--line); border-radius: 12px; padding: 12px 12px 10px; background: var(--soft); }
+.step .n { position: absolute; top: -12px; left: 12px; width: 26px; height: 26px; border-radius: 50%; background: var(--navy); color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: .9rem; }
+.step h2 { margin: 6px 0 4px; font-size: 1.05rem; color: var(--navy); display: flex; align-items: center; gap: 6px; }
+.step h2 .ms { color: var(--blue); }
+.tag { display: inline-block; font-size: .72rem; font-weight: 700; border-radius: 999px; padding: 1px 9px; margin-right: 4px; }
+.tag.phone { background: var(--yellow); color: var(--navy); } .tag.lap { background: #dbe8f7; color: var(--blue); } .tag.t { background: #eef1f4; color: var(--muted); font-weight: 600; }
+.step p { margin: 7px 0 0; }
+.step .knows { margin-top: 8px; padding-top: 7px; border-top: 1px dashed #c3ced9; color: var(--ok); font-size: .88rem; font-weight: 600; }
+.step .knows::before { content: "The system then knows: "; color: var(--muted); font-weight: 400; }
+.step:not(.last)::after { content: "→"; position: absolute; right: -19px; top: 44%; color: #9aa8b8; font-size: 1.3rem; font-weight: 700; }
+.step.wrap::after { content: "↓"; right: 46%; top: auto; bottom: -22px; }
+.row2 { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 22px; margin-top: 8px; }
+.ask { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+.ask div { border: 2px solid var(--navy); border-radius: 12px; padding: 10px 12px; }
+.ask b { display: block; color: var(--navy); font-size: 1.02rem; } .ask span { color: var(--muted); font-size: .9rem; }
+h3 { margin: 20px 0 6px; color: var(--navy); font-size: 1.05rem; }
+.start { background: #fffbe0; border: 1px solid #ecd96a; border-radius: 12px; padding: 10px 14px; margin-top: 16px; }
+.start ol { margin: 6px 0 0; padding-left: 20px; } .start li { margin: 2px 0; }
+footer { margin-top: 14px; color: var(--muted); font-size: .82rem; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 860px) { .steps, .row2, .ask { grid-template-columns: 1fr; } .step::after { display: none; } .page { margin: 0; border-radius: 0; padding: 18px 16px; } }
+@media print { body { background: #fff; font-size: 12.5px; } .page { box-shadow: none; margin: 0; max-width: none; padding: 0; } @page { size: A4 landscape; margin: 10mm; } }
+</style></head><body><div class="page">
+<header><div class="mark">SLICK'S</div><div><h1>How the system works: follow one tire</h1><p>From the day you order it to the day the money is counted. Seven steps, most of them a minute or two.</p></div></header>
+
+<div class="steps">
+  <div class="step"><span class="n">1</span><h2><span class="ms">shopping_cart</span>You order it</h2>
+    <span class="tag lap">Laptop</span><span class="tag t">a few minutes</span>
+    <p>Pick the supplier and the tires. The calendar shows which pay day is light. The supplier confirms, and it becomes a purchase order.</p>
+    <div class="knows">8 Sunny 11R22.5 are coming, and roughly when the check falls due.</div></div>
+  <div class="step"><span class="n">2</span><h2><span class="ms">move_to_inbox</span>It arrives</h2>
+    <span class="tag phone">Phone · Stock in</span><span class="tag t">1 minute</span>
+    <p>At the gate, the order is already on the screen. Type how many came and the DR number. Press Received.</p>
+    <div class="knows">8 tires are in stock, and you owe the supplier for them on a set date.</div></div>
+  <div class="step"><span class="n">3</span><h2><span class="ms">label</span>You label it</h2>
+    <span class="tag lap">Laptop + printer</span><span class="tag t">once per delivery</span>
+    <p>On the order, "Print labels" gives one sticker per tire. Stick them on. The sticker is what the phone reads from now on.</p>
+    <div class="knows">nothing new. This step makes every later step a scan, not typing.</div></div>
+  <div class="step wrap"><span class="n">4</span><h2><span class="ms">outbox</span>A customer buys two</h2>
+    <span class="tag phone">Phone · Stock out</span><span class="tag t">30 seconds</span>
+    <p>Write the invoice by hand, as always. Scan the two tires as they leave. Press Done.</p>
+    <div class="knows">6 are left. Two went out at 11:05, and their invoice is still to be recorded.</div></div>
+
+  <div class="row2">
+    <div class="step"><span class="n">5</span><h2><span class="ms">receipt_long</span>You record the invoice</h2>
+      <span class="tag phone">Phone · Record a sale</span><span class="tag lap">or laptop</span><span class="tag t">at the counter, idle, or at night</span>
+      <p>Type the invoice number and the amount you received, and how it was paid. A trade-in or surplus tire is added here with its estimated cost.</p>
+      <div class="knows">the sale, the profit on it, and whether the customer still owes.</div></div>
+    <div class="step"><span class="n">6</span><h2><span class="ms">fact_check</span>You pay what is due</h2>
+      <span class="tag lap">Laptop · Daily payables</span><span class="tag t">mornings, 5 minutes</span>
+      <p>The list shows what falls due today: supplier checks, loan payments, cards. Tick what the bank has paid. The bank statement confirms it later.</p>
+      <div class="knows">what is paid, what is still owed, and which days ahead are heavy.</div></div>
+    <div class="step last"><span class="n">7</span><h2><span class="ms">summarize</span>Month end</h2>
+      <span class="tag lap">Laptop · Income statement</span><span class="tag t">nothing to type</span>
+      <p>The system adds it up from everything recorded: sales, less what those tires cost, less expenses.</p>
+      <div class="knows">whether the month made money, and where it went.</div></div>
+  </div>
+</div>
+
+<h3>What you can ask it at any moment</h3>
+<div class="ask">
+  <div><b>How many do we have?</b><span>Scan or type a size on the phone. On hand, oldest DOT, last in, last out.</span></div>
+  <div><b>What do we owe, and when?</b><span>Suppliers, lenders, bank loans and cards, day by day, with the heavy days marked.</span></div>
+  <div><b>Did we make money?</b><span>Per sale, per day, per month. Counted from the cost of what was actually sold.</span></div>
+</div>
+
+<div class="start"><b>You do not have to start everything at once.</b> Each step works without the ones after it.
+  <ol>
+    <li><b>Now:</b> pay from Daily payables, and record the day's invoices in the evening. No labels needed.</li>
+    <li><b>Next:</b> order through a purchase order and receive on the phone, so stock and payables fill themselves in.</li>
+    <li><b>Then:</b> count the stock brand by brand and label it. After that, selling is a scan.</li>
+  </ol>
+</div>
+
+<footer><span>Two icons on the phone: <b>Slick's ERP</b> is the whole system; <b>Slick's POS</b> is the five buttons for the shop floor.</span><span>The invoice is always written by hand first. The system records it; it does not replace it.</span></footer>
+</div></body></html>

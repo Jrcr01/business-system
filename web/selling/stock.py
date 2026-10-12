@@ -45,9 +45,14 @@ def stock(request):
         resp["Content-Disposition"] = 'attachment; filename="stock.xlsx"'
         return resp
     counts = sr.summary(everything)
+    from engines.common import get_conn
+    from engines.label_pdf import DEFAULT_SIZE, SIZES
+    with get_conn() as conn:
+        brands = [r[0] for r in conn.execute("SELECT DISTINCT brand FROM items WHERE is_active = 1 AND brand != '' ORDER BY brand COLLATE NOCASE")]
     tabs = [(k, label + (f" ({counts[k if k != 'old' else 'old_pcs']:g})" if k in ("low", "negative", "uncounted") and counts.get(k) else "")) for k, label in SHOWS]
     return render(request, "selling/stock.html", {"page_id": "stock", "rows": rows[:400], "more": max(len(rows) - 400, 0), "sum": counts, "q": q, "show": show,
-                                                  "tabs": tabs, "old_years": sr.old_years()})
+                                                  "tabs": tabs, "old_years": sr.old_years(), "brands": brands, "categories": list(sr.CATEGORY_LABEL.items()),
+                                                  "label_sizes": [(k, v[0]) for k, v in SIZES.items()], "label_size": request.session.get("label_size", DEFAULT_SIZE)})
 
 
 @page_needed("stock")
@@ -79,7 +84,8 @@ def stock_item(request, item_id: int):
 
 @page_needed("stock")
 def labels(request):
-    """The label sheet as a PDF: ?item=<id>&n=<copies>, or ?receipt=<id> (one label per piece that came on that delivery); &size= one of label_pdf.SIZES.
+    """The label sheet as a PDF: ?item=<id>&n=<copies>, or ?receipt=<id> (one label per piece that came on that delivery), or ?brand=<brand>
+    (&category=, &per=onhand | a number of each: a whole brand in one print-out, owner 2026-10-12); &size= one of label_pdf.SIZES.
     The size last chosen is remembered for this person's next print (the owner has not settled on one)."""
     from engines import stock_rules as sr
     from engines.common import get_conn
@@ -100,6 +106,25 @@ def labels(request):
             except ValueError:
                 n = 1
             rows = [{"code": it["code"], "name": it["name"], "dot": it["dot"], "copies": n}]
+    elif request.GET.get("brand", "").strip():
+        brand, category, per = request.GET["brand"].strip(), request.GET.get("category", ""), request.GET.get("per", "onhand")
+        try:
+            each = max(1, min(int(request.GET.get("n") or 1), 50))
+        except ValueError:
+            each = 1
+        with get_conn() as conn:
+            got = conn.execute("""SELECT code, name, oldest_dot, on_hand FROM items WHERE is_active = 1 AND lower(brand) = lower(?) AND (? = '' OR category = ?)
+                                  ORDER BY name COLLATE NOCASE""", (brand, category, category)).fetchall()
+        for code, name, dot, on_hand in got:
+            copies = int(round(float(on_hand or 0))) if per == "onhand" else each
+            if copies > 0:
+                rows.append({"code": code, "name": name, "dot": sr.dot_text(dot) if float(on_hand or 0) > 0 else "", "copies": copies})
+        total = sum(r["copies"] for r in rows)
+        if not rows:
+            why = "nothing of it is on hand: choose 'this many of each' to print labels anyway" if got and per == "onhand" else "no item of that brand"
+            return HttpResponse(f"No label to print for {brand}: {why}.", content_type="text/plain; charset=utf-8", status=404)
+        if total > 3000:
+            return HttpResponse(f"That is {total:,} labels in one print-out. Choose a type as well, or fewer of each.", content_type="text/plain; charset=utf-8", status=400)
     if not rows:
         raise Http404
     resp = HttpResponse(labels_pdf(rows, size), content_type="application/pdf")
