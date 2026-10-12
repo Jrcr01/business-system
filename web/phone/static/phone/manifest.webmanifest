@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Slick's Tire Supply",
-  "short_name": "Slick's",
+  "name": "Slick's ERP",
+  "short_name": "Slick's ERP",
   "description": "Slick's business system",
   "start_url": "/",
   "scope": "/",
