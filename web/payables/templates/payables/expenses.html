@@ -16,12 +16,12 @@ list, who and why. Taken back only with a reason. Feeds the Deposits page and th
 
 <div class="grp">{{ m }} — ₱{{ total|floatformat:2|intcomma }}{% if by_cat %} <span class="hint">({% for n, v in by_cat %}{{ n }} {{ v|floatformat:0|intcomma }}{% if not forloop.last %} · {% endif %}{% endfor %})</span>{% endif %}</div>
 {% if rows %}
-<div class="scroll-x"><table class="list">
+<div class="scroll-x"><table class="list cards">
   <tr><th>No.</th><th>Date</th><th>Category</th><th>For / received by</th><th>From</th><th class="num">Amount</th><th>By</th><th></th></tr>
   {% for r in rows %}<tr{% if r.void %} style="opacity:.55"{% endif %}>
-    <td>{{ r.exp_no }}</td><td>{{ r.day|dmy }}</td><td>{{ r.category }}</td><td>{{ r.detail }}</td><td>{{ r.paid_from }}</td>
-    <td class="num">{{ r.amount|floatformat:2|intcomma }}</td><td>{{ r.by }}</td>
-    <td>{% if r.void %}<span class="pill off" title="{{ r.void_reason }}">taken back</span>
+    <td>{{ r.exp_no }}</td><td>{{ r.day|dmy }}</td><td class="c-t">{{ r.category }}{% if r.detail %} <span class="hint">· {{ r.detail }}</span>{% endif %}</td><td class="c-x">{{ r.detail }}</td><td data-l="from">{{ r.paid_from }}</td>
+    <td class="num c-big">{{ r.amount|floatformat:2|intcomma }}</td><td data-l="by">{{ r.by }}</td>
+    <td class="c-r">{% if r.void %}<span class="pill off" title="{{ r.void_reason }}">taken back</span>
       {% else %}<form method="post" onsubmit="var x = prompt('Why is {{ r.exp_no }} taken back?'); if (!x) return false; this.reason.value = x;">{% csrf_token %}
         <input type="hidden" name="action" value="void"><input type="hidden" name="expense_id" value="{{ r.expense_id }}">
         <input type="hidden" name="m" value="{{ m }}"><input type="hidden" name="reason" value="">

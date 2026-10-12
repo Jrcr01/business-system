@@ -29,8 +29,8 @@ def usdates(text) -> str:
 def dmy(value) -> str:
     """A date shown mm/dd/yyyy (owner, 2026-10-09: one date format across the system, mm/dd/yyyy); with its time (mm/dd/yyyy HH:MM) when it has one.
     Takes a date, a datetime or an ISO text ('2026-10-09', '2026-10-09 14:30:00'); anything else is shown as it is; empty shows nothing."""
-    if value in (None, ""):
-        return ""
+    if value in (None, "") or (isinstance(value, float) and value != value) or str(value).strip().lower() in ("nan", "nat", "none"):
+        return ""                                           # a missing date from a pandas frame reads as NaN: nothing, not "nan" (2026-10-12)
     if isinstance(value, datetime):
         return value.strftime("%m/%d/%Y %H:%M")
     if isinstance(value, date):

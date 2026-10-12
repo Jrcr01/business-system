@@ -36,10 +36,10 @@
 
 {% else %}
 <form method="post">{% csrf_token %}
-<div class="scroll-x"><table class="list"><tr><th></th><th>Flag</th><th>Details</th><th>Raised</th><th></th></tr>
-  {% for f in flags %}<tr><td><input type="checkbox" name="pick_{{ f.flag_id }}" value="1" aria-label="Pick"></td><td><span class="pill warn">{{ f.label }}</span></td>
-    <td>{{ f.detail|usdates }}</td><td style="white-space:nowrap">{{ f.raised_at|dmy }}{% if f.who %} <span class="hint">· {{ f.who }}</span>{% endif %}</td>
-    <td>{% if f.url %}<a class="btn small ghost" href="{{ f.url }}">Open</a>{% endif %}</td></tr>
+<div class="scroll-x"><table class="list cards"><tr><th></th><th>Flag</th><th>Details</th><th>Raised</th><th></th></tr>
+  {% for f in flags %}<tr><td class="c-k"><input type="checkbox" name="pick_{{ f.flag_id }}" value="1" aria-label="Pick"></td><td class="c-t"><span class="pill warn">{{ f.label }}</span></td>
+    <td>{{ f.detail|usdates }}</td><td style="white-space:nowrap" data-l="raised">{{ f.raised_at|dmy }}{% if f.who %} <span class="hint">· {{ f.who }}</span>{% endif %}</td>
+    <td class="c-r">{% if f.url %}<a class="btn small ghost" href="{{ f.url }}">Open</a>{% endif %}</td></tr>
   {% empty %}<tr><td colspan="5" class="hint">Nothing flagged.</td></tr>{% endfor %}</table></div>
 {% if flags %}<div class="bar" style="margin-top:8px"><div class="grow"><label for="note">Note: what was found (optional)</label><input id="note" type="text" name="note"></div>
   <button class="btn small" type="submit" name="action" value="reviewed"><span class="ms">task_alt</span>Mark ticked as reviewed</button></div>{% endif %}

@@ -484,6 +484,8 @@ table.list tr.tentative td { color: #6b7280; font-style: italic; }
 
 /* ---- a figure in two forms: the full one on a laptop, the short one (₱1.2M, ₱600K) on a phone (owner, 2026-10-12) ---- */
 .pw-short { display: none; }
+.c-only { display: none; }                                     /* words meant for a phone card only */
+@media (max-width: 480px) { table.cards .c-only { display: inline; font-weight: 400; color: var(--muted); font-size: .9rem; } }
 @media (max-width: 480px) { .pw-full { display: none; } .pw-short { display: inline; } .cal .d .amt, .cal .cell b { font-size: .8rem; white-space: nowrap; } .cal .d .est, .cal .cell .plan, .cal .cell .cin { font-size: .64rem; white-space: normal; line-height: 1.15; } }   /* "plan ₱9.7M" may take two lines */
 
 /* ---- Daily payables: the card payment box, full or in part (owner, 2026-10-12) ---- */
@@ -541,6 +543,9 @@ table.list tr.tentative td { color: #6b7280; font-style: italic; }
   table.cards td[data-l]:not(:empty)::before { content: attr(data-l) " "; }
   table.cards td[data-l]:not(:empty)::after { content: " ·"; color: #cbd5e1; }
   table.cards td.c-big::after, table.cards td.c-t::after { content: none; }
+  table.cards td.c-x { display: none; }
+  table.cards td.c-big .c-pill { display: inline-block; font-size: .78rem; font-weight: 600; border-radius: 999px; padding: 2px 10px; background: #e8f0fa; color: var(--blue); }
+  table.cards td.c-t .pill { font-size: .85rem; white-space: normal; }
   table.cards tr.dp-day { display: block; background: #eef3fa; border: 0; border-radius: 8px; padding: 6px 10px; }
   table.cards tr.dp-day td { display: block; color: var(--ink); font-size: .95rem; }
   table.cards tr.sel { outline: 2px solid var(--blue); }

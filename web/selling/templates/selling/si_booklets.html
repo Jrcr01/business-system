@@ -6,12 +6,12 @@
 {% if skipped %}<div class="warnbox"><b>{{ skipped|length }} number{{ skipped|length|pluralize }} skipped:</b> {% for n in skipped %}{{ n|stringformat:"06d" }}{% if not forloop.last %}, {% endif %}{% endfor %}.
   A later number is typed and {% if skipped|length == 1 %}this one is{% else %}these are{% endif %} not. <a href="/sales/">Type the sale</a>, or cancel the leaf below if it was spoiled.</div>{% endif %}
 {% if rows %}
-<div class="scroll-x"><table class="list">
+<div class="scroll-x"><table class="list cards">
   <tr><th>Booklet</th><th>Numbers</th><th>Holder</th><th>Status</th><th style="text-align:right">Used</th><th style="text-align:right">Cancelled</th><th style="text-align:right">Unused</th><th>Next</th><th></th></tr>
-  {% for b in rows %}<tr><td>{{ b.code }}</td><td>{{ b.start_no|stringformat:"06d" }}–{{ b.end_no|stringformat:"06d" }}</td><td>{{ b.holder|default:"—" }}</td>
+  {% for b in rows %}<tr><td class="c-t">{{ b.code }}<span class="c-only"> · {{ b.holder|default:"nobody yet" }}</span></td><td>{{ b.start_no|stringformat:"06d" }}–{{ b.end_no|stringformat:"06d" }}</td><td class="c-x">{{ b.holder|default:"—" }}</td>
     <td><span class="pill{% if b.status != 'IN_USE' %} off{% endif %}">{{ b.status_label }}</span></td>
-    <td class="num">{{ b.used }}</td><td class="num">{{ b.cancelled }}</td><td class="num">{{ b.unused }}</td><td>{% if b.next %}{{ b.next|stringformat:"06d" }}{% else %}—{% endif %}</td>
-    <td>{% if b.status == "WAITING" %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="use"><input type="hidden" name="booklet_id" value="{{ b.booklet_id }}">
+    <td class="num" data-l="used">{{ b.used }}</td><td class="num" data-l="cancelled">{{ b.cancelled }}</td><td class="num c-big">{{ b.unused }}<span class="c-only"> unused</span></td><td data-l="next">{% if b.next %}{{ b.next|stringformat:"06d" }}{% else %}—{% endif %}</td>
+    <td class="c-r">{% if b.status == "WAITING" %}<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="use"><input type="hidden" name="booklet_id" value="{{ b.booklet_id }}">
       <button class="btn small ghost" type="submit">Use this booklet now</button></form>{% endif %}</td></tr>{% endfor %}
 </table></div>
 {% else %}<p class="note">No booklet registered yet. Register the one on the counter so the next number is offered on each sale.</p>{% endif %}

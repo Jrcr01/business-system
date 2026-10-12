@@ -16,15 +16,15 @@
 </form>
 
 {% if rows %}
-<div class="scroll-x"><table class="list">
+<div class="scroll-x"><table class="list cards">
   <tr><th>Count</th><th>What</th><th>Counted by</th><th>Started</th><th>Status</th><th>Items</th><th>Short</th><th>Over</th><th style="text-align:right">Value of differences</th><th></th></tr>
   {% for c in rows %}<tr>
-    <td><a href="/stock-counts/{{ c.count_id }}/">{{ c.count_no }}</a></td><td>{{ c.scope }}</td><td>{{ c.counted_by|default:"—" }}</td><td>{{ c.started_at|dmy }}</td>
+    <td class="c-t"><a href="/stock-counts/{{ c.count_id }}/">{{ c.count_no }}</a> <span class="hint">· {{ c.scope }}</span></td><td class="c-x">{{ c.scope }}</td><td data-l="by">{{ c.counted_by|default:"—" }}</td><td data-l="started">{{ c.started_at|dmy }}</td>
     <td><span class="pill{% if c.status == 'WAITING' %} warn{% elif c.status != 'COUNTING' %} off{% endif %}">{{ c.status_label }}</span></td>
-    <td class="num">{% if c.status == "COUNTING" %}{{ c.typed }} of {{ c.items }}{% else %}{{ c.items }}{% endif %}</td>
-    <td class="num">{{ c.short|default_if_none:"" }}</td><td class="num">{{ c.over|default_if_none:"" }}</td>
-    <td class="num{% if c.value < 0 %} neg{% endif %}">{% if c.value %}{{ c.value|floatformat:2|intcomma }}{% endif %}</td>
-    <td>{% if c.open %}<a class="btn small" href="/stock-counts/{{ c.count_id }}/">{{ c.open }} to approve</a>{% endif %}</td></tr>{% endfor %}
+    <td class="num" data-l="items">{% if c.status == "COUNTING" %}{{ c.typed }} of {{ c.items }}{% else %}{{ c.items }}{% endif %}</td>
+    <td class="num" data-l="short">{{ c.short|default_if_none:"" }}</td><td class="num" data-l="over">{{ c.over|default_if_none:"" }}</td>
+    <td class="num c-big{% if c.value < 0 %} neg{% endif %}">{% if c.value %}{{ c.value|floatformat:2|intcomma }}{% endif %}</td>
+    <td class="c-r">{% if c.open %}<a class="btn small" href="/stock-counts/{{ c.count_id }}/">{{ c.open }} to approve</a>{% endif %}</td></tr>{% endfor %}
 </table></div>
 {% else %}<p class="note">No count yet.</p>{% endif %}
 {% endblock %}

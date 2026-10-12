@@ -5,13 +5,13 @@
 <p class="note">The relatives' businesses we lend tires to and borrow from. A lend takes stock out without a sale; a borrow brings stock in without a purchase.
   Each stays on the balance until it is returned, paid for (at cost) or set off.</p>
 {% if rows %}
-<div class="scroll-x"><table class="list">
+<div class="scroll-x"><table class="list cards">
   <tr><th>Affiliate</th><th style="text-align:right">They hold of ours</th><th style="text-align:right">We hold of theirs</th><th style="text-align:right">Net</th><th>Oldest open</th><th></th></tr>
   {% for b in rows %}<tr>
-    <td><a href="/affiliates/{{ b.customer_id }}/">{{ b.name }}</a></td>
-    <td class="num">{% if b.lent_pcs %}{{ b.lent_pcs|floatformat:"-2" }} pcs · ₱{{ b.lent_value|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
-    <td class="num">{% if b.borrowed_pcs %}{{ b.borrowed_pcs|floatformat:"-2" }} pcs · ₱{{ b.borrowed_value|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
-    <td class="num {% if b.net > 0 %}pos{% elif b.net < 0 %}neg{% endif %}">{% if b.net > 0 %}they owe ₱{{ b.net|floatformat:2|intcomma }}{% elif b.net < 0 %}we owe ₱{{ b.net|floatformat:2|intcomma|cut:"-" }}{% else %}even{% endif %}</td>
+    <td class="c-t"><a href="/affiliates/{{ b.customer_id }}/">{{ b.name }}</a></td>
+    <td class="num" data-l="they hold of ours">{% if b.lent_pcs %}{{ b.lent_pcs|floatformat:"-2" }} pcs · ₱{{ b.lent_value|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num" data-l="we hold of theirs">{% if b.borrowed_pcs %}{{ b.borrowed_pcs|floatformat:"-2" }} pcs · ₱{{ b.borrowed_value|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num c-big {% if b.net > 0 %}pos{% elif b.net < 0 %}neg{% endif %}">{% if b.net > 0 %}they owe ₱{{ b.net|floatformat:2|intcomma }}{% elif b.net < 0 %}we owe ₱{{ b.net|floatformat:2|intcomma|cut:"-" }}{% else %}even{% endif %}</td>
     <td>{% if b.oldest_days is not None %}{{ b.oldest_days }} day{{ b.oldest_days|pluralize }}{% if b.long_open %} <span class="pill warn">Long open</span>{% endif %}{% else %}—{% endif %}</td>
     <td><a class="btn small ghost" href="/affiliates/{{ b.customer_id }}/?do=lend">Lend</a> <a class="btn small ghost" href="/affiliates/{{ b.customer_id }}/?do=borrow">Borrow</a>
       <a class="btn small ghost" href="/affiliates/{{ b.customer_id }}/#settle">Settle</a></td></tr>{% endfor %}

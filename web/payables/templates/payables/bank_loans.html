@@ -45,13 +45,13 @@
   <button class="btn small ghost" type="submit"><span class="ms">search</span>Search</button>
 </form>
 {% if rows %}
-<div class="scroll-x"><table class="list">
+<div class="scroll-x"><table class="list cards">
   <tr><th>Loan reference</th><th>Bank</th><th>For</th><th style="text-align:right">Principal</th><th style="text-align:right">Still to pay</th><th>Next due</th><th>Mode</th><th>Status</th></tr>
   {% for r in rows %}<tr>
-    <td><a href="/bank-loans/{{ r.bank_loan_id }}/">{{ r.loan_ref }}</a>{% if r.is_beginning_balance %} <span class="pill off" title="Beginning balance (from MS Access)">beginning</span>{% endif %}</td>
-    <td>{{ r.creditor_name }}</td><td>{{ r.beneficiary|default:"—" }}</td>
-    <td class="num">{% if r.principal_amount %}{{ r.principal_amount|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
-    <td class="num">{{ r.still_to_pay|floatformat:2|intcomma }}</td><td>{{ r.next_due|dmy|default:"—" }}</td><td>{{ r.mode_of_payment|default:"" }}</td>
+    <td class="c-t"><a href="/bank-loans/{{ r.bank_loan_id }}/">{{ r.loan_ref }}</a>{% if r.is_beginning_balance %} <span class="pill off" title="Beginning balance (from MS Access)">beginning</span>{% endif %}</td>
+    <td>{{ r.creditor_name }}</td><td data-l="for">{{ r.beneficiary|default:"—" }}</td>
+    <td class="num" data-l="principal">{% if r.principal_amount %}{{ r.principal_amount|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num c-big">{{ r.still_to_pay|floatformat:2|intcomma }}</td><td data-l="next">{{ r.next_due|dmy|default:"—" }}</td><td>{{ r.mode_of_payment|default:"" }}</td>
     <td><span class="pill{% if r.status == 'Cancelled' or r.status == 'Closed' %} off{% endif %}">{{ r.status }}</span></td></tr>{% endfor %}
 </table></div>
 <p class="hint">{{ rows|length }} bank loan(s) · still to pay ₱{{ still_to_pay|floatformat:2|intcomma }}.</p>

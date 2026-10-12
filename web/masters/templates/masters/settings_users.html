@@ -8,14 +8,14 @@
 {% endif %}
 <p class="note">Only the System admin sees this. People are switched off, never deleted. Every change is in the audit log.</p>
 <div class="scroll-x">
-<table class="list">
+<table class="list cards">
   <tr><th>Name</th><th>Email (sign-in)</th><th>Username</th><th>Role</th><th>Status</th><th>Last signed in</th><th></th></tr>
   {% for u in users %}
   <tr>
-    <td>{{ u.name }}</td><td><b>{{ u.email }}</b></td><td>{{ u.username|default:"—" }}</td><td>{{ u.role_label }}</td>
+    <td class="c-t">{{ u.name }}</td><td><b>{{ u.email }}</b></td><td>{{ u.username|default:"—" }}</td><td class="c-big"><span class="c-pill">{{ u.role_label }}</span></td>
     <td>{% if not u.is_active %}<span class="pill off">Switched off</span>{% elif u.locked_until %}<span class="pill warn">Locked</span>{% elif u.must_change_password %}<span class="pill warn">Temporary password</span>{% else %}<span class="pill">Active</span>{% endif %}</td>
-    <td>{{ u.last_login_at|dmy|default:"—" }}</td>
-    <td>{% if u.user_id == me_id %}<span class="hint">you</span>{% endif %} <a href="/settings/users/{{ u.user_id }}/">Change</a></td>
+    <td data-l="signed in">{{ u.last_login_at|dmy|default:"—" }}</td>
+    <td class="c-r">{% if u.user_id == me_id %}<span class="hint">you</span>{% endif %} <a href="/settings/users/{{ u.user_id }}/">Change</a></td>
   </tr>
   {% endfor %}
 </table>

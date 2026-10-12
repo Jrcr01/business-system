@@ -16,14 +16,14 @@
 </form>
 <div class="seg">{% for k, label in tabs %}<a href="?show={{ k }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}"{% if k == show %} class="on"{% endif %}>{{ label }}</a>{% endfor %}</div>
 {% if rows %}
-<div class="scroll-x"><table class="list">
+<div class="scroll-x"><table class="list cards">
   <tr><th>Code</th><th>Item</th><th style="text-align:right">On hand</th><th style="text-align:right">Avg cost</th><th style="text-align:right">Value</th><th>Low at</th><th>Last in</th><th>Last out</th><th>Oldest DOT</th><th>Last counted</th><th></th></tr>
   {% for r in rows %}<tr>
-    <td>{{ r.code }}</td><td><a href="/stock/{{ r.id }}/">{{ r.name }}</a></td>
-    <td class="num{% if r.negative %} neg{% endif %}">{{ r.on_hand|floatformat:"-2" }}</td><td class="num">{{ r.avg_cost|floatformat:2|intcomma }}</td>
-    <td class="num{% if r.negative %} neg{% endif %}">{{ r.value|floatformat:2|intcomma }}</td><td class="num">{{ r.reorder_level }}</td>
-    <td>{{ r.last_in|default:"—"|dmy }}</td><td>{{ r.last_out|default:"—"|dmy }}</td><td>{{ r.dot|default:"—" }}</td><td>{{ r.last_counted_at|default:"never"|dmy }}</td>
-    <td>{% if r.negative %}<span class="pill warn">Below zero</span>{% elif r.low %}<span class="pill warn">Low</span>{% endif %}{% if r.old %} <span class="pill warn">Old stock</span>{% endif %}</td></tr>{% endfor %}
+    <td>{{ r.code }}</td><td class="c-t"><a href="/stock/{{ r.id }}/">{{ r.name }}</a></td>
+    <td class="num c-big{% if r.negative %} neg{% endif %}">{{ r.on_hand|floatformat:"-2" }}</td><td class="num" data-l="avg">{{ r.avg_cost|floatformat:2|intcomma }}</td>
+    <td class="num{% if r.negative %} neg{% endif %}" data-l="value">{{ r.value|floatformat:2|intcomma }}</td><td class="num" data-l="low at">{{ r.reorder_level }}</td>
+    <td data-l="in">{{ r.last_in|default:"—"|dmy }}</td><td data-l="out">{{ r.last_out|default:"—"|dmy }}</td><td data-l="DOT">{{ r.dot|default:"—" }}</td><td data-l="counted">{{ r.last_counted_at|default:"never"|dmy }}</td>
+    <td class="c-r">{% if r.negative %}<span class="pill warn">Below zero</span>{% elif r.low %}<span class="pill warn">Low</span>{% endif %}{% if r.old %} <span class="pill warn">Old stock</span>{% endif %}</td></tr>{% endfor %}
 </table></div>
 {% if more %}<p class="hint">{{ more }} more not shown: search or pick a type to narrow it down.</p>{% endif %}
 {% else %}<p class="note">No item matches.{% if q %} <a href="/stock/">Show everything</a>{% endif %}</p>{% endif %}

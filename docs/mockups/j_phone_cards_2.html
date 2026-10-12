@@ -1,0 +1,125 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: the remaining list pages as cards</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1180px; margin: 0 auto; padding: 18px 16px 60px; }
+.why { color: var(--muted); margin: 0 0 12px; max-width: 86ch; }
+.phones { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.phone { width: 360px; background: #fff; border: 10px solid #1c2733; border-radius: 34px; overflow: hidden; box-shadow: 0 6px 20px rgba(16,24,40,.25); }
+.bar { background: var(--navy); color: #fff; padding: 10px 14px; display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: .95rem; }
+.body { padding: 10px 12px 18px; min-height: 380px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.chip { font-size: .85rem; padding: 5px 12px; border: 1px solid #cbd5e1; border-radius: 999px; color: var(--ink); }
+.chip.on { background: #e8f0fa; border-color: var(--blue); color: var(--blue); font-weight: 700; }
+.card { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fff; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.card .t { flex: 1 1 40%; font-weight: 700; font-size: 1.02rem; }
+.card .big { flex: 1 1 45%; font-weight: 700; font-size: 1.05rem; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.card .s { color: var(--muted); font-size: .85rem; }
+.card .s::after { content: " ·"; color: #cbd5e1; }
+.card .r { flex: 0 0 100%; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.card.tick { } .card.tick input { flex: 0 0 22px; width: 22px; height: 22px; order: -3; }
+.pill { display: inline-block; font-size: .72rem; border-radius: 999px; padding: 1px 8px; background: var(--soft); color: var(--muted); white-space: nowrap; }
+.pill.warn { background: #fff7e0; color: var(--warn); } .pill.ok { background: #e3f5ec; color: var(--ok); } .pill.red { background: #fde8e8; color: var(--red); } .pill.blue { background: #e8f0fa; color: var(--blue); }
+.btn { display: inline-flex; align-items: center; gap: 6px; background: #fff; color: var(--blue); border: 1px solid #b9c6d8; border-radius: 10px; padding: 7px 12px; font: inherit; font-weight: 600; font-size: .9rem; }
+.neg { color: var(--red); } .pos { color: var(--ok); }
+.q { background: #fff7e0; border: 1px solid #f1d38a; border-radius: 10px; padding: 12px 16px; margin-top: 26px; max-width: 900px; }
+.hint { color: var(--muted); font-size: .85rem; }
+</style></head><body><main>
+<p class="why"><b>Sample figures, not your data.</b> The same card rule as the seven pages now live: under a phone width each table row becomes a card with the
+name and the figure big and the rest small; the laptop tables do not change. Pages with no figure lead with the name and the date or the state.</p>
+
+<div class="phones">
+
+<div class="phone"><div class="bar"><span class="ms">inventory_2</span>Items and stock</div><div class="body">
+  <div class="chips"><span class="chip on">All</span><span class="chip">Tires</span><span class="chip">Low stock 5</span><span class="chip">Below zero 2</span></div>
+  <div class="card"><span class="t">Westlake 205/55R16 SA37</span><span class="big">12 pcs</span>
+    <span class="s">TR-0001</span><span class="s">avg 2,840.00</span><span class="s">value 34,080.00</span><span class="s">low at 4</span><span class="s">in 10/08</span><span class="s">out 10/11</span><span class="s">DOT 12/2026</span><span class="s">counted 09/30</span></div>
+  <div class="card"><span class="t">Sunny 11R22.5 SN-801</span><span class="big neg">-2 pcs</span>
+    <span class="s">TR-0015</span><span class="s">avg 13,900.00</span><span class="s">value -27,800.00</span><span class="s">low at 2</span><span class="s">out 10/12</span><span class="pill red">below zero</span></div>
+  <p class="hint">Big: the item and what is on hand. Cost and value stay in the small print (this is the laptop page on a phone; the staff phone uses the phone pages without them).</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">fact_check</span>Stock counts</div><div class="body">
+  <div class="card"><span class="t">SC-0003 · Tires, Westlake</span><span class="big neg">-8,520.00</span>
+    <span class="s">by Julian</span><span class="s">started 10/10</span><span class="pill warn">Finished</span><span class="s">38 items</span><span class="s">short 3</span><span class="s">over 1</span>
+    <span class="r"><button class="btn">Approve differences</button></span></div>
+  <div class="card"><span class="t">SC-0002 · Batteries</span><span class="big">0.00</span>
+    <span class="s">by Rhodora</span><span class="s">started 10/03</span><span class="pill ok">Approved</span><span class="s">14 items</span></div>
+  <p class="hint">Big: the count and the value of its differences. The sheet itself (the counting page) already works with a scanner and stays as it is.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">handshake</span>Affiliates</div><div class="body">
+  <div class="card"><span class="t">Tita Baby Tire Center</span><span class="big neg">net -6 pcs</span>
+    <span class="s">they hold 8 of ours</span><span class="s">we hold 2 of theirs</span><span class="s">oldest open 09/14</span>
+    <span class="r"><button class="btn">Lend / borrow</button></span></div>
+  <p class="hint">Big: the affiliate and the net pieces out. Minus = they hold more of ours.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">account_balance</span>Bank loans</div><div class="body">
+  <div class="card"><span class="t">LOAN - BPI/EMELITA</span><span class="big">₱1,240,000</span>
+    <span class="s">BPI</span><span class="s">for the Hilux</span><span class="s">principal 2,000,000</span><span class="s">next 10/15</span><span class="pill">ADA</span><span class="pill ok">Active</span></div>
+  <div class="card"><span class="t">Every 11th - RAP BPI</span><span class="big">₱92,960</span>
+    <span class="s">BPI</span><span class="s">principal 185,920</span><span class="s">next 11/11</span><span class="pill">Check</span><span class="pill ok">Active</span></div>
+  <p class="hint">Big: the loan and what is still to pay.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">wallet</span>Expenses</div><div class="body">
+  <div class="card"><span class="t">Electricity · Meralco</span><span class="big">₱18,430.00</span>
+    <span class="s">EX-0021</span><span class="s">10/11/2026</span><span class="s">from the drawer</span><span class="s">by Rhodora</span>
+    <span class="r"><button class="btn">Void</button></span></div>
+  <div class="card"><span class="t">Wages · week 41, 4 staff</span><span class="big">₱24,000.00</span>
+    <span class="s">EX-0020</span><span class="s">10/10/2026</span><span class="s">from the bank</span><span class="s">by Jeane Ravin</span></div>
+  <p class="hint">Big: category with who it was for, and the amount.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">menu_book</span>Check booklets</div><div class="body">
+  <div class="card"><span class="t">BK-0008 · Jeane Ravin</span><span class="big">31 open</span>
+    <span class="s">3992575401–3992575450</span><span class="s">received 10/11</span><span class="pill ok">Active</span><span class="s">used 17</span><span class="s">spoiled 2</span><span class="s">next 3992575420</span>
+    <span class="r"><button class="btn">Audit</button><button class="btn">Hand over</button></span></div>
+  <p class="hint">Big: the booklet with its holder, and how many leaves are still open. Invoice booklets the same: the booklet and holder, then unused.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">group</span>People</div><div class="body">
+  <div class="card"><span class="t">Rhodora Roxas</span><span class="big"><span class="pill blue">Owner</span></span>
+    <span class="s">but.roxas@yahoo.com</span><span class="s">rhodoraroxas</span><span class="pill ok">Active</span><span class="s">signed in 10/12 09:36</span>
+    <span class="r"><button class="btn">Change</button></span></div>
+  <div class="card"><span class="t">Warehouse phone</span><span class="big"><span class="pill blue">Scanner (phone)</span></span>
+    <span class="s">warehouse@slickstiresupply.com</span><span class="pill ok">Active</span><span class="s">never signed in</span>
+    <span class="r"><button class="btn">Change</button></span></div>
+  <p class="hint">No figure here: the role takes the right-hand place.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">contacts</span>Creditors</div><div class="body">
+  <div class="card"><span class="t">New Century City Marketing Corp.</span><span class="big"><span class="pill blue">Supplier</span></span>
+    <span class="s">140 days</span><span class="s">delivery 7 days</span><span class="s">0917 555 2244</span><span class="s">TIN 123-456-789</span><span class="pill ok">Active</span></div>
+  <div class="card"><span class="t">Ramon Mendoza</span><span class="big"><span class="pill blue">Lender</span></span>
+    <span class="s">0918 555 1100</span><span class="pill ok">Active</span></div>
+  <p class="hint">Big: the name and the kind. Tap the card to open the creditor.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">fact_check</span>Checks and review</div><div class="body">
+  <div class="chips"><span class="chip on">Review list 11</span><span class="chip">Data checks 18</span></div>
+  <div class="card tick"><input type="checkbox"><span class="t">Card payments recorded daily differ from the SOA</span>
+    <span class="s">Platinum - 2409 due 09/29: the SOA shows ₱20,000.00 paid, ₱302,152.07 was recorded on Daily payables.</span><span class="s">10/11/2026 16:35</span><span class="s">Jeane Ravin</span>
+    <span class="r"><a class="btn">Open</a></span></div>
+  <div class="card tick"><input type="checkbox"><span class="t">Signed in on a device not used before</span>
+    <span class="s">julianroxas3@gmail.com, Chrome on Windows in PH, 10/12 09:36.</span><span class="s">10/12/2026 01:36</span>
+  </div>
+  <p class="hint">Big: the flag's name; the detail wraps under it; the tick on the card, "Mark ticked as reviewed" in the bar at the bottom as now.</p>
+</div></div>
+
+</div>
+
+<div class="q"><b>Same as before</b>
+<ul style="margin:8px 0 0">
+  <li>Laptop tables unchanged; cards only under a phone width.</li>
+  <li>Everything the table shows is on the card; nothing dropped. Buttons come along on their own line.</li>
+  <li>Pages that stay as scrolling tables: a batch's invoices, the loan schedules, Bank and cash, Analytics, Reports, Income statement, the Catalog, Data checks.</li>
+</ul>
+<b style="display:block;margin-top:10px">One question</b>
+<p style="margin:6px 0 0">Items and stock on a phone: keep cost and value in the small print (as drawn), or leave them off the phone entirely, as on the phone pages?</p></div>
+</main></body></html>

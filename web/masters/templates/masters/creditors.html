@@ -12,16 +12,16 @@
   <a class="btn small" href="/creditors/new/"><span class="ms">person_add</span>Add a creditor</a>
 </form>
 <div class="scroll-x">
-<table class="list">
+<table class="list cards">
   <tr><th>Name</th><th>Type</th><th>Terms</th><th>Delivery days</th><th>Contact</th><th>TIN</th><th>Status</th></tr>
   {% for r in rows %}
   <tr>
-    <td><a href="/creditors/{{ r.creditor_id }}/">{{ r.name }}</a></td>
-    <td>{{ r.type_label }}</td>
+    <td class="c-t"><a href="/creditors/{{ r.creditor_id }}/">{{ r.name }}</a></td>
+    <td class="c-big"><span class="c-pill">{{ r.type_label }}</span></td>
     <td>{% if r.type == "SUPPLIER" and r.terms %}{% if r.terms == "COD" %}COD{% else %}{{ r.terms }} days{% endif %}{% endif %}</td>
-    <td class="num">{% if r.type == "SUPPLIER" %}{% if r.lead_days is not None and r.lead_days != "" %}{{ r.lead_days }}{% else %}—{% endif %}{% endif %}</td>
+    <td class="num" data-l="delivery days">{% if r.type == "SUPPLIER" %}{% if r.lead_days is not None and r.lead_days != "" %}{{ r.lead_days }}{% else %}—{% endif %}{% endif %}</td>
     <td>{{ r.contact_person|default:"" }}{% if r.contact_person and r.contact_number %} · {% endif %}{{ r.contact_number|default:"" }}</td>
-    <td>{{ r.tin|default:"" }}</td>
+    <td data-l="TIN">{{ r.tin|default:"" }}</td>
     <td>{% if r.is_active %}<span class="pill">Active</span>{% else %}<span class="pill off">Switched off</span>{% endif %}</td>
   </tr>
   {% empty %}

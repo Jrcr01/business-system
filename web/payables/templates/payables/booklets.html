@@ -16,7 +16,7 @@
 </div>
 
 {% if rows %}
-<div class="scroll-x"><table class="list">
+<div class="scroll-x"><table class="list cards">
   <tr><th>Booklet</th><th>Holder</th><th>Check numbers</th><th>Received</th><th>Status</th><th style="text-align:right">Used</th><th style="text-align:right">Spoiled</th><th style="text-align:right">Open</th>
     <th>Next free</th><th>Up to no.</th><th>To account for</th><th></th></tr>
   {% for b in rows %}
@@ -25,13 +25,13 @@
     {% if not request.view_only %}<form method="post" style="display:inline;margin-left:10px">{% csrf_token %}<input type="hidden" name="action" value="confirm_gap">
       <input type="hidden" name="booklet_id" value="{{ b.booklet_id }}"><button class="btn small ghost" type="submit" title="The bank gave a booklet that does not follow the last one">It is the bank's jump</button></form>{% endif %}</td></tr>{% endif %}{% endif %}
   <tr{% if b.status == "Archived" %} class="tentative"{% endif %}>
-    <td><b>{{ b.code }}</b></td>
-    <td>{% if b.holder %}{{ b.holder }}{% if b.is_mine %} <span class="pill">me</span>{% endif %}{% else %}<span class="hint">nobody yet</span>{% endif %}</td>
+    <td class="c-t"><b>{{ b.code }}</b><span class="c-only"> · {% if b.holder %}{{ b.holder }}{% else %}nobody yet{% endif %}</span></td>
+    <td class="c-x">{% if b.holder %}{{ b.holder }}{% if b.is_mine %} <span class="pill">me</span>{% endif %}{% else %}<span class="hint">nobody yet</span>{% endif %}</td>
     <td>{{ b.start_number }}–{{ b.end_number }} <span class="hint">({{ b.leaves }})</span></td>
-    <td>{{ b.date_received|dmy }}</td>
+    <td data-l="received">{{ b.date_received|dmy }}</td>
     <td><span class="pill{% if b.status != 'Active' %} off{% endif %}">{{ b.status }}</span></td>
-    <td class="num">{{ b.used }}</td><td class="num">{{ b.spoiled }}</td><td class="num">{{ b.open }}</td>
-    <td>{{ b.next_free|default:"—" }}</td>
+    <td class="num" data-l="used">{{ b.used }}</td><td class="num" data-l="spoiled">{{ b.spoiled }}</td><td class="num c-big">{{ b.open }}<span class="c-only"> open</span></td>
+    <td data-l="next">{{ b.next_free|default:"—" }}</td>
     <td>{% if request.view_only or b.status == "Archived" %}{{ b.reported_up_to|default:"—" }}{% else %}
       <form method="post" style="display:flex;gap:4px">{% csrf_token %}<input type="hidden" name="action" value="up_to"><input type="hidden" name="booklet_id" value="{{ b.booklet_id }}">
         <input class="inline-input" style="width:104px" inputmode="numeric" name="number" value="{{ b.reported_up_to|default:'' }}" placeholder="last used" aria-label="{{ b.code }} is used up to no.">
