@@ -12,5 +12,9 @@
   "icons": [
     {"src": "/static/phone/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
     {"src": "/static/phone/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+  ],
+  "shortcuts": [
+    {"name": "Slick's POS", "short_name": "POS", "description": "Price list, stock, stock in, stock out, record a sale, stock count", "url": "/phone/",
+     "icons": [{"src": "/static/phone/icon-ops-192.png", "sizes": "192x192", "type": "image/png"}]}
   ]
 }

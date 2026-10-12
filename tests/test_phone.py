@@ -186,6 +186,7 @@ def test_the_site_is_installable_from_any_page_and_the_service_worker_is_served(
     r = web.get("/phone/manifest.webmanifest")
     r2 = b"".join(r.streaming_content).decode(); r = web.get("/phone/manifest.webmanifest")
     assert '"id": "/"' in b"".join(r.streaming_content).decode() and '"scope": "/"' in r2
+    assert '"shortcuts"' in r2 and '"url": "/phone/"' in r2                     # Chrome blocks a second app inside the first: the POS is a shortcut of the ERP app (2026-10-12)
 
 
 def test_the_phone_pages_are_their_own_app_beside_the_whole_site(web, db):
