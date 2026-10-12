@@ -345,7 +345,15 @@ main:has(.login-wrap) { position: relative; }
   .login-bg { background-position: 78% center; }
   .login-bg::after { background: linear-gradient(180deg, rgba(10,18,36,0) 0%, rgba(10,18,36,.35) 40%, rgba(10,18,36,.85) 100%); }
   .login-wrap { padding: 0 16px; align-items: flex-end; padding-bottom: 24px; }
-  .login-card { margin: 0 auto; padding: 24px 22px 18px; }
+  .login-card { margin: 0 auto; padding: 16px 18px 12px; }   /* compact, so the whole card fits one phone screen (owner, 2026-10-12) */
+  .login-card h2 { margin: 12px 0 10px; font-size: 1.25rem; }
+  .login-brand { padding-bottom: 10px; gap: 10px; } .login-brand img { height: 38px; width: 38px; } .login-brand b { font-size: .98rem; } .login-brand span { font-size: .8rem; }
+  .login-who { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: .85rem; padding: 8px 10px; margin: 0 0 10px; }
+  .login-who b { flex: 0 0 100%; font-size: .95rem; overflow-wrap: anywhere; }
+  .login-card input[type=email], .login-card input[type=password] { padding: 10px 12px; }
+  .login-card .btn.wide { margin-top: 12px; padding: 11px; }
+  .login-help { font-size: .82rem; margin: 10px 0 0; }
+  .login-foot { margin: 10px 0 0; padding-top: 8px; font-size: .75rem; }
   main:has(.login-wrap) > .msg { left: 16px; right: 16px; max-width: none; }
 }
 
