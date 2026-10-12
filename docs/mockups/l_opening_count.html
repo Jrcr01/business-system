@@ -1,0 +1,116 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: the opening count, add as you go</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --yellow: #F3E03B; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 22px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1240px; margin: 0 auto; padding: 18px 16px 60px; }
+.why { color: var(--muted); margin: 0 0 12px; max-width: 88ch; }
+.phones { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.phone { width: 350px; background: #f3f4f6; border: 10px solid #1c2733; border-radius: 34px; overflow: hidden; box-shadow: 0 6px 20px rgba(16,24,40,.25); }
+.bar { background: var(--navy); color: #fff; padding: 12px 14px; display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.bar small { margin-left: auto; font-weight: 400; opacity: .85; font-size: .8rem; }
+.body { padding: 12px 12px 18px; min-height: 560px; }
+.num { display: inline-flex; width: 26px; height: 26px; border-radius: 50%; background: var(--yellow); color: var(--navy); font-weight: 800; align-items: center; justify-content: center; margin-right: 6px; }
+h2 { font-size: 1.05rem; margin: 0 0 10px; color: var(--navy); }
+.big { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; margin: 0 0 10px; border: 1px solid #b9c6d8; border-radius: 14px; background: #fff; font: inherit; font-size: 1.05rem; font-weight: 700; color: var(--blue); text-align: left; }
+.big small { display: block; font-weight: 400; color: var(--muted); font-size: .82rem; }
+.card { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
+.card b.t { display: block; font-size: 1rem; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.qty { display: inline-flex; align-items: center; border: 1px solid #b9c6d8; border-radius: 12px; overflow: hidden; }
+.qty button { width: 40px; height: 40px; font-size: 1.3rem; border: 0; background: #f7f9fc; color: var(--blue); }
+.qty input { width: 48px; height: 40px; text-align: center; font: inherit; border: 0; border-left: 1px solid #b9c6d8; border-right: 1px solid #b9c6d8; }
+.field { border: 1px solid #b9c6d8; border-radius: 12px; padding: 9px 12px; font: inherit; width: 100%; background: #fff; }
+.scan { display: flex; gap: 8px; margin-bottom: 8px; } .scan .field { border: 2px solid var(--blue); }
+label { display: block; font-size: .8rem; color: var(--muted); margin: 8px 0 3px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-size: .9rem; padding: 6px 14px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; }
+.chip.on { background: #e8f0fa; border-color: var(--blue); color: var(--blue); font-weight: 700; }
+.pill { display: inline-block; font-size: .72rem; border-radius: 999px; padding: 1px 8px; background: var(--soft); color: var(--muted); }
+.pill.warn { background: #fff7e0; color: var(--warn); } .pill.ok { background: #e3f5ec; color: var(--ok); } .pill.new { background: #e8f0fa; color: var(--blue); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: #fff; color: var(--blue); border: 1px solid #b9c6d8; border-radius: 12px; padding: 9px 12px; font: inherit; font-weight: 600; }
+.btn.main { background: var(--blue); color: #fff; border-color: var(--blue); width: 100%; font-size: 1.05rem; padding: 13px; margin-top: 10px; }
+.hint { color: var(--muted); font-size: .84rem; }
+.opt { padding: 8px 10px; border-bottom: 1px solid var(--line); background: #fff; display: flex; justify-content: space-between; gap: 8px; }
+.opt:last-child { border-bottom: 0; } .list { border: 1px solid #b9c6d8; border-radius: 12px; overflow: hidden; margin-bottom: 8px; }
+.note { background: #fff7e0; border-left: 4px solid #C26A00; border-radius: 4px; padding: 8px 10px; font-size: .85rem; margin: 8px 0; }
+.lap { background: #fff; border: 8px solid #1c2733; border-radius: 14px; padding: 16px 18px; margin-top: 22px; max-width: 1000px; }
+table { border-collapse: collapse; width: 100%; font-size: .93rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--muted); font-size: .8rem; border-bottom: 2px solid var(--line); padding: 6px 8px; } td { border-bottom: 1px solid var(--line); padding: 7px 8px; }
+.r { text-align: right; }
+.q { background: #fff7e0; border: 1px solid #f1d38a; border-radius: 10px; padding: 12px 16px; margin-top: 22px; max-width: 920px; }
+</style></head><body><main>
+<p class="why"><b>Sample figures, not your data.</b> The opening count for stock the system does not know yet. You walk the racks with the phone. A tire already in
+the system is found and counted; a tire that is not is added on the spot and counted in the same step. The notebook is only needed for the costs. Nothing changes
+in stock until the System admin approves the count on the laptop, as with every count.</p>
+
+<div class="phones">
+
+<div class="phone"><div class="bar"><span class="ms">arrow_back</span>Stock count<small>Jeane Ravin</small></div><div class="body">
+  <h2><span class="num">1</span>Start</h2>
+  <button class="big" style="border-color:var(--blue)"><span class="ms">playlist_add</span><span>Opening count: add as you go<small>An empty sheet. Find or add each tire as you reach it. For stock the system does not know yet.</small></span></button>
+  <button class="big"><span class="ms">fact_check</span><span>Count a brand<small>The sheet lists every item of the brand. As today.</small></span></button>
+  <p class="hint" style="margin-top:14px">Open counts</p>
+  <div class="card"><b class="t">CT-0004 · Opening count</b><span class="hint">counting · 37 items so far · Julian</span></div>
+  <p class="hint">Several opening counts can run at once, one per person or per rack. Each is approved on its own.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">arrow_back</span>CT-0004<small>37 items</small></div><div class="body">
+  <h2><span class="num">2</span>Find the tire in front of you</h2>
+  <div class="scan"><input class="field" value="205 55 16 mich" placeholder="Scan, or type size and brand"><button class="btn"><span class="ms">photo_camera</span></button></div>
+  <div class="list">
+    <div class="opt"><span>Westlake 205/55R16 SA37</span><span class="hint">in the system</span></div>
+    <div class="opt"><span>Yokohama 205/55R16 BluEarth AE51</span><span class="hint">in the system</span></div>
+    <div class="opt" style="background:#e8f0fa"><b style="color:var(--blue)"><span class="ms">add</span> Not here: add "Michelin 205/55R16"</b><span></span></div>
+  </div>
+  <p class="hint" style="margin:10px 0 6px">Counted so far on this sheet (newest first)</p>
+  <div class="card"><b class="t">Bridgestone 185/65R15 Ecopia EP150 <span class="pill new">new item</span></b>
+    <div class="row"><span class="qty"><button>−</button><input value="4"><button>+</button></span><span class="hint">cost</span><input class="field" style="width:110px;text-align:right" value="3,450.00"></div></div>
+  <div class="card"><b class="t">Westlake 195/65R15 RP18</b>
+    <div class="row"><span class="qty"><button>−</button><input value="8"><button>+</button></span><span class="hint">cost</span><input class="field" style="width:110px;text-align:right" value="2,612.50"><span class="pill ok">from the price list</span></div></div>
+  <div class="card"><b class="t">GT Radial 11R22.5 GT279 <span class="pill new">new item</span></b>
+    <div class="row"><span class="qty"><button>−</button><input value="2"><button>+</button></span><span class="hint">cost</span><input class="field" style="width:110px;text-align:right" placeholder="not known"><span class="pill warn">no cost yet</span></div></div>
+  <div class="row"><button class="btn" style="flex:1">Save</button><button class="btn main" style="flex:2;margin-top:0">Finish</button></div>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">arrow_back</span>Add an item<small>CT-0004</small></div><div class="body">
+  <h2><span class="num">3</span>Not in the system: add it and count it</h2>
+  <label>Type</label><div class="chips"><span class="chip on">Tire</span><span class="chip">Battery</span><span class="chip">Mags</span><span class="chip">Rims</span></div>
+  <label>Brand</label><input class="field" value="Michelin"><div class="chips" style="margin-top:6px"><span class="chip">Michelin</span><span class="chip">Bridgestone</span><span class="chip">GT Radial</span><span class="chip">Giti</span></div>
+  <span class="hint">Brands typed before are offered, so the spelling stays the same.</span>
+  <div class="two"><div><label>Size</label><input class="field" value="205/55R16"></div><div><label>Pattern / model</label><input class="field" value="Primacy 4"></div></div>
+  <div class="note"><b>Looks like one you have:</b> Michelin 205/55R16 Primacy 4 ST. <a href="#">Use that one</a> or keep adding a new item.</div>
+  <div class="two"><div><label>How many on the rack</label><span class="qty"><button>−</button><input value="6"><button>+</button></span></div>
+    <div><label>Cost each (from the notebook)</label><input class="field" style="text-align:right" value="5,200.00"></div></div>
+  <label>DOT, oldest (optional, WWYY)</label><input class="field" style="max-width:120px" value="2425">
+  <button class="btn main"><span class="ms">add_task</span>Add and count</button>
+  <p class="hint">Back on the sheet at once, ready for the next tire. The cost can be left empty and typed later.</p>
+</div></div>
+
+</div>
+
+<div class="lap">
+  <h2><span class="num">4</span>On the laptop: the System admin approves (Stock → Stock counts → CT-0004)</h2>
+  <p class="hint" style="margin:0 0 8px">37 items · 212 pieces · ₱684,300.00 at cost · 9 new items · 3 with no cost yet</p>
+  <table>
+    <tr><th>Item</th><th></th><th class="r">Counted</th><th class="r">Cost each</th><th class="r">Value</th><th></th></tr>
+    <tr><td>Michelin 205/55R16 Primacy 4</td><td><span class="pill new">new item</span></td><td class="r">6</td><td class="r">5,200.00</td><td class="r">31,200.00</td><td></td></tr>
+    <tr><td>Westlake 195/65R15 RP18</td><td><span class="pill ok">price list</span></td><td class="r">8</td><td class="r">2,612.50</td><td class="r">20,900.00</td><td></td></tr>
+    <tr><td>GT Radial 11R22.5 GT279</td><td><span class="pill new">new item</span> <span class="pill warn">no cost</span></td><td class="r">2</td><td class="r"><input class="field" style="width:110px;text-align:right" placeholder="type it"></td><td class="r">—</td><td><span class="hint">can be approved without; flagged until typed</span></td></tr>
+  </table>
+  <div class="row" style="margin-top:10px"><input class="field" style="max-width:320px" value="Opening count, racks A and B"><button class="btn" style="background:var(--blue);color:#fff">Approve all</button><button class="btn">Recount a line</button></div>
+  <p class="hint">Approving puts the pieces on hand at these costs and makes the new items real. Then: Print labels for a whole brand → one per piece on hand.</p>
+</div>
+
+<div class="q"><b>Questions before I build</b>
+<ol style="margin:8px 0 0">
+  <li><b>Cost.</b> Pre-filled from the price list when the item is on one; typed from the notebook when not; may be left empty (flagged until typed). Right?</li>
+  <li><b>Who may add new items</b> from the rack: the family only, or the staff phone as well? New items always show as "new item" for you to see before approving.</li>
+  <li><b>Batteries, mags and rims:</b> the same screen with their own fields (battery: brand and model; mags and rims: brand, size, design). Are those on the racks too, or tires only for now?</li>
+  <li><b>DOT:</b> worth typing at the opening count (it is what marks old stock later), or skip it to go faster?</li>
+</ol></div>
+</main></body></html>

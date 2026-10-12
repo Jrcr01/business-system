@@ -292,6 +292,10 @@ def count(request):
         ok, msg, cid = cr.start_count(p.get("category", ""), p.get("brand", ""), p.get("uncounted") == "1", "", p.get("counted_by", ""))
         _say(request, ok, msg)
         return redirect(f"/phone/count/{cid}/" if ok else "/phone/count/")
+    if request.method == "POST" and request.POST.get("action") == "start_opening":
+        ok, msg, cid = cr.start_opening(request.POST.get("counted_by", ""))
+        _say(request, ok, msg)
+        return redirect(f"/phone/count/{cid}/" if ok else "/phone/count/")
     with get_conn() as conn:
         brands = [r[0] for r in conn.execute("SELECT DISTINCT brand FROM items WHERE is_active = 1 AND brand != '' ORDER BY brand COLLATE NOCASE")]
     rows = [c for c in cr.listing() if c["status"] in ("COUNTING", "WAITING")]
@@ -322,11 +326,20 @@ def count_sheet(request, count_id: int):
                         bad = f"{row['name']}: '{raw}' is not a quantity."
                         break
                 typed[row["line_id"]] = (n, p.get(f"n_{row['line_id']}", ""))
+                if f"k_{row['line_id']}" in p:                   # an opening sheet, to a person who sees costs: the cost typed from the notebook
+                    k = str(p.get(f"k_{row['line_id']}", "")).replace(",", "").strip()
+                    try:
+                        typed[row["line_id"]] += (float(k) if k else None,)
+                    except ValueError:
+                        bad = f"{row['name']}: '{k}' is not a cost."
+                        break
             ok, msg = (False, bad) if bad else cr.save_counted(count_id, typed, p.get("counted_by") if p.get("counted_by") is not None else None)
             if ok and what == "finish":
                 ok, msg = cr.finish(count_id)
         elif what == "cancel":
             ok, msg = cr.cancel(count_id)
+        elif what == "add":                                      # an opening count: an item the system has, found at the rack
+            ok, msg = cr.add_line(count_id, int(p.get("item_id") or 0), p.get("qty", ""), p.get("cost", "") if request.phone_mine["prices"] else None, p.get("dot", ""))
         else:
             ok, msg = False, "Unknown action."
         if p.get("quiet") == "1":                                # the autosave: a plain answer, no page
@@ -336,5 +349,52 @@ def count_sheet(request, count_id: int):
         return redirect("/phone/count/" if (what in ("cancel", "finish") and ok) else f"/phone/count/{count_id}/")
     rows = cr.sheet_rows(count_id)
     done = sum(1 for r in rows if r["counted"] is not None)
+    if c["opening"]:
+        return render(request, "phone/count_open.html", _ctx(request, c["count_no"], c=c, rows=rows, counting=c["status"] == "COUNTING",
+                                                              show_cost=request.phone_mine["prices"], may_add=_may_add(request),
+                                                              pieces=sum(float(r["counted"] or 0) for r in rows),
+                                                              lines_json={r["item_id"]: r["line_id"] for r in rows}))
     return render(request, "phone/count_sheet.html", _ctx(request, c["count_no"], c=c, rows=rows, done=done, counting=c["status"] == "COUNTING",
                                                            codes_json={r["line_id"]: [x.upper() for x in r["codes"]] for r in rows}))
+
+
+def _may_add(request) -> bool:
+    """New items are added at the rack by the family only, never from the staff phone (owner, 2026-10-13)."""
+    return request.slicks_user["role"] != "scanner" and request.phone_mine["count_do"]
+
+
+@phone_page("count", write=True)
+def count_add(request, count_id: int):
+    """An opening count: the tire in front of you is not in the system. Its fields, how many, and the cost from the notebook: made and counted in one step."""
+    import re
+
+    from engines import count_rules as cr
+    from engines.product_catalog import CATEGORY_FIELDS, CODE, TIRE_SIZE, brands
+    c = cr.get_count(count_id)
+    if not c or not c["opening"]:
+        raise Http404
+    if not _may_add(request):
+        _say(request, False, "New items are added by the family. Tell them which tire is not in the system.")
+        return redirect(f"/phone/count/{count_id}/")
+    typed = {}
+    if request.method == "POST":
+        p = request.POST
+        cat = next((label for label, code in CODE.items() if code == p.get("category")), "")
+        values = {f["key"]: p.get(f"f_{CODE[cat]}_{f['key']}", "") for f in CATEGORY_FIELDS.get(cat, [])}
+        ok, msg = cr.add_new(count_id, cat, p.get("brand", ""), values, p.get("qty", ""), p.get("cost", "") if request.phone_mine["prices"] else None, p.get("dot", ""))
+        _say(request, ok, msg)
+        if ok:
+            return redirect(f"/phone/count/{count_id}/")
+        typed = p
+    q = " ".join(request.GET.get("q", "").split())
+    size = TIRE_SIZE.search(q.upper().replace(" ", ""))
+    loose = re.search(r"\b(\d{3})[ /]?(\d{2})[ /rR]*(\d{2})\b", q)            # typed the quick way: "205 55 16" is 205/55R16
+    word = next((w for w in q.split() if re.fullmatch(r"[A-Za-z][A-Za-z.&'-]+", w)), "")
+    known = brands()
+    start = {"brand": next((b for b in known if word and b.lower().startswith(word.lower())), word.title()), "size": size.group(0) if size else ("{}/{}R{}".format(*loose.groups()) if loose else "")}
+    groups = [{"code": CODE[label], "label": "Tire" if label == "Tires" else label,
+               "fields": [dict(f, name=f"f_{CODE[label]}_{f['key']}", value=typed.get(f"f_{CODE[label]}_{f['key']}", start["size"] if (label == "Tires" and f["key"] == "size") else ""))
+                          for f in flds]} for label, flds in CATEGORY_FIELDS.items()]
+    return render(request, "phone/count_add.html", _ctx(request, "Add an item", c=c, groups=groups, brands=known, show_cost=request.phone_mine["prices"],
+                                                         category=typed.get("category", "tire"), brand=typed.get("brand", start["brand"]),
+                                                         qty=typed.get("qty", ""), cost=typed.get("cost", ""), dot=typed.get("dot", "")))

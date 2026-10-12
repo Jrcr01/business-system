@@ -7,13 +7,18 @@
 <div class="facts"><div><span>Items counted</span><b>{{ rows|length }}</b></div><div><span>Matched</span><b>{{ matched }}</b></div>
   <div><span>Short</span><b{% if short %} class="neg"{% endif %}>{{ short|length }} item{{ short|length|pluralize }} · {{ short_pcs|floatformat:"-2" }} pcs · ₱{{ short_value|floatformat:2|intcomma }}</b></div>
   <div><span>Over</span><b{% if over %} class="pos"{% endif %}>{{ over|length }} item{{ over|length|pluralize }} · {{ over_pcs|floatformat:"-2" }} pcs · ₱{{ over_value|floatformat:2|intcomma }}</b></div></div>
+{% if new_items or no_cost %}<p class="note">{% if new_items %}<b>{{ new_items }}</b> new item{{ new_items|pluralize }} added at the rack: look at each name before approving.{% endif %}
+  {% if no_cost %}<b>{{ no_cost }}</b> with no cost yet: type it in the Value column. A line may be approved without one; it stays marked here until the cost is typed.{% endif %}</p>{% endif %}
 <div class="scroll-x"><table class="list">
   <tr><th>Item</th><th style="text-align:right">Expected</th><th style="text-align:right">Counted</th><th style="text-align:right">Difference</th><th style="text-align:right">Value</th><th>Counter's note</th><th>Reason</th><th></th></tr>
   {% for r in rows %}<tr>
-    <td><a href="/stock/{{ r.item_id }}/">{{ r.name }}</a>{% for h in r.hints %}<div class="hint">· {{ h }}</div>{% endfor %}</td>
+    <td><a href="/stock/{{ r.item_id }}/">{{ r.name }}</a>{% if r.is_new %} <span class="pill">new item</span>{% endif %}{% if r.no_cost %} <span class="pill warn">no cost</span>{% endif %}{% for h in r.hints %}<div class="hint">· {{ h }}</div>{% endfor %}</td>
     <td class="num">{{ r.expected|floatformat:"-2" }}</td><td class="num">{{ r.counted|floatformat:"-2" }}</td>
     <td class="num{% if r.difference < 0 %} neg{% elif r.difference > 0 %} pos{% endif %}">{% if r.difference > 0 %}+{% endif %}{{ r.difference|floatformat:"-2" }}</td>
-    <td class="num{% if r.value < 0 %} neg{% elif r.value > 0 %} pos{% endif %}">{{ r.value|floatformat:2|intcomma }}</td><td>{{ r.note }}</td>
+    <td class="num{% if r.value < 0 %} neg{% elif r.value > 0 %} pos{% endif %}">{% if r.no_cost and may_approve %}<form method="post" style="margin:0;display:flex;gap:4px;justify-content:flex-end">{% csrf_token %}
+        <input type="hidden" name="action" value="cost"><input type="hidden" name="line_id" value="{{ r.line_id }}">
+        <input type="text" inputmode="decimal" name="cost" placeholder="cost each" style="width:96px;text-align:right" aria-label="Cost each: {{ r.name }}"><button class="btn small ghost" type="submit">Set</button></form>
+      {% else %}{{ r.value|floatformat:2|intcomma }}{% if r.cost %}<div class="hint">{{ r.cost|floatformat:2|intcomma }} each</div>{% endif %}{% endif %}</td><td>{{ r.note }}</td>
     {% if r.decision == "MATCHED" %}<td class="hint">matched</td><td></td>
     {% elif r.decision == "APPROVED" %}<td>{{ r.reason }}</td><td class="hint">approved by {{ r.decided_by }}</td>
     {% elif may_approve and c.status == "WAITING" %}

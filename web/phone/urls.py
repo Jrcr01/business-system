@@ -11,6 +11,7 @@ urlpatterns = [
     path("sale/", views.sale, name="phone_sale"),
     path("count/", views.count, name="phone_count"),
     path("count/<int:count_id>/", views.count_sheet, name="phone_count_sheet"),
+    path("count/<int:count_id>/add/", views.count_add, name="phone_count_add"),
     path("day/", views.day, name="phone_day"),
     path("manifest.webmanifest", views.manifest, name="phone_manifest"),
     path("manifest-ops.webmanifest", views.manifest_ops, name="phone_manifest_ops"),

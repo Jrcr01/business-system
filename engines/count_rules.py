@@ -60,15 +60,155 @@ def start_count(category: str = "", brand: str = "", uncounted: bool = False, se
     return True, f"{number} started: {len(ids)} item(s) to count.", int(cid)
 
 
+def start_opening(counted_by: str = "") -> tuple[bool, str, int | None]:
+    """An opening count (owner, 2026-10-13: stock the system does not know yet, "we have inventory notebook"): an EMPTY sheet. Each tire is found
+    or added as the rack is walked (add_line, add_new). Approved like any count; nothing about stock changes until then."""
+    allowed, why = require_permission("inventory.use")
+    if not allowed:
+        return False, why, None
+    with write_tx() as conn:
+        used = [int(r[0][3:]) for r in conn.execute("SELECT count_no FROM stock_counts WHERE count_no LIKE 'CT-%'") if r[0][3:].isdigit()]
+        number = f"CT-{next_doc_number(conn, 'CT', 0, max(used, default=0)):04d}"
+        cid = conn.execute("INSERT INTO stock_counts (count_no, scope, counted_by, started_by, opening) VALUES (?, 'Opening count', ?, acting_user(), 1) RETURNING count_id",
+                           (number, " ".join(str(counted_by or "").split()) or None)).fetchone()[0]
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'COUNT_STARTED', 'stock_counts', ?, ?)",
+                     (cid, f"{number}: opening count, items added as counted"))
+    return True, f"{number} started. Find or add each item as you reach it.", int(cid)
+
+
+def _amount(text, what: str) -> tuple[float | None, str]:
+    """A typed quantity or cost: (number or None when empty, '' or what is wrong)."""
+    raw = str(text if text is not None else "").replace(",", "").strip()
+    if raw == "":
+        return None, ""
+    try:
+        n = float(raw)
+    except ValueError:
+        return None, f"'{raw}' is not {what}."
+    return (n, "") if n >= 0 else (None, f"{what.capitalize()} cannot be below zero.")
+
+
+def _put_line(conn, count_id: int, item_id: int, qty: float, cost: float | None, dot, is_new: bool) -> float:
+    """An item onto an opening sheet with what was counted. Already on it (the same tire on a second rack): the quantity is ADDED. Returns the line's total.
+    The cost is kept only while the item has none of its own: typed, or else the supplier's price."""
+    from engines.stock_rules import note_dot
+    has_cost = float(conn.execute("SELECT COALESCE(avg_cost, 0) FROM items WHERE id = ?", (int(item_id),)).fetchone()[0]) > 0
+    if has_cost:
+        cost = None
+    elif not cost:
+        cost = _list_cost(int(item_id)) or None
+    row = conn.execute("SELECT line_id, counted FROM stock_count_lines WHERE count_id = ? AND item_id = ?", (int(count_id), int(item_id))).fetchone()
+    if row:
+        total = float(row[1] or 0) + float(qty)
+        conn.execute("UPDATE stock_count_lines SET counted = ?, cost_typed = COALESCE(?, cost_typed) WHERE line_id = ?", (total, cost, row[0]))
+    else:
+        total = float(qty)
+        conn.execute("INSERT INTO stock_count_lines (count_id, item_id, counted, cost_typed, is_new) VALUES (?, ?, ?, ?, ?)", (int(count_id), int(item_id), total, cost, 1 if is_new else 0))
+    note_dot(conn, int(item_id), dot)
+    return total
+
+
+def _opening_sheet(conn, count_id: int) -> str:
+    """'' when items may be added to this count, or why not."""
+    row = conn.execute("SELECT status, opening FROM stock_counts WHERE count_id = ?", (int(count_id),)).fetchone()
+    if not row:
+        return "Count not found."
+    if not row[1]:
+        return "Items are added only to an opening count."
+    return "" if row[0] == "COUNTING" else "This count is finished: nothing more can be added."
+
+
+def add_line(count_id: int, item_id: int, qty, cost=None, dot="") -> tuple[bool, str]:
+    """An item the system already has, onto an opening sheet with how many are on the rack."""
+    allowed, why = require_permission("inventory.use")
+    if not allowed:
+        return False, why
+    n, bad = _amount(qty, "a quantity")
+    c, bad2 = _amount(cost, "a cost")
+    if bad or bad2 or n is None:
+        return False, bad or bad2 or "Type how many are on the rack."
+    with write_tx() as conn:
+        why = _opening_sheet(conn, count_id)
+        if why:
+            return False, why
+        it = conn.execute("SELECT name FROM items WHERE id = ? AND is_active = 1", (int(item_id),)).fetchone()
+        if not it:
+            return False, "Item not found."
+        total = _put_line(conn, count_id, int(item_id), n, c, dot, False)
+    return True, f"{it[0]}: {total:g} counted."
+
+
+def add_new(count_id: int, category: str, brand: str, values: dict, qty, cost=None, dot="") -> tuple[bool, str]:
+    """An item the system does not have: made (with its code) and counted in one step. The same fields as the catalog; an item that turns out to
+    exist already is simply counted."""
+    from engines.product_catalog import CATEGORY_FIELDS, get_or_create_product, label_of
+    allowed, why = require_permission("inventory.use")
+    if not allowed:
+        return False, why
+    category, brand = label_of(category), " ".join(str(brand or "").split())
+    if category not in CATEGORY_FIELDS:
+        return False, "Choose the type: tire, battery, mags or rims."
+    if not brand:
+        return False, "Type the brand."
+    keys = {f["key"] for f in CATEGORY_FIELDS[category]}
+    values = {k: " ".join(str(v or "").split()) for k, v in values.items() if k in keys}
+    missing = [f["label"] for f in CATEGORY_FIELDS[category] if f["required"] and not values.get(f["key"])]
+    if missing:
+        return False, "Still needed: " + ", ".join(missing) + "."
+    n, bad = _amount(qty, "a quantity")
+    c, bad2 = _amount(cost, "a cost")
+    if bad or bad2 or n is None:
+        return False, bad or bad2 or "Type how many are on the rack."
+    with write_tx() as conn:
+        why = _opening_sheet(conn, count_id)
+        if why:
+            return False, why
+        old = conn.execute("SELECT brand FROM items WHERE lower(brand) = lower(?) LIMIT 1", (brand,)).fetchone()
+        item_id, name, created = get_or_create_product(category, old[0] if old else brand, conn=conn, **values)      # one spelling per brand
+        if not item_id:
+            return False, "That item could not be added. Check the fields."
+        conn.execute("UPDATE items SET is_active = 1 WHERE id = ?", (int(item_id),))
+        total = _put_line(conn, count_id, int(item_id), n, c, dot, created)
+    return True, (f"{name} added and counted: {total:g}." if created else f"{name} was already in the system: {total:g} counted.")
+
+
+def set_cost(line_id: int, cost) -> tuple[bool, str]:
+    """The System admin types the cost of a counted item that has none: before the approval (kept on the line), or after it (the item's cost itself,
+    with a ledger row). An item that already has a cost is not touched here."""
+    allowed, why = require_permission("inventory.approve")
+    if not allowed:
+        return False, why
+    c, bad = _amount(cost, "a cost")
+    if bad or not c:
+        return False, bad or "Type the cost each."
+    with write_tx() as conn:
+        row = conn.execute("""SELECT l.count_id, l.item_id, l.decision, c.count_no, i.name, COALESCE(i.avg_cost, 0), i.on_hand FROM stock_count_lines l
+                              JOIN stock_counts c ON c.count_id = l.count_id JOIN items i ON i.id = l.item_id WHERE l.line_id = ?""", (int(line_id),)).fetchone()
+        if not row:
+            return False, "Line not found."
+        count_id, item_id, decision, number, name, avg, on_hand = row
+        if float(avg) > 0:
+            return False, f"{name} already has a cost (₱{float(avg):,.2f})."
+        conn.execute("UPDATE stock_count_lines SET cost_typed = ?, unit_cost = CASE WHEN expected IS NOT NULL THEN ? ELSE unit_cost END WHERE line_id = ?", (c, c, int(line_id)))
+        if decision == "APPROVED":
+            conn.execute("UPDATE items SET avg_cost = ? WHERE id = ?", (c, int(item_id)))
+            conn.execute("""INSERT INTO stock_ledger (item_id, kind, qty, unit_cost, on_hand_after, avg_after, ref_type, ref_id, moved_on, note, created_by)
+                            VALUES (?, 'COST', 0, ?, ?, ?, 'stock_counts', ?, ?, ?, acting_user())""",
+                         (int(item_id), c, float(on_hand or 0), c, int(count_id), str(manila_today()), f"{number}: cost typed after the count"))
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'COUNT_COST_TYPED', 'stock_counts', ?, ?)",
+                     (int(count_id), f"{number}: {name} cost {c:,.2f} each"))
+    return True, f"{name}: cost ₱{c:,.2f} each."
+
+
 def get_count(count_id: int) -> dict | None:
     with get_conn() as conn:
         row = conn.execute("""SELECT count_id, count_no, scope, status, counted_by, started_by, started_at, finished_by, finished_at, closed_at,
                                      (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = c.count_id),
-                                     (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = c.count_id AND l.counted IS NOT NULL)
+                                     (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = c.count_id AND l.counted IS NOT NULL), opening
                               FROM stock_counts c WHERE count_id = ?""", (int(count_id),)).fetchone()
     if not row:
         return None
-    keys = ("count_id", "count_no", "scope", "status", "counted_by", "started_by", "started_at", "finished_by", "finished_at", "closed_at", "items", "typed")
+    keys = ("count_id", "count_no", "scope", "status", "counted_by", "started_by", "started_at", "finished_by", "finished_at", "closed_at", "items", "typed", "opening")
     out = dict(zip(keys, row))
     out["status_label"] = STATUS.get(out["status"], out["status"])
     return out
@@ -90,18 +230,22 @@ def listing() -> list[dict]:
 
 
 def sheet_rows(count_id: int) -> list[dict]:
-    """The blind sheet: line_id, item_id, code, name, counted, note, codes (what a scan of this item reads) -- and NOTHING about what is expected."""
+    """The blind sheet: line_id, item_id, code, name, counted, note, codes (what a scan of this item reads) -- and NOTHING about what is expected.
+    Also is_new, cost (the item's own, else the one typed at the count) and own_cost (the item has one: not to be typed). An opening sheet: newest first."""
     with get_conn() as conn:
-        rows = conn.execute("""SELECT l.line_id, i.id, i.code, i.name, l.counted, l.note FROM stock_count_lines l JOIN items i ON i.id = l.item_id
-                               WHERE l.count_id = ? AND l.decision IS NULL ORDER BY i.category, i.name COLLATE NOCASE""", (int(count_id),)).fetchall()
+        opening = (conn.execute("SELECT opening FROM stock_counts WHERE count_id = ?", (int(count_id),)).fetchone() or [0])[0]
+        rows = conn.execute("""SELECT l.line_id, i.id, i.code, i.name, l.counted, l.note, l.is_new, l.cost_typed, COALESCE(i.avg_cost, 0) FROM stock_count_lines l
+                               JOIN items i ON i.id = l.item_id WHERE l.count_id = ? AND l.decision IS NULL ORDER BY """
+                            + ("l.line_id DESC" if opening else "i.category, i.name COLLATE NOCASE"), (int(count_id),)).fetchall()
         codes: dict[int, list[str]] = {}
         for b, iid in conn.execute("SELECT barcode, item_id FROM item_barcodes"):
             codes.setdefault(int(iid), []).append(b)
-    return [{"line_id": int(a), "item_id": int(b), "code": c, "name": d, "counted": e, "note": f or "", "codes": [c.upper()] + codes.get(int(b), [])} for a, b, c, d, e, f in rows]
+    return [{"line_id": int(a), "item_id": int(b), "code": c, "name": d, "counted": e, "note": f or "", "codes": [c.upper()] + codes.get(int(b), []),
+             "is_new": bool(g), "own_cost": float(k) > 0, "cost": float(k) if float(k) > 0 else h} for a, b, c, d, e, f, g, h, k in rows]
 
 
 def save_counted(count_id: int, typed: dict, counted_by: str | None = None) -> tuple[bool, str]:
-    """What was counted so far: {line_id: (quantity or None, note)}. Saved as typed; nothing about stock changes."""
+    """What was counted so far: {line_id: (quantity or None, note)} or (quantity, note, cost typed or None). Saved as typed; nothing about stock changes."""
     allowed, why = require_permission("inventory.use")
     if not allowed:
         return False, why
@@ -111,9 +255,14 @@ def save_counted(count_id: int, typed: dict, counted_by: str | None = None) -> t
             return False, "Count not found."
         if row[0] != "COUNTING":
             return False, "This count is finished: it can no longer be typed in."
-        for line_id, (qty, note) in typed.items():
+        for line_id, got in typed.items():
+            qty, note = got[0], got[1]
             if qty is not None and qty < 0:
                 return False, "A counted quantity cannot be below zero."
+            if len(got) > 2:
+                if got[2] is not None and got[2] < 0:
+                    return False, "A cost cannot be below zero."
+                conn.execute("UPDATE stock_count_lines SET cost_typed = ? WHERE line_id = ? AND count_id = ? AND decision IS NULL", (got[2] or None, int(line_id), int(count_id)))
             conn.execute("UPDATE stock_count_lines SET counted = ?, note = ? WHERE line_id = ? AND count_id = ? AND decision IS NULL",
                          (qty, " ".join(str(note or "").split()) or None, int(line_id), int(count_id)))
         if counted_by is not None:
@@ -135,8 +284,8 @@ def finish(count_id: int) -> tuple[bool, str]:
             return False, f"{row[1]} is already finished."
         if not (row[2] or "").strip():
             return False, "Type who counted (\"Counted by\") before finishing."
-        lines = conn.execute("""SELECT l.line_id, l.item_id, l.counted, i.on_hand, i.avg_cost FROM stock_count_lines l JOIN items i ON i.id = l.item_id
-                                WHERE l.count_id = ? AND l.decision IS NULL""", (int(count_id),)).fetchall()
+        lines = conn.execute("""SELECT l.line_id, l.item_id, l.counted, i.on_hand, CASE WHEN COALESCE(i.avg_cost, 0) > 0 THEN i.avg_cost ELSE l.cost_typed END
+                                FROM stock_count_lines l JOIN items i ON i.id = l.item_id WHERE l.count_id = ? AND l.decision IS NULL""", (int(count_id),)).fetchall()
         typed = [ln for ln in lines if ln[2] is not None]
         if not typed:
             return False, "Nothing is typed yet. Type what was counted, then finish."
@@ -193,14 +342,16 @@ def differences(count_id: int) -> list[dict]:
     hints. Matched lines included (difference 0)."""
     with get_conn() as conn:
         since = (conn.execute("SELECT finished_at FROM stock_counts WHERE count_id = ?", (int(count_id),)).fetchone() or [None])[0]
-        rows = conn.execute("""SELECT l.line_id, i.id, i.code, i.name, l.expected, l.counted, l.unit_cost, l.note, l.decision, l.reason, l.decided_by
+        rows = conn.execute("""SELECT l.line_id, i.id, i.code, i.name, l.expected, l.counted, l.unit_cost, l.note, l.decision, l.reason, l.decided_by,
+                                      l.is_new, COALESCE(i.avg_cost, 0)
                                FROM stock_count_lines l JOIN items i ON i.id = l.item_id WHERE l.count_id = ? AND l.counted IS NOT NULL AND l.expected IS NOT NULL
                                ORDER BY (l.decision IS NOT NULL), ABS(l.counted - l.expected) * l.unit_cost DESC, i.name COLLATE NOCASE""", (int(count_id),)).fetchall()
         out = []
-        for line_id, item_id, code, name, expected, counted, cost, note, decision, reason, who in rows:
+        for line_id, item_id, code, name, expected, counted, cost, note, decision, reason, who, is_new, avg in rows:
             diff = float(counted) - float(expected)
             out.append({"line_id": int(line_id), "item_id": int(item_id), "code": code, "name": name, "expected": float(expected), "counted": float(counted),
                         "difference": diff, "value": round(diff * float(cost or 0), 2), "note": note or "", "decision": decision, "reason": reason or "", "decided_by": who or "",
+                        "is_new": bool(is_new), "cost": float(cost or 0), "no_cost": float(counted) > 0 and float(avg) <= 0 and float(cost or 0) <= 0,
                         "hints": _hints(conn, int(item_id), since) if decision is None and diff < -EPS else []})
     return out
 
@@ -249,16 +400,17 @@ def approve(line_id: int, reason: str) -> tuple[bool, str]:
     from engines.review_flags import flag
     from engines.stock_ledger import stock_set
     with write_tx() as conn:
-        row = conn.execute("""SELECT l.count_id, l.item_id, l.expected, l.counted, l.unit_cost, l.decision, c.count_no, c.status, c.counted_by, i.name, i.on_hand
+        row = conn.execute("""SELECT l.count_id, l.item_id, l.expected, l.counted, l.unit_cost, l.decision, c.count_no, c.status, c.counted_by, i.name, i.on_hand,
+                                     COALESCE(i.avg_cost, 0)
                               FROM stock_count_lines l JOIN stock_counts c ON c.count_id = l.count_id JOIN items i ON i.id = l.item_id WHERE l.line_id = ?""", (int(line_id),)).fetchone()
         if not row:
             return False, "Line not found."
-        count_id, item_id, expected, counted, cost, decision, number, status, counted_by, name, on_hand = row
+        count_id, item_id, expected, counted, cost, decision, number, status, counted_by, name, on_hand, avg = row
         if status != "WAITING" or decision is not None or expected is None:
             return False, "This line is not waiting for approval."
         diff = float(counted) - float(expected)
-        if diff > 0 and float(cost or 0) <= 0:                   # counted before it was ever received (the opening count): its cost is the supplier's price
-            cost = _list_cost(int(item_id))
+        if diff > 0 and float(avg) <= 0:                         # counted before it was ever received (the opening count): the cost typed, else the supplier's price
+            cost = float(cost or 0) or _list_cost(int(item_id))
             if cost > 0:
                 conn.execute("UPDATE items SET avg_cost = ? WHERE id = ? AND COALESCE(avg_cost, 0) <= 0", (cost, int(item_id)))
                 conn.execute("UPDATE stock_count_lines SET unit_cost = ? WHERE line_id = ?", (cost, int(line_id)))
@@ -266,7 +418,7 @@ def approve(line_id: int, reason: str) -> tuple[bool, str]:
         conn.execute("UPDATE stock_count_lines SET decision = 'APPROVED', reason = ?, decided_by = acting_user(), decided_at = CURRENT_TIMESTAMP WHERE line_id = ?", (reason, int(line_id)))
         conn.execute("UPDATE items SET last_counted_at = ? WHERE id = ?", (str(manila_today()), int(item_id)))
         note = (f"{number}: {name} counted {float(counted):g} against {float(expected):g} ({diff:+g}, ₱{diff * float(cost or 0):+,.2f}); counted by {counted_by or 'not named'}. "
-                f"Approved: {reason}")
+                f"Approved: {reason}" + (" NO COST YET: type it on the count's page." if diff > 0 and float(cost or 0) <= 0 else ""))
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'COUNT_DIFFERENCE_APPROVED', 'stock_counts', ?, ?)",
                      (int(count_id), note))
         flag(conn, "COUNT_DIFFERENCE", "stock_counts", int(count_id), note)

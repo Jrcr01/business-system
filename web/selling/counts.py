@@ -64,6 +64,8 @@ def count(request, count_id: int):
             ok, msg = cr.approve_all(count_id, p.get("reason", ""))
         elif what == "recount":
             ok, msg = cr.recount(int(p.get("line_id") or 0))
+        elif what == "cost":                                     # an opening count: the cost of an item that has none, typed by the System admin
+            ok, msg = cr.set_cost(int(p.get("line_id") or 0), p.get("cost", ""))
         else:
             ok, msg = False, "Unknown action."
         _say(request, ok, msg)
@@ -79,4 +81,5 @@ def count(request, count_id: int):
                 "short": [r for r in rows if r["difference"] < -1e-9], "over": [r for r in rows if r["difference"] > 1e-9]})
     ctx["short_pcs"], ctx["short_value"] = -sum(r["difference"] for r in ctx["short"]), -sum(r["value"] for r in ctx["short"])
     ctx["over_pcs"], ctx["over_value"] = sum(r["difference"] for r in ctx["over"]), sum(r["value"] for r in ctx["over"])
+    ctx["new_items"], ctx["no_cost"] = sum(1 for r in rows if r["is_new"]), sum(1 for r in rows if r["no_cost"])
     return render(request, "selling/count_differences.html", ctx)

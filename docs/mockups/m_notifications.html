@@ -1,0 +1,86 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: credit card reminders</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --bad: #b3261e; --yellow: #F3E03B; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 22px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1240px; margin: 0 auto; padding: 18px 16px 60px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 88ch; }
+.cols { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.phone { width: 350px; border: 10px solid #1c2733; border-radius: 34px; overflow: hidden; box-shadow: 0 6px 20px rgba(16,24,40,.25); }
+.lock { background: linear-gradient(170deg, #0f2a4a, #173d68 60%, #0b1f38); color: #fff; min-height: 610px; padding: 30px 14px 20px; }
+.clock { text-align: center; font-size: 3.2rem; font-weight: 300; line-height: 1; } .date { text-align: center; opacity: .85; margin: 4px 0 20px; }
+.lab { font-size: .85rem; opacity: .85; margin: 16px 0 6px 4px; }
+.push { background: rgba(255,255,255,.96); color: var(--ink); border-radius: 18px; padding: 12px 14px; border-left: 6px solid var(--blue); }
+.push.due { border-left-color: var(--bad); } .push.fee { border-left-color: #C26A00; }
+.push .top { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+.push .ico { width: 20px; height: 20px; border-radius: 5px; background: var(--navy); color: var(--yellow); font-size: .55rem; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.push b { display: block; } .push span.t { font-size: .93rem; }
+.num { display: inline-flex; width: 24px; height: 24px; border-radius: 50%; background: var(--yellow); color: var(--navy); font-weight: 800; align-items: center; justify-content: center; margin-right: 6px; font-size: .85rem; }
+h2 { font-size: 1.05rem; margin: 0 0 10px; color: var(--navy); }
+.hint { color: var(--muted); font-size: .84rem; }
+.pill { display: inline-block; font-size: .72rem; border-radius: 999px; padding: 1px 8px; background: var(--soft); color: var(--muted); } .pill.ok { background: #e3f5ec; color: var(--ok); }
+.lap { background: #fff; border: 8px solid #1c2733; border-radius: 14px; padding: 16px 18px; max-width: 760px; flex: 1 1 520px; }
+.set { display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; align-items: center; }
+.set > div b { display: block; } .field { border: 1px solid #b9c6d8; border-radius: 10px; padding: 6px 10px; font: inherit; background: #fff; }
+.sw { width: 44px; height: 24px; border-radius: 999px; background: var(--blue); position: relative; display: inline-block; } .sw::after { content: ""; position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
+.sw.off { background: #cbd5e1; } .sw.off::after { right: auto; left: 3px; }
+table { border-collapse: collapse; width: 100%; font-size: .93rem; } th { text-align: left; color: var(--muted); font-size: .8rem; border-bottom: 2px solid var(--line); padding: 6px 8px; } td { border-bottom: 1px solid var(--line); padding: 7px 8px; }
+.q { background: #fff7e0; border: 1px solid #f1d38a; border-radius: 10px; padding: 12px 16px; margin-top: 22px; max-width: 920px; }
+</style></head><body><main>
+<p class="why"><b>Sample figures, not your data.</b> Reminders for credit cards only, three kinds: the statement is coming, the payment is due today, and the
+annual fee is coming. Nothing about supplier checks or the daily total. Each reaches the phone through the Slick's ERP app already installed; a card with
+nothing happening sends nothing.</p>
+
+<div class="cols">
+
+<div class="phone"><div class="lock">
+  <div class="clock">7:00</div><div class="date">Wednesday, 14 October</div>
+
+  <div class="lab"><span class="num">1</span>The statement is coming</div>
+  <div class="push"><div class="top"><span class="ico">ERP</span>Slick's ERP · now</div>
+    <b>BPI Platinum 2409 · statement today</b>
+    <span class="t">Jeane's card closes its statement today, 14 Oct. Get the statement and record it; payment will be due about 4 Nov.</span></div>
+
+  <div class="lab"><span class="num">2</span>The payment is due today</div>
+  <div class="push due"><div class="top"><span class="ico">ERP</span>Slick's ERP · now</div>
+    <b>Mastercard Toyota 4047 · due today</b>
+    <span class="t">Julian's card: ₱25,000.00 due today, 14 Oct. Not yet marked paid.</span></div>
+
+  <div class="lab"><span class="num">3</span>The annual fee is coming</div>
+  <div class="push fee"><div class="top"><span class="ico">ERP</span>Slick's ERP · now</div>
+    <b>BDO Gold 7731 · annual fee in November</b>
+    <span class="t">Rhodora's card is charged its annual fee next month. Call the bank now to ask for a waiver.</span></div>
+</div></div>
+
+<div class="lap">
+  <h2><span class="num">4</span>Settings → Notifications (System admin)</h2>
+  <div class="set">
+    <div><b>Statement coming</b><span class="hint">On the card's statement day. Stops once that month's statement is recorded.</span></div><span class="sw"></span>
+    <div><b>Payment due today</b><span class="hint">On the due date, only while the statement is not marked paid in full.</span></div><span class="sw"></span>
+    <div><b>Annual fee coming</b><span class="hint">On the 1st of the month before the card's annual-fee month.</span></div><span class="sw"></span>
+    <div><b>Time</b><span class="hint">Manila time.</span></div><select class="field"><option>7:00 AM</option></select>
+  </div>
+  <table style="margin-top:14px">
+    <tr><th>Who receives them</th><th>Phone</th><th></th></tr>
+    <tr><td>Jeane Ravin Roxas <span class="hint">every card</span></td><td><span class="pill ok">allowed on 1 phone</span></td><td><span class="sw"></span></td></tr>
+    <tr><td>Julian Ralph Roxas <span class="hint">own cards</span></td><td><span class="pill">not allowed yet</span></td><td><span class="sw"></span></td></tr>
+    <tr><td>Rhodora Roxas <span class="hint">own cards</span></td><td><span class="pill">not allowed yet</span></td><td><span class="sw off"></span></td></tr>
+  </table>
+  <p class="hint">Each person allows it once on their own phone: Slick's ERP → person menu → "Notifications on this phone" → Allow.<br>
+  The statement day and the annual-fee month are already kept on each card (Set-up → Cards). A card with either left empty sends no reminder of that kind, and is listed here so it can be filled in.</p>
+</div>
+
+</div>
+
+<div class="q"><b>Questions before I build</b>
+<ol style="margin:8px 0 0">
+  <li><b>Payment due:</b> on the due date only ("due today"), or also a few days before? A payment made at a bank counter the same day is fine; an online transfer from another bank can take a day.</li>
+  <li><b>Statement coming:</b> on the statement day itself, or a day or two after, when the bank has usually sent it?</li>
+  <li><b>Annual fee:</b> one month before is my suggestion, so there is time to ask for a waiver. Is the fee amount worth keeping on the card too, or is the month enough?</li>
+  <li><b>Who receives them:</b> you for every card and each cardholder for their own, as drawn? Or you only?</li>
+  <li><b>Time:</b> 7:00 AM?</li>
+</ol></div>
+</main></body></html>

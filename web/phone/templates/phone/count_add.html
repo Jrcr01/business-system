@@ -1,0 +1,51 @@
+{% extends "phone/base.html" %}{% load humanize slicks %}
+{% block content %}
+{% comment %}Owner, 2026-10-13: the tire in front of you is not in the system -- add it and count it in one step (the family only). The same fields as
+the catalog, so the item is a full one from the start.{% endcomment %}
+<div class="ph-card" style="background:#f7f9fc"><b class="t">Not in the system: add it and count it</b><span class="hint">{{ c.count_no }} · Opening count</span></div>
+<form method="post" id="ad_form" data-guard>{% csrf_token %}
+  <label>Type</label>
+  <div class="op-chips">{% for g in groups %}<label class="op-chip"><input type="radio" name="category" value="{{ g.code }}"{% if g.code == category %} checked{% endif %}><span>{{ g.label }}</span></label>{% endfor %}</div>
+  <label for="ad_brand">Brand</label><input class="ph-field" id="ad_brand" type="text" name="brand" value="{{ brand }}" list="ad_brands" autocomplete="off" required>
+  <datalist id="ad_brands">{% for b in brands %}<option value="{{ b }}">{% endfor %}</datalist>
+  <span class="hint">Brands already in the system are offered as you type, so the spelling stays the same.</span>
+  {% for g in groups %}<div class="ad-group" data-cat="{{ g.code }}"{% if g.code != category %} hidden{% endif %}>
+    {% for f in g.fields %}{% if f.required %}<label for="{{ f.name }}">{{ f.label }}</label>
+    <input class="ph-field" id="{{ f.name }}" type="text" name="{{ f.name }}" value="{{ f.value }}" placeholder="{{ f.note }}" autocomplete="off" autocapitalize="characters">{% endif %}{% endfor %}
+    <details style="margin-top:8px"><summary class="hint" style="cursor:pointer">More details (optional)</summary>
+    {% for f in g.fields %}{% if not f.required %}<label for="{{ f.name }}">{{ f.label }}</label>
+    {% if f.choices %}<select class="ph-field" id="{{ f.name }}" name="{{ f.name }}"><option value=""></option>{% for ch in f.choices %}<option value="{{ ch }}"{% if ch == f.value %} selected{% endif %}>{{ ch }}</option>{% endfor %}</select>
+    {% else %}<input class="ph-field" id="{{ f.name }}" type="text" name="{{ f.name }}" value="{{ f.value }}" placeholder="{{ f.note }}" autocomplete="off" autocapitalize="characters">{% endif %}{% endif %}{% endfor %}
+    </details>
+  </div>{% endfor %}
+  <div id="ad_like" class="note" hidden></div>
+  <div class="ph-row" style="margin-top:10px;align-items:flex-end">
+    <div><label for="ad_qty">How many on the rack</label><input type="text" inputmode="decimal" class="ct_q" id="ad_qty" name="qty" value="{{ qty|default:'1' }}" data-step="1" data-min="0"></div>
+    {% if show_cost %}<div style="flex:1 1 120px"><label for="ad_cost">Cost each (notebook)</label><input class="ph-field" style="text-align:right" id="ad_cost" type="text" inputmode="decimal" name="cost" value="{{ cost }}" placeholder="may be left empty"></div>{% endif %}
+  </div>
+  <label for="ad_dot">DOT, oldest <span style="font-weight:400">(optional, wwyy)</span></label><input class="ph-field" style="max-width:130px" id="ad_dot" type="text" inputmode="numeric" name="dot" value="{{ dot }}">
+  <button class="btn main" type="submit" style="margin-top:12px"><span class="ms">add_task</span>Add and count</button>
+  <p class="hint">Back on the sheet at once, ready for the next one. A cost left empty is marked "no cost yet" and can be typed later.</p>
+</form>
+<p style="margin-top:12px"><a class="btn small ghost" href="/phone/count/{{ c.count_id }}/">Back to the sheet</a></p>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var form = document.getElementById("ad_form"), like = document.getElementById("ad_like"), items = [];
+  function cat() { return (form.querySelector('input[name="category"]:checked') || {}).value; }
+  function groups() { document.querySelectorAll(".ad-group").forEach(function (g) { g.hidden = g.dataset.cat !== cat(); }); look(); }
+  function look() {                                            /* an item much like it may be there already */
+    var brand = document.getElementById("ad_brand").value.trim().toLowerCase(), g = document.querySelector('.ad-group[data-cat="' + cat() + '"]');
+    var head = g ? (g.querySelector("input[type=text]") || {}).value || "" : "", digits = head.replace(/\D/g, "");
+    like.hidden = true;
+    if (brand.length < 2 || digits.length < 4) return;
+    var got = items.filter(function (it) { return it.find.indexOf(brand) >= 0 && it.find.indexOf(digits) >= 0; }).slice(0, 3);
+    if (!got.length) return;
+    like.innerHTML = "<b>Already in the system:</b> " + got.map(function (it) { var a = document.createElement("a"); a.href = "../?pick=" + it.id; a.textContent = it.name; return a.outerHTML; }).join(" · ") + ". Tap it to count that one, or keep adding a new item.";
+    like.hidden = false;
+  }
+  form.querySelectorAll('input[name="category"]').forEach(function (r) { r.addEventListener("change", groups); });
+  form.addEventListener("input", look);
+  fetch("/stock/items.json", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) { items = d.items || []; look(); }).catch(function () {});
+});
+</script>
+{% endblock %}

@@ -51,3 +51,13 @@ body { background: #f3f4f6; }
 .ph-main #sl_table td:last-child .btn { padding: 8px 10px; }
 .ph-main .later-box { padding: 12px; }
 @media (min-width: 700px) { .ph-main { padding-top: 18px; } }
+/* the opening count (2026-10-13): the found list under the search box, the type chips on Add an item */
+.op-list { border: 1px solid #b9c6d8; border-radius: 12px; overflow: hidden; margin: -4px 0 12px; background: #fff; }
+.op-opt { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 12px; border: 0; border-bottom: 1px solid var(--line); background: #fff; font: inherit; text-align: left; color: var(--ink); text-decoration: none; }
+.op-opt:last-child { border-bottom: 0; }
+.op-new { background: #e8f0fa; color: var(--blue); }
+.op-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.op-chip input { position: absolute; opacity: 0; }
+.op-chip span { display: inline-block; padding: 8px 16px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; }
+.op-chip input:checked + span { background: #e8f0fa; border-color: var(--blue); color: var(--blue); font-weight: 700; }
+.op-chip input:focus-visible + span { outline: 2px solid var(--blue); outline-offset: 2px; }

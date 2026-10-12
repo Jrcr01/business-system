@@ -13,7 +13,7 @@ def test_a_count_started_scanned_saved_and_finished_on_the_phone(web, db):
     page = web.get("/phone/").content.decode()
     assert 'href="/phone/count/"' in page
     page = web.get("/phone/count/").content.decode()
-    assert "Start a count" in page and "Westlake" in page
+    assert "Count a brand" in page and "Westlake" in page
     r = web.post("/phone/count/", {"action": "start", "category": "tire", "brand": "Westlake", "counted_by": "Julian"})
     cid = _n("SELECT count_id FROM stock_counts")
     assert r["Location"] == f"/phone/count/{cid}/"

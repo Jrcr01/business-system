@@ -1,0 +1,98 @@
+{% extends "phone/base.html" %}{% load humanize slicks %}
+{% block content %}
+{% comment %}Owner, 2026-10-13: the opening count, add as you go. The sheet starts empty: find the tire in front of you and type how many; one the
+system does not have is added on the spot (the family only). Costs show only to a person who sees the price list. Approved on the laptop.{% endcomment %}
+<div class="ph-card" style="background:#f7f9fc"><b class="t">{{ c.count_no }} · Opening count</b><span class="hint">{% if counting %}counting · {{ rows|length }} item{{ rows|length|pluralize }} · {{ pieces|floatformat:"-2" }} pcs so far{% if c.counted_by %} · {{ c.counted_by }}{% endif %}{% else %}finished: it waits for approval on the laptop{% endif %}</span></div>
+{% if counting %}
+<div class="ph-scan"><input type="text" id="op_q" placeholder="Scan, or type size and brand" autocomplete="off" aria-label="Find an item" autofocus>
+  <button type="button" id="ct_cam" hidden aria-label="Camera"><span class="ms">photo_camera</span></button></div>
+<video id="ct_video" playsinline hidden></video>
+<div id="op_found" class="op-list" hidden></div>
+<form method="post" id="op_pick" class="ph-card" style="border-color:var(--blue)" hidden>{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="item_id" id="op_item">
+  <b class="t" id="op_name"></b><span class="hint" id="op_code"></span>
+  <div class="ph-row" style="margin-top:6px"><span class="hint">On the rack</span><input type="text" inputmode="decimal" class="ct_q" name="qty" id="op_qty" value="1" data-step="1" data-min="0" aria-label="How many on the rack"></div>
+  <div class="ph-row" style="margin-top:6px">{% if show_cost %}<span id="op_costwrap" class="ph-row" style="flex:1 1 150px"><span class="hint">Cost each</span><input class="ph-field" style="flex:1 1 90px;text-align:right" type="text" inputmode="decimal" name="cost" id="op_cost" placeholder="notebook" aria-label="Cost each"></span>{% endif %}
+    <input class="ph-field" style="flex:0 1 110px" type="text" inputmode="numeric" name="dot" placeholder="DOT wwyy" aria-label="DOT, optional"></div>
+  <div class="ph-row" style="margin-top:8px"><button class="btn main" type="submit" style="flex:2;margin-top:0"><span class="ms">add_task</span>Count it</button><button class="btn ghost" type="button" id="op_no" style="flex:1">Not this</button></div>
+</form>
+<div id="ct_msg" class="hint" style="min-height:1.2em"></div>
+<form method="post" id="ct_form" data-guard>{% csrf_token %}<input type="hidden" name="counted_by" value="{{ c.counted_by|default:'' }}">
+  {% if rows %}<p class="hint" style="margin:4px 0 6px">Counted so far on this sheet (newest first)</p>{% else %}<p class="note">Nothing counted yet. Type the size of the first tire in the box above.</p>{% endif %}
+  {% for r in rows %}
+  <div class="ph-card" id="ln_{{ r.line_id }}"><b class="t">{{ r.name }}{% if r.is_new %} <span class="pill">new item</span>{% endif %}</b><span class="hint">{{ r.code }}</span>
+    <div class="ph-row" style="margin-top:6px"><span class="hint">Counted</span>
+      <input type="text" inputmode="decimal" class="ct_q" name="c_{{ r.line_id }}" value="{% if r.counted is not None %}{{ r.counted|floatformat:'-2' }}{% endif %}" data-step="1" data-min="0" aria-label="Counted: {{ r.name }}">
+      {% if show_cost %}{% if r.own_cost %}<span class="hint">cost ₱{{ r.cost|floatformat:2|intcomma }}</span>
+      {% else %}<span class="hint">cost</span><input class="ph-field" style="flex:1 1 80px;text-align:right" type="text" inputmode="decimal" name="k_{{ r.line_id }}" value="{% if r.cost %}{{ r.cost|floatformat:2 }}{% endif %}" placeholder="cost each" aria-label="Cost each: {{ r.name }}">{% if not r.cost %}<span class="pill warn">no cost yet</span>{% endif %}{% endif %}{% endif %}</div>
+  </div>
+  {% endfor %}
+  {% if rows %}<div class="ph-row" style="margin-top:10px"><button class="btn" type="submit" name="action" value="save" style="flex:1"><span class="ms">save</span>Save</button>
+    <button class="btn main" type="submit" name="action" value="finish" style="flex:2;margin-top:0" onclick="return confirm('Finish this count? Nothing more can be added to it after.');"><span class="ms">send</span>Finish</button></div>
+  <p class="hint">An item added by mistake: clear its count and it drops off at Finish. Finish hands the sheet to the System admin; stock changes only when it is approved on the laptop.</p>{% endif %}
+</form>
+<form method="post" style="margin-top:14px" onsubmit="return confirm('Cancel {{ c.count_no }}? What was counted on it is dropped. Items added stay in the system.');">{% csrf_token %}<input type="hidden" name="action" value="cancel">
+  <button class="btn small ghost" type="submit">Cancel this count</button></form>
+{{ lines_json|json_script:"op_lines" }}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var lines = JSON.parse(document.getElementById("op_lines").textContent || "{}"), q = document.getElementById("op_q"), found = document.getElementById("op_found");
+  var pick = document.getElementById("op_pick"), msg = document.getElementById("ct_msg"), form = document.getElementById("ct_form"), items = [], mayAdd = {{ may_add|yesno:"true,false" }};
+  function quiet() {                                           /* keep what is typed on the cards before the page is left */
+    var data = new FormData(form); data.append("action", "save"); data.append("quiet", "1");
+    return fetch(location.pathname, {method: "POST", body: data, credentials: "same-origin"}).catch(function () {});
+  }
+  function esc(t) { var d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
+  function choose(it) {
+    found.hidden = true; q.value = "";
+    var lid = lines[it.id];
+    if (lid) {                                                 /* already on the sheet: one more */
+      var inp = form.querySelector('input[name="c_' + lid + '"]'), card = document.getElementById("ln_" + lid);
+      inp.value = (parseFloat(inp.value) || 0) + 1; card.scrollIntoView({block: "center"}); card.style.background = "#e7f6ee"; setTimeout(function () { card.style.background = ""; }, 600);
+      msg.textContent = "+1 " + it.name + " = " + inp.value; msg.style.color = "#0b6e4f"; window.phone.beep(); quiet(); return;
+    }
+    document.getElementById("op_item").value = it.id; document.getElementById("op_name").textContent = it.name; document.getElementById("op_code").textContent = it.code;
+    document.getElementById("op_qty").value = 1;
+    var cw = document.getElementById("op_costwrap"); if (cw) { cw.hidden = it.cost > 0; document.getElementById("op_cost").value = ""; }
+    pick.hidden = false; pick.scrollIntoView({block: "center"}); document.getElementById("op_qty").select();
+  }
+  function matches(text) {
+    var words = text.toLowerCase().split(/\s+/).filter(Boolean);
+    return words.length ? items.filter(function (it) { return words.every(function (w) { return it.find.indexOf(w) >= 0; }); }) : [];
+  }
+  function show() {
+    var text = q.value.trim(), got = matches(text);
+    if (!text) { found.hidden = true; return; }
+    var html = got.slice(0, 8).map(function (it, i) { return '<button type="button" class="op-opt" data-i="' + i + '"><span>' + esc(it.name) + '</span><span class="hint">' + (lines[it.id] ? "on this sheet" : "in the system") + '</span></button>'; }).join("");
+    if (got.length > 8) html += '<div class="op-opt hint">' + (got.length - 8) + ' more: type more of the size or brand</div>';
+    if (mayAdd) html += '<a class="op-opt op-new" href="add/?q=' + encodeURIComponent(text) + '"><b><span class="ms">add</span> Not here: add "' + esc(text) + '"</b></a>';
+    else if (!got.length) html += '<div class="op-opt hint">Not in the system. Tell the family: they add new items.</div>';
+    found.innerHTML = html; found.hidden = false;
+    found.querySelectorAll("button.op-opt").forEach(function (b) { b.addEventListener("click", function () { choose(got[+b.dataset.i]); }); });
+    var a = found.querySelector("a.op-new"); if (a) a.addEventListener("click", function (e) { e.preventDefault(); quiet().then(function () { location.href = a.href; }); });
+  }
+  function scanned(code) {
+    code = (code || "").trim(); if (!code) return;
+    var up = code.toUpperCase(), exact = items.filter(function (it) { return it.codes.indexOf(up) >= 0; });
+    if (exact.length === 1) { choose(exact[0]); return; }
+    var got = matches(code); if (got.length === 1) { choose(got[0]); return; }
+    q.value = code; show();
+  }
+  q.addEventListener("input", show);
+  q.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); scanned(q.value); } });
+  document.getElementById("op_no").addEventListener("click", function () { pick.hidden = true; q.focus(); });
+  pick.addEventListener("submit", function (e) { if (pick.dataset.sent) return; e.preventDefault(); pick.dataset.sent = "1"; quiet().then(function () { pick.submit(); }); });
+  window.phone.camera(document.getElementById("ct_cam"), document.getElementById("ct_video"), scanned);
+  fetch("/stock/items.json", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
+    items = d.items || [];
+    var want = new URLSearchParams(location.search).get("pick");
+    if (want) { var it = items.filter(function (x) { return String(x.id) === want; })[0]; if (it) choose(it); }
+    else if (q.value.trim()) show();
+  }).catch(function () { msg.textContent = "The item list did not load. Check the signal and reload the page."; msg.style.color = "#b3261e"; });
+});
+</script>
+{% else %}
+{% for r in rows %}<div class="ph-card"><b class="t">{{ r.name }}{% if r.is_new %} <span class="pill">new item</span>{% endif %}</b><span class="hint">{{ r.code }} · counted {% if r.counted is not None %}{{ r.counted|floatformat:"-2" }}{% else %}—{% endif %}</span></div>
+{% empty %}<p class="note">Every line of this count is decided. See it on the laptop: Stock → Stock counts.</p>{% endfor %}
+{% endif %}
+<p style="margin-top:12px"><a class="btn small ghost" href="/phone/count/">All counts</a></p>
+{% endblock %}

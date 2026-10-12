@@ -1227,7 +1227,8 @@ CREATE TABLE IF NOT EXISTS stock_counts (
     started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     finished_by TEXT,
     finished_at DATETIME,
-    closed_at DATETIME
+    closed_at DATETIME,
+    opening INTEGER NOT NULL DEFAULT 0                              -- migration 094: 1 = an opening count: starts empty, items found or added at the rack
 );
 CREATE TABLE IF NOT EXISTS stock_count_lines (
     line_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1241,6 +1242,8 @@ CREATE TABLE IF NOT EXISTS stock_count_lines (
     reason TEXT,
     decided_by TEXT,
     decided_at DATETIME,
+    cost_typed REAL,                                                -- migration 094: the cost typed at the count (used while the item has no cost of its own)
+    is_new INTEGER NOT NULL DEFAULT 0,                              -- migration 094: 1 = the item was made in this count
     UNIQUE (count_id, item_id)
 );
 

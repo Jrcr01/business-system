@@ -1,10 +1,17 @@
 {% extends "phone/base.html" %}{% load humanize slicks %}
 {% block content %}
 {% comment %}Owner, 2026-10-12: stock counts on the phone -- walk the rack and scan. The open counts, then Start a count.{% endcomment %}
-{% for c in rows %}<a class="ph-big" href="/phone/count/{{ c.count_id }}/" style="flex-wrap:wrap"><span class="ms">fact_check</span><span>{{ c.count_no }} · {{ c.scope }}<br>
-  <span class="hint" style="font-weight:400">{% if c.status == "COUNTING" %}counting · {{ c.typed }} of {{ c.items }} typed{% else %}finished · {{ c.open }} to approve on the laptop{% endif %}{% if c.counted_by %} · {{ c.counted_by }}{% endif %}</span></span></a>
-{% empty %}<p class="note">No count is open. Start one below: a brand at a time is easiest.</p>{% endfor %}
-<details class="ph-card" style="margin-top:12px"{% if not rows %} open{% endif %}><summary style="font-weight:700;cursor:pointer"><span class="ms">add_box</span> Start a count</summary>
+{% for c in rows %}<a class="ph-big" href="/phone/count/{{ c.count_id }}/" style="flex-wrap:wrap"><span class="ms">{% if c.opening %}playlist_add{% else %}fact_check{% endif %}</span><span>{{ c.count_no }} · {{ c.scope }}<br>
+  <span class="hint" style="font-weight:400">{% if c.status == "COUNTING" and c.opening %}counting · {{ c.items }} item{{ c.items|pluralize }} so far{% elif c.status == "COUNTING" %}counting · {{ c.typed }} of {{ c.items }} typed{% else %}finished · {{ c.open }} to approve on the laptop{% endif %}{% if c.counted_by %} · {{ c.counted_by }}{% endif %}</span></span></a>
+{% empty %}<p class="note">No count is open. Start one below.</p>{% endfor %}
+{% comment %}Owner, 2026-10-13: the opening count, add as you go -- for stock the system does not know yet.{% endcomment %}
+<details class="ph-card" style="margin-top:12px"><summary style="font-weight:700;cursor:pointer"><span class="ms">playlist_add</span> Opening count: add as you go</summary>
+  <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="start_opening">
+    <p class="hint" style="margin-top:0">An empty sheet. Find or add each tire as you reach it. For stock the system does not know yet; several can run at once, one per person or per rack.</p>
+    <label for="op_by">Counted by</label><input class="ph-field" id="op_by" type="text" name="counted_by" value="{{ me_name }}">
+    <button class="btn main" type="submit" style="margin-top:8px"><span class="ms">play_arrow</span>Start an opening count</button>
+  </form></details>
+<details class="ph-card" style="margin-top:12px"{% if not rows %} open{% endif %}><summary style="font-weight:700;cursor:pointer"><span class="ms">fact_check</span> Count a brand</summary>
   <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="start">
     <label for="ct_cat">Type</label><select class="ph-field" id="ct_cat" name="category"><option value="">All types</option>{% for k, label in categories %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select>
     <label for="ct_brand">Brand</label><select class="ph-field" id="ct_brand" name="brand"><option value="">All brands</option>{% for b in brands %}<option value="{{ b }}">{{ b }}</option>{% endfor %}</select>
