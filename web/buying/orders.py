@@ -39,6 +39,22 @@ def _say(request, ok: bool, msg: str) -> None:
     (messages.success if ok else messages.error)(request, msg)
 
 
+def _cannot_fall_due(request, cid: int, day, order_day) -> None:
+    """A plain note, not an error (owner, 2026-10-12: "yes change it to a plainer note"): the day clicked cannot be this order's pay day -- too early
+    (before the order date plus the supplier's terms) or not a bank day. The list under the calendar still shows the day clicked."""
+    from engines.po_rules import expected_pay_date
+    if day is None:
+        return
+    first = expected_pay_date(cid, order_day)
+    if first and day < first:
+        msg = (f"This order cannot fall due on {day:%m/%d/%Y}: the earliest is {first:%m/%d/%Y} (the order date plus the supplier's terms). "
+               f"Its pay day is unchanged; {day:%m/%d/%Y} is shown below.")
+    else:
+        msg = (f"{day:%m/%d/%Y} cannot be this order's pay day: it is a weekend, a holiday or a marked day off, or the supplier's terms do not land on it. "
+               f"Its pay day is unchanged; {day:%m/%d/%Y} is shown below.")
+    messages.info(request, msg)
+
+
 def _manila_day(stamp) -> date | None:
     """The Manila date of a time the database stamped (CURRENT_TIMESTAMP is UTC: a request sent at 2 AM here must not read as yesterday)."""
     from datetime import datetime
@@ -303,7 +319,7 @@ def order_new(request):
     if request.method == "GET" and p.get("day") and cid:         # a day clicked on the calendar: the delivery date that makes the order fall due then
         d = delivery_for_day(cid, _date(p.get("day")), order_day)
         if d is None:
-            _say(request, False, "No delivery date makes the order fall due that day (it is before the order could be paid, or not a bank day).")
+            _cannot_fall_due(request, cid, _date(p.get("day")), order_day)
         else:
             delivery = d
     if request.method == "POST" and p.get("action") == "start":
@@ -400,7 +416,7 @@ def order_edit(request, po_id: int):
             from engines.po_rules import delivery_for_day
             d = delivery_for_day(cid, _date(p.get("day")), order_day)
             if d is None:
-                _say(request, False, "No delivery date makes the order fall due that day (it is before the order could be paid, or not a bank day).")
+                _cannot_fall_due(request, cid, _date(p.get("day")), order_day)
                 return redirect(f"/purchase-orders/{po_id}/edit/?view=month&m={p.get('m', '')}&look={p.get('day', '')}#payables")
             delivery = d
         elif what == "order":                                    # no shortcut (owner, 2026-10-11): a PO only once the supplier confirmed

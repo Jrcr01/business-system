@@ -179,3 +179,20 @@ def test_the_list_under_the_calendar_follows_the_day_clicked(web, db):
     ctx = _calendar_ctx(R(day=other.isoformat()), cid, date(2026, 11, 2), 0.0, None)
     assert ctx["daysched"]["day"] == other and not ctx["looked_is_pay"] and ctx["daysched"]["total"] == day_schedule(other)["total"]
     assert _calendar_ctx(R(look=other.isoformat()), cid, date(2026, 11, 2), 0.0, None)["daysched"]["day"] == other
+
+
+def test_a_day_the_order_cannot_fall_due_on_gives_a_plain_note(web, db):
+    # owner, 2026-10-12: the red "No delivery date makes the order fall due that day..." read like an error; "yes change it to a plainer note"
+    from datetime import timedelta
+    from engines.clock import manila_today
+    from engines.po_rules import expected_pay_date
+    from tests.test_web_d0 import _admin
+    from tests.test_web_d2b import _supplier_with_price
+    _admin(web)
+    cid = _supplier_with_price(web, db)
+    today = manila_today()
+    first = expected_pay_date(cid, today)
+    early = first - timedelta(days=1)
+    page = web.get(f"/purchase-orders/new/?s={cid}&order_date={today.isoformat()}&day={early.isoformat()}").content.decode()
+    assert "No delivery date makes" not in page and 'class="msg error"' not in page
+    assert 'class="msg info"' in page and "cannot" in page and "is shown below" in page
