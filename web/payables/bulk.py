@@ -337,3 +337,50 @@ def soa(request):
                 df = result[key]
                 result[key] = {"cols": [str(c) for c in df.columns], "rows": df.astype(str).values.tolist()}
     return render(request, "payables/soa.html", {"page_id": "order-statements", "suppliers": suppliers, "cid": cid, "result": result})
+
+
+# --- supplier statement check: tick their paper against our records (owner, 2026-10-13) --------------------------------------------------------------------
+
+def _with_rows(result: dict) -> dict:
+    for row in result["summary"]:
+        row["rows"] = result["groups"][row["key"]]
+    return result
+
+
+@page_needed("order-statements")
+def statement_check(request):
+    """A supplier's statement arrives as a photo or on paper, each supplier's in its own layout; every line is a document number, a date and an
+    amount. The page lists what OUR records say we owe; the person ticks what is on the paper and types what we do not have. It only compares."""
+    from engines import statement_check as sc
+    suppliers = _suppliers()
+    cid = int(request.POST.get("s") or request.GET.get("s") or 0)
+    if cid not in dict(suppliers):
+        return render(request, "payables/statement_check.html", {"page_id": "order-statements", "suppliers": suppliers, "cid": 0, "history": sc.history()})
+    ours, ctx = sc.our_lines(cid), {"page_id": "order-statements", "suppliers": suppliers, "cid": cid, "supplier": dict(suppliers)[cid], "typed": []}
+    if request.method == "POST":
+        p = request.POST
+        ticked = {r["invoice_id"]: sc._number(p.get(f"a_{r['invoice_id']}")) for r in ours if p.get(f"t_{r['invoice_id']}") == "1"}
+        typed = [t for t in zip(p.getlist("x_date"), p.getlist("x_ref"), p.getlist("x_amount")) if t[1].strip() or t[2].strip()]
+        result = sc.compare(cid, ticked, typed, p.get("their_total"))
+        if p.get("action") == "save":
+            ok, msg, check_id = sc.save(cid, p.get("statement_date", ""), result)
+            _say(request, ok, msg)
+            if ok:
+                return redirect(f"/order-statements/check/{check_id}/")
+        for r in ours:                                           # the form as it was typed, under the result
+            r["ticked"] = r["invoice_id"] in ticked
+            r["theirs"] = p.get(f"a_{r['invoice_id']}", "")
+        ctx.update({"result": _with_rows(result), "typed": typed, "statement_date": p.get("statement_date", ""), "their_total": p.get("their_total", "")})
+    ctx.update({"ours": ours, "ours_total": sum(r["amount"] for r in ours), "history": sc.history(cid)})
+    return render(request, "payables/statement_check.html", ctx)
+
+
+@page_needed("order-statements")
+def statement_check_saved(request, check_id: int):
+    from engines import statement_check as sc
+    kept = sc.saved(check_id)
+    if not kept:
+        raise Http404
+    result = _with_rows({"groups": kept["groups"], "summary": kept["summary"], "their_total": kept["their_total"], "found": kept["found"], "left": kept["left"],
+                         "ours_total": kept["ours_total"]})
+    return render(request, "payables/statement_check.html", {"page_id": "order-statements", "kept": kept, "result": result, "statement_date": kept["statement_date"], "cid": 0})

@@ -1,0 +1,135 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: dark mode</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; margin: 0; font-size: 16px; background: #d9dee5; color: #1c2733; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1280px; margin: 0 auto; padding: 18px 16px 60px; }
+.why { color: #4b5563; margin: 0 0 14px; max-width: 90ch; }
+h2.sec { font-size: 1.05rem; color: #0f2a4a; margin: 26px 0 10px; }
+.num { display: inline-flex; width: 26px; height: 26px; border-radius: 50%; background: #F3E03B; color: #0f2a4a; font-weight: 800; align-items: center; justify-content: center; margin-right: 6px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cap { font-size: .8rem; color: #4b5563; margin: 0 0 4px 2px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+
+/* the two colour sets: every screen below is drawn once and coloured by these */
+.light { --bg: #ffffff; --card: #ffffff; --soft: #f3f4f6; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --field: #ffffff; --fieldline: #b9c6d8; --link: #0B4F8A;
+         --bar: #0f2a4a; --btn: #0B4F8A; --btnink: #ffffff; --okbg: #e3f5ec; --ok: #0b6e4f; --warnbg: #fff7e0; --warn: #9a3412; --badbg: #fdecea; --bad: #b3261e; --pillbg: #eef3fa; --pill: #0B4F8A; --head: #0B4F8A; }
+.dark  { --bg: #0e1622; --card: #162131; --soft: #1c2a3d; --ink: #e6ebf2; --muted: #9fb0c5; --line: #2a3a50; --field: #101a28; --fieldline: #3b4f6b; --link: #7fb6ee;
+         --bar: #0a1422; --btn: #2f7fd0; --btnink: #ffffff; --okbg: #12362b; --ok: #6fdcae; --warnbg: #3a2c10; --warn: #f2c26b; --badbg: #40191a; --bad: #ff9a94; --pillbg: #1d3350; --pill: #9cc8f5; --head: #F3E03B; }
+
+.scr { background: var(--bg); color: var(--ink); border: 8px solid #1c2733; border-radius: 14px; overflow: hidden; }
+.top { background: var(--bar); color: #fff; padding: 10px 14px; display: flex; align-items: center; gap: 14px; font-size: .92rem; border-bottom: 1px solid var(--line); }
+.top .logo { background: #0B4F8A; color: #F3E03B; font-weight: 800; border-radius: 6px; padding: 3px 7px; font-size: .8rem; }
+.top span.m { opacity: .9; } .top .me { margin-left: auto; opacity: .9; }
+.in { padding: 14px 16px 18px; }
+.scr h3 { color: var(--head); margin: 0 0 10px; font-size: 1.15rem; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.tile span { display: block; font-size: .8rem; color: var(--muted); } .tile b { font-size: 1.2rem; } .tile small { display: block; font-size: .8rem; }
+.tile.alert { border-color: var(--bad); } .tile.alert small { color: var(--bad); } .tile.ok small { color: var(--ok); }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--muted); font-size: .78rem; border-bottom: 2px solid var(--line); padding: 6px 8px; } td { border-bottom: 1px solid var(--line); padding: 7px 8px; }
+.r { text-align: right; } .hint { color: var(--muted); font-size: .84rem; }
+.pill { display: inline-block; font-size: .74rem; border-radius: 999px; padding: 1px 9px; background: var(--pillbg); color: var(--pill); white-space: nowrap; }
+.pill.ok { background: var(--okbg); color: var(--ok); } .pill.warn { background: var(--warnbg); color: var(--warn); } .pill.bad { background: var(--badbg); color: var(--bad); } .pill.off { background: var(--soft); color: var(--muted); }
+.btn { display: inline-flex; align-items: center; gap: 6px; background: var(--btn); color: var(--btnink); border: 1px solid var(--btn); border-radius: 10px; padding: 6px 12px; font: inherit; font-weight: 600; font-size: .9rem; }
+.btn.ghost { background: transparent; color: var(--link); border-color: var(--fieldline); }
+.field { border: 1px solid var(--fieldline); border-radius: 10px; padding: 6px 10px; font: inherit; background: var(--field); color: var(--ink); }
+.msg { border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-size: .92rem; }
+.msg.ok { background: var(--okbg); color: var(--ok); } .msg.warn { background: var(--warnbg); color: var(--warn); border-left: 4px solid var(--warn); } .msg.bad { background: var(--badbg); color: var(--bad); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; } .chip { border: 1px solid var(--fieldline); border-radius: 999px; padding: 3px 12px; font-size: .86rem; color: var(--ink); } .chip.on { background: var(--btn); border-color: var(--btn); color: #fff; }
+.tick { width: 18px; height: 18px; border-radius: 4px; border: 2px solid var(--fieldline); display: inline-block; vertical-align: middle; } .tick.on { background: var(--btn); border-color: var(--btn); }
+.neg { color: var(--bad); } .pos { color: var(--ok); }
+a.l { color: var(--link); }
+
+.phones { display: flex; gap: 18px; flex-wrap: wrap; }
+.phone { width: 300px; border: 9px solid #1c2733; border-radius: 30px; overflow: hidden; background: var(--soft); color: var(--ink); }
+.pbar { background: var(--bar); color: #fff; padding: 11px 13px; font-weight: 700; display: flex; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); } .pbar small { margin-left: auto; font-weight: 400; opacity: .85; font-size: .78rem; }
+.pin { padding: 11px; min-height: 380px; }
+.pcard { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 9px 11px; margin-bottom: 8px; } .pcard b { display: block; }
+.pbig { display: flex; gap: 10px; align-items: center; background: var(--card); border: 1px solid var(--fieldline); border-radius: 14px; padding: 13px; margin-bottom: 9px; font-weight: 700; color: var(--link); }
+.menu { background: var(--card); border: 1px solid var(--line); border-radius: 12px; width: 300px; padding: 6px; color: var(--ink); box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.menu div { padding: 8px 10px; border-radius: 8px; display: flex; gap: 8px; align-items: center; } .menu .who { color: var(--muted); font-size: .84rem; border-bottom: 1px solid var(--line); border-radius: 0; margin-bottom: 4px; }
+.seg { display: inline-flex; border: 1px solid var(--fieldline); border-radius: 10px; overflow: hidden; margin-left: auto; } .seg span { padding: 3px 10px; font-size: .84rem; } .seg span.on { background: var(--btn); color: #fff; }
+.q { background: #fff7e0; border: 1px solid #f1d38a; border-radius: 10px; padding: 12px 16px; margin-top: 26px; max-width: 920px; }
+@media (max-width: 900px) { .pair { grid-template-columns: 1fr; } .tiles { grid-template-columns: 1fr 1fr; } }
+</style></head><body><main>
+<p class="why"><b>Sample figures, not your data.</b> The same screens in the light look you have now (left) and the proposed dark look (right). Dark keeps the shop's
+navy, blue and yellow: a deep navy page, soft white text, the yellow for headings, and calmer versions of the green, orange and red so warnings still stand out
+without glaring. Printed pages are not affected: statements, checks, labels and reports always print black on white.</p>
+
+<h2 class="sec"><span class="num">1</span>Home</h2>
+<div class="pair">
+  <div><p class="cap">Light (now)</p><div class="scr light"><div class="top"><span class="logo">SLICK'S</span><span class="m">Buy</span><span class="m">Stock</span><span class="m">Sell</span><span class="m">Pay suppliers</span><span class="me">Jeane Ravin ▾</span></div>
+    <div class="in"><h3>Good evening, Jeane</h3><div class="tiles">
+      <div class="tile alert"><span>Daily payables</span><b>₱418K</b><small>over the limit on 10/14</small></div>
+      <div class="tile ok"><span>In the bank</span><b>₱1.2M</b><small>as of 10/12</small></div>
+      <div class="tile"><span>Review list</span><b>7</b><small>3 new today</small></div>
+      <div class="tile"><span>Goods to come</span><b>4 orders</b><small>2 this week</small></div>
+      <div class="tile ok"><span>Sales today</span><b>₱86,400</b><small>12 invoices</small></div>
+      <div class="tile alert"><span>Stock below zero</span><b>3 items</b><small>look at these</small></div></div></div></div></div>
+  <div><p class="cap">Dark (proposed)</p><div class="scr dark"><div class="top"><span class="logo">SLICK'S</span><span class="m">Buy</span><span class="m">Stock</span><span class="m">Sell</span><span class="m">Pay suppliers</span><span class="me">Jeane Ravin ▾</span></div>
+    <div class="in"><h3>Good evening, Jeane</h3><div class="tiles">
+      <div class="tile alert"><span>Daily payables</span><b>₱418K</b><small>over the limit on 10/14</small></div>
+      <div class="tile ok"><span>In the bank</span><b>₱1.2M</b><small>as of 10/12</small></div>
+      <div class="tile"><span>Review list</span><b>7</b><small>3 new today</small></div>
+      <div class="tile"><span>Goods to come</span><b>4 orders</b><small>2 this week</small></div>
+      <div class="tile ok"><span>Sales today</span><b>₱86,400</b><small>12 invoices</small></div>
+      <div class="tile alert"><span>Stock below zero</span><b>3 items</b><small>look at these</small></div></div></div></div></div>
+</div>
+
+<h2 class="sec"><span class="num">2</span>Daily payables: a table, chips, ticks, buttons and a field</h2>
+<div class="pair">
+  <div><p class="cap">Light (now)</p><div class="scr light"><div class="in"><h3>Daily payables</h3>
+    <div class="chips"><span class="chip">Mon 10/12</span><span class="chip on">Tue 10/13</span><span class="chip">Wed 10/14</span><span class="chip">Thu 10/15</span></div>
+    <div class="msg warn">₱418,250.00 due on 10/14 is ₱68,250.00 over the daily limit.</div>
+    <table><tr><th></th><th>Payee</th><th>Reference</th><th class="r">Amount</th><th></th></tr>
+      <tr><td><span class="tick on"></span></td><td>New Century Tire</td><td>check 0004512</td><td class="r">128,400.00</td><td><span class="pill ok">cleared</span></td></tr>
+      <tr><td><span class="tick"></span></td><td>Sunny Tire Trading</td><td>check 0004513</td><td class="r">96,000.00</td><td><span class="pill">dated today</span></td></tr>
+      <tr><td><span class="tick"></span></td><td>BPI Platinum 2409 · Jeane</td><td>card, due today</td><td class="r">24,000.00</td><td><span class="pill warn">not paid</span></td></tr>
+      <tr><td><span class="tick"></span></td><td>Daisy · instalment 7 of 12</td><td>lender</td><td class="r neg">41,850.00</td><td><span class="pill bad">overdue</span></td></tr></table>
+    <p style="margin:12px 0 0"><input class="field" value="note for the day" style="width:200px"> <button class="btn">Mark paid</button> <button class="btn ghost">Print</button> <a class="l" href="#">Open the batch</a></p></div></div></div>
+  <div><p class="cap">Dark (proposed)</p><div class="scr dark"><div class="in"><h3>Daily payables</h3>
+    <div class="chips"><span class="chip">Mon 10/12</span><span class="chip on">Tue 10/13</span><span class="chip">Wed 10/14</span><span class="chip">Thu 10/15</span></div>
+    <div class="msg warn">₱418,250.00 due on 10/14 is ₱68,250.00 over the daily limit.</div>
+    <table><tr><th></th><th>Payee</th><th>Reference</th><th class="r">Amount</th><th></th></tr>
+      <tr><td><span class="tick on"></span></td><td>New Century Tire</td><td>check 0004512</td><td class="r">128,400.00</td><td><span class="pill ok">cleared</span></td></tr>
+      <tr><td><span class="tick"></span></td><td>Sunny Tire Trading</td><td>check 0004513</td><td class="r">96,000.00</td><td><span class="pill">dated today</span></td></tr>
+      <tr><td><span class="tick"></span></td><td>BPI Platinum 2409 · Jeane</td><td>card, due today</td><td class="r">24,000.00</td><td><span class="pill warn">not paid</span></td></tr>
+      <tr><td><span class="tick"></span></td><td>Daisy · instalment 7 of 12</td><td>lender</td><td class="r neg">41,850.00</td><td><span class="pill bad">overdue</span></td></tr></table>
+    <p style="margin:12px 0 0"><input class="field" value="note for the day" style="width:200px"> <button class="btn">Mark paid</button> <button class="btn ghost">Print</button> <a class="l" href="#">Open the batch</a></p></div></div></div>
+</div>
+
+<h2 class="sec"><span class="num">3</span>The messages: saved, look at this, refused</h2>
+<div class="pair">
+  <div><p class="cap">Light (now)</p><div class="scr light"><div class="in"><div class="msg ok">Saved. On hand is now 12.</div><div class="msg warn">This DR number is already on another delivery. Save anyway?</div><div class="msg bad">Not saved: the amount is more than the invoice.</div>
+    <span class="pill ok">matches</span> <span class="pill warn">no cost yet</span> <span class="pill bad">below zero</span> <span class="pill">new item</span> <span class="pill off">switched off</span> <span class="pos">+3 over</span> · <span class="neg">−2 short</span></div></div></div>
+  <div><p class="cap">Dark (proposed)</p><div class="scr dark"><div class="in"><div class="msg ok">Saved. On hand is now 12.</div><div class="msg warn">This DR number is already on another delivery. Save anyway?</div><div class="msg bad">Not saved: the amount is more than the invoice.</div>
+    <span class="pill ok">matches</span> <span class="pill warn">no cost yet</span> <span class="pill bad">below zero</span> <span class="pill">new item</span> <span class="pill off">switched off</span> <span class="pos">+3 over</span> · <span class="neg">−2 short</span></div></div></div>
+</div>
+
+<h2 class="sec"><span class="num">4</span>On the phone (Slick's POS), and the switch</h2>
+<div class="phones">
+  <div><p class="cap">Light (now)</p><div class="phone light"><div class="pbar"><span class="ms">arrow_back</span>Slick's<small>Jeane Ravin</small></div><div class="pin">
+    <div class="pbig"><span class="ms">sell</span>Price list</div><div class="pbig"><span class="ms">inventory_2</span>Stock</div><div class="pbig"><span class="ms">move_to_inbox</span>Stock in <span class="pill" style="margin-left:auto">2 waiting</span></div>
+    <div class="pcard"><b>Westlake 195/65R15 RP18</b><span class="hint">TR-0142 · on hand 8 · oldest DOT 24/25</span></div><div class="pcard"><b>Sunny 11R22.5 SN366</b><span class="hint">TR-0207 · on hand <span class="neg">−1</span></span></div></div></div></div>
+  <div><p class="cap">Dark (proposed)</p><div class="phone dark"><div class="pbar"><span class="ms">arrow_back</span>Slick's<small>Jeane Ravin</small></div><div class="pin">
+    <div class="pbig"><span class="ms">sell</span>Price list</div><div class="pbig"><span class="ms">inventory_2</span>Stock</div><div class="pbig"><span class="ms">move_to_inbox</span>Stock in <span class="pill" style="margin-left:auto">2 waiting</span></div>
+    <div class="pcard"><b>Westlake 195/65R15 RP18</b><span class="hint">TR-0142 · on hand 8 · oldest DOT 24/25</span></div><div class="pcard"><b>Sunny 11R22.5 SN366</b><span class="hint">TR-0207 · on hand <span class="neg">−1</span></span></div></div></div></div>
+  <div><p class="cap">The switch, in the person menu</p><div class="dark" style="background:#0e1622;padding:18px;border-radius:14px"><div class="menu">
+    <div class="who"><span><b style="color:var(--ink)">System admin</b><br>v.jrcroxas@gmail.com</span></div>
+    <div><span class="ms">dark_mode</span>Look <span class="seg"><span>Light</span><span class="on">Dark</span><span>Auto</span></span></div>
+    <div><span class="ms">smartphone</span>On the phone</div><div><span class="ms">notifications</span>Notifications on this phone</div><div><span class="ms">key</span>Change password</div><div><span class="ms">logout</span>Sign out</div></div>
+    <p class="hint" style="max-width:300px;margin:12px 0 0">Each person picks their own, and it follows them to every device they sign in on. "Auto" follows the phone or laptop's own light/dark setting. Everyone starts on Light.</p></div></div>
+</div>
+
+<div class="q"><b>Questions before I build</b>
+<ol style="margin:8px 0 0">
+  <li><b>The look itself:</b> is this dark right, or should it be darker (near black) or softer (more grey-blue)?</li>
+  <li><b>Headings in yellow</b> on dark, as drawn, or keep them light blue?</li>
+  <li><b>The switch:</b> Light / Dark / Auto as drawn, or only Light / Dark?</li>
+  <li><b>The sign-in page</b> is already dark navy. I would leave it as it is in both modes.</li>
+</ol>
+<p style="margin:8px 0 0">What it involves: about 185 colours in the style files plus those written inside individual pages each get a dark partner, then every page is opened once in dark to catch any white box or unreadable text. Printing is untouched.</p></div>
+</main></body></html>

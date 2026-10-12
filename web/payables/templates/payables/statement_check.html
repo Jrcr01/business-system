@@ -1,0 +1,123 @@
+{% extends "core/base.html" %}{% load humanize slicks %}
+{% block title %}Supplier statement check{% endblock %}
+{% block content %}
+{% comment %}Owner, 2026-10-13: suppliers' statements come as photos and paper in different layouts; every line is a document number, a date and an
+amount. Nothing is uploaded: the page lists what OUR records say we owe, the person ticks what is on the paper and types only what we do not have.{% endcomment %}
+<p class="note noprint"><a href="/order-statements/">← Order statements</a></p>
+<h2><span class="ms" style="font-size:28px">fact_check</span> Supplier statement check{% if kept %} <span class="pill off">saved {{ kept.saved_at|dmy }} by {{ kept.saved_by }}</span>{% endif %}</h2>
+{% if not kept %}
+<form method="get" class="bar noprint"><div><label for="sc_s">Supplier</label><select id="sc_s" name="s" onchange="this.form.submit()"><option value="">Pick the supplier</option>
+  {% for id, name in suppliers %}<option value="{{ id }}"{% if id == cid %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div></form>
+{% endif %}
+{% if cid and not kept %}
+<p class="note noprint" style="max-width:900px">Below is what <b>your records</b> say you owe {{ supplier }}: every delivery not yet paid by a cleared check, oldest first.
+  Go down their paper and <b>tick each line that is on it</b>; change the amount only where theirs differs. Lines on their paper that are not listed here go in the second table.</p>
+<form method="post" id="sc_form">{% csrf_token %}
+  <div class="bar noprint">
+    <div><label for="sc_date">Their statement is dated</label><input id="sc_date" type="date" name="statement_date" value="{{ statement_date }}"></div>
+    <div><label for="sc_total">The total on their paper</label><input id="sc_total" type="text" inputmode="decimal" name="their_total" value="{{ their_total }}" style="width:160px;text-align:right"></div>
+    <div class="grow"><label for="sc_find">Find a number</label><input id="sc_find" type="text" placeholder="type the DR or SI no., press Enter to tick it" autocomplete="off"></div>
+  </div>
+  <div id="sc_msg" class="hint noprint" style="min-height:1.2em" role="status"></div>
+  <div class="scroll-x"><table class="list">
+    <tr><th style="width:70px">On theirs</th><th>Date</th><th>DR / SI no.</th><th style="text-align:right">Your amount</th><th style="text-align:right">Their amount</th><th></th></tr>
+    {% for r in ours %}<tr id="ln_{{ r.invoice_id }}" data-refs="{{ r.refs|join:' ' }}" data-ours="{{ r.amount|stringformat:'.2f' }}">
+      <td><input type="checkbox" class="sc_t" name="t_{{ r.invoice_id }}" value="1"{% if r.ticked %} checked{% endif %} style="width:22px;height:22px" aria-label="On their statement: {{ r.ref }}"></td>
+      <td>{{ r.date|dmy }}</td><td><b>{{ r.ref }}</b>{% if r.partly %} <span class="pill warn">partly paid</span>{% endif %}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td>
+      <td class="num"><input type="text" inputmode="decimal" class="sc_a" name="a_{{ r.invoice_id }}" value="{{ r.theirs }}" placeholder="{{ r.amount|floatformat:2|intcomma }}" style="width:130px;text-align:right" aria-label="Their amount: {{ r.ref }}"></td>
+      <td class="hint">{{ r.note }}</td></tr>
+    {% empty %}<tr><td colspan="6" class="hint">Your records show nothing owed to this supplier. Type the lines of their paper below.</td></tr>{% endfor %}
+  </table></div>
+  <div class="grp">On their paper, not in the list above <span class="hint" style="font-weight:400">(type these)</span></div>
+  <table class="list" id="sc_typed" style="max-width:760px">
+    <tr><th>Date</th><th>DR / SI no.</th><th style="text-align:right">Their amount</th></tr>
+    {% for d, ref, amount in typed %}<tr><td><input type="date" name="x_date" value="{{ d }}"></td><td><input type="text" name="x_ref" value="{{ ref }}" autocomplete="off"></td>
+      <td class="num"><input type="text" inputmode="decimal" class="sc_x" name="x_amount" value="{{ amount }}" style="width:130px;text-align:right"></td></tr>{% endfor %}
+  </table>
+  <p class="hint">A new line appears as you fill the last one. A number you already paid is recognised and shown with its check.</p>
+  <div class="facts" style="max-width:900px"><div><span>Total on their paper</span><b id="sc_their">—</b></div><div><span>Ticked and typed so far</span><b id="sc_found">0.00</b></div>
+    <div><span>Still to find on the paper</span><b id="sc_left">—</b></div><div><span>Your records say you owe</span><b>{{ ours_total|floatformat:2|intcomma }}</b></div></div>
+  <p class="hint noprint">"Still to find" reaches zero when every line of their paper is ticked or typed: then nothing was missed or mistyped.</p>
+  <div class="bar noprint"><button class="btn" type="submit" name="action" value="compare"><span class="ms">compare_arrows</span>Compare</button>
+    <button class="btn ghost" type="submit" name="action" value="save"><span class="ms">save</span>Compare and save this check</button></div>
+</form>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var form = document.getElementById("sc_form"), find = document.getElementById("sc_find"), msg = document.getElementById("sc_msg"), typed = document.getElementById("sc_typed");
+  function num(t) { var n = parseFloat(String(t || "").replace(/[,₱\s]/g, "")); return isNaN(n) ? null : n; }
+  function fmt(n) { return n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+  function totals() {
+    var found = 0;
+    form.querySelectorAll("tr[data-ours]").forEach(function (tr) {
+      if (!tr.querySelector(".sc_t").checked) return;
+      var theirs = num(tr.querySelector(".sc_a").value); found += theirs === null ? parseFloat(tr.dataset.ours) : theirs;
+    });
+    form.querySelectorAll(".sc_x").forEach(function (i) { var n = num(i.value); if (n !== null) found += n; });
+    var total = num(document.getElementById("sc_total").value), left = document.getElementById("sc_left");
+    document.getElementById("sc_found").textContent = fmt(found);
+    document.getElementById("sc_their").textContent = total === null ? "—" : fmt(total);
+    left.textContent = total === null ? "—" : fmt(total - found); left.className = total !== null && Math.abs(total - found) < 0.005 ? "pos" : (total === null ? "" : "neg");
+  }
+  function blank() {                                           /* always one empty line at the end of the typed table */
+    var rows = typed.querySelectorAll("tr"), last = rows[rows.length - 1], empty = rows.length > 1 && !Array.prototype.some.call(last.querySelectorAll("input"), function (i) { return i.value.trim(); });
+    if (empty) return;
+    var tr = document.createElement("tr");
+    tr.innerHTML = '<td><input type="date" name="x_date"></td><td><input type="text" name="x_ref" autocomplete="off" placeholder="number"></td><td class="num"><input type="text" inputmode="decimal" class="sc_x" name="x_amount" placeholder="amount" style="width:130px;text-align:right"></td>';
+    typed.appendChild(tr);
+  }
+  form.addEventListener("input", function (e) {
+    if (e.target.classList.contains("sc_a") && e.target.value.trim()) e.target.closest("tr").querySelector(".sc_t").checked = true;     /* an amount typed = it is on theirs */
+    blank(); totals();
+  });
+  form.addEventListener("change", totals);
+  find.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    var key = find.value.toUpperCase().replace(/\s/g, ""); if (!key) return;
+    var hit = Array.prototype.filter.call(form.querySelectorAll("tr[data-refs]"), function (tr) { return tr.dataset.refs.split(" ").indexOf(key) >= 0; });
+    if (hit.length === 1) {
+      hit[0].querySelector(".sc_t").checked = true; hit[0].scrollIntoView({block: "center"}); hit[0].style.background = "#e7f6ee"; setTimeout(function () { hit[0].style.background = ""; }, 700);
+      msg.textContent = key + " ticked."; msg.style.color = "#0b6e4f";
+    } else {                                                   /* not on the list: start a typed line with it */
+      blank(); var rows = typed.querySelectorAll("tr"), last = rows[rows.length - 1];
+      last.querySelector('input[name="x_ref"]').value = find.value.trim(); last.querySelector('input[name="x_amount"]').focus(); blank();
+      msg.textContent = key + " is not in the list above: type its amount below."; msg.style.color = "#9a3412";
+    }
+    find.value = ""; totals();
+  });
+  blank(); totals();
+});
+</script>
+{% endif %}
+{% if result %}
+<div class="grp">{% if kept %}{{ kept.supplier }}{% else %}{{ supplier }}{% endif %}: what the comparison shows{% if statement_date %} <span class="hint" style="font-weight:400">· their statement dated {{ statement_date|dmy }}</span>{% endif %}</div>
+<div class="facts" style="max-width:900px"><div><span>Total on their paper</span><b>{% if result.their_total is not None %}{{ result.their_total|floatformat:2|intcomma }}{% else %}—{% endif %}</b></div>
+  <div><span>Lines ticked and typed</span><b>{{ result.found|floatformat:2|intcomma }}</b></div>
+  <div><span>Still to find on the paper</span><b{% if result.left %} class="neg"{% endif %}>{% if result.left is not None %}{{ result.left|floatformat:2|intcomma }}{% else %}—{% endif %}</b></div>
+  <div><span>Your records say you owe</span><b>{{ result.ours_total|floatformat:2|intcomma }}</b></div></div>
+<table class="list" style="max-width:900px">
+  <tr><th>What</th><th style="text-align:right">Lines</th><th style="text-align:right">Amount</th><th>What to do</th></tr>
+  {% for s in result.summary %}<tr><td><span class="pill{% if s.key == 'match' or s.key == 'paid' %}{% elif s.lines %} warn{% else %} off{% endif %}">{{ s.label }}</span></td>
+    <td class="num">{{ s.lines }}</td><td class="num">{% if s.lines %}{% if s.key == "amount" and s.amount > 0 %}+{% endif %}{{ s.amount|floatformat:2|intcomma }}{% endif %}</td>
+    <td class="hint">{% if s.lines %}{{ s.todo }}{% endif %}</td></tr>{% endfor %}
+</table>
+{% for s in result.summary %}{% if s.lines and s.key != "match" %}
+<div class="grp">{{ s.label }}</div>
+<table class="list" style="max-width:900px"><tr><th>Date</th><th>DR / SI no.</th><th style="text-align:right">Yours</th><th style="text-align:right">Theirs</th><th></th></tr>
+  {% for x in s.rows %}<tr><td>{{ x.date|dmy }}</td><td><b>{{ x.ref }}</b></td>
+    <td class="num">{% if x.ours is not None %}{{ x.ours|floatformat:2|intcomma }}{% else %}—{% endif %}</td><td class="num">{% if x.theirs is not None %}{{ x.theirs|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+    <td class="hint">{{ x.note }}</td></tr>{% endfor %}
+</table>{% endif %}{% endfor %}
+<p class="hint" style="max-width:900px">This page only compares. Nothing in your records was changed.</p>
+<p class="noprint"><button class="btn small ghost" type="button" onclick="window.print()"><span class="ms">print</span>Print the differences</button>
+  {% if kept %}<a class="btn small ghost" href="/order-statements/check/?s={{ kept.creditor_id }}">A new check for this supplier</a>{% endif %}</p>
+{% endif %}
+{% if history and not kept %}
+<div class="grp noprint">Checks saved before</div>
+<table class="list noprint" style="max-width:900px"><tr><th>Saved</th><th>Supplier</th><th>Their statement</th><th style="text-align:right">Their total</th><th style="text-align:right">Yours then</th><th></th></tr>
+  {% for h in history %}<tr><td>{{ h.saved_at|dmy }}</td><td>{{ h.supplier }}</td><td>{{ h.statement_date|dmy|default:"—" }}</td>
+    <td class="num">{% if h.their_total is not None %}{{ h.their_total|floatformat:2|intcomma }}{% else %}—{% endif %}</td><td class="num">{{ h.ours_total|floatformat:2|intcomma }}</td>
+    <td><a href="/order-statements/check/{{ h.check_id }}/">Open</a></td></tr>{% endfor %}
+</table>{% endif %}
+<style>@media print { .noprint, .topbar, nav, form#sc_form { display: none !important; } }</style>
+{% endblock %}
