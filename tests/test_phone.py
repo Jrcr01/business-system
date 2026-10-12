@@ -195,7 +195,7 @@ def test_the_phone_pages_are_their_own_app_beside_the_whole_site(web, db):
     _on()
     r = web.get("/phone/manifest-ops.webmanifest")
     ops = b"".join(r.streaming_content).decode()
-    assert r.status_code == 200 and '"id": "/phone/"' in ops and '"scope": "/phone/"' in ops and "Slick's POS" in ops and "icon-ops-192" in ops
+    assert r.status_code == 200 and '"id": "/phone/"' in ops and '"scope": "/phone/"' in ops and "Slick's POS" in ops and "icon-pos-192" in ops
     whole = b"".join(web.get("/phone/manifest.webmanifest").streaming_content).decode()
     assert '"id": "/"' in whole                                                 # two ids: Chrome installs them as two apps
     assert 'href="/phone/manifest-ops.webmanifest"' in web.get("/phone/").content.decode()
