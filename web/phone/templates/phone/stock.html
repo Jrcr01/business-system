@@ -1,0 +1,53 @@
+{% extends "phone/base.html" %}{% load humanize slicks %}
+{% block content %}
+{% comment %}Owner, 2026-10-12: scan or type a code, see the item; cost and value stay on the laptop (the staff hold the phone).{% endcomment %}
+<form method="get" class="ph-scan" id="st_form"><input type="search" name="q" id="st_q" value="{{ q }}" placeholder="Scan or type a code / size" autofocus autocomplete="off" aria-label="Scan or find an item">
+  <button type="button" id="st_cam" hidden aria-label="Camera"><span class="ms">photo_camera</span></button>
+  <button type="submit" aria-label="Search"><span class="ms">search</span></button></form>
+<video id="st_video" playsinline hidden></video>
+<div class="chips">
+  <a class="chip{% if not show %} on{% endif %}" href="/phone/stock/">Find</a>
+  <a class="chip{% if show == 'low' %} on{% endif %}" href="/phone/stock/?show=low">Low stock {{ counts.low }}</a>
+  <a class="chip{% if show == 'negative' %} on{% endif %}" href="/phone/stock/?show=negative">Below zero {{ counts.negative }}</a>
+</div>
+{% if item %}
+  {% if found %}<div class="ph-ok">Found: {{ item.code }}</div>{% endif %}
+  <div class="ph-card"><b class="t">{{ item.name }}</b><span class="hint">{{ item.code }}</span>
+    <div class="kv"><span>On hand</span><b class="n{% if item.negative %} neg{% endif %}">{{ item.on_hand|floatformat:"-2"|intcomma }}</b></div>
+    <div class="kv"><span>Oldest DOT</span><b>{% if item.dot %}{{ item.dot }}{% if item.old %} <span class="pill warn">old stock</span>{% endif %}{% else %}—{% endif %}</b></div>
+    <div class="kv"><span>Low at</span><b>{{ item.reorder_level }}{% if item.low %} <span class="pill warn">low</span>{% endif %}</b></div>
+    <div class="kv"><span>Last in</span><b>{% if item.last_in %}{{ item.last_in|dmy }}{% else %}—{% endif %}</b></div>
+    <div class="kv"><span>Last out</span><b>{% if item.last_out %}{{ item.last_out|dmy }}{% else %}—{% endif %}</b></div>
+    <div class="kv"><span>Last counted</span><b>{% if item.last_counted_at %}{{ item.last_counted_at|dmy }}{% else %}never{% endif %}</b></div>
+    <div class="kv"><span>Barcodes known</span><b>{{ item.barcodes|length }}</b></div>
+    {% if may_do %}
+    <details style="margin-top:8px"><summary class="hint">Teach a barcode</summary>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="barcode"><input type="hidden" name="item_id" value="{{ item.id }}">
+        <label for="bc">Scan the maker's barcode into this box</label><input class="ph-field" id="bc" type="text" name="barcode" inputmode="numeric" autocomplete="off">
+        <button class="btn small" type="submit" style="margin-top:8px">This barcode is {{ item.code }}</button></form></details>
+    <details style="margin-top:6px"><summary class="hint">Low-stock level</summary>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="level"><input type="hidden" name="item_id" value="{{ item.id }}">
+        <label for="lv">Warn when on hand is at or under</label><input class="ph-field" id="lv" type="number" name="level" value="{{ item.reorder_level }}" min="0" style="max-width:120px">
+        <button class="btn small" type="submit" style="margin-top:8px">Save</button></form></details>
+    {% endif %}
+    <div class="ph-row" style="margin-top:10px"><a class="btn small ghost" href="/stock/labels/?item={{ item.id }}&n=1" target="_blank"><span class="ms">print</span>Labels</a></div>
+  </div>
+  <p class="hint">Cost and value stay on the laptop.</p>
+{% elif rows %}
+  <p class="hint">{{ rows|length }} item{{ rows|length|pluralize }}{% if show %} {{ show|default:"" }}{% endif %}. Tap one.</p>
+  {% for r in rows %}<div class="ph-card"><a class="t" href="/phone/stock/?id={{ r.id }}">{{ r.name }}</a>
+    <div class="kv"><span>{{ r.code }}</span><b{% if r.negative %} class="neg"{% endif %}>{{ r.on_hand|floatformat:"-2"|intcomma }} on hand{% if r.dot %} · DOT {{ r.dot }}{% endif %}</b></div></div>{% endfor %}
+{% elif q %}
+  <p class="note">Nothing matches "{{ q }}". A barcode the system does not know yet is taught on the item: find the item by its size, then "Teach a barcode".</p>
+{% elif show %}
+  <p class="note">Nothing here.</p>
+{% else %}
+  <p class="note">Scan a label, or type a code or a size. {{ counts.items }} items, {{ counts.pieces|floatformat:"-2"|intcomma }} pieces on hand.</p>
+{% endif %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var q = document.getElementById("st_q"), form = document.getElementById("st_form");
+  window.phone.camera(document.getElementById("st_cam"), document.getElementById("st_video"), function (code) { q.value = code; window.phone.beep(); form.submit(); });
+});
+</script>
+{% endblock %}

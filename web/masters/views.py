@@ -24,6 +24,8 @@ def page_needed(page_id: str, action: str | None = None):
             from core.menu import PAGES, doable_pages
             from engines.permissions import can
             role = request.slicks_user["role"]
+            if role == "scanner" and not request.path.startswith(("/stock/labels/", "/stock/items.json", "/stock/learn/")):
+                return redirect("/phone/")                      # the staff phone's account works on the phone pages only (owner, 2026-10-12)
             if page_id not in pages_for(role) or (action and not can(role, action)):
                 return render(request, "core/not_allowed.html", {"page": PAGES[page_id]}, status=403)
             request.view_only = page_id not in doable_pages(role)

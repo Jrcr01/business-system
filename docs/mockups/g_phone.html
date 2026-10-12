@@ -1,0 +1,118 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: the phone pages</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 22px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1180px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 26px 0 6px; }
+.why { color: var(--muted); margin: 0 0 12px; max-width: 86ch; }
+.phones { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.phone { width: 360px; background: #fff; border: 10px solid #1c2733; border-radius: 34px; padding: 0; box-shadow: 0 6px 20px rgba(16,24,40,.25); overflow: hidden; }
+.bar { background: var(--navy); color: #fff; padding: 12px 14px; display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.bar .ms { font-size: 24px; } .bar small { margin-left: auto; font-weight: 400; opacity: .85; font-size: .8rem; }
+.body { padding: 12px 14px 18px; min-height: 520px; }
+.big { display: flex; align-items: center; gap: 12px; width: 100%; padding: 18px 16px; margin: 0 0 12px; border: 1px solid #b9c6d8; border-radius: 14px; background: #f7f9fc; font: inherit; font-size: 1.15rem; font-weight: 700; color: var(--blue); text-align: left; }
+.big .ms { font-size: 30px; }
+.scan { display: flex; gap: 8px; margin-bottom: 12px; }
+.scan input { flex: 1; font: inherit; font-size: 1.1rem; padding: 12px; border: 2px solid var(--blue); border-radius: 12px; }
+.scan button { font: inherit; border: 1px solid #b9c6d8; background: #fff; border-radius: 12px; padding: 0 12px; color: var(--blue); }
+.card { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: #fff; }
+.card b.t { display: block; font-size: 1.05rem; }
+.kv { display: flex; justify-content: space-between; padding: 3px 0; font-variant-numeric: tabular-nums; } .kv span { color: var(--muted); }
+.pill { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 1px 8px; background: var(--soft); color: var(--muted); }
+.pill.warn { background: #fff7e0; color: var(--warn); } .pill.ok { background: #e3f5ec; color: var(--ok); } .pill.red { background: #fde8e8; color: var(--red); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: #fff; color: var(--blue); border: 1px solid #b9c6d8; border-radius: 12px; padding: 10px 14px; font: inherit; font-weight: 600; }
+.btn.main { background: var(--blue); color: #fff; border-color: var(--blue); width: 100%; font-size: 1.1rem; padding: 14px; }
+.btn.small { padding: 6px 10px; font-size: .9rem; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.qty { display: inline-flex; align-items: center; border: 1px solid #b9c6d8; border-radius: 12px; overflow: hidden; }
+.qty button { width: 44px; height: 44px; font-size: 1.4rem; border: 0; background: #f7f9fc; color: var(--blue); }
+.qty input { width: 54px; height: 44px; text-align: center; font: inherit; font-size: 1.1rem; border: 0; border-left: 1px solid #b9c6d8; border-right: 1px solid #b9c6d8; }
+.field { border: 1px solid #b9c6d8; border-radius: 12px; padding: 10px 12px; font: inherit; width: 100%; background: #fff; }
+label { display: block; font-size: .8rem; color: var(--muted); margin: 8px 0 3px; }
+.msg { background: #e7f6ee; color: #14532d; border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-weight: 600; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.chip { font-size: .85rem; padding: 5px 12px; border: 1px solid #cbd5e1; border-radius: 999px; color: var(--ink); }
+.chip.on { background: #e8f0fa; border-color: var(--blue); color: var(--blue); font-weight: 700; }
+.q { background: #fff7e0; border: 1px solid #f1d38a; border-radius: 10px; padding: 12px 16px; margin-top: 26px; max-width: 900px; }
+.hint { color: var(--muted); font-size: .85rem; }
+</style></head><body><main>
+<p class="why"><b>Sample figures, not your data.</b> The phone pages are part of the same site: same sign-in, same rules, same server. "Add to Home screen"
+on the phone gives an icon that opens straight to this. A wireless or Bluetooth scanner types into the box on any phone; the camera button appears on
+Android Chrome (iPhone later, if an iPhone is actually used for scanning).</p>
+
+<div class="phones">
+<div class="phone"><div class="bar"><span class="ms">home</span>Slick's<small>Jeane Ravin · Sign out</small></div><div class="body">
+  <button class="big"><span class="ms">sell</span>Price list</button>
+  <button class="big"><span class="ms">inventory_2</span>Stock</button>
+  <button class="big"><span class="ms">move_to_inbox</span>Stock in <span class="pill warn" style="margin-left:auto">2 orders waiting</span></button>
+  <button class="big"><span class="ms">outbox</span>Stock out <span class="pill" style="margin-left:auto">3 slips today</span></button>
+  <p class="hint" style="text-align:center;margin-top:30px">Each button shows only to a person allowed that page.<br><a href="#">Open the laptop site</a></p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">arrow_back</span>Price list<small>Jeane Ravin</small></div><div class="body">
+  <div class="scan"><input value="205 55 16" placeholder="Size, brand or pattern"><button><span class="ms">search</span></button></div>
+  <p class="hint">Prices in force today. 3 items found.</p>
+  <div class="card"><b class="t">Yokohama 205/55R16 BluEarth AE51</b>
+    <div class="kv"><span>Express Dymans</span><b>4,950.00</b></div><div class="kv"><span class="hint" style="padding-left:12px">since 09/15/2026 · less 5, 3</span><span></span></div>
+    <div class="kv"><span>New Century City Marketing</span><b>5,120.00</b></div><div class="kv"><span class="hint" style="padding-left:12px">since 08/01/2026</span><span></span></div></div>
+  <div class="card"><b class="t">Sunny 205/55R16 NA305</b>
+    <div class="kv"><span>New Century City Marketing</span><b>3,480.00</b></div><div class="kv"><span class="hint" style="padding-left:12px">since 09/15/2026 · less 5</span><span></span></div></div>
+  <div class="card"><b class="t">Dunlop 205/55R16 SP Sport LM705</b><div class="kv"><span class="hint">no price on file today</span><span></span></div></div>
+  <p class="hint">Read-only here: adding and importing prices stay on the laptop. Hidden from the staff phone.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">arrow_back</span>Stock<small>Warehouse phone</small></div><div class="body">
+  <div class="scan"><input value="" placeholder="Scan or type a code / size" autofocus><button><span class="ms">photo_camera</span></button></div>
+  <div class="chips"><span class="chip on">Find</span><span class="chip">Low stock 14</span><span class="chip">Below zero 2</span></div>
+  <div class="msg">Found: YOK-2055516-AE51</div>
+  <div class="card"><b class="t">Yokohama 205/55R16 BluEarth AE51</b>
+    <div class="kv"><span>On hand</span><b style="font-size:1.3rem">6 pcs</b></div>
+    <div class="kv"><span>Oldest DOT</span><b>1226 <span class="pill ok">this year</span></b></div>
+    <div class="kv"><span>Low at</span><b>4</b></div>
+    <div class="kv"><span>Last in</span><b>10/08/2026 · 8 pcs</b></div>
+    <div class="kv"><span>Last out</span><b>10/11/2026 · 2 pcs</b></div>
+    <div class="kv"><span>Barcodes known</span><b>2</b></div>
+    <div class="row" style="margin-top:8px"><button class="btn small"><span class="ms">barcode</span>Teach a barcode</button><button class="btn small"><span class="ms">print</span>Labels</button></div></div>
+  <p class="hint">Cost and value stay on the laptop.</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">arrow_back</span>Stock in<small>Warehouse phone</small></div><div class="body">
+  <div class="card" style="background:#f7f9fc"><b class="t">PO 0016 · New Century City Marketing</b><span class="hint">ordered 10/09/2026 · 3 lines still to come</span> <a href="#" class="hint">change order</a></div>
+  <div class="scan"><input value="" placeholder="Scan a tire to tick its line" autofocus><button><span class="ms">photo_camera</span></button></div>
+  <div class="card"><b class="t">Sunny 11R22.5 16PR SN-801</b><div class="kv"><span>Still to come</span><b>8</b></div>
+    <div class="row" style="margin-top:6px"><span class="hint">Arrived</span><span class="qty"><button>−</button><input value="8"><button>+</button></span><span class="hint">DOT</span><input class="field" style="width:80px" value="3626"></div></div>
+  <div class="card"><b class="t">Sunny 295/80R22.5 SN-802</b><div class="kv"><span>Still to come</span><b>4</b></div>
+    <div class="row" style="margin-top:6px"><span class="hint">Arrived</span><span class="qty"><button>−</button><input value="4"><button>+</button></span><span class="hint">DOT</span><input class="field" style="width:80px" value="3526"></div></div>
+  <div class="card" style="opacity:.75"><b class="t">Sunny 12R22.5 SN-801</b><div class="kv"><span>Still to come</span><b>6</b></div>
+    <div class="row" style="margin-top:6px"><span class="hint">Arrived</span><span class="qty"><button>−</button><input value="0"><button>+</button></span><span class="pill">not on this delivery</span></div></div>
+  <label>DR no. (the payable)</label><input class="field" value="DR 77210"><label>SI no. (if it came)</label><input class="field" placeholder="optional">
+  <button class="btn main" style="margin-top:12px"><span class="ms">check</span>Received: 12 pcs on DR 77210</button>
+  <p class="hint">Same rules as Receive on the laptop. If part of a one-DR order is missing, it asks: the rest will not come, or keep it open?</p>
+</div></div>
+
+<div class="phone"><div class="bar"><span class="ms">arrow_back</span>Stock out<small>Warehouse phone</small></div><div class="body">
+  <div class="scan"><input value="" placeholder="Scan each tire going out" autofocus><button><span class="ms">photo_camera</span></button></div>
+  <div class="msg">+1 Sunny 11R22.5 SN-801 · 3 scanned</div>
+  <div class="card"><b class="t">Sunny 11R22.5 16PR SN-801</b><div class="row"><span class="hint">on hand 14 · DOT 3626</span><span class="qty" style="margin-left:auto"><button>−</button><input value="2"><button>+</button></span></div></div>
+  <div class="card"><b class="t">Yokohama 205/55R16 AE51</b><div class="row"><span class="hint">on hand 6 · DOT 1226</span><span class="qty" style="margin-left:auto"><button>−</button><input value="1"><button>+</button></span></div></div>
+  <label>SI no. (optional)</label><input class="field" placeholder="if already written"><label>Customer (optional)</label><input class="field" value="RVC Trucking">
+  <button class="btn main" style="margin-top:12px"><span class="ms">outbox</span>Done — 3 pcs out</button>
+  <p style="margin:14px 0 4px"><b>Today's slips</b></p>
+  <div class="kv"><span>09:40 RL-0031 · 4 pcs · SI 5522</span><a href="#" class="hint">undo</a></div>
+  <div class="kv"><span>11:05 RL-0032 · 2 pcs · no SI yet</span><a href="#" class="hint">undo</a></div>
+  <p class="hint">This is the same slip as Scan out. The invoice is still written by hand and recorded in the evening; the slip only moves the stock.</p>
+</div></div>
+</div>
+
+<div class="q"><b>Before I build</b>
+<ol style="margin:8px 0 0">
+  <li>Is the staff phone an Android? (The camera button needs Android Chrome; on an iPhone the staff would use a Bluetooth scanner.)</li>
+  <li>Stock out from the phone works even while "Sales start from a scan" is off on the laptop. Right?</li>
+  <li>The staff account "Warehouse phone" sees Stock, Stock in and Stock out only, no price list. Right?</li>
+  <li>Anything missing on the Stock card, or anything there that should not be on a phone the staff hold?</li>
+</ol></div>
+</main></body></html>

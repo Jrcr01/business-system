@@ -267,18 +267,19 @@ def daily_payables() -> pd.DataFrame:
             conn, params=(CUTOFF_NOTE,))
         cards = pd.read_sql_query(                             # what is still to pay on each open statement (after any partial payments)
             """SELECT 'card' AS kind, cs.cc_statement_id AS item_id, cs.due_date AS day, cr.creditor_name AS payee,
-                      cc.card_name || ' - ' || cc.card_number_last4 AS ref,
+                      cc.card_name || ' - ' || cc.card_number_last4 || COALESCE(' · ' || h.name, '') AS ref,      -- with the cardholder (owner, 2026-10-12)
                       ROUND(cs.total_amount_due - COALESCE(cs.amount_paid, 0), 2) AS amount,
                       'Card' AS track, NULL AS ticked,
                       COALESCE(cs.amount_paid, 0) AS paid_so_far, NULL AS note
                FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id JOIN creditors cr ON cr.creditor_id = cc.creditor_id
+               LEFT JOIN cardholders h ON h.cardholder_id = cc.cardholder_id
                WHERE cs.status = 'Unpaid' AND COALESCE(cs.amount_paid, 0) <= 0.005           -- a payment, even partial, settles it here: the rest carries to the next statement (owner, 2026-10-09)
                  AND cs.total_amount_due > 0.005""", conn)
         card_paid = pd.read_sql_query(                         # the card payments recorded lately, each on its posting date, until the bank shows them
             """SELECT 'cardpay' AS kind, p.payment_id AS item_id, cs.due_date AS day, cr.creditor_name AS payee,
-                      cc.card_name || ' - ' || cc.card_number_last4 AS ref, p.amount, 'Card' AS track, p.payment_date AS ticked, p.note
+                      cc.card_name || ' - ' || cc.card_number_last4 || COALESCE(' · ' || h.name, '') AS ref, p.amount, 'Card' AS track, p.payment_date AS ticked, p.note
                FROM cc_payments p JOIN cc_statements cs ON cs.cc_statement_id = p.cc_statement_id JOIN credit_cards cc ON cc.card_id = p.card_id
-               JOIN creditors cr ON cr.creditor_id = cc.creditor_id
+               JOIN creditors cr ON cr.creditor_id = cc.creditor_id LEFT JOIN cardholders h ON h.cardholder_id = cc.cardholder_id
                WHERE p.payment_date >= ? AND cs.paid_confirmed = 0                 -- until the next SOA confirms it (the owner's way)
                  AND p.cc_statement_id NOT IN (SELECT matched_cc_statement_id FROM bank_transactions WHERE matched_cc_statement_id IS NOT NULL)""",
             conn, params=((today - pd.Timedelta(days=60)).isoformat(),))

@@ -1,0 +1,67 @@
+{% extends "phone/base.html" %}{% load humanize slicks %}
+{% block content %}
+{% comment %}Owner, 2026-10-12: stock in on the phone is against a purchase order; the same step as Receive on the laptop (the DR is the payable).{% endcomment %}
+{% if not orders %}
+  <p class="note">No order is waiting for goods. Orders are made on the laptop (Buy > Purchase orders).</p>
+{% elif not order %}
+  <p class="hint">Which order arrived?</p>
+  {% for o in orders %}<a class="ph-big" href="/phone/in/?po={{ o.po_id }}" style="flex-wrap:wrap"><span class="ms">local_shipping</span><span>{{ o.po_no }}<br><span class="hint" style="font-weight:400">{{ o.supplier }} · {{ o.pcs|floatformat:"-2" }} pcs on {{ o.lines }} line{{ o.lines|pluralize }} · ordered {{ o.ordered_on|dmy }}</span></span></a>{% endfor %}
+{% else %}
+  <div class="ph-card" style="background:#f7f9fc"><b class="t">{{ order.po_no }} · {{ order.supplier }}</b>
+    <span class="hint">ordered {{ order.ordered_on|dmy }} · {{ lines|length }} line{{ lines|length|pluralize }} still to come</span>
+    {% if orders|length > 1 %} <a class="hint" href="/phone/in/?po=0">change order</a>{% endif %}</div>
+  {% if ask %}
+  <div class="warnbox" style="margin:10px 0">
+    {% if ask.more %}<b>More than ordered:</b><ul>{% for m in ask.more %}<li>{{ m }}</li>{% endfor %}</ul><p class="hint">Agreed with the supplier?</p>{% endif %}
+    {% if ask.rest %}<b>Part of the order has not come:</b><ul>{% for m in ask.rest %}<li>{{ m }}</li>{% endfor %}</ul>{% endif %}
+    <form method="post">{% csrf_token %}{% for f in ask.carry %}<input type="hidden" name="{{ f.0 }}" value="{{ f.1 }}">{% endfor %}
+      {% if ask.more %}<input type="hidden" name="confirm_more" value="1">{% endif %}
+      {% if ask.rest %}
+        <button class="btn main" type="submit" name="rest" value="open">Keep the order open: the rest comes on another DR</button>
+        <button class="btn main ghost" type="submit" name="rest" value="close">The rest will not come: close the order</button>
+      {% else %}<button class="btn main" type="submit">Yes, agreed: record it</button>{% endif %}
+    </form>
+    <a class="btn small ghost" href="/phone/in/?po={{ order.po_id }}" style="margin-top:8px">Change it</a>
+  </div>
+  {% else %}
+  <div class="ph-scan"><input type="text" id="in_q" placeholder="Scan a tire to tick its line" autocomplete="off" aria-label="Scan a tire" autofocus>
+    <button type="button" id="in_cam" hidden aria-label="Camera"><span class="ms">photo_camera</span></button></div>
+  <video id="in_video" playsinline hidden></video>
+  <div id="in_msg" class="hint"></div>
+  <form method="post" id="in_form">{% csrf_token %}<input type="hidden" name="po" value="{{ order.po_id }}"><input type="hidden" name="inv_date" value="{{ today|date:'Y-m-d' }}">
+    {% for ln in lines %}
+    <div class="ph-card" id="line_{{ ln.line_id }}"><b class="t">{{ ln.item_name }}</b>
+      <div class="kv"><span>Still to come</span><b>{{ ln.remaining|floatformat:"-2" }}{% if ln.unit %} {{ ln.unit }}{% endif %}</b></div>
+      <div class="ph-row" style="margin-top:6px"><span class="hint">Arrived</span>
+        <input type="text" inputmode="decimal" name="qty_{{ ln.line_id }}" value="{{ ln.qty_typed }}" data-step="1" data-min="0" aria-label="Arrived: {{ ln.item_name }}" class="in_qty">
+        <span class="hint">DOT</span><input class="ph-field" style="width:84px" type="text" inputmode="numeric" maxlength="4" name="dot_{{ ln.line_id }}" value="{{ ln.dot_typed }}" placeholder="WWYY" aria-label="DOT of {{ ln.item_name }}"></div>
+    </div>
+    {% endfor %}
+    <label for="dr">DR no. (the payable)</label><input class="ph-field" id="dr" type="text" name="dr" value="{{ dr }}" placeholder="the delivery receipt's number">
+    <label for="doc">SI no. (if it came)</label><input class="ph-field" id="doc" type="text" name="doc" value="{{ doc }}" placeholder="optional">
+    <button class="btn main" type="submit"><span class="ms">check</span>Received: <span id="in_total">0</span> pcs</button>
+    <p class="hint">Same rules as Receive on the laptop. The price is the order's; a different price on the document is corrected on the laptop.</p>
+  </form>
+  {{ codes_json|json_script:"in_codes" }}
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var codes = JSON.parse(document.getElementById("in_codes").textContent || "{}"), q = document.getElementById("in_q"), msg = document.getElementById("in_msg");
+    function total() { var t = 0; document.querySelectorAll(".in_qty").forEach(function (i) { t += parseFloat(i.value) || 0; }); document.getElementById("in_total").textContent = t.toLocaleString("en-US", {maximumFractionDigits: 2}); }
+    document.querySelectorAll(".in_qty").forEach(function (i) { i.addEventListener("input", total); });
+    total();
+    function scanned(code) {                                    /* the line whose item has this code: one more arrived */
+      code = code.trim().toUpperCase(); if (!code) return;
+      for (var lid in codes) { if (codes[lid].indexOf(code) >= 0) {
+        var inp = document.querySelector('input[name="qty_' + lid + '"]');
+        inp.value = (parseFloat(inp.value) || 0) + 1; inp.dispatchEvent(new Event("input", {bubbles: true}));
+        var card = document.getElementById("line_" + lid); card.scrollIntoView({block: "center"}); card.style.background = "#e7f6ee"; setTimeout(function () { card.style.background = ""; }, 600);
+        msg.textContent = "+1 " + card.querySelector(".t").textContent; msg.style.color = "#0b6e4f"; window.phone.beep(); return; } }
+      msg.textContent = "No line on this order has the code " + code + "."; msg.style.color = "#b3261e";
+    }
+    q.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); scanned(q.value); q.value = ""; } });
+    window.phone.camera(document.getElementById("in_cam"), document.getElementById("in_video"), scanned);
+  });
+  </script>
+  {% endif %}
+{% endif %}
+{% endblock %}

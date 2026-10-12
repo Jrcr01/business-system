@@ -19,6 +19,7 @@ def page_frame(request) -> dict:
     return {
         "me": user,
         "idle_seconds": _idle_seconds() if user else 0,
+        "phone_on": __import__("engines.settings_registry", fromlist=["phone_on"]).phone_on() if user else False,
         "role_label": ROLE_LABEL.get(user["role"], user["role"]) if user else "",
         "topbar": menu_for(user["role"]) if user else [],
         "is_sandbox": settings.IS_SANDBOX,
@@ -351,6 +352,8 @@ def home(request):
     from engines.home_tiles import GROUPS, evaluate, layout
     from engines.permissions import can
     user = request.slicks_user
+    if user["role"] == "scanner":
+        return redirect("/phone/")
     mine = pages_for(user["role"])
     titles = {g.key: g for g in GROUPS}
     rows, by_id = [], {}

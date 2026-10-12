@@ -1,0 +1,15 @@
+{% extends "phone/base.html" %}{% load humanize slicks %}
+{% block content %}
+{% comment %}Owner, 2026-10-12: the price list on the phone shows supplier cost prices as the laptop page does; read-only here; hidden from the staff phone by the per-person setting.{% endcomment %}
+<form method="get" class="ph-scan"><input type="search" name="q" value="{{ q }}" placeholder="Size, brand or pattern" autofocus autocomplete="off" aria-label="Find an item">
+  <button type="submit" aria-label="Search"><span class="ms">search</span></button></form>
+{% if asked %}
+  {% if rows %}<p class="hint">Prices in force today. {{ rows|length }} item{{ rows|length|pluralize }} found{% if rows|length == 40 %} (the first 40: type more to narrow it){% endif %}.</p>
+  {% for it in rows %}<div class="ph-card"><b class="t">{{ it.name }}</b>{% if it.code %}<span class="hint">{{ it.code }}{% if it.unit %} · {{ it.unit }}{% endif %}</span>{% endif %}
+    {% for s in it.suppliers %}<div class="kv"><span>{{ s.supplier }}</span><b>{{ s.net|floatformat:2|intcomma }}</b></div>
+    <div class="kv" style="padding:0 0 4px 12px"><span class="hint">since {{ s.since|date:"m/d/Y" }}{% if s.chain %} · list {{ s.list|floatformat:2|intcomma }} less {{ s.chain }}{% endif %}</span><span></span></div>{% endfor %}
+  </div>{% endfor %}
+  {% else %}<p class="note">Nothing matches "{{ q }}". Try fewer words, or the size's digits run together (2055516).</p>{% endif %}
+{% else %}<p class="note">Type a size, a brand or a pattern. Each supplier's net price in force today is shown.</p>{% endif %}
+<p class="hint">Read-only here: adding and importing prices stay on the laptop.</p>
+{% endblock %}

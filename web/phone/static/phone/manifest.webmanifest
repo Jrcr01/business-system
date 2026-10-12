@@ -1,0 +1,15 @@
+{
+  "name": "Slick's on the phone",
+  "short_name": "Slick's",
+  "description": "Price list, stock, stock in and stock out for Slick's Tire Supply",
+  "start_url": "/phone/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f2a4a",
+  "theme_color": "#0f2a4a",
+  "icons": [
+    {"src": "/static/phone/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/static/phone/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+  ]
+}

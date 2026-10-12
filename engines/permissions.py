@@ -26,13 +26,17 @@ from __future__ import annotations
 
 from engines.acting_user import acting_email, acting_role
 
-ROLES = ("admin", "owner", "sales", "payables", "purchasing", "releaser", "viewer")
-ROLE_LABEL = {"admin": "System admin", "owner": "Owner", "sales": "Sales", "payables": "Payables", "purchasing": "Purchasing", "releaser": "Releaser", "viewer": "Viewer"}
+ROLES = ("admin", "owner", "sales", "payables", "purchasing", "releaser", "viewer", "scanner")
+ROLE_LABEL = {"admin": "System admin", "owner": "Owner", "sales": "Sales", "payables": "Payables", "purchasing": "Purchasing", "releaser": "Releaser", "viewer": "Viewer",
+              "scanner": "Scanner (phone)"}
 Y, VIEW, OWN = "Y", "view", "own"
 
 # action id: (group, what it means, admin, sales, payables, purchasing, viewer) -- the Owner column is the admin's, less SYSTEM_ONLY; the Releaser's is RELEASER
 SYSTEM_ONLY = {"carveout.use", "users.manage", "audit.view", "settings.edit", "health.fix", "inventory.approve"}      # the System admin's alone (family owners never get these)
 RELEASER = {"home.open": "Y", "account.own": "Y", "po.receive_goods": "Y", "check.release": "Y"}
+# the staff phone (owner, 2026-10-12: "designate a phone to be used by our staff for scanning of bar codes mainly for inventory"): stock, stock in,
+# stock out -- never prices, never payables; the laptop pages send it to /phone/ (masters.views.page_needed)
+SCANNER = {"home.open": "Y", "account.own": "Y", "inventory.use": "Y", "po.receive_goods": "Y", "sales.use": "Y"}
 _ROWS: list[tuple[str, str, str, tuple]] = [
     ("home.open", "Purchasing", "Home", (Y, Y, Y, Y, Y)),
     ("more.use", "System", "Sign in to the old screens (/more/) not yet in the main system", (Y, Y, Y, Y, Y)),
@@ -80,7 +84,7 @@ _ROWS: list[tuple[str, str, str, tuple]] = [
 def _levels(action: str, row: tuple) -> dict:
     admin, sales, payables, purchasing, viewer = row
     return {"admin": admin, "owner": None if action in SYSTEM_ONLY else admin, "sales": sales, "payables": payables, "purchasing": purchasing,
-            "releaser": RELEASER.get(action), "viewer": viewer}
+            "releaser": RELEASER.get(action), "viewer": viewer, "scanner": SCANNER.get(action)}
 
 
 ACTIONS: dict[str, dict] = {a: {"group": g, "label": text, "levels": _levels(a, lv)} for a, g, text, lv in _ROWS}

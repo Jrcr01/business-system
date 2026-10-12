@@ -98,6 +98,7 @@ INSTALLED_APPS = [
     "masters",                                             # D1: creditors, settings, users
     "buying",                                              # D2: price lists, purchase orders, receiving
     "payables",                                            # D3: order statements, invoices, credit memos, Add data, Payables due
+    "phone",                                               # the phone pages (owner, 2026-10-12): price list, stock, stock in, stock out
     "selling",                                             # the revenue cycle, stage A (2026-10-11): stock, counts, affiliates, counter sale
 ]
 

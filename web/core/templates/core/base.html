@@ -7,7 +7,7 @@
 <link rel="icon" href="{% static 'assets/slicks_logo.jpg' %}">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
-<link rel="stylesheet" href="{% static 'core/slicks.css' %}?v=2026-10-13f">
+<link rel="stylesheet" href="{% static 'core/slicks.css' %}?v=2026-10-13g">
 </head>
 <body>
 {% if me %}
@@ -31,6 +31,7 @@
     <button type="button" class="tb-label"><span class="ms">person</span> {{ me.name }} &#9662;</button>
     <div class="tb-menu">
       <div class="who"><b>{{ role_label }}</b>{{ me.email }}</div>
+      {% if phone_on %}<a href="/phone/"><span class="ms">smartphone</span>On the phone</a>{% endif %}
       <a href="/password/"><span class="ms">key</span>Change password</a>
       <form method="post" action="/logout/">{% csrf_token %}<button type="submit"><span class="ms">logout</span>Sign out</button></form>
     </div>

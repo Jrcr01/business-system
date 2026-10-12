@@ -24,6 +24,22 @@
   <input id="dp-search" type="search" placeholder="Search payee or check / reference" aria-label="Search payee or reference">
 </div>
 {% if days %}
+<dialog id="card-dlg" class="card-dlg" aria-labelledby="cd-title">
+  <h3 id="cd-title"><span class="ms">credit_card</span> Card payment</h3>
+  <p class="cd-who"></p>
+  <p class="hint">Total due <b class="cd-due"></b></p>
+  <div class="cd-choice">
+    <button class="btn cd-full" type="button"><span class="ms">check</span>Paid in full</button>
+    <button class="btn ghost cd-some" type="button"><span class="ms">call_split</span>Paid in part</button>
+  </div>
+  <div class="cd-part" hidden>
+    <label for="cd-amt">How much was paid? The rest carries to the next statement.</label>
+    <input id="cd-amt" class="cd-amt" type="text" inputmode="decimal" placeholder="amount paid">
+    <button class="btn small cd-ok" type="button">Record this amount</button>
+    <div class="cd-err neg hint"></div>
+  </div>
+  <div class="actions" style="margin-top:12px"><button class="btn small ghost cd-cancel" type="button">Cancel</button></div>
+</dialog>
 <form method="post" id="dp-form">{% csrf_token %}<input type="hidden" name="action" value="clear_many"><input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="by" value="{{ by }}">
 <div class="scroll-x"><table class="list dp">
   <tr><th style="width:34px">{% if may_tick and show != "ticked" %}<input type="checkbox" id="dp-all" aria-label="Tick every item shown that is due">{% endif %}</th>
@@ -37,9 +53,8 @@
     <td>{% if not r.ticked and may_tick %}<input type="checkbox" name="tick_{{ r.kind }}_{{ r.item_id }}" value="1" data-amt="{{ r.amount }}"{% if not r.due %} disabled title="Not due yet: it can't be paid before its date"{% endif %} aria-label="Paid: {{ r.payee }} {{ r.ref }}">{% endif %}</td>
     <td>{{ r.day|dmy }}</td><td>{{ r.payee }}</td>
     <td>{{ r.ref|default:"—" }} <span class="kind">{{ r.track }}</span></td>
-    <td class="num">{% if r.kind == "card" and not r.ticked and may_tick and r.due %}<input class="inline-input num card-amt" style="text-align:right;width:8.5em" inputmode="decimal"
-          name="amt_card_{{ r.item_id }}" value="{{ r.amount|floatformat:2 }}" data-max="{{ r.amount }}" aria-label="Amount paid on {{ r.ref }}" title="Pay part of it: type the amount paid">
-        {% else %}{{ r.amount|floatformat:2|intcomma }}{% endif %}</td>
+    <td class="num">{{ r.amount|floatformat:2|intcomma }}{% if r.kind == "card" and not r.ticked and may_tick and r.due %}<input type="hidden" class="card-amt"
+          name="amt_card_{{ r.item_id }}" value="" data-max="{{ r.amount }}" data-ref="{{ r.ref }}">{% endif %}</td>
     <td>{% if r.ticked %}<span class="pill">paid {{ r.ticked|dmy }}</span>{% if r.note %} <span class="hint">{{ r.note|usdates }}</span>{% endif %}
           {% if may_tick and r.kind == "check" %}<button class="btn small ghost" type="submit" form="undo-c{{ r.item_id }}">Undo</button>
           {% elif may_tick and r.kind == "loan" %}<button class="btn small ghost" type="submit" form="undo-l{{ r.item_id }}">Undo</button>
@@ -85,8 +100,40 @@
     if (go) { go.disabled = !n; goT.textContent = n ? "Mark " + n + " paid" : "Mark paid"; }
   }
   form.addEventListener("change", update);
-  form.addEventListener("input", function (e) {                 /* typing a card amount ticks its line */
-    if (e.target.classList.contains("card-amt")) { var b = e.target.closest("tr").querySelector('input[type=checkbox]'); if (b && !b.disabled) b.checked = true; update(); }
+  /* owner, 2026-10-12: the card's total due is shown, not typed; marking it paid asks first "in full?", and if not, how much was paid
+     (the rest carries to the next statement). The system's own box (not the browser's), one card at a time. */
+  var dlg = document.getElementById("card-dlg"), asked = false;
+  function askCard(hid) {
+    return new Promise(function (resolve) {
+      var due = parseFloat(hid.dataset.max) || 0;
+      dlg.querySelector(".cd-who").textContent = hid.dataset.ref;
+      dlg.querySelector(".cd-due").textContent = "₱" + peso(due);
+      var part = dlg.querySelector(".cd-part"), amt = dlg.querySelector(".cd-amt"), err = dlg.querySelector(".cd-err");
+      part.hidden = true; amt.value = ""; err.textContent = "";
+      function done(v) { dlg.close(); dlg.onclose = null; resolve(v); }
+      dlg.querySelector(".cd-full").onclick = function () { hid.value = ""; done(true); };
+      dlg.querySelector(".cd-some").onclick = function () { part.hidden = false; amt.focus(); };
+      dlg.querySelector(".cd-ok").onclick = function () {
+        var v = parseFloat(String(amt.value).replace(/,/g, ""));
+        if (!(v > 0) || v >= due - 0.005) { err.textContent = "Type an amount above 0 and below ₱" + peso(due) + ": that is a part payment."; amt.focus(); return; }
+        hid.value = v.toFixed(2); done(true);
+      };
+      amt.onkeydown = function (ev) { if (ev.key === "Enter") { ev.preventDefault(); dlg.querySelector(".cd-ok").click(); } };
+      dlg.querySelector(".cd-cancel").onclick = function () { done(false); };
+      dlg.onclose = function () { resolve(false); };
+      dlg.showModal();
+    });
+  }
+  form.addEventListener("submit", function (e) {
+    if (asked) { asked = false; return; }
+    var cards = [];
+    boxes.forEach(function (b) { var hid = b.checked && b.closest("tr").querySelector(".card-amt"); if (hid) cards.push(hid); });
+    if (!cards.length) return;
+    e.preventDefault();
+    (function next(k) {
+      if (k >= cards.length) { asked = true; form.requestSubmit(go); return; }
+      askCard(cards[k]).then(function (ok) { if (ok) next(k + 1); });
+    })(0);
   });
   if (all) all.addEventListener("change", function () {
     boxes.forEach(function (b) { if (!b.disabled && b.closest("tr").style.display !== "none") b.checked = all.checked; }); update();

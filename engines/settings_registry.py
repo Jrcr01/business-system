@@ -68,6 +68,10 @@ NUMBERS = [
     ("signin_idle_minutes", "Sign-in", "Sign out after no activity for", 30, 5, 120, 0, "minutes",
      "Owner, 2026-10-12: \"30 minutes with the warning\". A person who opens no page and touches nothing for this long is signed out; a minute before, "
      "the page says so and offers to stay. Typing or clicking on an open page counts as activity. Two hours is the most the server allows."),
+    ("phone_pages", "Phone", "The phone pages are on (1 = yes, 0 = no)", 0, 0, 1, 0, "",
+     "Owner, 2026-10-12: \"We need pricelist, inventory. Stock in, stock out. Those items need mobility without using a laptop.\" 1: /phone/ opens -- "
+     "Price list, Stock, Stock in and Stock out on a phone, added to its home screen -- for everyone allowed those pages, and the Scanner role signs in "
+     "straight to it. 0: /phone/ goes to Home."),
     ("stock_old_years", "Stock", "A tire this old (by its DOT) is old stock", 3, 1, 15, 0, "years",
      "Tires at or above this age show as Old stock, to be sold first. The age comes from the DOT week and year typed when the tires are received."),
     ("affiliate_open_days", "Stock", "Flag tires lent or borrowed and still open after", 30, 1, 365, 0, "days",
@@ -310,6 +314,11 @@ def reset_shortcuts() -> tuple[bool, str]:
         if had:
             _audit(conn, "SHORTCUTS_RESET", SHORTCUT_KEY, "Keyboard shortcuts back to the defaults")
     return True, "Keyboard shortcuts are back to the defaults."
+
+
+def phone_on() -> bool:
+    """Are the phone pages open (owner, 2026-10-12)? Off until the System admin switches them on."""
+    return int_value("phone_pages") == 1
 
 
 def idle_minutes() -> int:

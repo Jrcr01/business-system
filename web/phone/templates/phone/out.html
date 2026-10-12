@@ -1,0 +1,27 @@
+{% extends "phone/base.html" %}{% load humanize slicks %}
+{% block content %}
+{% comment %}Owner, 2026-10-12: the same slip as Scan out (the stock is out the moment Done is pressed; the invoice is written by hand and recorded after
+close), reached from the phone whether or not the laptop's "Sales start from a scan" is on.{% endcomment %}
+<form method="post" id="out_form">{% csrf_token %}<input type="hidden" name="action" value="slip">
+  {% include "selling/_scan_lines.html" %}
+  <label for="si_hint">SI no. (optional, if the invoice is already written)</label><input class="ph-field" id="si_hint" type="text" inputmode="numeric" name="si_hint" value="{{ si_hint }}" placeholder="004503">
+  <label for="customer">Customer (optional)</label><input class="ph-field" id="customer" type="text" name="customer" value="{{ customer }}" list="cust_names" placeholder="Walk-in" autocomplete="off">
+  <datalist id="cust_names">{% for n in names %}<option value="{{ n }}">{% endfor %}</datalist>
+  <button class="btn main" type="submit"><span class="ms">outbox</span>Done — <span id="out_pcs">0</span> pcs out</button>
+</form>
+<h2 style="margin-top:18px">Today's slips</h2>
+{% if slips %}{% for r in slips %}<div class="ph-card"><div class="kv"><span><b>{{ r.release_no }}</b> · {{ r.pcs|floatformat:"-2" }} pcs{% if r.si_hint %} · SI {{ r.si_hint }}{% else %} · <span class="pill warn">no SI yet</span>{% endif %}</span>
+  <form method="post" onsubmit="return confirm('Undo {{ r.release_no }}? The stock comes back.');">{% csrf_token %}<input type="hidden" name="action" value="undo"><input type="hidden" name="sale_id" value="{{ r.sale_id }}"><button class="btn small ghost" type="submit">Undo</button></form></div>
+  <span class="hint">{{ r.items }}{% if r.customer != "Walk-in" %} · {{ r.customer }}{% endif %}</span></div>{% endfor %}
+{% else %}<p class="hint">No slip yet today.</p>{% endif %}
+<p class="hint">The invoice is still written by hand and recorded in the evening; the slip only moves the stock.</p>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var box = document.getElementById("scanlines"), pcs = document.getElementById("out_pcs");
+  box.addEventListener("lines", function (e) { var t = 0; e.detail.lines.forEach(function (l) { t += l.qty; }); pcs.textContent = t.toLocaleString("en-US", {maximumFractionDigits: 2}); });
+  new MutationObserver(function () {                            /* minus / plus around each line's quantity, as the lines are drawn */
+    document.querySelectorAll("#sl_rows .inline-input").forEach(function (i) { if (!i.dataset.step) { i.dataset.step = "1"; i.dataset.min = "0"; window.phone.steppers(document.getElementById("sl_rows")); } });
+  }).observe(document.getElementById("sl_rows"), {childList: true});
+});
+</script>
+{% endblock %}

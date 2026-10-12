@@ -431,6 +431,18 @@ table.list tr.tentative td { color: #6b7280; font-style: italic; }
 .tile.long .f .ms { font-size: 24px; }
 @media (max-width: 480px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .tile { height: 146px; padding: 12px; } }      /* a phone: still two across */
 
+/* ---- Daily payables: the card payment box, full or in part (owner, 2026-10-12) ---- */
+.card-dlg { border: 1px solid #d5dbe3; border-radius: 12px; padding: 18px 20px; max-width: 440px; width: calc(100vw - 32px); box-shadow: 0 10px 30px rgba(16,24,40,.3); font: inherit; color: var(--ink); }
+.card-dlg::backdrop { background: rgba(15,42,74,.45); }
+.card-dlg h3 { margin: 0 0 8px; color: var(--blue); font-size: 1.1rem; }
+.card-dlg .cd-who { font-weight: 700; margin: 0 0 2px; }
+.card-dlg .cd-due { font-size: 1.15rem; color: var(--ink); }
+.card-dlg .cd-choice { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.card-dlg .cd-choice .btn { flex: 1 1 160px; padding: 12px; }
+.card-dlg .cd-part { margin-top: 12px; }
+.card-dlg .cd-part label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
+.card-dlg .cd-amt { font: inherit; font-size: 1.1rem; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; width: 100%; max-width: 220px; margin-right: 8px; margin-bottom: 6px; }
+
 /* ---- the order calendar: the part of a day that is an estimate (owner, 2026-10-12) ---- */
 .cal .d .est, .callegend .est { display: block; font-size: .7rem; font-weight: 400; color: #6b7280; }
 
