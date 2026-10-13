@@ -1,7 +1,8 @@
 """Credit card reminders on the phone (owner, 2026-10-13: a daily payables message "is a good idea but it will only stresses us. instead have
 credit cards only incoming statement, due date, annual fee"). Three kinds, each with its own switch in Settings > Notifications:
 
-  * STATEMENT -- two days after the card's statement day ("when the bank has usually sent it"), while that month's statement is not recorded
+  * STATEMENT -- from two days after the statement was expected ("when the bank has usually sent it"), again every 3 days, until that month's
+                 statement is recorded or the card is marked "No due this month": the same cards as the Missing statement check
   * DUE       -- on the due date only, twice that day (8 AM and 2 PM), while the statement is not paid in full
   * FEE       -- on the 1st of the month before the card's annual-fee month ("the month enough")
 
@@ -9,12 +10,12 @@ Who: the System admin for every card, each cardholder for their own cards, with 
 by the server's timer and sends only at the two hours set; what was sent is remembered, so a second call the same hour sends nothing."""
 from __future__ import annotations
 
-import calendar
-from datetime import date, timedelta
+from datetime import date
 
 from engines.common import get_conn, write_tx
 
 STATEMENT_AFTER_DAYS = 2
+REPEAT_DAYS = 3
 MONTHS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
 
@@ -31,25 +32,53 @@ def _first(name) -> str:
     return (str(name or "").split() or [""])[0]
 
 
+def missing_statements(today: date) -> dict:
+    """Cards to remind about a statement today (owner, 2026-10-13: "so i am not looking this everyday"): {card_id: (month, expected by, again)}.
+    The same cards as Credit cards > Missing statement check -- had a statement last month (or a "No due"), none recorded for this one, not marked
+    "No due this month" -- from two days after the day the statement was expected ("when the bank has usually sent it"), and then again every
+    REPEAT_DAYS until it is recorded or marked."""
+    from engines.cc_service import get_statement_coverage
+    cov = get_statement_coverage(today)
+    if cov.empty:
+        return {}
+    month, out = today.strftime("%Y-%m"), {}
+    with get_conn() as conn:
+        last = dict(conn.execute("SELECT card_id, MAX(substr(key, 9)) FROM card_reminders_sent WHERE kind = 'STATEMENT' AND key LIKE ? GROUP BY card_id", (month + "@%",)))
+    for r in cov.to_dict("records"):
+        expected = r.get("expected_by")
+        expected = date.fromisoformat(expected[:10]) if isinstance(expected, str) and expected else None
+        due_now = r["status"] == "Missing this month" or (r["status"] == "Not yet expected" and expected and (today - expected).days >= STATEMENT_AFTER_DAYS)
+        if not due_now:
+            continue
+        before = last.get(int(r["card_id"]))
+        if before and (today - date.fromisoformat(before)).days < REPEAT_DAYS:
+            continue
+        out[int(r["card_id"])] = (month, expected, bool(before))
+    return out
+
+
+def missing_count(today: date | None = None) -> int:
+    """How many cards are on the Missing statement check right now (for Home): "Missing this month" only, as that page counts them."""
+    from engines.cc_service import get_statement_coverage
+    cov = get_statement_coverage(today)
+    return 0 if cov.empty else int((cov["status"] == "Missing this month").sum())
+
+
 def due_messages(today: date, slot: str) -> list[dict]:
     """What is worth saying today in this slot ('am' or 'pm'): [{kind, card_id, key, holder_id, title, body, url}]."""
-    from engines.cc_dates import statement_month_for
     out = []
+    missing = missing_statements(today) if slot == "am" and _on("notify_card_statement") else {}
     with get_conn() as conn:
         cards = conn.execute("""SELECT cc.card_id, cc.card_name || ' ' || cc.card_number_last4, cc.statement_day, cc.annual_fee_due_month, cc.cardholder_id, ch.name
                                 FROM credit_cards cc LEFT JOIN cardholders ch ON ch.cardholder_id = cc.cardholder_id WHERE cc.is_active = 1""").fetchall()
         for card_id, name, st_day, fee_month, holder_id, holder in cards:
             whose = f"{_first(holder)}'s card" if holder else "The card"
-            if slot == "am" and _on("notify_card_statement") and st_day:
-                closed = today - timedelta(days=STATEMENT_AFTER_DAYS)
-                if closed.day == min(int(st_day), calendar.monthrange(closed.year, closed.month)[1]):
-                    month = closed.strftime("%Y-%m")
-                    have = any(statement_month_for(due, st_day) == month for (due,) in conn.execute(
-                        "SELECT due_date FROM cc_statements WHERE card_id = ? AND status != 'Cancelled' AND due_date >= ?", (card_id, str(closed))))
-                    if not have:
-                        out.append({"kind": "STATEMENT", "card_id": card_id, "key": month, "holder_id": holder_id, "url": "/credit-cards/",
-                                    "title": f"{name} · statement is out",
-                                    "body": f"{whose} closed its statement on {_day(closed)}. Get the statement from the bank and record it."})
+            if card_id in missing:
+                month, expected, again = missing[card_id]
+                out.append({"kind": "STATEMENT", "card_id": card_id, "key": f"{month}@{today}", "holder_id": holder_id, "url": "/credit-cards/?tab=missing",
+                            "title": f"{name} · statement {'still ' if again else ''}not recorded",
+                            "body": (f"{whose} should have had its statement by {_day(expected)}. " if expected else f"{whose} has no statement recorded for {MONTHS[today.month]}. ")
+                                    + "Record it, or press \"No due this month\" on Credit cards."})
             if _on("notify_card_due"):
                 for due, total, paid in conn.execute("""SELECT due_date, total_amount_due, amount_paid FROM cc_statements
                                                         WHERE card_id = ? AND due_date = ? AND status IN ('Unpaid', 'Partially Paid')""", (card_id, str(today))):

@@ -430,7 +430,11 @@ def _bank_loans():
 
 def _credit_cards():
     n = _count("SELECT COUNT(*) FROM v_cc_due_alerts WHERE urgency_status LIKE 'CRITICAL%'")
-    return _waiting(n, "due within 3 days", "alert")
+    from engines.card_reminders import missing_count
+    m = missing_count()                                      # owner, 2026-10-13: the Missing statement check is not a page to open every day
+    if n:
+        return str(n), "due within 3 days" + (f" · {m} statement{'s' if m != 1 else ''} missing" if m else ""), "alert"
+    return _waiting(m, f"statement{'s' if m != 1 else ''} missing", "warn")
 
 
 def _dashboard():

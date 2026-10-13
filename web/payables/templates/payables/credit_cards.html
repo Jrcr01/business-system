@@ -134,6 +134,18 @@
   <div><label for="show">Show</label><select id="show" name="show" onchange="this.form.submit()"><option value="open"{% if show == "open" %} selected{% endif %}>Not paid or not confirmed yet</option>
     <option value="all"{% if show == "all" %} selected{% endif %}>All</option></select></div>
 </form>
+{% if edit_stmt %}
+<div class="grp" id="edit">Correct the statement of {{ edit_stmt.card }} due {{ edit_stmt.due_date|dmy }}</div>
+<form method="post" class="bar">{% csrf_token %}<input type="hidden" name="action" value="correct_statement"><input type="hidden" name="statement_id" value="{{ edit_stmt.cc_statement_id }}"><input type="hidden" name="card" value="{{ card }}">
+  <div><label for="es_month">Statement month</label><input id="es_month" type="month" name="month" value="{{ edit_stmt.statement_month|default:'' }}"></div>
+  <div><label for="es_due">Due date</label><input id="es_due" type="date" name="due" value="{{ edit_stmt.due_date|slice:':10' }}" required></div>
+  {% if edit_stmt.is_latest %}<div><label for="es_total">Total amount due</label><input id="es_total" type="text" inputmode="decimal" name="total" value="{{ edit_stmt.total_amount_due|floatformat:2|intcomma }}" style="width:150px;text-align:right"></div>
+  <div><label for="es_fee">Finance charge</label><input id="es_fee" type="text" inputmode="decimal" name="interest" value="{{ edit_stmt.interest_charged|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>{% endif %}
+  <button class="btn small" type="submit"><span class="ms">save</span>Save the correction</button> <a class="btn small ghost" href="/credit-cards/{% if card %}?card={{ card }}&show={{ show }}{% endif %}">Cancel</a>
+</form>
+<p class="hint">{% if edit_stmt.is_latest %}This is the card's newest statement, so its amounts can be corrected too. To change the "payments since the earlier statement" figure, delete it and add it again.
+  {% else %}A later statement was built on this one, so its amounts stay as they are; the month and the due date can be corrected.{% endif %} Every correction is in the audit log.</p>
+{% endif %}
 {% if stmts %}
 <div class="scroll-x"><table class="list cards">
   <tr><th>Card</th><th>Month</th><th>Due</th><th style="text-align:right">Total due</th><th style="text-align:right">Paid</th><th>Payments (posting date)</th><th>Status</th><th>SOA</th><th></th></tr>
@@ -142,7 +154,7 @@
     <td data-l="payments">{% for p in s.payments %}{{ p.payment_date|dmy }} · {{ p.amount|floatformat:2|intcomma }}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="hint">—</span>{% endfor %}</td>
     <td><span class="pill{% if s.status != 'Paid' %} warn{% endif %}">{{ s.status }}</span></td>
     <td data-l="SOA">{% if s.paid_confirmed %}confirmed{% else %}<span class="hint">not yet confirmed</span>{% endif %}</td>
-    <td class="c-r">{% if may_write and s.is_latest %}<form method="post" style="display:inline" onsubmit="return confirm('Delete this statement of {{ s.total_amount_due|floatformat:2 }} due {{ s.due_date|dmy }}? Only the latest statement of a card can be deleted.');">{% csrf_token %}
+    <td class="c-r">{% if may_write %}<a class="btn small ghost" href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}&edit={{ s.cc_statement_id }}#edit">Edit</a> {% endif %}{% if may_write and s.is_latest %}<form method="post" style="display:inline" onsubmit="return confirm('Delete this statement of {{ s.total_amount_due|floatformat:2 }} due {{ s.due_date|dmy }}? Only the latest statement of a card can be deleted.');">{% csrf_token %}
       <input type="hidden" name="action" value="delete_statement"><input type="hidden" name="statement_id" value="{{ s.cc_statement_id }}"><button class="btn small ghost" type="submit">Delete</button></form>{% endif %}</td></tr>{% endfor %}
 </table></div>
 <p class="hint">{{ stmts|length }} statement(s). Pay a card on <a href="/checks/">Daily payables</a>, in full or in part; the next SOA confirms it.</p>

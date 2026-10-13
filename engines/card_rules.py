@@ -251,6 +251,58 @@ def edit_cc_statement(
     return True, "Statement updated."
 
 
+def correct_cc_statement(cc_statement_id: int, statement_month: str | None, due_date, total_due=None, interest=None) -> tuple[bool, str]:
+    """A typing error on a recorded statement put right (owner, 2026-10-13: "why i cant edit this ... for example error").
+    Any statement: its month and its due date, as long as the due date stays between the statements before and after it. The LATEST statement
+    of a card only: also its total and its finance charge -- what it carried over from the earlier statement stays, the new charges are worked
+    out again, and payments already recorded against it stay. Older amounts stay locked: a later statement was built on them."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        row = cur.execute("""SELECT card_id, statement_month, due_date, total_amount_due, previous_balance, interest_charged, amount_paid
+                             FROM cc_statements WHERE cc_statement_id = ? AND status != 'Cancelled'""", (int(cc_statement_id),)).fetchone()
+        if not row:
+            return False, "Statement not found."
+        card_id, old_month, old_due, old_total, previous, old_interest, paid = row
+        if not due_date:
+            return False, "Give the due date."
+        due = str(due_date)[:10]
+        before = cur.execute("SELECT MAX(due_date) FROM cc_statements WHERE card_id = ? AND status != 'Cancelled' AND cc_statement_id != ? AND due_date < ?",
+                             (card_id, int(cc_statement_id), str(old_due)[:10])).fetchone()[0]
+        after = cur.execute("SELECT MIN(due_date) FROM cc_statements WHERE card_id = ? AND status != 'Cancelled' AND cc_statement_id != ? AND due_date > ?",
+                            (card_id, int(cc_statement_id), str(old_due)[:10])).fetchone()[0]
+        if (before and due <= str(before)[:10]) or (after and due >= str(after)[:10]):
+            return False, "That due date would put this statement before or after its neighbours. Keep it between the statement before and the one after."
+        month = (statement_month or "").strip()[:7] or old_month
+        latest = _is_latest_cc_statement(cur, int(cc_statement_id), card_id)
+        total, fee = float(old_total), float(old_interest or 0)
+        if total_due is not None or interest is not None:
+            new_total = float(old_total if total_due is None else total_due)
+            new_fee = float(old_interest or 0) if interest is None else float(interest or 0)
+            if abs(new_total - total) > 0.004 or abs(new_fee - fee) > 0.004:
+                if not latest:
+                    return False, "Only the newest statement of a card can have its amounts changed: a later statement was built on this one. Its month and due date can be corrected."
+                if new_total <= 0:
+                    return False, "Type the total amount due from the statement."
+                if float(paid or 0) - new_total > 0.005:
+                    return False, f"{php(paid)} is already recorded as paid on this statement, more than the new total. Take the payment back first."
+                if new_total - float(previous or 0) - new_fee < -1.0:
+                    return False, (f"These don't add up: {php(previous)} carried over plus the finance charge {php(new_fee)} is more than the total {php(new_total)}.")
+                total, fee = round(new_total, 2), round(new_fee, 2)
+        new_charges = max(round(total - float(previous or 0) - fee, 2), 0.0)
+        left = round(total - float(paid or 0), 2)
+        status = "Paid" if left <= 0.005 else ("Partially Paid" if float(paid or 0) > 0.005 else "Unpaid")
+        cur.execute("""UPDATE cc_statements SET statement_month = ?, due_date = ?, total_amount_due = ?, new_charges = ?, interest_charged = ?,
+                              unpaid_balance_next = ?, status = ? WHERE cc_statement_id = ?""", (month, due, total, new_charges, fee, max(left, 0.0), status, int(cc_statement_id)))
+        was = f"month {old_month or 'none'}, due {str(old_due)[:10]}, total {php(old_total)}, finance charge {php(old_interest or 0)}"
+        now = f"month {month or 'none'}, due {due}, total {php(total)}, finance charge {php(fee)}"
+        if was == now:
+            return False, "Nothing was changed."
+        cur.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values, new_values) VALUES (acting_user(), 'CC_STATEMENT_CORRECTED', 'cc_statements', ?, ?, ?)",
+                    (int(cc_statement_id), was, now))
+        conn.commit()
+    return True, "Statement corrected."
+
+
 def delete_cc_statement(cc_statement_id: int) -> tuple[bool, str]:
     """Removes a CC statement entirely -- only allowed on the latest statement for its card, same
     guard as edit_cc_statement(), so a mistakenly-added statement can be undone cleanly."""

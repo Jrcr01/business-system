@@ -96,6 +96,13 @@ def credit_cards(request):
                                                           ORDER BY x.due_date DESC, x.cc_statement_id DESC LIMIT 1)""")}
         for c in ctx["active_cards"]:
             c["latest"] = latest.get(c["card_id"])
+        one = int(request.GET.get("edit") or 0) if (request.GET.get("edit") or "").isdigit() else 0
+        if one and may:
+            hit = _rows(f"""SELECT cs.cc_statement_id, cs.card_id, {CARD_NAME} AS card, cs.statement_month, cs.due_date, cs.total_amount_due, cs.interest_charged,
+                                   (SELECT x.cc_statement_id FROM cc_statements x WHERE x.card_id = cs.card_id ORDER BY x.due_date DESC, x.cc_statement_id DESC LIMIT 1)
+                                       = cs.cc_statement_id AS is_latest
+                            FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id WHERE cs.cc_statement_id = ? AND cs.status != 'Cancelled'""", (one,))
+            ctx["edit_stmt"] = hit[0] if hit else None
         ctx.update({"stmts": stmts, "card": card, "show": show, "typed": request.session.pop("cc_typed", None),
                     "month_default": date.today().strftime("%Y-%m")})
     return render(request, "payables/credit_cards.html", ctx)
@@ -119,6 +126,13 @@ def _post(request):
         if not ok:
             request.session["cc_typed"] = {k: v for k, v in p.items() if k != "csrfmiddlewaretoken"}
         return redirect("/credit-cards/" + (f"?card={card}" if card else ""))
+    if what == "correct_statement":
+        sid = int(p.get("statement_id") or 0)
+        total, fee = (_num(p.get("total")) if "total" in p else None), (_num(p.get("interest"), 0.0) if "interest" in p else None)
+        ok, msg = cr.correct_cc_statement(sid, p.get("month", ""), _date(p.get("due")), total, fee)
+        _say(request, ok, msg)
+        back = f"?card={p.get('card')}&show=all" if (p.get("card") or "").isdigit() else "?show=all"
+        return redirect("/credit-cards/" + back + ("" if ok else f"&edit={sid}#edit"))
     if what == "delete_statement":
         _say(request, *cr.delete_cc_statement(int(p.get("statement_id") or 0)))
         return redirect("/credit-cards/")

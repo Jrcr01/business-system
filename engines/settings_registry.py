@@ -73,8 +73,9 @@ NUMBERS = [
      "Price list, Stock, Stock in and Stock out on a phone, added to its home screen -- for everyone allowed those pages, and the Scanner role signs in "
      "straight to it. 0: /phone/ goes to Home."),
     ("notify_card_statement", "Notifications", "Card reminder: the statement is out (1 = yes, 0 = no)", 1, 0, 1, 0, "",
-     "Owner, 2026-10-13: credit card reminders on the phone. Sent two days after the card's statement day, \"when the bank has usually sent it\", "
-     "while that month's statement is not recorded. Who receives them: Settings > Notifications."),
+     "Owner, 2026-10-13: credit card reminders on the phone. Sent from two days after the statement was expected, \"when the bank has usually sent it\", "
+     "and again every 3 days until that month's statement is recorded or the card is marked \"No due this month\": the same cards as Credit cards > "
+     "Missing statement check. Who receives them: Settings > Notifications."),
     ("notify_card_due", "Notifications", "Card reminder: the payment is due today (1 = yes, 0 = no)", 1, 0, 1, 0, "",
      "Sent on the due date only, twice that day (the two hours below), while the statement is not marked paid in full."),
     ("notify_card_fee", "Notifications", "Card reminder: the annual fee is next month (1 = yes, 0 = no)", 1, 0, 1, 0, "",
