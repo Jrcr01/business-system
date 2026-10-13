@@ -349,7 +349,7 @@ def fingerprint_options(request):
         "challenge": challenge, "rp": {"name": "Slick's ERP", "id": _site(request)[1]},
         "user": {"id": fp.b64(f"slicks-{int(user['user_id'])}".encode()), "name": user["email"], "displayName": user["name"]},
         "pubKeyCredParams": [{"type": "public-key", "alg": a} for a in fp.ALGS], "timeout": 60000, "attestation": "none",
-        "authenticatorSelection": {"authenticatorAttachment": "platform", "userVerification": "required", "residentKey": "discouraged"},
+        "authenticatorSelection": {"authenticatorAttachment": "platform", "userVerification": "required", "residentKey": "preferred"},     # Android makes only passkeys (owner, 2026-10-14: the phone cancelled at once)
         "excludeCredentials": [{"type": "public-key", "id": k} for k in fp.key_ids(int(user["user_id"]))]}})
 
 
