@@ -29,8 +29,8 @@ Scan what was sold, type the amount received; profit shows at once. A slip of th
   <div class="kv"><span>Profit</span><b id="ps_profit" class="n">0.00</b></div>
   <div id="ps_warn" class="warnbox" hidden><b>To note. You can still save.</b><div id="ps_warn_list"></div>
     <div id="ps_below" hidden style="margin-top:6px"><label for="below_reason">Why below cost?</label><input class="ph-field" id="below_reason" type="text" name="below_reason" placeholder="e.g. old stock, loyal customer"></div></div>
-  <label>Paid how</label>
-  <div class="ph-pay" id="ps_methods">{% for k, label in methods %}<label class="btn small{% if k == method %} main{% else %} ghost{% endif %}"{% if label|length > 20 %} style="grid-column:1 / -1"{% endif %}><input type="radio" name="method" value="{{ k }}"{% if k == method %} checked{% endif %} style="display:none">{{ label }}</label>{% endfor %}</div>
+  <label for="ps_methods">Mode of payment</label>
+  <select class="ph-field" id="ps_methods" name="method">{% for k, label in methods %}<option value="{{ k }}"{% if k == method %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
   <div class="ph-row" id="ps_check" hidden><div style="flex:1 1 120px"><label for="check_no">Check no.</label><input class="ph-field" id="check_no" type="text" name="check_no" inputmode="numeric"></div>
     <div style="flex:1 1 120px"><label for="check_date">Check date</label><input class="ph-field" id="check_date" type="date" name="check_date"></div>
     <div style="flex:1 1 120px"><label for="bank">Bank</label><input class="ph-field" id="bank" type="text" name="bank"></div></div>
@@ -61,12 +61,9 @@ document.addEventListener("DOMContentLoaded", function () {
   receipt.addEventListener("input", redo); document.querySelectorAll(".svc-a, .sp-qty, .sp-cost").forEach(function (i) { i.addEventListener("input", redo); });
   si.addEventListener("input", function () { document.getElementById("ps_si").textContent = si.value; });
   var methods = document.getElementById("ps_methods");
-  methods.addEventListener("change", function () {
-    methods.querySelectorAll("label").forEach(function (l) { var on = l.querySelector("input").checked; l.classList.toggle("main", on); l.classList.toggle("ghost", !on); });
-    method();
-  });
+  methods.addEventListener("change", method);
   function method() {                                           /* a transfer or a card needs its reference; a check its number, date and bank */
-    var m = methods.querySelector("input:checked"), v = m ? m.value : "CASH", ref = document.getElementById("reference");
+    var v = methods.value || "CASH", ref = document.getElementById("reference");
     document.getElementById("ps_check").hidden = v !== "CHECK";
     var needs = v === "TRANSFER" || v === "CARD";
     ref.required = needs; document.getElementById("ref_hint").textContent = needs ? "(needed: the GCash / Maya reference or the card approval number)" : "(optional)";
