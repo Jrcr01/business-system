@@ -543,6 +543,16 @@ def _thermal_lines(data: dict) -> list[dict]:
         if gap_after:
             lines.append({"text": "", "font": font, "size": size, "align": align, "height": gap_after, "color": color})
 
+    def row(left, mid, right, *, head=False, bold=False, size=THERMAL_SIZE_BODY):
+        """One line in three columns: the name at the left, the date in the middle, the amount at the right edge."""
+        font = THERMAL_FONT_HEAD if (head or bold) else THERMAL_FONT_BODY
+        size = THERMAL_SIZE_DETAIL if head else size
+        room = THERMAL_CONTENT_WIDTH_PT * 0.44                  # a long reference is cut to its column, never printed over the date
+        left = str(left)
+        while left and stringWidth(left, font, size) > room:
+            left = left[:-1]
+        lines.append({"text": left, "font": font, "size": size, "align": "left", "height": size * 1.5, "color": colors.black, "mid": str(mid), "right": str(right)})
+
     def add_divider(ch="-"):
         add(_thermal_divider(ch), font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, align="center")
 
@@ -553,45 +563,42 @@ def _thermal_lines(data: dict) -> list[dict]:
     add_divider("=")
     add(f"PS no.: {_shown_ref(stmt['statement_ref'])}")
     add(f"Supplier: {stmt['creditor_name']}")
-    add(f"Status: {stmt['status']}")
     add(f"Date: {manila_now().strftime('%m/%d/%Y')}", gap_after=2)
     add_divider()
 
+    # Owner, 2026-10-14 ("i do not like the format. just include dr/si, date received, amount, credit memo ref no amount date, checks issued date,
+    # check no, amount"): one line each, three columns, nothing else.
     add("INVOICES", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION)
+    row("DR / SI", "Received", "Amount", head=True)
     if not data["invoices"]:
         add("  (none)")
     for i in data["invoices"]:
-        add(i["doc_ref"])
-        due = f"  Due {us_date(i['due_date'])}" if str(i["due_date"] or "")[:10] != str(i["invoice_date"] or "")[:10] else ""
-        add(f"  Recv {us_date(i['invoice_date'])}{due}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_DETAIL)
-        shown = "Covered by check" if str(i["display_status"]).startswith("Check issued") else i["display_status"]
-        add(f"  Net PHP {_money(i['amount'])}   [{shown}]", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_DETAIL)
-        if i.get("check_nos"):
-            add(f"  Check #{i['check_nos']}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_DETAIL)
+        if i["status"] == "Cancelled":
+            continue
+        row(i["doc_ref"] + (f" / DR {i['dr_no']}" if i.get("dr_no") else ""), us_date(i["invoice_date"]), _money(i["amount"]))
+    row("Total", "", _money(stmt["total_amount"]), bold=True)
     add_divider()
 
     if data["memos"]:
         add("CREDIT MEMOS", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION)
+        row("Ref no.", "Date", "Amount", head=True)
         for m in data["memos"]:
-            add(f"{m['memo_ref']}  {us_date(m['memo_date'])}")
-            add(f"  -PHP {_money(m['amount'])}  {m['reason'] or ''}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_DETAIL)
+            row(m["memo_ref"], us_date(m["memo_date"]), _money(m["amount"]))
+        row("Total", "", _money(stmt["credit_memo_total"]), bold=True)
         add_divider()
 
-    add(f"Gross Total:   PHP {stmt['total_amount']:,.2f}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_BODY)
-    add(f"Credit Memos:  PHP {stmt['credit_memo_total']:,.2f}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_BODY)
-    add(f"TO BE PAID:    PHP {stmt['net_total']:,.2f}", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_BODY + 0.5)
+    row("TO BE PAID", "", f"PHP {stmt['net_total']:,.2f}", bold=True, size=THERMAL_SIZE_BODY + 1)
     add_divider()
 
-    add("CHECKS", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION)
-    if not data["checks"]:
-        add("  (none)")
-    for c in data["checks"]:
-        mark = _check_status(c, True)                            # the strip goes to the supplier with the checks: only Cleared / Cancelled / Replaced is said
-        add(f"Check #{c['check_number'] or 'Pending'}" + (f"   [{mark}]" if mark else ""))
-        add(f"  {us_date(c['check_date'], '--')}   PHP {_money(c['amount'])}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_DETAIL)
+    add("CHECKS ISSUED", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION)
+    row("Check no.", "Date", "Amount", head=True)
     live = [c for c in data["checks"] if c["status"] == "Active"]
+    if not live:
+        add("  (none)")
+    for c in live:
+        row(c["check_number"] or "Pending", us_date(c["check_date"], "--"), _money(c["amount"]))
     if live:
-        add(f"TOTAL CHECKS ({len(live)}):  PHP {_money(sum(float(c['amount'] or 0) for c in live))}", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_BODY + 0.5)
+        row(f"Total ({len(live)})", "", _money(sum(float(c["amount"] or 0) for c in live)), bold=True)
     add_divider("=")
     add("Received by: ____________________", gap_after=2)
     add("Date: ______________", gap_after=4)
@@ -617,6 +624,10 @@ def _draw_thermal(c: pdfcanvas.Canvas, lines: list[dict], y_start: float) -> Non
                 c.drawRightString(x_right, y, spec["text"])
             else:
                 c.drawString(x_left, y, spec["text"])
+            if spec.get("mid"):
+                c.drawString(x_left + THERMAL_CONTENT_WIDTH_PT * 0.46, y, spec["mid"])
+            if spec.get("right"):
+                c.drawRightString(x_right, y, spec["right"])
     c.setFillColor(colors.black)
 
 
