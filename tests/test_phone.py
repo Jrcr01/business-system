@@ -142,7 +142,7 @@ def test_the_scanner_role_lives_on_the_phone_and_never_sees_prices(web, db):
     assert staff.get("/order-statements/")["Location"] == "/phone/"
     page = staff.get("/phone/").content.decode()
     assert 'href="/phone/stock/"' in page and 'href="/phone/in/"' in page and 'href="/phone/out/"' in page
-    assert 'href="/phone/prices/"' not in page and "Open the laptop site" not in page
+    assert 'href="/phone/prices/"' not in page and "the whole system" not in page
     assert staff.get("/phone/prices/").status_code == 403
     assert staff.get("/stock/items.json").status_code == 200                    # the scan box's list still loads
     assert staff.get("/phone/stock/").status_code == 200 and staff.get("/phone/out/").status_code == 200 and staff.get("/phone/in/").status_code == 200
