@@ -84,3 +84,21 @@ def test_a_card_paid_in_part_leaves_the_calendar_and_shows_as_carried(web, db):
     assert sched[sched["track"] == "Credit Card"].empty                                    # a payment, even partial: the rest carries, off the calendar
     page = web.get(f"/credit-cards/?card={card}&show=all").content.decode()
     assert "Partially Paid" in page and "6,000.00 carried to the next statement" in page
+
+
+def test_statements_before_the_start_month_are_kept_but_not_listed(web, db):
+    # owner, 2026-10-13: "we start statements from september" / "maybe we do not include statements prior september" -> hide, never delete
+    from engines.settings_store import set_setting
+    _admin(web)
+    card = _card(db)                                                                     # statement day 8
+    _add(web, card, "2026-07", "2026-08-30", "100,000")                                  # statement dated 8 Aug
+    _add(web, card, "2026-09", "2026-09-30", "250,000", payments="100,000")              # statement dated 8 Sep
+    page = web.get(f"/credit-cards/?card={card}&show=all").content.decode()
+    assert "100,000.00" in page and "250,000.00" in page and "not shown" not in page     # no start month set: everything is listed
+    set_setting("cc_start_month", "202609")
+    page = web.get(f"/credit-cards/?card={card}&show=all").content.decode()
+    assert "250,000.00" in page and "08/30/2026" not in page
+    assert "1 earlier statement (before September 2026) is not shown" in page and "earlier=1" in page
+    page = web.get(f"/credit-cards/?card={card}&show=all&earlier=1").content.decode()
+    assert "08/30/2026" in page and "Hide them" in page
+    assert _n("SELECT COUNT(*) FROM cc_statements") == 2                                 # nothing was deleted

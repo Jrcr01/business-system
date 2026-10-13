@@ -36,6 +36,10 @@ NUMBERS = [
      "The forecast estimates future deposits from this many recent weeks of bank deposits."),
     ("cash_buffer", "Cash forecast", "Cash buffer to keep in the bank", 0, 0, 1_000_000_000, 2, "₱",
      "The Dashboard, forecast and planner warn when the balance would go below this amount."),
+    ("cc_start_month", "Credit cards", "Card statements start from (year and month as YYYYMM, e.g. 202609; 0 = show every statement)", 0, 0, 209912, 0, "",
+     "Owner, 2026-10-13: \"we start statements from september\", \"maybe we do not include statements prior september\". Statements of an earlier month "
+     "stay saved but are left off the Statements list; a link on that page shows them again. The month is the statement's own month (its statement "
+     "date), not its due date. Nothing is deleted, and the month can be moved."),
     ("cc_missing_wait_days", "Credit cards", "Wait before a card statement counts as missing", 7, 0, 60, 0, "days",
      "After a card's statement date, wait this many days before warning that its statement has not been entered."),
     ("min_money_amount", "Entry checks", "Smallest loan / limit amount accepted", 1, 0.01, 1000, 2, "₱",

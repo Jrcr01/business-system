@@ -157,8 +157,12 @@
     <td class="c-r">{% if may_write %}<a class="btn small ghost" href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}&edit={{ s.cc_statement_id }}#edit">Edit</a> {% endif %}{% if may_write and s.is_latest %}<form method="post" style="display:inline" onsubmit="return confirm('Delete this statement of {{ s.total_amount_due|floatformat:2 }} due {{ s.due_date|dmy }}? Only the latest statement of a card can be deleted.');">{% csrf_token %}
       <input type="hidden" name="action" value="delete_statement"><input type="hidden" name="statement_id" value="{{ s.cc_statement_id }}"><button class="btn small ghost" type="submit">Delete</button></form>{% endif %}</td></tr>{% endfor %}
 </table></div>
+{% if hidden_n %}<p class="note">{{ hidden_n }} earlier statement{{ hidden_n|pluralize }} (before {{ start_label }}) {{ hidden_n|pluralize:"is,are" }} not shown: card statements start from {{ start_label }}.
+  <a href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}&earlier=1">Show {{ hidden_n|pluralize:"it,them" }}</a></p>
+{% elif earlier and start_label %}<p class="note">Showing the statements from before {{ start_label }} too. <a href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}">Hide them</a></p>{% endif %}
 <p class="hint">{{ stmts|length }} statement(s). Pay a card on <a href="/checks/">Daily payables</a>, in full or in part; the next SOA confirms it.</p>
-{% else %}<p class="note">No statements here.</p>{% endif %}
+{% else %}<p class="note">No statements here.{% if hidden_n %} {{ hidden_n }} earlier one{{ hidden_n|pluralize }} (before {{ start_label }}) {{ hidden_n|pluralize:"is,are" }} not shown.
+  <a href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}&earlier=1">Show {{ hidden_n|pluralize:"it,them" }}</a>{% endif %}</p>{% endif %}
 {% endif %}
 <script>
 /* card pickers: type the last 4 digits (or part of the card or holder name) to narrow the list; one match is picked by itself (owner, 2026-10-09) */

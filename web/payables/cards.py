@@ -75,11 +75,18 @@ def credit_cards(request):
             where.append("cs.card_id = ?"); params.append(int(card))
         if show == "open":
             where.append("(cs.status IN ('Unpaid', 'Partially Paid') OR cs.paid_confirmed = 0)")
-        stmts = _rows(f"""SELECT cs.cc_statement_id, cs.card_id, {CARD_NAME} AS card, ch.name AS holder, cs.statement_month, cs.due_date, cs.total_amount_due,
+        stmts = _rows(f"""SELECT cs.cc_statement_id, cs.card_id, {CARD_NAME} AS card, ch.name AS holder, cs.statement_month, cs.due_date, cs.total_amount_due, cc.statement_day,
                                  COALESCE(cs.amount_paid, 0) AS amount_paid, cs.status, cs.paid_confirmed,
                                  (SELECT MAX(x.due_date) FROM cc_statements x WHERE x.card_id = cs.card_id AND x.status != 'Cancelled') = cs.due_date AS is_latest
                           FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id LEFT JOIN cardholders ch ON ch.cardholder_id = cc.cardholder_id
                           WHERE {" AND ".join(where)} ORDER BY cs.due_date DESC, cs.cc_statement_id DESC LIMIT 300""", tuple(params))
+        from engines.cc_dates import statement_month_for
+        from engines.cc_service import start_month
+        first, earlier, hidden = start_month(), request.GET.get("earlier") == "1", 0      # owner, 2026-10-13: statements before the start month are kept, not listed
+        if first and not earlier:
+            keep = [s for s in stmts if statement_month_for(s["due_date"], s["statement_day"]) >= first]
+            hidden, stmts = len(stmts) - len(keep), keep
+        ctx.update({"hidden_n": hidden, "start_label": date(int(first[:4]), int(first[5:]), 1).strftime("%B %Y") if first else "", "earlier": earlier})
         pays = {}
         if stmts:
             ids = [s["cc_statement_id"] for s in stmts]

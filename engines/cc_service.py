@@ -40,6 +40,13 @@ def get_statement_gap_alerts(today: date | None = None) -> pd.DataFrame:
                                           "status", "expected_by"]].reset_index(drop=True)
 
 
+def start_month() -> str | None:
+    """'YYYY-MM' the card statements start from (Settings > Credit cards; owner, 2026-10-13), or None when every statement is shown."""
+    from engines.settings_registry import int_value
+    n = int_value("cc_start_month")
+    return f"{n // 100:04d}-{n % 100:02d}" if n >= 200001 and 1 <= n % 100 <= 12 else None
+
+
 MISSING_WAIT_KEY = "cc_missing_wait_days"
 DEFAULT_MISSING_WAIT_DAYS = 7
 
