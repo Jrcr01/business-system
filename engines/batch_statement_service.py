@@ -507,7 +507,7 @@ def generate_bulk_summary_pdf(rows: list[dict], scope_label: str, statement_type
 
 # --- 80mm thermal-printer statement (continuous roll, single copy) ---------
 
-THERMAL_WIDTH_MM = 80
+THERMAL_WIDTH_MM = 72       # the width an 80 mm printer can really print (owner, 2026-10-14: the amounts were cut off at the right edge)
 THERMAL_MAX_HEIGHT_MM = 3276  # printer/driver's typical max continuous-roll length
 THERMAL_MARGIN_MM = 3
 THERMAL_WIDTH_PT = THERMAL_WIDTH_MM * mm
@@ -547,7 +547,7 @@ def _thermal_lines(data: dict) -> list[dict]:
         """One line in three columns: the name at the left, the date in the middle, the amount at the right edge."""
         font = THERMAL_FONT_HEAD if (head or bold) else THERMAL_FONT_BODY
         size = THERMAL_SIZE_DETAIL if head else size
-        room = THERMAL_CONTENT_WIDTH_PT * 0.44                  # a long reference is cut to its column, never printed over the date
+        room = THERMAL_CONTENT_WIDTH_PT * 0.40                  # a long reference is cut to its column, never printed over the date
         left = str(left)
         while left and stringWidth(left, font, size) > room:
             left = left[:-1]
@@ -625,7 +625,7 @@ def _draw_thermal(c: pdfcanvas.Canvas, lines: list[dict], y_start: float) -> Non
             else:
                 c.drawString(x_left, y, spec["text"])
             if spec.get("mid"):
-                c.drawString(x_left + THERMAL_CONTENT_WIDTH_PT * 0.46, y, spec["mid"])
+                c.drawString(x_left + THERMAL_CONTENT_WIDTH_PT * 0.42, y, spec["mid"])
             if spec.get("right"):
                 c.drawRightString(x_right, y, spec["right"])
     c.setFillColor(colors.black)
