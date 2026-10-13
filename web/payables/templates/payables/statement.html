@@ -143,7 +143,6 @@
 <form class="bar" method="get" action="/order-statements/{{ b.statement_id }}/a4.pdf" target="_blank">
   <div><label for="copies">Copies</label><select id="copies" name="copies"><option value="both">Both (filing + supplier)</option><option value="filing">Filing copy only</option><option value="supplier">Supplier copy only</option></select></div>
   <label class="inline"><input type="checkbox" name="history" value="1" checked> Full check history (incl. cancelled/replaced)</label>
-  <label class="inline"><input type="checkbox" name="apply" value="1"> Payment application &amp; running balance</label>
   <button class="btn small" type="submit"><span class="ms">picture_as_pdf</span>Full-page statement, short bond (PDF)</button>
   <a class="btn small ghost" href="/order-statements/{{ b.statement_id }}/thermal.pdf" target="_blank"><span class="ms">receipt_long</span>Thermal strip (PDF)</a>
 </form>

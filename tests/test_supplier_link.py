@@ -102,3 +102,12 @@ def test_a_draft_gets_no_code_and_many_wrong_tries_are_refused(web, db):
         assert c.get("/s/" + "B" * 32 + "/").status_code == 404
     assert c.get("/s/" + "B" * 32 + "/").status_code == 429
     sl._MISSES.clear()
+
+
+def test_print_many_can_make_the_summary_page_alone(web, db):
+    _admin(web)
+    sid = _numbered(web, db)
+    r = web.get(f"/order-statements/print-many/?go=1&scope=all&ids={sid}&type=summary&unprinted=1")
+    assert r.status_code == 200 and r["Content-Type"] == "application/pdf"
+    text = _text(r.content)
+    assert "Sunny Tire Supply" in text and "Summary only" in text and "INTERNAL FILING COPY" not in text and "SUPPLIER COPY" not in text

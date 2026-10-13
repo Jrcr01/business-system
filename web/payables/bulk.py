@@ -292,6 +292,14 @@ def _merged_pdf(request, ids: list[int], scope: str, last: str | None):
     a4, history, unprinted = g.get("type", "a4") != "thermal", g.get("history") == "1", g.get("unprinted") == "1"
     copies = g.get("copies", "both") if g.get("copies") in ("both", "filing", "supplier") else "both"
     merged, made = PdfWriter(), 0
+    if g.get("type") == "summary":                               # owner, 2026-10-14: "have an option to print summary page only"
+        rows = bulk_summary_rows(ids, unprinted)
+        if not rows:
+            raise Http404
+        scope_text = f"Since last check print ({last})" if scope == "since" and last else dict(SCOPES)[scope]
+        resp = HttpResponse(generate_bulk_summary_pdf(rows, scope_text, "Summary only" + ("" if unprinted else " · printed checks only")), content_type="application/pdf")
+        resp["Content-Disposition"] = f'inline; filename="statements_summary_{manila_now():%Y%m%d_%H%M}.pdf"'
+        return resp
     if not a4:                                                   # owner, 2026-10-14: one continuous strip, a cut line between statements; no letter-size summary page
         from engines.batch_statement_service import generate_thermal_many_pdf
         strip = generate_thermal_many_pdf(ids, history, unprinted, qr_base=f"{request.scheme}://{request.get_host()}")
