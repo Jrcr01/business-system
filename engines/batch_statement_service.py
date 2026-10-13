@@ -518,10 +518,11 @@ THERMAL_FONT_HEAD = "Helvetica-Bold"
 THERMAL_FONT_BODY = "Helvetica"
 THERMAL_FONT_MONO = "Courier"
 
-THERMAL_SIZE_TITLE = 10
-THERMAL_SIZE_SECTION = 8.5
-THERMAL_SIZE_BODY = 7.5
+THERMAL_SIZE_TITLE = 11
+THERMAL_SIZE_SECTION = 9.5
+THERMAL_SIZE_BODY = 8.5
 THERMAL_SIZE_SMALL = 6.5
+THERMAL_SIZE_DETAIL = 8          # owner, 2026-10-14 ("Its blurred"): a 203-dot thermal head breaks thin Courier at 6.5 and dithers grey; detail lines are black Helvetica at 8
 
 
 def _thermal_divider(ch: str = "-", font: str = THERMAL_FONT_MONO, size: float = THERMAL_SIZE_SMALL) -> str:
@@ -562,22 +563,22 @@ def _thermal_lines(data: dict) -> list[dict]:
     for i in data["invoices"]:
         add(i["doc_ref"])
         due = f"  Due {us_date(i['due_date'])}" if str(i["due_date"] or "")[:10] != str(i["invoice_date"] or "")[:10] else ""
-        add(f"  Recv {us_date(i['invoice_date'])}{due}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, color=GREY)
+        add(f"  Recv {us_date(i['invoice_date'])}{due}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_DETAIL)
         shown = "Covered by check" if str(i["display_status"]).startswith("Check issued") else i["display_status"]
-        add(f"  Net PHP {_money(i['amount'])}   [{shown}]", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
+        add(f"  Net PHP {_money(i['amount'])}   [{shown}]", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_DETAIL)
         if i.get("check_nos"):
-            add(f"  Check #{i['check_nos']}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, color=GREY)
+            add(f"  Check #{i['check_nos']}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_DETAIL)
     add_divider()
 
     if data["memos"]:
         add("CREDIT MEMOS", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION)
         for m in data["memos"]:
             add(f"{m['memo_ref']}  {us_date(m['memo_date'])}")
-            add(f"  -PHP {_money(m['amount'])}  {m['reason'] or ''}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
+            add(f"  -PHP {_money(m['amount'])}  {m['reason'] or ''}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_DETAIL)
         add_divider()
 
-    add(f"Gross Total:   PHP {stmt['total_amount']:,.2f}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_BODY)
-    add(f"Credit Memos:  PHP {stmt['credit_memo_total']:,.2f}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_BODY)
+    add(f"Gross Total:   PHP {stmt['total_amount']:,.2f}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_BODY)
+    add(f"Credit Memos:  PHP {stmt['credit_memo_total']:,.2f}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_BODY)
     add(f"TO BE PAID:    PHP {stmt['net_total']:,.2f}", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_BODY + 0.5)
     add_divider()
 
@@ -587,7 +588,7 @@ def _thermal_lines(data: dict) -> list[dict]:
     for c in data["checks"]:
         mark = _check_status(c, True)                            # the strip goes to the supplier with the checks: only Cleared / Cancelled / Replaced is said
         add(f"Check #{c['check_number'] or 'Pending'}" + (f"   [{mark}]" if mark else ""))
-        add(f"  {us_date(c['check_date'], '--')}   PHP {_money(c['amount'])}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
+        add(f"  {us_date(c['check_date'], '--')}   PHP {_money(c['amount'])}", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_DETAIL)
     live = [c for c in data["checks"] if c["status"] == "Active"]
     if live:
         add(f"TOTAL CHECKS ({len(live)}):  PHP {_money(sum(float(c['amount'] or 0) for c in live))}", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_BODY + 0.5)
