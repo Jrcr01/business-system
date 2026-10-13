@@ -95,6 +95,9 @@ def _title_band(styles) -> Table:
     return band
 
 
+NOT_TYPED = '<font color="#8a96a6" size="8.5">not typed</font>'      # owner, 2026-10-14: an empty box read as a fault of the printout
+
+
 def _info_panel(loan, styles) -> Table:
     label_style = ParagraphStyle("InfoLabel", parent=styles["Normal"], fontSize=7.5, textColor=GREY, leading=10)
     value_style = ParagraphStyle("InfoValue", parent=styles["Normal"], fontSize=9.5, leading=13, fontName="Helvetica-Bold")
@@ -102,11 +105,12 @@ def _info_panel(loan, styles) -> Table:
         [Paragraph("LOAN REF.", label_style), Paragraph("BANK", label_style),
          Paragraph("ACCOUNT NO.", label_style), Paragraph("STATUS", label_style)],
         [Paragraph(loan["loan_ref"], value_style), Paragraph(loan["creditor_name"], value_style),
-         Paragraph(loan["account_number"] or "—", value_style), Paragraph(loan["status"], value_style)],
+         Paragraph(loan["account_number"] or NOT_TYPED, value_style), Paragraph(loan["status"], value_style)],
         [Paragraph("START DATE", label_style), Paragraph("MATURITY DATE", label_style),
          Paragraph("PRINCIPAL", label_style), Paragraph("MODE OF PAYMENT", label_style)],
-        [Paragraph(_us(loan["start_date"], "—"), value_style), Paragraph(_us(loan["maturity_date"], "—"), value_style),
-         Paragraph(f"PHP {_money(loan['principal_amount'])}", value_style), Paragraph(loan["mode_of_payment"] or "—", value_style)],
+        [Paragraph(_us(loan["start_date"], NOT_TYPED), value_style), Paragraph(_us(loan["maturity_date"], NOT_TYPED), value_style),
+         Paragraph(f"PHP {_money(loan['principal_amount'])}" if loan["principal_amount"] is not None else NOT_TYPED, value_style),
+         Paragraph(loan["mode_of_payment"] or NOT_TYPED, value_style)],
         [Paragraph("ATTRIBUTABLE TO", label_style), Paragraph("", label_style),
          Paragraph("", label_style), Paragraph("", label_style)],
         [Paragraph(f"{loan['beneficiary']} ({loan['beneficiary_type']})" if loan["beneficiary"] else "—", value_style),

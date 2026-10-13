@@ -1,0 +1,40 @@
+{% load humanize %}{% comment %}Owner, 2026-10-14 ("our focus are now sales and liquidity"): what happened and why. Figures from engines/bi_service.sales.{% endcomment %}
+{% with n=bi.now b=bi.before y=bi.year_ago d=bi.delta dy=bi.delta_year %}
+<div class="kpis">
+  <a class="kpi" href="/sales/?view=day"><span>Sales (goods and services)</span><b>₱{{ n.sales|floatformat:0|intcomma }}</b>
+    <small class="{% if d.sales is None %}{% elif d.sales >= 0 %}pos{% else %}neg{% endif %}">{% if d.sales is not None %}{% if d.sales >= 0 %}▲{% else %}▼{% endif %} {{ d.sales }}% vs the period before (₱{{ b.sales|floatformat:0|intcomma }}){% else %}nothing in the period before{% endif %}</small></a>
+  <a class="kpi" href="/income-statement/"><span>Gross margin</span><b>₱{{ n.margin|floatformat:0|intcomma }} <em>{{ n.margin_pct }}%</em></b>
+    <small class="{% if d.margin is None %}{% elif d.margin >= 0 %}pos{% else %}neg{% endif %}">{% if d.margin is not None %}{% if d.margin >= 0 %}▲{% else %}▼{% endif %} {{ d.margin }}% · was {{ b.margin_pct }}%{% else %}—{% endif %}</small></a>
+  <a class="kpi" href="/sales/?view=day"><span>Pieces sold</span><b>{{ n.pieces|intcomma }}</b>
+    <small class="{% if d.pieces is None %}{% elif d.pieces >= 0 %}pos{% else %}neg{% endif %}">{% if d.pieces is not None %}{% if d.pieces >= 0 %}▲{% else %}▼{% endif %} {{ d.pieces }}% · {{ b.pieces }} before{% else %}—{% endif %}</small></a>
+  <a class="kpi" href="/sales/?view=day"><span>Average sale</span><b>₱{{ n.average|floatformat:0|intcomma }}</b>
+    <small>{{ n.invoices }} invoice{{ n.invoices|pluralize }}{% if n.services %} · services ₱{{ n.services|floatformat:0|intcomma }}{% endif %}{% if n.returns %} · returns ₱{{ n.returns|floatformat:0|intcomma }}{% endif %}</small></a>
+</div>
+<div class="charts">
+  <div class="chart"><div class="ct">Sales by day <small class="hint">this period (blue) over the period before (grey)</small></div>
+    {% if n.sales or b.sales %}{% include "payables/_line.html" with g=bi.by_day alt="Sales by day" %}{% else %}<p class="hint">No sales in the period yet.</p>{% endif %}</div>
+  <div class="chart"><div class="ct">Sales and margin by month <small class="hint">last 12 months · blue sales, green margin</small></div>
+    <div class="bi-cols">{% for m in bi.by_month %}<div class="col" title="{{ m.label }}: sales ₱{{ m.sales|floatformat:0|intcomma }}, margin ₱{{ m.margin|floatformat:0|intcomma }}">
+      <div class="bars"><span class="s" style="height:{{ m.pct }}%"></span><span class="m" style="height:{{ m.mpct }}%"></span></div><span class="lb">{{ m.label|slice:":3" }}</span></div>{% endfor %}</div></div>
+  <div class="chart"><div class="ct">By brand <small class="hint">sales · margin %</small></div>
+    {% for r in bi.by_brand %}<div class="hbar"><span class="n" title="{{ r.label }}">{{ r.label }}</span><span class="track"><span class="fill" style="width:{% widthratio r.amount bi.by_brand.0.amount 100 %}%"></span></span><span class="v">₱{{ r.amount|floatformat:0|intcomma }} · {{ r.margin_pct }}%</span></div>
+    {% empty %}<p class="hint">Nothing to show yet.</p>{% endfor %}</div>
+  <div class="chart"><div class="ct">Top sizes <small class="hint">pieces</small></div>
+    {% for n_, q in bi.by_size %}<div class="hbar"><span class="n" title="{{ n_ }}">{{ n_ }}</span><span class="track"><span class="fill g" style="width:{% widthratio q bi.by_size.0.1 100 %}%"></span></span><span class="v">{{ q }}</span></div>
+    {% empty %}<p class="hint">Nothing to show yet.</p>{% endfor %}</div>
+  <div class="chart"><div class="ct">Who buys, and how they pay</div>
+    {% for t, v in bi.by_type %}<div class="hbar"><span class="n">{{ t }}</span><span class="track"><span class="fill" style="width:{% widthratio v bi.by_type.0.1 100 %}%"></span></span><span class="v">₱{{ v|floatformat:0|intcomma }}</span></div>{% empty %}<p class="hint">Nothing to show yet.</p>{% endfor %}
+    {% if bi.by_method %}<div style="height:8px"></div>{% endif %}
+    {% for t, v in bi.by_method %}<div class="hbar"><span class="n">{{ t }}</span><span class="track"><span class="fill o" style="width:{% widthratio v bi.by_method.0.1 100 %}%"></span></span><span class="v">₱{{ v|floatformat:0|intcomma }}</span></div>{% endfor %}</div>
+  <div class="chart"><div class="ct">This period against the others</div>
+    <div class="scroll-x"><table class="list bi-cmp"><tr><th></th><th class="num">{{ start|date:"m/d" }}–{{ end|date:"m/d/y" }}</th><th class="num">{{ bi.before_range.0|date:"m/d" }}–{{ bi.before_range.1|date:"m/d/y" }}</th><th class="num">{{ bi.year_range.0|date:"m/d" }}–{{ bi.year_range.1|date:"m/d/y" }}</th></tr>
+      <tr><td>Sales</td><td class="num">{{ n.sales|floatformat:0|intcomma }}</td><td class="num">{{ b.sales|floatformat:0|intcomma }} {% if d.sales is not None %}<small class="{% if d.sales is None %}{% elif d.sales >= 0 %}pos{% else %}neg{% endif %}">{{ d.sales }}%</small>{% endif %}</td><td class="num">{{ y.sales|floatformat:0|intcomma }} {% if dy.sales is not None %}<small class="{% if dy.sales >= 0 %}pos{% else %}neg{% endif %}">{{ dy.sales }}%</small>{% endif %}</td></tr>
+      <tr><td>Gross margin</td><td class="num">{{ n.margin|floatformat:0|intcomma }}</td><td class="num">{{ b.margin|floatformat:0|intcomma }} {% if d.margin is not None %}<small class="{% if d.margin is None %}{% elif d.margin >= 0 %}pos{% else %}neg{% endif %}">{{ d.margin }}%</small>{% endif %}</td><td class="num">{{ y.margin|floatformat:0|intcomma }} {% if dy.margin is not None %}<small class="{% if dy.margin >= 0 %}pos{% else %}neg{% endif %}">{{ dy.margin }}%</small>{% endif %}</td></tr>
+      <tr><td>Margin %</td><td class="num">{{ n.margin_pct }}%</td><td class="num">{{ b.margin_pct }}%</td><td class="num">{{ y.margin_pct }}%</td></tr>
+      <tr><td>Pieces</td><td class="num">{{ n.pieces }}</td><td class="num">{{ b.pieces }}</td><td class="num">{{ y.pieces }}</td></tr>
+      <tr><td>Invoices</td><td class="num">{{ n.invoices }}</td><td class="num">{{ b.invoices }}</td><td class="num">{{ y.invoices }}</td></tr>
+      <tr><td>Service income</td><td class="num">{{ n.services|floatformat:0|intcomma }}</td><td class="num">{{ b.services|floatformat:0|intcomma }}</td><td class="num">{{ y.services|floatformat:0|intcomma }}</td></tr></table></div></div>
+</div>
+<p class="hint" style="margin-top:10px">A sale counts on the day it was sold, whether paid or on credit; a return reduces the day it came back; voided invoices and the opening receivables never count.
+  Margin is the selling price less the item's average cost when it was sold, as on the <a href="/income-statement/">Income statement</a>.</p>
+{% endwith %}

@@ -98,7 +98,7 @@ def _info_panel(note, styles) -> Table:
     rows = [
         [Paragraph("LN. NO.", label_style), Paragraph("LENDER", label_style),
          Paragraph("DATE", label_style), Paragraph("STATUS", label_style)],
-        [Paragraph(note["note_ref"], value_style), Paragraph(note["creditor_name"], value_style),
+        [Paragraph("Pending" if str(note["note_ref"]).startswith("PENDING-") else note["note_ref"], value_style), Paragraph(note["creditor_name"], value_style),
          Paragraph(__import__("engines.common", fromlist=["us_date"]).us_date(note["issue_date"]), value_style), Paragraph(note["status"], value_style)],
         [Paragraph("PRINCIPAL", label_style), Paragraph("MONTHLY INTEREST", label_style),
          Paragraph("GENERATED", label_style), Paragraph("", label_style)],
@@ -135,13 +135,28 @@ def generate_loan_note_pdf(loan_note_id: int) -> bytes | None:
     sheet = loan_note_sheet(loan_note_id) or {"loan_rows": [], "payment_rows": [], "loan_total": 0.0, "payment_total": 0.0, "difference": 0.0}
     difference = sheet["difference"]
 
+    # Owner, 2026-10-14: "as much as possible let it be one page only". Built at the normal row height first; when that spills onto a second page,
+    # rebuilt with tighter rows and gaps, the roomiest that fits one page.
+    best = None
+    for pad in (5, 4, 3, 2.5, 2):
+        pdf, pages = _build(note, sheet, difference, pad)
+        if best is None or pages < best[1]:
+            best = (pdf, pages)
+        if pages <= 1:
+            break
+    return best[0]
+
+
+def _build(note, sheet, difference, pad: float) -> tuple[bytes, int]:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=LETTER,
         leftMargin=LEFT_MARGIN, rightMargin=RIGHT_MARGIN, topMargin=TOP_MARGIN, bottomMargin=BOTTOM_MARGIN,
     )
     styles = getSampleStyleSheet()
-    story: list = [_title_band(styles), Spacer(1, 10), _info_panel(note, styles), Spacer(1, 10)]
+    gap = 10 if pad >= 5 else 6
+    tight = [("TOPPADDING", (0, 0), (-1, -1), pad), ("BOTTOMPADDING", (0, 0), (-1, -1), pad)]
+    story: list = [_title_band(styles), Spacer(1, gap), _info_panel(note, styles), Spacer(1, gap)]
 
     recon_rows = [
         ["Loan Schedule", f"PHP {_money(sheet['loan_total'])}"],
@@ -156,9 +171,7 @@ def generate_loan_note_pdf(loan_note_id: int) -> bytes | None:
         ("TEXTCOLOR", (0, -1), (-1, -1), ACCENT),
         ("LINEABOVE", (0, -1), (-1, -1), 1, ACCENT),
         ("LINEABOVE", (0, 0), (-1, 0), 0.5, BORDER),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
+    ] + tight))
     story.append(recon_table)
 
     story.append(_section_heading("Loan Schedule", styles))
@@ -168,7 +181,7 @@ def generate_loan_note_pdf(loan_note_id: int) -> bytes | None:
     if len(sched_rows) == 1:
         sched_rows.append(["—", "—", "—", "—"])
     sched_table = Table(sched_rows, colWidths=[CONTENT_WIDTH * w for w in (0.22, 0.26, 0.24, 0.28)], repeatRows=1)
-    sched_table.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (1, 1), (3, -1), "RIGHT"), ("ALIGN", (0, 0), (0, -1), "CENTER")]))
+    sched_table.setStyle(TableStyle(SECTION_TABLE_STYLE + tight + [("ALIGN", (1, 1), (3, -1), "RIGHT"), ("ALIGN", (0, 0), (0, -1), "CENTER")]))
     story.append(sched_table)
 
     story.append(_section_heading("Payment Schedule", styles))
@@ -178,9 +191,8 @@ def generate_loan_note_pdf(loan_note_id: int) -> bytes | None:
     if len(chk_rows) == 1:
         chk_rows.append(["—", "—", "—", "—"])
     chk_table = Table(chk_rows, colWidths=[CONTENT_WIDTH * w for w in (0.12, 0.25, 0.35, 0.28)], repeatRows=1)
-    chk_table.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (3, 1), (3, -1), "RIGHT"), ("ALIGN", (0, 0), (1, -1), "CENTER")]))
+    chk_table.setStyle(TableStyle(SECTION_TABLE_STYLE + tight + [("ALIGN", (3, 1), (3, -1), "RIGHT"), ("ALIGN", (0, 0), (1, -1), "CENTER")]))
     story.append(chk_table)
 
     doc.build(story)
-    buffer.seek(0)
-    return buffer.getvalue()
+    return buffer.getvalue(), doc.page

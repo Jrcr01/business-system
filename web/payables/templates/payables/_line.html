@@ -1,0 +1,10 @@
+{% comment %}A line chart drawn by the page: one series (a, blue), an earlier one behind it (b, grey), a dashed floor (the cash buffer).{% endcomment %}
+<svg viewBox="0 0 {{ g.w }} {{ g.h }}" class="bi-line" role="img" aria-label="{{ alt }}">
+  {% for t in g.ticks %}<line x1="40" y1="{{ t.y }}" x2="{{ g.w|add:"-10" }}" y2="{{ t.y }}" class="grid"/><text x="2" y="{{ t.y|add:"4" }}" class="tk">{{ t.label }}</text>{% endfor %}
+  {% if g.zero %}<line x1="40" y1="{{ g.zero }}" x2="{{ g.w|add:"-10" }}" y2="{{ g.zero }}" class="zero"/>{% endif %}
+  {% if g.floor %}<line x1="40" y1="{{ g.floor }}" x2="{{ g.w|add:"-10" }}" y2="{{ g.floor }}" class="floor"/>{% endif %}
+  {% if g.b %}<polyline points="{{ g.b }}" class="b"/>{% endif %}
+  {% if g.a %}<polyline points="{{ g.a }}" class="a"/>{% endif %}
+  {% if g.last %}<circle cx="{{ g.last.x }}" cy="{{ g.last.y }}" r="3.5" class="dot"/>{% endif %}
+  {% for l in g.labels %}<text x="{{ l.x }}" y="{{ g.h|add:"-6" }}" class="tk" text-anchor="{% if forloop.first %}start{% elif forloop.last %}end{% else %}middle{% endif %}">{{ l.label }}</text>{% endfor %}
+</svg>

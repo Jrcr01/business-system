@@ -12,7 +12,7 @@
 <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js?v=3").catch(function () {});</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
-<link rel="stylesheet" href="{% static 'core/slicks.css' %}?v=2026-10-13za">
+<link rel="stylesheet" href="{% static 'core/slicks.css' %}?v=2026-10-14a">
 </head>
 <body>
 {% if me %}
@@ -178,8 +178,12 @@ if (window.matchMedia("(hover: none)").matches) {
 (function () {   // owner, 2026-10-12: signed out after no activity, with a warning a minute before. The server decides; this only shows it.
   var total = {{ idle_seconds }}, deadline = Date.now() + total * 1000, touched = false, lastPing = Date.now();
   var box = document.getElementById("idle-warn"), left = document.getElementById("idle-left");
+  /* every tab of this browser shares when the person was last active, so a tab left open behind the one in use does not sign them out */
+  function mark() { try { localStorage.setItem("slk_seen", String(Date.now())); } catch (e) {} }
+  function others() { try { return parseInt(localStorage.getItem("slk_seen") || "0", 10) || 0; } catch (e) { return 0; } }
+  mark();
   function ping() {
-    lastPing = Date.now(); touched = false;
+    lastPing = Date.now(); touched = false; mark();
     fetch("/whoami/", {credentials: "same-origin"}).then(function (r) { if (r.ok && !r.redirected) { deadline = Date.now() + total * 1000; box.style.display = "none"; } });
   }
   ["keydown", "pointerdown", "input"].forEach(function (e) { document.addEventListener(e, function () { touched = true; }, {passive: true}); });
@@ -187,6 +191,7 @@ if (window.matchMedia("(hover: none)").matches) {
   setInterval(function () {
     var secs = Math.round((deadline - Date.now()) / 1000);
     if (touched && (Date.now() - lastPing > 240000 || secs < 90)) { ping(); return; }       // working on the page counts as activity
+    if (secs <= 60 && others() + total * 1000 - Date.now() > 61000) { deadline = others() + total * 1000; box.style.display = "none"; return; }
     if (secs <= 0) { location.href = "/login/?idle=1&next=" + encodeURIComponent(location.pathname + location.search); return; }
     if (secs <= 60) { left.textContent = secs; box.style.display = "block"; }
   }, 1000);

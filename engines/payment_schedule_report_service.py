@@ -64,6 +64,27 @@ def _date_text(d: date) -> str:
     return f"{d.strftime('%A')} {d.strftime('%m/%d/%Y')}" if isinstance(d, date) else str(d)
 
 
+def _week_summary(df, styles) -> list:
+    """The whole list in a few lines (owner, 2026-10-14): what goes out each week, Monday to Sunday, with the count and the total. Only when the
+    list runs over more than one week."""
+    import pandas as pd
+    from datetime import timedelta
+    days = pd.to_datetime(df["actual_payment_date"]).dt.date
+    mondays = [d - timedelta(days=d.weekday()) for d in days]
+    by = pd.DataFrame({"week": mondays, "amount": df["amount"].astype(float).values}).groupby("week")["amount"].agg(["count", "sum"]).sort_index()
+    if len(by) < 2:
+        return []
+    rows = [["Week", "Payments", "Amount (PHP)"]]
+    for monday, r in by.iterrows():
+        rows.append([f"{monday:%m/%d} to {monday + timedelta(days=6):%m/%d/%Y}", int(r["count"]), f"{float(r['sum']):,.2f}"])
+    rows.append(["Total", int(by["count"].sum()), f"{float(by['sum'].sum()):,.2f}"])
+    t = Table(rows, colWidths=[CONTENT_WIDTH * w for w in (0.4, 0.2, 0.4)], repeatRows=1)
+    t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), ACCENT), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                           ("FONTSIZE", (0, 0), (-1, -1), 9), ("GRID", (0, 0), (-1, -1), 0.5, BORDER), ("ALIGN", (1, 0), (2, -1), "RIGHT"),
+                           ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+    return [Paragraph("By week", ParagraphStyle("Wk", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=ACCENT, spaceAfter=4)), t, Spacer(1, 10)]
+
+
 def _build_due_date_schedule_pdf(title: str, subtitle: str, df, ref_label: str) -> bytes:
     """One continuous table for the whole report (column header repeats on every page via
     repeatRows) rather than a separate boxed table per due date -- compact enough to hold
@@ -101,6 +122,12 @@ def _build_due_date_schedule_pdf(title: str, subtitle: str, df, ref_label: str) 
         # is measured (reportlab stringWidth at Helvetica 9pt + 11pt of cell padding): Due Date
         # header >= 0.094, Track >= 0.107, Amount's own header ("Amount (PHP)") >= 0.135 -- anything
         # tighter overflows past the column instead of wrapping.
+        story.extend(_week_summary(df, styles))
+        story.append(Paragraph(
+            "Grouped by actual payment date — a due date landing on a weekend is paid the next banking day. "
+            "* marks a row whose original due date differs from the payment date shown above it.",
+            ParagraphStyle("NoteTop", parent=styles["Normal"], fontSize=7.9, textColor=GREY, spaceAfter=6),
+        ))
         headers = ["Due Date", "Payee Name", "Track", ref_label, "Amount (PHP)"]
         col_widths = [CONTENT_WIDTH * w for w in (0.098, 0.299, 0.111, 0.352, 0.14)]
         n_cols = len(headers)
@@ -178,12 +205,6 @@ def _build_due_date_schedule_pdf(title: str, subtitle: str, df, ref_label: str) 
         table = Table(data, colWidths=col_widths, repeatRows=1)
         table.setStyle(TableStyle(cmds))
         story.append(table)
-        story.append(Spacer(1, 4))
-        story.append(Paragraph(
-            "Grouped by actual payment date — a due date landing on a weekend is paid the next banking day. "
-            "* marks a row whose original due date differs from the payment date shown above it.",
-            ParagraphStyle("Note", parent=styles["Normal"], fontSize=7.9, textColor=GREY),
-        ))
 
     story.append(Spacer(1, 10))
     story.append(Paragraph(f"Generated {manila_now().strftime('%m/%d/%Y %H:%M')}", ParagraphStyle("Gen", parent=styles["Normal"], fontSize=8.4, textColor=GREY)))

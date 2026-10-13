@@ -57,7 +57,8 @@ MENU: dict[str, list] = {
     "Bank": ["bank-cash", "booklets", "expenses"],     # the Check-date planner dropped with /more/ (owner, 2026-10-09)
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records": ["reports", "income-statement"],
-    "Analytics": [("Purchasing", "shopping_cart", "analytics", "tab=purchasing", "reports.use"), ("Payables", "receipt_long", "analytics", "tab=payables", "reports.use"),
+    "Analytics": [("Sales", "point_of_sale", "analytics", "tab=sales", "reports.use"), ("Cash ahead", "trending_up", "analytics", "tab=cash", "reports.use"),
+                  ("Purchasing", "shopping_cart", "analytics", "tab=purchasing", "reports.use"), ("Payables", "receipt_long", "analytics", "tab=payables", "reports.use"),
                   ("Bank and cash", "account_balance", "analytics", "tab=bank", "reports.use"), ("Lenders", "handshake", "analytics", "tab=lenders", "reports.use")],
     "Set-up": ["creditors", "settings", "review"],
 }
@@ -68,7 +69,7 @@ SECTION_GROUP = {"Stock": "stock", "Sell": "sell", "Buy": "buy", "Pay suppliers"
 
 # the Home tiles' page states (engines/home_tiles.py, written for Streamlit's widget keys) in this site's words
 TILE_QUERY = {("po_mode", "Receive"): "mode=receive", ("po_mode", "Match invoice"): "mode=match", ("sales_view", "day"): "view=day", ("sales_view", "released"): "view=released", ("sales_view", "scan"): "view=scan",
-              **{("analytics_tab", t): f"tab={t}" for t in ("payables", "lenders", "bank", "purchasing")}}
+              **{("analytics_tab", t): f"tab={t}" for t in ("sales", "cash", "payables", "lenders", "bank", "purchasing")}}
 
 
 def page_url(page_id: str, query: str = "") -> str:

@@ -70,7 +70,7 @@ def _title_band(entity_label: str, entity_name: str) -> Table:
     title_style = ParagraphStyle("BandTitle", parent=styles["Normal"], textColor=colors.white, fontSize=16, leading=19, fontName="Helvetica-Bold")
     sub_style = ParagraphStyle("BandSub", parent=styles["Normal"], textColor=colors.white, fontSize=9, leading=12, alignment=2)
     band = Table(
-        [[Paragraph("STATEMENT OF ACCOUNT", title_style), Paragraph(_esc(f"{entity_label.upper()}: {entity_name}"), sub_style)]],
+        [[Paragraph("STATEMENT OF ACCOUNT", title_style), Paragraph(_esc(f"{entity_label.upper()}: {entity_name}").replace(" · ", "<br/>").replace(" — ", "<br/>"), sub_style)]],
         colWidths=[CONTENT_WIDTH * 0.55, CONTENT_WIDTH * 0.45],
     )
     band.setStyle(TableStyle([
@@ -157,7 +157,7 @@ def _finish(doc, story) -> bytes:
 
 
 def _invoices_table(df, with_batch_col: bool = True):
-    headers = ["Doc Ref", "Invoice Date", "Due Date", "Gross", "Net", "Status"] + (["Batch"] if with_batch_col else [])
+    headers = ["Doc Ref", "Invoice Date", "Due Date", "Gross", "Net", "Status"] + (["Payment statement"] if with_batch_col else [])
     widths = [CONTENT_WIDTH * w for w in ((0.16, 0.14, 0.14, 0.14, 0.14, 0.12, 0.16) if with_batch_col else (0.18, 0.16, 0.16, 0.16, 0.16, 0.18))]
     rows = []
     for r in df.itertuples():
@@ -168,7 +168,7 @@ def _invoices_table(df, with_batch_col: bool = True):
     return _section_table(headers, rows, widths)
 
 
-def _checks_table(df, with_batch_col: bool = True, batch_col_label: str = "Batch"):
+def _checks_table(df, with_batch_col: bool = True, batch_col_label: str = "Payment statement"):
     headers = ["Check Date", "Check #", "Amount", "Status", "Cleared"] + ([batch_col_label] if with_batch_col else [])
     widths = [CONTENT_WIDTH * w for w in ((0.15, 0.2, 0.16, 0.12, 0.15, 0.22) if with_batch_col else (0.2, 0.26, 0.2, 0.16, 0.18))]
     ref_field = "note_ref" if batch_col_label == "Loan Note" else "statement_ref"
@@ -198,7 +198,7 @@ def generate_supplier_statement_pdf(supplier_name: str, statements_df, invoices_
     if group_by_batch and not statements_df.empty:
         for batch in statements_df.itertuples():
             ref = batch.statement_ref
-            story.append(Paragraph(_esc(f"Batch {ref} — {batch.status}"), st["section"]))
+            story.append(Paragraph(_esc(f"Payment statement {ref} — {batch.status}"), st["section"]))
             b_inv = invoices_df[invoices_df["statement_ref"] == ref] if not invoices_df.empty else invoices_df
             b_chk = checks_df[checks_df["statement_ref"] == ref] if not checks_df.empty else checks_df
             story.append(Paragraph("Invoices", ParagraphStyle("Sub", fontSize=9, fontName="Helvetica-Bold", spaceAfter=3)))
@@ -210,8 +210,8 @@ def generate_supplier_statement_pdf(supplier_name: str, statements_df, invoices_
             b_chk_live = b_chk[b_chk["status"] == "Active"] if not b_chk.empty else b_chk
             story.append(Spacer(1, 4))
             story.append(_totals_block([
-                ("Batch invoiced (excl. cancelled)", b_inv_live["amount"].sum() if not b_inv_live.empty else 0),
-                ("Batch paid (active checks)", b_chk_live["amount"].sum() if not b_chk_live.empty else 0),
+                ("Invoiced on this statement (excl. cancelled)", b_inv_live["amount"].sum() if not b_inv_live.empty else 0),
+                ("Paid on this statement (active checks)", b_chk_live["amount"].sum() if not b_chk_live.empty else 0),
             ]))
             story.append(Spacer(1, 10))
     else:

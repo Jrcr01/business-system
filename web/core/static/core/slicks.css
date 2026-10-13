@@ -574,3 +574,19 @@ table.list tr.tentative td { color: var(--fg-6b7280); font-style: italic; }
 /* Fingerprint sign-in (owner, 2026-10-13): the link under the Sign in button, as on his bank's app */
 .login-fp { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 1.02rem; text-decoration: none; padding: 8px 10px; }
 .login-fp .ms { font-size: 30px; color: var(--fg-0b6e4f); }
+
+/* Business intelligence on Analytics (owner, 2026-10-14): the line charts the page draws itself, the month columns, the comparison table */
+.bi-line { width: 100%; height: auto; display: block; }
+.bi-line .grid { stroke: var(--bd-e3e7ed); } .bi-line .zero { stroke: var(--bd-8a96a6); } .bi-line .floor { stroke: var(--fg-9a3412); stroke-dasharray: 6 5; }
+.bi-line .tk { font-size: 10px; fill: var(--fg-64748b); }
+.bi-line .a { fill: none; stroke: var(--fg-0b4f8a); stroke-width: 2.5; stroke-linejoin: round; } .bi-line .b { fill: none; stroke: var(--fg-b7c3d1); stroke-width: 2; }
+.bi-line .dot { fill: var(--fg-0b4f8a); }
+.bi-cols { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; height: 150px; align-items: end; }
+.bi-cols .col { display: flex; flex-direction: column; height: 100%; justify-content: flex-end; }
+.bi-cols .bars { display: flex; gap: 2px; align-items: flex-end; flex: 1; }
+.bi-cols .bars span { display: block; flex: 1; border-radius: 3px 3px 0 0; min-height: 1px; } .bi-cols .s { background: var(--fg-0b4f8a); } .bi-cols .m { background: var(--bg-1d9e75); }
+.bi-cols .lb { font-size: .72rem; color: var(--fg-64748b); text-align: center; margin-top: 3px; }
+.kpi small { font-size: .8rem; color: var(--fg-64748b); } .kpi b em { font-style: normal; font-size: 1rem; color: var(--fg-64748b); }
+.kpi small.pos, .bi-cmp small.pos, .kpi b.pos { color: var(--fg-1b7f3b); } .kpi small.neg, .bi-cmp small.neg, .kpi b.neg { color: var(--fg-b3261e); }
+.hbar .fill.g { background: var(--bg-1d9e75); } .hbar .fill.o { background: var(--bg-c26a00); }
+.chart .ct small { font-weight: 400; margin-left: 6px; }

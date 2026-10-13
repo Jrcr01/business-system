@@ -385,6 +385,24 @@ def _lenders():
     return str(n), "active loan notes", "ok" if n else "none"
 
 
+def _an_sales():
+    from engines.bi_service import _totals
+    from engines.clock import manila_today
+    t = manila_today()
+    n = _totals(t.replace(day=1), t)
+    return peso_short(n["sales"]), f"this month · margin {n['margin_pct']}%", "ok" if n["sales"] else "none"
+
+
+def _an_cash():
+    from engines.bi_service import liquidity
+    from engines.clock import manila_today
+    q = liquidity(manila_today())
+    if q.get("none"):
+        return "—", "no bank statement yet", "none"
+    low = q["lowest_day"]
+    return peso_short(q["lowest"]), f"lowest in 60 days, {low.strftime('%b')} {low.day}", "warn" if q["lowest"] < max(q["buffer"], 0) or q["lowest"] < 0 else "ok"
+
+
 def _an_payables():
     from engines.reports_service import get_combined_ap_summary
     df = get_combined_ap_summary()
@@ -522,6 +540,8 @@ for _t in (
           report_type_picker="Statement of account — supplier, lender, bank loan or card", rpt_soa_view="Supplier history"),
         A("Possible duplicates", "Check everything on file", ":material/content_copy:", rpt_mode="Standard reports", report_type_picker="Possible duplicates — check everything on file"),
         A("Decision reports", "Answers for choices", ":material/lightbulb:", rpt_mode="Standard reports", report_type_picker="Decision reports — answers for choices")]),
+    Tile("analytics", "analytics", "Sales", _an_sales, key="an-sales", icon=":material/point_of_sale:", state=(("analytics_tab", "sales"),), needs="reports.use"),
+    Tile("analytics", "analytics", "Cash ahead", _an_cash, key="an-cash", icon=":material/trending_up:", state=(("analytics_tab", "cash"),), needs="reports.use"),
     Tile("analytics", "analytics", "Payables", _an_payables, key="an-payables", icon=":material/receipt_long:", state=(("analytics_tab", "payables"),), needs="reports.use"),
     Tile("analytics", "analytics", "Lenders", _an_lenders, key="an-lenders", icon=":material/handshake:", state=(("analytics_tab", "lenders"),), needs="reports.use"),
     Tile("analytics", "analytics", "Bank and cash", _an_bank, key="an-bank", icon=":material/account_balance:", state=(("analytics_tab", "bank"),), needs="reports.use"),

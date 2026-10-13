@@ -10,8 +10,8 @@ from django.shortcuts import render
 from masters.views import page_needed
 from engines.common import us_date
 
-TABS = [("purchasing", "Purchasing"), ("payables", "Payables"), ("bank", "Bank and cash"), ("lenders", "Lenders")]     # in the order of the work, as on Home
-PERIODS = [("month", "This month"), ("quarter", "This quarter"), ("year", "This year")]
+TABS = [("sales", "Sales"), ("cash", "Cash ahead"), ("purchasing", "Purchasing"), ("payables", "Payables"), ("bank", "Bank and cash"), ("lenders", "Lenders")]     # owner, 2026-10-14: sales and liquidity first
+PERIODS = [("month", "This month"), ("quarter", "This quarter"), ("year", "This year"), ("custom", "From … to …")]
 TRACK_OF = {"payables": "Supplier", "lenders": "Lender"}
 
 
@@ -21,7 +21,13 @@ def _rows(sql: str, params: tuple = ()) -> list:
         return conn.execute(sql, params).fetchall()
 
 
-def _period(key: str, today: date) -> tuple[date, date]:
+def _period(key: str, today: date, frm: str = "", to: str = "") -> tuple[date, date]:
+    if key == "custom":
+        try:
+            a, b = date.fromisoformat(frm), date.fromisoformat(to)
+            return (a, b) if a <= b else (b, a)
+        except ValueError:
+            return today.replace(day=1), today
     if key == "quarter":
         first = date(today.year, 3 * ((today.month - 1) // 3) + 1, 1)
     elif key == "year":
@@ -70,7 +76,7 @@ def analytics(request):
         return render(request, "core/not_allowed.html", {"page": PAGES["analytics"]}, status=403)
     tab = request.GET.get("tab") if request.GET.get("tab") in dict(tabs) else ("payables" if "payables" in dict(tabs) else tabs[0][0])     # Payables opens first, as before
     per = request.GET.get("period") if request.GET.get("period") in dict(PERIODS) else "month"
-    start, end = _period(per, today)
+    start, end = _period(per, today, request.GET.get("from", ""), request.GET.get("to", ""))
     ctx = {"page_id": "analytics", "tabs": tabs, "tab": tab, "periods": PERIODS, "period": per, "start": start, "end": end, "today": today}
     try:
         ctx.update(globals()[f"_{tab}"](today, start, end))
@@ -78,6 +84,19 @@ def analytics(request):
     except Exception as e:                                           # noqa: BLE001 -- a broken figure must not take the page down
         ctx["error"] = f"This dashboard could not be drawn: {e}"
     return render(request, "payables/analytics.html", ctx)
+
+
+def _sales(today, start, end) -> dict:
+    """Owner, 2026-10-14: what happened and why (engines/bi_service.sales); drawn by analytics_sales.html."""
+    from engines import bi_service
+    period = "custom" if (start, end) not in (_period(k, today) for k in ("month", "quarter", "year")) else next(k for k in ("month", "quarter", "year") if _period(k, today) == (start, end))
+    return {"bi": bi_service.sales(today, start, end, period), "include": "payables/analytics_sales.html"}
+
+
+def _cash(today, start, end) -> dict:
+    """Owner, 2026-10-14: liquidity, the bank balance 60 days ahead (engines/bi_service.liquidity); drawn by analytics_cash.html."""
+    from engines import bi_service
+    return {"bi": bi_service.liquidity(today), "include": "payables/analytics_cash.html"}
 
 
 def _payables(today, start, end) -> dict:

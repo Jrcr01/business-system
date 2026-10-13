@@ -6,10 +6,13 @@
 <nav class="tabs">
   {% for k, label in tabs %}<a href="?tab={{ k }}&period={{ period }}"{% if k == tab %} class="on"{% endif %}>{{ label }}</a>{% endfor %}
   <form method="get" style="margin-left:auto"><input type="hidden" name="tab" value="{{ tab }}">
-    <select name="period" aria-label="Period" onchange="this.form.submit()">{% for k, label in periods %}<option value="{{ k }}"{% if k == period %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></form>
+    <select name="period" aria-label="Period" onchange="if (this.value != 'custom') this.form.submit(); else document.getElementById('an_custom').hidden = false;">{% for k, label in periods %}<option value="{{ k }}"{% if k == period %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    <span id="an_custom"{% if period != "custom" %} hidden{% endif %}> <input type="date" name="from" value="{{ start|date:"Y-m-d" }}" aria-label="From"> <input type="date" name="to" value="{{ end|date:"Y-m-d" }}" aria-label="To"> <button class="btn small ghost" type="submit">Show</button></span></form>
 </nav>
-<p class="hint">Period {{ start|date:"m/d/Y" }} → {{ end|date:"m/d/Y" }} (for spend and checks cleared). What is owed and due is as of today. A check counts as paid only once it has cleared.</p>
+{% if tab == "cash" %}<p class="hint">As of today, {{ today|date:"m/d/Y" }}, from the last bank balance on file.</p>
+{% else %}<p class="hint">Period {{ start|date:"m/d/Y" }} → {{ end|date:"m/d/Y" }}{% if tab != "sales" %} (for spend and checks cleared). What is owed and due is as of today. A check counts as paid only once it has cleared{% endif %}.</p>{% endif %}
 {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+{% if include %}{% include include %}{% endif %}
 {% if cards %}
 <div class="kpis">
   {% for label, value, kind, url in cards %}<a class="kpi" href="{{ url }}"><span>{{ label }}</span><b>{% if kind == "peso" %}₱{{ value|floatformat:0|intcomma }}{% else %}{{ value|intcomma }}{% endif %}</b></a>{% endfor %}

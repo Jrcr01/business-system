@@ -1,0 +1,21 @@
+{% load humanize %}{% comment %}Owner, 2026-10-14 ("liquidity"): the bank balance ahead, from engines/bi_service.liquidity (cash_insights_service.forecast).{% endcomment %}
+{% if bi.none %}<p class="note"><span class="ms">info</span> No bank statement is imported yet, so there is no balance to start from. Import one on <a href="/bank-cash/">Bank and cash</a> and this page fills in.</p>
+{% else %}
+{% if bi.stale %}<p class="note"><span class="ms">warning</span> The last bank balance is {{ bi.stale_days }} days old ({{ bi.as_of|date:"m/d/Y" }}). Import a newer statement for a forecast worth reading.</p>{% endif %}
+<div class="kpis">
+  <a class="kpi" href="/bank-cash/?tab=recon"><span>Bank at the last statement line</span><b>₱{{ bi.opening|floatformat:0|intcomma }}</b><small>{{ bi.as_of|date:"m/d/Y" }}</small></a>
+  <a class="kpi" href="/calendar/"><span>Lowest point in {{ bi.days }} days</span><b class="{% if bi.lowest < bi.buffer or bi.lowest < 0 %}neg{% else %}pos{% endif %}">₱{{ bi.lowest|floatformat:0|intcomma }}</b>
+    <small>on {{ bi.lowest_day|date:"M j" }}{% if bi.buffer %}{% if bi.lowest < bi.buffer %} · ₱{{ bi.buffer|floatformat:0|intcomma }} buffer not kept{% else %} · above the ₱{{ bi.buffer|floatformat:0|intcomma }} buffer{% endif %}{% endif %}</small></a>
+  <a class="kpi" href="/reports/"><span>Going out, {{ bi.days }} days</span><b>₱{{ bi.money_out|floatformat:0|intcomma }}</b>
+    <small>{% for t, v in bi.by_track.items %}{{ t|lower }} ₱{{ v|floatformat:0|intcomma }}{% if not forloop.last %} · {% endif %}{% empty %}nothing scheduled{% endfor %}</small></a>
+  <a class="kpi" href="/collect/?view=deposits"><span>Expected in, {{ bi.days }} days</span><b>₱{{ bi.money_in|floatformat:0|intcomma }}</b><small>from the last {{ bi.weeks }} weeks' bank deposits, by weekday</small></a>
+</div>
+<div class="chart"><div class="ct">Bank balance ahead <small class="hint">blue = expected{% if bi.buffer %} · dashed = the buffer{% endif %}</small></div>
+  {% include "payables/_line.html" with g=bi.line alt="Bank balance ahead" %}
+  <p class="hint">Ends the {{ bi.days }} days at ₱{{ bi.end_balance|floatformat:0|intcomma }}.{% if bi.first_below %} First below the buffer on {{ bi.first_below|date:"M j" }}.{% endif %}</p></div>
+{% if bi.heavy %}<div class="chart" style="margin-top:12px"><div class="ct">The heavy days</div>
+  <div class="scroll-x"><table class="list"><tr><th>Day</th><th class="num">Out</th><th>What</th></tr>
+    {% for h in bi.heavy %}<tr><td>{{ h.day|date:"D M j" }}</td><td class="num">₱{{ h.amount|floatformat:0|intcomma }}</td><td>{{ h.what }}</td></tr>{% endfor %}</table></div></div>{% endif %}
+<p class="hint" style="margin-top:10px">How it is made: every check not yet cleared on its date (a past-dated one counts today), card statements and loan installments on their due dates,
+  ordered purchase orders; money in = the average bank deposit per weekday over the last {{ bi.weeks }} weeks. Plain arithmetic, redone every time the page opens. Settings → Cash forecast holds the buffer and the weeks.</p>
+{% endif %}

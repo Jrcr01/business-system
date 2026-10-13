@@ -169,3 +169,13 @@ def test_the_scanner_account_never_uses_it(web):
     c = Client()
     login(c, "rack@slicks.test")
     assert c.get("/fingerprint/options/").status_code == 400
+
+
+def test_the_idle_page_really_signs_out_and_a_signed_in_person_skips_the_form(web):
+    # owner, 2026-10-14: the page's countdown showed "You were signed out" while the menu and every page still opened
+    _admin(web)
+    r = web.get("/login/?next=/expenses/")
+    assert r.status_code == 302 and r["Location"] == "/expenses/"
+    page = web.get("/login/?idle=1&next=/expenses/").content.decode()
+    assert "You were signed out" in page and 'class="tb-user' not in page and "Change password" not in page
+    assert web.get("/")["Location"].startswith("/login/")

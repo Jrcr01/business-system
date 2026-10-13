@@ -155,6 +155,8 @@ def test_the_calendar_replaces_payables_due(web, db):
     sid = _new_batch(web, cid)
     _add_inv(web, sid, gross="10,000")
     day = manila_today() + timedelta(days=3)
+    while day.weekday() >= 5:                                                    # a check dated on a weekend shows on the next banking day
+        day += timedelta(days=1)
     web.post(f"/order-statements/{sid}/", {"action": "chk_park", "d1": str(day), "a1": "10,000"})
     with sqlite3.connect(_db()) as conn:
         conn.execute("UPDATE checks_issued SET check_number = '0001' WHERE statement_id = ?", (sid,))
@@ -249,7 +251,7 @@ def test_the_printed_statement_says_sales_invoice_and_shows_the_dr(db):
     sid = create_order_statement(cid)
     add_invoice(cid, "SI-55", date(2026, 10, 1), date(2027, 2, 1), 500.0, [], sid, dr_no="DR 12")
     text = "".join(p.get_text() for p in fitz.open(stream=generate_batch_statement_pdf(sid), filetype="pdf"))
-    assert "Sales Invoice" in text and "SI-55 (DR 12)" in text
+    assert "SI / DR no." in text and "SI-55 (DR 12)" in text
 
 
 def _ordered_and_received(db, web=None, qty=2):

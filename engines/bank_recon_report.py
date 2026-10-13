@@ -108,7 +108,7 @@ def generate_recon_pdf(r: dict) -> bytes:
     else:
         rows = [[str(x.check_number or "no number"), __import__("engines.common", fromlist=["us_date"]).us_date(x.check_date), str(x.payee), str(x.reference or ""), _money(x.amount)]
                 for x in r["outstanding"].itertuples()]
-        story.append(_section_table(["Check #", "Check date", "Payee", "Batch / loan note", "Amount (PHP)"], rows,
+        story.append(_section_table(["Check #", "Check date", "Payee", "Payment statement / loan note", "Amount (PHP)"], rows,
                                     [CONTENT_WIDTH * f for f in (0.16, 0.14, 0.34, 0.2, 0.16)], right_cols=(4,)))
     story.append(Paragraph("Bank items not in the system (debits that are not our checks)", sec))
     if r["bank_items"].empty:

@@ -1,0 +1,246 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: Business intelligence on Analytics</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; --yellow: #f5c518; --sky: #8fc4f3; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1180px; margin: 0 auto; padding: 18px 20px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 30px 0 4px; }
+h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 8px; }
+.why { color: var(--muted); margin: 0 0 12px; max-width: 86ch; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 16px 18px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.tabs span { border: 1px solid #d5dbe3; border-radius: 8px; padding: 5px 11px; background: #fff; font-size: .9rem; }
+.tabs .on { background: var(--blue); color: #fff; border-color: var(--blue); } .tabs .new { border-style: dashed; }
+.period { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; font-size: .9rem; color: var(--muted); }
+.period b { background: var(--soft); border-radius: 6px; padding: 3px 9px; color: var(--ink); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpi { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.kpi .l { font-size: .8rem; color: var(--muted); } .kpi .v { font-size: 1.45rem; font-weight: 800; } .kpi .d { font-size: .82rem; }
+.up { color: var(--ok); } .dn { color: var(--red); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+.chart { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.chart .ct { font-weight: 700; font-size: .92rem; margin-bottom: 6px; } .chart .ct small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.hbar { display: grid; grid-template-columns: 150px 1fr 90px; gap: 8px; align-items: center; font-size: .86rem; margin: 3px 0; }
+.hbar .track { background: var(--soft); border-radius: 4px; height: 12px; } .hbar .fill { background: var(--blue); height: 12px; border-radius: 4px; }
+.hbar .fill.g { background: #1d9e75; } .hbar .fill.o { background: #e3a008; } .hbar .fill.r { background: #d9534f; }
+.hbar .v { text-align: right; font-variant-numeric: tabular-nums; }
+svg { width: 100%; height: auto; font-family: inherit; }
+table.list { border-collapse: collapse; width: 100%; font-size: .9rem; font-variant-numeric: tabular-nums; }
+table.list th { text-align: left; color: var(--muted); font-weight: 600; font-size: .78rem; border-bottom: 2px solid var(--line); padding: 5px 8px; }
+table.list td { border-bottom: 1px solid var(--line); padding: 6px 8px; } .num { text-align: right !important; }
+.pill { display: inline-block; font-size: .74rem; border-radius: 999px; padding: 1px 8px; font-weight: 600; }
+.pill.r { background: #fdecea; color: var(--red); } .pill.o { background: #fff4e5; color: var(--warn); } .pill.g { background: #e7f6ee; color: var(--ok); } .pill.b { background: #eef3fa; color: var(--blue); }
+.btn { display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; border: 1px solid var(--blue); border-radius: 8px; padding: 7px 12px; font: inherit; font-weight: 600; font-size: .9rem; }
+.btn.ghost { background: #fff; color: var(--blue); border-color: #b9c6d8; }
+.bar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; background: var(--soft); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.bar label { display: block; font-size: .78rem; color: var(--muted); font-weight: 600; margin-bottom: 3px; }
+.bar input, .bar select { font: inherit; border: 1px solid #b9c6d8; border-radius: 8px; padding: 6px 9px; background: #fff; }
+.warn-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: start; padding: 9px 4px; border-bottom: 1px solid var(--line); }
+.warn-row .ms { font-size: 22px; } .warn-row .t { font-weight: 700; } .warn-row .w { color: var(--muted); font-size: .88rem; }
+.ask { border: 2px solid var(--blue); border-radius: 12px; padding: 12px 14px; }
+.ask input { width: 100%; font: inherit; font-size: 1.05rem; border: 1px solid #b9c6d8; border-radius: 8px; padding: 10px 12px; }
+.chips span { display: inline-block; border: 1px solid #b9c6d8; border-radius: 999px; padding: 3px 10px; font-size: .84rem; margin: 6px 6px 0 0; color: var(--blue); }
+.ladder { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 10px 0 18px; }
+.ladder div { background: #fff; border: 1px solid #d5dbe3; border-radius: 10px; padding: 10px 12px; font-size: .9rem; } .ladder b { display: block; color: var(--blue); }
+.note { background: #fff7e0; border-radius: 8px; padding: 8px 12px; font-size: .9rem; margin-top: 10px; }
+.tick { font-size: .9rem; color: var(--muted); }
+</style></head><body><main>
+
+<h1 style="margin-top:4px">Business intelligence on Analytics <small>every figure below is a made-up example, in the shape the real pages would have</small></h1>
+<p class="why">Six tabs, following the BI ladder on SAP's page: what happened → why → what will happen → what to do, plus alerts and questions in plain words.
+The last two tabs are the decision support system (compare scenarios, highlight risks, guide next steps). Tick which tabs are necessary; the rest can wait.</p>
+<div class="ladder">
+  <div><b>1 · Sales</b>What happened and why: sales, margin, by brand, size, customer, payment.</div>
+  <div><b>2 · Stock</b>What is tied up: value, fast and slow movers, days of stock, DOT age.</div>
+  <div><b>3 · Cash</b>What will happen: the bank balance 60 days ahead.</div>
+  <div><b>4 · Warnings</b>Risks surfaced for you, each with a why and a link.</div>
+  <div><b>5 · Decisions</b>Compare scenarios: pay plan, reorder, price change.</div>
+  <div><b>6 · Ask</b>Questions in plain words, answered from the system's own data.</div>
+</div>
+
+<!-- ============ 1 SALES ============ -->
+<h1>1. Sales <small>what happened, and why</small></h1>
+<div class="screen">
+  <div class="tabs"><span>Purchasing</span><span>Payables</span><span>Bank and cash</span><span>Lenders</span><span class="on new">Sales</span><span class="new">Stock</span><span class="new">Cash</span><span class="new">Warnings</span><span class="new">Decisions</span><span class="new">Ask</span></div>
+  <div class="period">Period: <b>October 2026</b> <span>month</span> · <span>quarter</span> · <span>year</span> · <span>from ___ to ___</span> <span style="margin-left:auto"><span class="btn ghost"><span class="ms">download</span>Excel</span></span></div>
+  <div class="kpis">
+    <div class="kpi"><div class="l">Sales of goods + services</div><div class="v">₱742,300</div><div class="d up">▲ 7.9% vs September (₱688,150)</div></div>
+    <div class="kpi"><div class="l">Gross margin</div><div class="v">₱170,850 <span style="font-size:1rem">23.0%</span></div><div class="d up">▲ from 22.5%</div></div>
+    <div class="kpi"><div class="l">Pieces sold</div><div class="v">214</div><div class="d dn">▼ 3 fewer than September</div></div>
+    <div class="kpi"><div class="l">Average sale</div><div class="v">₱6,240</div><div class="d up">▲ ₱410 · 119 invoices</div></div>
+  </div>
+  <div class="charts">
+    <div class="chart"><div class="ct">Sales by day<small>October (blue) over September (grey)</small></div>
+      <svg viewBox="0 0 520 170"><g stroke="#e5e7eb"><line x1="40" y1="20" x2="510" y2="20"/><line x1="40" y1="70" x2="510" y2="70"/><line x1="40" y1="120" x2="510" y2="120"/></g>
+      <g font-size="10" fill="#4b5563"><text x="4" y="24">60k</text><text x="4" y="74">30k</text><text x="4" y="124">0</text><text x="40" y="160">1</text><text x="195" y="160">10</text><text x="350" y="160">20</text><text x="495" y="160">31</text></g>
+      <polyline fill="none" stroke="#b7c3d1" stroke-width="2" points="40,95 56,88 72,105 88,70 104,92 120,110 136,60 152,85 168,96 184,78 200,64 216,101 232,90 248,72 264,66 280,98 296,80 312,55 328,88 344,93 360,75 376,100 392,69 408,84 424,62 440,95 456,78 472,90 488,71 504,86"/>
+      <polyline fill="none" stroke="#0B4F8A" stroke-width="2.5" points="40,90 56,80 72,100 88,62 104,85 120,104 136,50 152,78 168,88 184,66 200,58 216,96 232,82"/>
+      <circle cx="232" cy="82" r="4" fill="#0B4F8A"/><text x="238" y="78" font-size="10" fill="#0B4F8A">today ₱24,800</text></svg></div>
+    <div class="chart"><div class="ct">Sales and margin by month<small>last 12 months</small></div>
+      <svg viewBox="0 0 520 170"><g font-size="10" fill="#4b5563"><text x="4" y="24">800k</text><text x="4" y="74">400k</text><text x="4" y="124">0</text></g>
+      <g fill="#0B4F8A"><rect x="45" y="60" width="22" height="62"/><rect x="83" y="52" width="22" height="70"/><rect x="121" y="66" width="22" height="56"/><rect x="159" y="48" width="22" height="74"/><rect x="197" y="40" width="22" height="82"/><rect x="235" y="44" width="22" height="78"/><rect x="273" y="58" width="22" height="64"/><rect x="311" y="50" width="22" height="72"/><rect x="349" y="36" width="22" height="86"/><rect x="387" y="42" width="22" height="80"/><rect x="425" y="38" width="22" height="84"/><rect x="463" y="31" width="22" height="91"/></g>
+      <g fill="#1d9e75"><rect x="45" y="106" width="22" height="16"/><rect x="83" y="104" width="22" height="18"/><rect x="121" y="108" width="22" height="14"/><rect x="159" y="103" width="22" height="19"/><rect x="197" y="101" width="22" height="21"/><rect x="235" y="102" width="22" height="20"/><rect x="273" y="105" width="22" height="17"/><rect x="311" y="103" width="22" height="19"/><rect x="349" y="100" width="22" height="22"/><rect x="387" y="102" width="22" height="20"/><rect x="425" y="101" width="22" height="21"/><rect x="463" y="99" width="22" height="23"/></g>
+      <g font-size="10" fill="#4b5563"><text x="45" y="140">Nov</text><text x="121" y="140">Jan</text><text x="197" y="140">Mar</text><text x="273" y="140">May</text><text x="349" y="140">Jul</text><text x="425" y="140">Sep</text></g>
+      <text x="400" y="160" font-size="10"><tspan fill="#0B4F8A">■ sales</tspan> <tspan fill="#1d9e75">■ margin</tspan></text></svg></div>
+    <div class="chart"><div class="ct">By brand<small>sales · margin %</small></div>
+      <div class="hbar"><span>Sunny</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="v">248,600 · 24%</span></div>
+      <div class="hbar"><span>Yokohama</span><div class="track"><div class="fill" style="width:72%"></div></div><span class="v">179,000 · 19%</span></div>
+      <div class="hbar"><span>New Century</span><div class="track"><div class="fill" style="width:61%"></div></div><span class="v">151,700 · 26%</span></div>
+      <div class="hbar"><span>Motolite (batteries)</span><div class="track"><div class="fill" style="width:38%"></div></div><span class="v">94,500 · 21%</span></div>
+      <div class="hbar"><span>Others</span><div class="track"><div class="fill" style="width:27%"></div></div><span class="v">68,500 · 22%</span></div></div>
+    <div class="chart"><div class="ct">Top sizes<small>pieces</small></div>
+      <div class="hbar"><span>185/65R15</span><div class="track"><div class="fill g" style="width:100%"></div></div><span class="v">36</span></div>
+      <div class="hbar"><span>205/55R16</span><div class="track"><div class="fill g" style="width:78%"></div></div><span class="v">28</span></div>
+      <div class="hbar"><span>265/65R17</span><div class="track"><div class="fill g" style="width:61%"></div></div><span class="v">22</span></div>
+      <div class="hbar"><span>195/55R15</span><div class="track"><div class="fill g" style="width:53%"></div></div><span class="v">19</span></div>
+      <div class="hbar"><span>11R22.5 (truck)</span><div class="track"><div class="fill g" style="width:44%"></div></div><span class="v">16</span></div></div>
+    <div class="chart"><div class="ct">Who buys, and how they pay</div>
+      <div class="hbar"><span>Walk-in</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="v">412,000</span></div>
+      <div class="hbar"><span>Fleet</span><div class="track"><div class="fill" style="width:58%"></div></div><span class="v">238,800</span></div>
+      <div class="hbar"><span>Dealer</span><div class="track"><div class="fill" style="width:22%"></div></div><span class="v">91,500</span></div>
+      <div style="height:8px"></div>
+      <div class="hbar"><span>Cash</span><div class="track"><div class="fill o" style="width:100%"></div></div><span class="v">455,100</span></div>
+      <div class="hbar"><span>On credit (charge)</span><div class="track"><div class="fill o" style="width:41%"></div></div><span class="v">186,400</span></div>
+      <div class="hbar"><span>GCash / transfer</span><div class="track"><div class="fill o" style="width:16%"></div></div><span class="v">72,300</span></div>
+      <div class="hbar"><span>Check</span><div class="track"><div class="fill o" style="width:6%"></div></div><span class="v">28,500</span></div></div>
+    <div class="chart"><div class="ct">This month against the others</div>
+      <table class="list"><tr><th></th><th class="num">Oct 2026</th><th class="num">Sep 2026</th><th class="num">Oct 2025</th></tr>
+        <tr><td>Sales</td><td class="num">742,300</td><td class="num">688,150 <span class="up">+7.9%</span></td><td class="num">610,400 <span class="up">+21.6%</span></td></tr>
+        <tr><td>Gross margin</td><td class="num">170,850</td><td class="num">155,050 <span class="up">+10.2%</span></td><td class="num">131,200 <span class="up">+30.2%</span></td></tr>
+        <tr><td>Margin %</td><td class="num">23.0%</td><td class="num">22.5%</td><td class="num">21.5%</td></tr>
+        <tr><td>Pieces</td><td class="num">214</td><td class="num">217 <span class="dn">−1.4%</span></td><td class="num">188 <span class="up">+13.8%</span></td></tr>
+        <tr><td>Service income</td><td class="num">18,450</td><td class="num">15,200</td><td class="num">12,900</td></tr></table>
+      <p class="tick" style="margin:8px 0 0">Why the margin rose: Sunny 185/65R15 sold at the new price list (+₱180 each); fewer dealer sales (lowest margin).</p></div>
+  </div>
+</div>
+
+<!-- ============ 2 STOCK ============ -->
+<h1>2. Stock <small>what is tied up, and what moves</small></h1>
+<div class="screen">
+  <div class="kpis">
+    <div class="kpi"><div class="l">Stock value (at average cost)</div><div class="v">₱3,184,000</div><div class="d">1,126 pieces · 312 items</div></div>
+    <div class="kpi"><div class="l">Days of stock</div><div class="v">58 days</div><div class="d">at the last 30 days' cost of sales</div></div>
+    <div class="kpi"><div class="l">Below reorder level</div><div class="v">14 items</div><div class="d dn">4 at zero</div></div>
+    <div class="kpi"><div class="l">Slow movers</div><div class="v">₱412,600</div><div class="d">37 items with no sale in 90 days</div></div>
+  </div>
+  <div class="charts">
+    <div class="chart"><div class="ct">Value by brand</div>
+      <div class="hbar"><span>Sunny</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="v">1,012,000</span></div>
+      <div class="hbar"><span>Yokohama</span><div class="track"><div class="fill" style="width:84%"></div></div><span class="v">848,500</span></div>
+      <div class="hbar"><span>New Century</span><div class="track"><div class="fill" style="width:57%"></div></div><span class="v">575,000</span></div>
+      <div class="hbar"><span>Motolite</span><div class="track"><div class="fill" style="width:31%"></div></div><span class="v">312,400</span></div>
+      <div class="hbar"><span>Mags and rims</span><div class="track"><div class="fill" style="width:43%"></div></div><span class="v">436,100</span></div></div>
+    <div class="chart"><div class="ct">Fast movers<small>pieces out, 30 days · days of stock left</small></div>
+      <div class="hbar"><span>Sunny 185/65R15</span><div class="track"><div class="fill g" style="width:100%"></div></div><span class="v">36 · 12 d</span></div>
+      <div class="hbar"><span>Yoko 205/55R16</span><div class="track"><div class="fill g" style="width:78%"></div></div><span class="v">28 · 31 d</span></div>
+      <div class="hbar"><span>NC 265/65R17</span><div class="track"><div class="fill g" style="width:61%"></div></div><span class="v">22 · 8 d <span class="pill r">reorder</span></span></div>
+      <div class="hbar"><span>Motolite Gold 2SM</span><div class="track"><div class="fill g" style="width:50%"></div></div><span class="v">18 · 25 d</span></div></div>
+    <div class="chart"><div class="ct">Slow movers<small>no sale in 90 days · value tied up</small></div>
+      <div class="hbar"><span>Yoko 275/40R20</span><div class="track"><div class="fill r" style="width:100%"></div></div><span class="v">8 pcs · 96,000</span></div>
+      <div class="hbar"><span>Sunny 33x12.5R20</span><div class="track"><div class="fill r" style="width:72%"></div></div><span class="v">6 pcs · 69,000</span></div>
+      <div class="hbar"><span>Mags 18" Rota</span><div class="track"><div class="fill r" style="width:55%"></div></div><span class="v">4 sets · 52,800</span></div>
+      <div class="hbar"><span>NC 165/65R13</span><div class="track"><div class="fill r" style="width:30%"></div></div><span class="v">16 pcs · 28,800</span></div></div>
+    <div class="chart"><div class="ct">DOT age<small>pieces by year of manufacture</small></div>
+      <div class="hbar"><span>2026</span><div class="track"><div class="fill g" style="width:100%"></div></div><span class="v">612</span></div>
+      <div class="hbar"><span>2025</span><div class="track"><div class="fill g" style="width:58%"></div></div><span class="v">355</span></div>
+      <div class="hbar"><span>2024</span><div class="track"><div class="fill o" style="width:19%"></div></div><span class="v">117</span></div>
+      <div class="hbar"><span>2023 and older</span><div class="track"><div class="fill r" style="width:7%"></div></div><span class="v">42 <span class="pill o">sell first</span></span></div></div>
+    <div class="chart"><div class="ct">Stock value by month<small>end of each month</small></div>
+      <svg viewBox="0 0 520 150"><g font-size="10" fill="#4b5563"><text x="4" y="24">4M</text><text x="4" y="74">2M</text><text x="4" y="124">0</text></g>
+      <polyline fill="none" stroke="#0B4F8A" stroke-width="2.5" points="40,70 80,66 120,74 160,62 200,58 240,50 280,54 320,47 360,52 400,44 440,46 480,41"/>
+      <g font-size="10" fill="#4b5563"><text x="40" y="140">Nov</text><text x="120" y="140">Jan</text><text x="200" y="140">Mar</text><text x="280" y="140">May</text><text x="360" y="140">Jul</text><text x="440" y="140">Sep</text></g></svg>
+      <p class="tick" style="margin:4px 0 0">Stock grew ₱640k over the year while sales grew 22%: days of stock went from 49 to 58.</p></div>
+  </div>
+</div>
+
+<!-- ============ 3 CASH ============ -->
+<h1>3. Cash <small>what will happen: the bank 60 days ahead (added to the Bank and cash tab)</small></h1>
+<div class="screen">
+  <div class="kpis">
+    <div class="kpi"><div class="l">Bank today</div><div class="v">₱1,420,000</div><div class="d">last statement line 10/13</div></div>
+    <div class="kpi"><div class="l">Lowest point ahead</div><div class="v dn">₱186,000</div><div class="d dn">on Nov 15 — ₱214k below the reserve</div></div>
+    <div class="kpi"><div class="l">Going out, 60 days</div><div class="v">₱4,120,000</div><div class="d">checks 3.1M · cards 620k · loans 400k</div></div>
+    <div class="kpi"><div class="l">Expected in, 60 days</div><div class="v">₱3,980,000</div><div class="d">from the last 8 weeks' takings and collections</div></div>
+  </div>
+  <div class="chart"><div class="ct">Bank balance ahead<small>blue = expected · dotted = reserve (the daily limit × 1)</small></div>
+    <svg viewBox="0 0 1000 220"><g stroke="#e5e7eb"><line x1="50" y1="20" x2="990" y2="20"/><line x1="50" y1="90" x2="990" y2="90"/><line x1="50" y1="160" x2="990" y2="160"/></g>
+    <g font-size="11" fill="#4b5563"><text x="4" y="24">2.0M</text><text x="4" y="94">1.0M</text><text x="4" y="164">0</text></g>
+    <line x1="50" y1="132" x2="990" y2="132" stroke="#9a3412" stroke-dasharray="6 5"/><text x="900" y="128" font-size="11" fill="#9a3412">reserve ₱400k</text>
+    <polyline fill="none" stroke="#0B4F8A" stroke-width="2.5" points="50,61 100,70 150,66 200,84 250,96 300,88 350,110 400,118 450,124 500,147 550,139 600,128 650,120 700,104 750,96 800,100 850,90 900,82 950,78 990,74"/>
+    <circle cx="500" cy="147" r="5" fill="#C62828"/><text x="470" y="178" font-size="11" fill="#C62828" font-weight="700">Nov 15 · ₱186k</text>
+    <g font-size="11" fill="#4b5563"><text x="50" y="205">Oct 14</text><text x="280" y="205">Oct 29</text><text x="500" y="205">Nov 13</text><text x="730" y="205">Nov 28</text><text x="950" y="205">Dec 12</text></g></svg>
+    <table class="list" style="margin-top:8px"><tr><th>The heavy days</th><th class="num">Out</th><th>What</th></tr>
+      <tr><td>Nov 15</td><td class="num">486,000</td><td>Sunny checks 2026-PS 0034 (312k) · World 9953 card (174k)</td></tr>
+      <tr><td>Nov 2</td><td class="num">402,500</td><td>Yokohama 2026-PS 0031 (280k) · Metrobank loan installment (122.5k)</td></tr>
+      <tr><td>Oct 30</td><td class="num">355,000</td><td>Private lender · Mang Erning (355k)</td></tr></table></div>
+  <p class="note">How the forecast is made: the last 8 weeks' cash in, by weekday, carried forward; every check, card statement, loan installment and lender due on its date; expenses at last month's pace. Plain arithmetic, re-done every time the page opens; no AI.</p>
+</div>
+
+<!-- ============ 4 WARNINGS ============ -->
+<h1>4. Warnings <small>risks surfaced for you — each with a why and where to act</small></h1>
+<div class="screen">
+  <div class="warn-row"><span class="ms" style="color:var(--red)">error</span><div><div class="t">Cash falls below the reserve on Nov 15 (₱186k against ₱400k)</div><div class="w">Two payment statements and the World card fall on the same day. Open Decisions → Pay plan to move one.</div></div><span class="btn ghost">Pay plan</span></div>
+  <div class="warn-row"><span class="ms" style="color:var(--red)">error</span><div><div class="t">NC 265/65R17 will run out in 8 days</div><div class="w">22 sold in 30 days, 6 on hand; New Century delivers in 10 days. Order 24 by Oct 16.</div></div><span class="btn ghost">Reorder</span></div>
+  <div class="warn-row"><span class="ms" style="color:var(--warn)">warning</span><div><div class="t">3 customers over 30 days: ₱148,200</div><div class="w">JB Trucking ₱86,000 (41 days) · Reyes Fleet ₱42,200 (35 days) · Ocampo ₱20,000 (33 days).</div></div><span class="btn ghost">Collect</span></div>
+  <div class="warn-row"><span class="ms" style="color:var(--warn)">warning</span><div><div class="t">Sunny's new price list is 6.4% higher on 11 sizes</div><div class="w">185/65R15 ₱2,780 → ₱2,960. Your selling price still gives 24%; at the old selling price it would be 19%.</div></div><span class="btn ghost">Price lists</span></div>
+  <div class="warn-row"><span class="ms" style="color:var(--warn)">warning</span><div><div class="t">₱412,600 in 37 slow movers</div><div class="w">No sale in 90 days. The biggest: Yokohama 275/40R20, 8 pieces, ₱96,000.</div></div><span class="btn ghost">Stock</span></div>
+  <div class="warn-row"><span class="ms" style="color:var(--warn)">warning</span><div><div class="t">Margin under 15% on 4 items this month</div><div class="w">Dealer sales of Yoko 205/55R16 at ₱3,900 against a cost of ₱3,420 (12%).</div></div><span class="btn ghost">Sales</span></div>
+  <div class="warn-row"><span class="ms" style="color:var(--blue)">info</span><div><div class="t">2 card statements not yet typed (Jcb Gold 8012, Mastercard 0126)</div><div class="w">Expected by Oct 11. Due dates cannot be planned until they are in.</div></div><span class="btn ghost">Credit cards</span></div>
+  <p class="tick" style="margin:10px 0 0">The limits (30 days, 90 days, 15%, 5% price rise) are settings. A Home tile shows "Warnings · 7".</p>
+</div>
+
+<!-- ============ 5 DECISIONS ============ -->
+<h1>5. Decisions <small>the decision support system: compare scenarios, see the effect, choose</small></h1>
+<div class="screen">
+  <div class="tabs"><span class="on">Pay plan</span><span>Reorder</span><span>Price change</span></div>
+  <div class="charts">
+    <div class="chart"><div class="ct">Pay plan<small>"If I pay these this week…"</small></div>
+      <table class="list"><tr><th></th><th>Due</th><th>Payable</th><th class="num">Amount</th><th>Suggestion</th></tr>
+        <tr><td>☑</td><td>Oct 30</td><td>Mang Erning (lender)</td><td class="num">355,000</td><td><span class="pill r">overdue if moved</span></td></tr>
+        <tr><td>☑</td><td>Nov 2</td><td>Yokohama 2026-PS 0031</td><td class="num">280,000</td><td><span class="pill g">2% discount if by Oct 28</span></td></tr>
+        <tr><td>☐</td><td>Nov 15</td><td>Sunny 2026-PS 0034</td><td class="num">312,000</td><td><span class="pill b">30-day terms: Nov 20 is still on time</span></td></tr>
+        <tr><td>☑</td><td>Nov 15</td><td>World 9953 card</td><td class="num">174,000</td><td><span class="pill o">interest 3.5% if partly paid</span></td></tr></table>
+      <p style="margin:8px 0 0"><b>With the ticked paid on time and Sunny moved to Nov 20:</b> lowest point becomes <span class="up">₱498,000 on Nov 20</span>, above the reserve. Discount kept: ₱5,600.</p>
+      <svg viewBox="0 0 520 110"><line x1="30" y1="70" x2="510" y2="70" stroke="#9a3412" stroke-dasharray="6 5"/>
+        <polyline fill="none" stroke="#b7c3d1" stroke-width="2" points="30,30 90,40 150,52 210,62 270,84 330,74 390,60 450,50 510,44"/>
+        <polyline fill="none" stroke="#1d9e75" stroke-width="2.5" points="30,30 90,40 150,52 210,58 270,64 330,66 390,56 450,48 510,42"/>
+        <text x="380" y="100" font-size="10"><tspan fill="#b7c3d1">— before</tspan> <tspan fill="#1d9e75">— with this plan</tspan></text></svg></div>
+    <div class="chart"><div class="ct">Reorder<small>days of stock against the supplier's delivery time</small></div>
+      <table class="list"><tr><th>Item</th><th class="num">On hand</th><th class="num">Sold / 30 d</th><th class="num">Days left</th><th>Order</th><th>Cheapest</th></tr>
+        <tr><td>NC 265/65R17</td><td class="num">6</td><td class="num">22</td><td class="num dn">8</td><td><b>24 by Oct 16</b></td><td>New Century ₱4,180</td></tr>
+        <tr><td>Sunny 185/65R15</td><td class="num">14</td><td class="num">36</td><td class="num dn">12</td><td><b>40 by Oct 20</b></td><td>Sunny ₱2,960 · Yokohama list ₱3,100</td></tr>
+        <tr><td>Motolite Gold 2SM</td><td class="num">15</td><td class="num">18</td><td class="num">25</td><td>12 by Nov 1</td><td>Motolite ₱4,250</td></tr>
+        <tr><td>Yoko 205/55R16</td><td class="num">29</td><td class="num">28</td><td class="num">31</td><td>—</td><td></td></tr></table>
+      <p style="margin:8px 0 0"><span class="btn"><span class="ms">add_shopping_cart</span>Make a draft request for the ticked</span> <span class="tick">→ the usual request → PO path, nothing skipped.</span></p></div>
+    <div class="chart"><div class="ct">Price change<small>"What if I sell this at…"</small></div>
+      <div class="bar"><div><label>Item</label><select><option>Sunny 185/65R15</option></select></div><div><label>Cost now</label><input value="2,960" disabled style="width:90px"></div><div><label>Price now</label><input value="3,890" disabled style="width:90px"></div><div><label>New price</label><input value="3,650" style="width:90px"></div><span class="btn ghost">Show</span></div>
+      <table class="list"><tr><th></th><th class="num">Now</th><th class="num">At ₱3,650</th></tr>
+        <tr><td>Margin per piece</td><td class="num">930 (24%)</td><td class="num">690 (19%)</td></tr>
+        <tr><td>Last month's 36 pieces</td><td class="num">33,480</td><td class="num dn">24,840 (−8,640)</td></tr>
+        <tr><td>Pieces needed for the same margin</td><td class="num">36</td><td class="num">49 (+36%)</td></tr></table>
+      <p class="tick" style="margin:8px 0 0">The system does not know whether a lower price brings 36% more buyers; it shows what it would take.</p></div>
+  </div>
+</div>
+
+<!-- ============ 6 ASK ============ -->
+<h1>6. Ask <small>questions in plain words, answered from the system's own records</small></h1>
+<div class="screen">
+  <div class="ask"><input value="how much did we pay Sunny in September and how much do we still owe them">
+    <div class="chips"><span>best-selling size last month</span><span>which customers paid late</span><span>margin by brand this year</span><span>checks clearing next week</span></div></div>
+  <div class="chart" style="margin-top:12px"><div class="ct">Sunny Tire Supply — September 2026</div>
+    <div class="kpis"><div class="kpi"><div class="l">Paid in September (cleared checks)</div><div class="v">₱612,400</div><div class="d">3 checks</div></div><div class="kpi"><div class="l">Still owed today</div><div class="v">₱524,000</div><div class="d">2 payment statements, nearest due Nov 15</div></div></div>
+    <table class="list"><tr><th>Check</th><th>Cleared</th><th class="num">Amount</th><th>Payment statement</th></tr>
+      <tr><td>MB 0004512</td><td>09/05/2026</td><td class="num">198,400</td><td>2026 - OS 0022</td></tr>
+      <tr><td>MB 0004519</td><td>09/18/2026</td><td class="num">214,000</td><td>2026 - OS 0025</td></tr>
+      <tr><td>MB 0004527</td><td>09/29/2026</td><td class="num">200,000</td><td>2026 - OS 0027</td></tr></table>
+    <p class="tick" style="margin:8px 0 0">What I looked at: checks of this supplier cleared between 09/01 and 09/30; invoices in payment statements with a balance. <span class="btn ghost" style="padding:3px 8px;font-size:.8rem">Excel</span></p></div>
+  <p class="note"><b>How it works:</b> the question goes to Claude (Anthropic's model) with a description of the system's tables; it writes one read-only query, the system runs it and draws the answer. It can only read, never change anything, and every question and its query are logged. Needs an Anthropic API key (about ₱0.50–2 per question). System admin only to start. This is the only place AI is used; price lists stay as they are.</p>
+</div>
+
+<h1>What to tick</h1>
+<p class="why">Each tab can be built on its own. My suggestion for the order: <b>Sales + Stock</b> (the charts fill in as sales are recorded), then <b>Cash + Warnings</b>, then <b>Decisions</b>, and <b>Ask</b> last once you add the key.
+Not in this mock-up on purpose: receivables and customers (Stage C), budgeting (parked), and anything that writes data from Analytics — the tabs only read.</p>
+</main></body></html>

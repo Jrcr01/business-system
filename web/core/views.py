@@ -236,6 +236,15 @@ def login(request):
     if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
         nxt = "/"
     email, cf = "", getattr(request, "cf_email", None)
+    if getattr(request, "slicks_user", None) and not settings.SANDBOX_NO_SIGNIN:
+        # Owner, 2026-10-14: "when logout, system can be still accessed". The page's own countdown brought the person here while the server still
+        # held the sign-in (another tab or a background request had kept it fresh): the menu stayed and every page still opened. Now the sign-in
+        # really ends here; and a signed-in person who simply opens /login/ goes on to their page instead of seeing a sign-in form.
+        if request.GET.get("idle") == "1" and request.method == "GET":
+            request.session.flush()
+            request.slicks_user = None
+        elif request.method == "GET":
+            return redirect(nxt)
     if request.method == "GET" and request.GET.get("idle") == "1":
         from engines.settings_registry import idle_minutes
         messages.info(request, f"You were signed out after {idle_minutes()} minutes of no activity. Sign in to carry on where you were.")

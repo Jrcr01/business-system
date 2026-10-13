@@ -116,7 +116,6 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
                 (statement_id,),
             ).fetchall()
         }
-        invoices = [dict(r, display_status=_invoice_display_status(r, cover.get(r["invoice_id"]))) for r in invoice_rows]
         memos = cur.execute(
             """SELECT memo_ref, memo_date, amount, reason
                FROM credit_memos WHERE statement_id = ? ORDER BY credit_memo_id""",
@@ -137,7 +136,8 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
         # check itself as one "Not itemized" line so the ledger still reconciles to the real
         # balance even for a check issued before per-invoice tracking existed.
         active_checks = cur.execute(
-            "SELECT check_id, check_number, check_date, amount FROM checks_issued WHERE statement_id = ? AND status = 'Active'"
+            "SELECT check_id, check_number, check_date, amount, (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL) AS cleared "
+            "FROM checks_issued WHERE statement_id = ? AND status = 'Active'"
             + ("" if include_unprinted else " AND " + _printed_sql("checks_issued")) + " ORDER BY check_date, check_id",
             (statement_id,),
         ).fetchall()
@@ -151,6 +151,9 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
     allocations_by_check: dict[int, list] = {}
     for r in alloc_rows:
         allocations_by_check.setdefault(r["check_id"], []).append((r["doc_ref"], r["amount"]))
+    _spread_checks(invoice_rows, cover, active_checks, allocations_by_check)
+    invoices = [dict(r, display_status=_invoice_display_status(r, cover.get(r["invoice_id"])), check_nos=(cover.get(r["invoice_id"]) or {}).get("check_nos", ""))
+                for r in invoice_rows]
 
     running_balance = float(stmt["net_total"])
     payment_ledger = []
@@ -162,9 +165,44 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
                 payment_ledger.append({"invoice": doc_ref, "check_number": chk["check_number"] or "Pending", "check_date": chk["check_date"], "amount": amount, "balance": running_balance})
         else:
             running_balance -= float(chk["amount"])
-            payment_ledger.append({"invoice": "Not itemized", "check_number": chk["check_number"] or "Pending", "check_date": chk["check_date"], "amount": chk["amount"], "balance": running_balance})
+            payment_ledger.append({"invoice": "Whole statement", "check_number": chk["check_number"] or "Pending", "check_date": chk["check_date"], "amount": chk["amount"], "balance": running_balance})
 
     return {"statement": stmt, "invoices": invoices, "memos": memos, "checks": checks, "payment_ledger": payment_ledger}
+
+
+def _spread_checks(invoice_rows, cover: dict, active_checks, allocations_by_check: dict) -> None:
+    """A check parked against the whole statement has no per-invoice rows; for the printout it is spread over the invoices it pays, oldest first
+    (owner, 2026-10-14: an issued check must not leave its invoices reading "Unpaid"). Fills `cover` for the invoices it reaches, and gives every
+    covered invoice its check numbers. Only what is printed: the stored rows are untouched."""
+    for inv in invoice_rows:
+        c = cover.get(inv["invoice_id"])
+        if c is not None and not isinstance(c, dict):
+            cover[inv["invoice_id"]] = dict(c)
+    by_doc = {}
+    for chk in active_checks:
+        for doc_ref, _amt in allocations_by_check.get(chk["check_id"], []):
+            by_doc.setdefault(doc_ref, []).append(chk["check_number"] or "Pending")
+    free = [[chk, float(chk["amount"] or 0) - sum(float(a) for _, a in allocations_by_check.get(chk["check_id"], []))] for chk in active_checks]
+    free = [f for f in free if f[1] > 0.005]
+    for inv in invoice_rows:
+        nos = list(by_doc.get(inv["doc_ref"], []))
+        if inv["status"] != "Cancelled":
+            c = cover.get(inv["invoice_id"])
+            need = float(inv["amount"] or 0) - float((c or {}).get("covered") or 0)
+            while need > 0.005 and free:
+                chk, left = free[0]
+                take = min(need, left)
+                c = cover.setdefault(inv["invoice_id"], {"invoice_id": inv["invoice_id"], "covered": 0.0, "cleared": 0.0, "last_check_date": None})
+                c["covered"] = float(c["covered"] or 0) + take
+                c["cleared"] = float(c["cleared"] or 0) + (take if chk["cleared"] else 0)
+                c["last_check_date"] = max(str(c["last_check_date"] or ""), str(chk["check_date"] or "")) or None
+                if (chk["check_number"] or "Pending") not in nos:
+                    nos.append(chk["check_number"] or "Pending")
+                need, free[0][1] = need - take, left - take
+                if free[0][1] <= 0.005:
+                    free.pop(0)
+        if nos and inv["invoice_id"] in cover:
+            cover[inv["invoice_id"]]["check_nos"] = ", ".join(nos)
 
 
 def payment_kind(data: dict) -> str:
@@ -255,13 +293,13 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     story.append(_info_panel(stmt, styles, for_supplier))
 
     _add_section(story, "Invoices", styles)
-    inv_rows = [["Sales Invoice", "Invoice Date", "Due Date", "Gross (PHP)", "Net (PHP)", "Status"]]
+    inv_rows = [["SI / DR no.", "Invoice Date", "Due Date", "Gross (PHP)", "Net (PHP)", "Status", "Check"]]
     for i in data["invoices"]:
         inv_rows.append([i["doc_ref"] + (f" (DR {i['dr_no']})" if i.get("dr_no") else ""), us_date(i["invoice_date"]), us_date(i["due_date"]), _money(i["gross_amount"]), _money(i["amount"]),
-                         ("Covered by check" if for_supplier and str(i["display_status"]).startswith("Check issued") else i["display_status"])])
+                         ("Covered by check" if for_supplier and str(i["display_status"]).startswith("Check issued") else i["display_status"]), i.get("check_nos") or ""])
     if len(inv_rows) == 1:
-        inv_rows.append(["—", "—", "—", "—", "—", "—"])
-    inv_table = Table(inv_rows, colWidths=[CONTENT_WIDTH * w for w in (0.15, 0.14, 0.14, 0.14, 0.14, 0.29)], repeatRows=1)
+        inv_rows.append(["—", "—", "—", "—", "—", "—", "—"])
+    inv_table = Table(inv_rows, colWidths=[CONTENT_WIDTH * w for w in (0.15, 0.12, 0.12, 0.13, 0.13, 0.2, 0.15)], repeatRows=1)
     inv_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (3, 1), (4, -1), "RIGHT")]))
     story.append(inv_table)
 
@@ -308,7 +346,13 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     chk_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (2, 1), (2, -1), "RIGHT")] + extra))
     story.append(chk_table)
 
-    if show_payment_application:
+    if not for_supplier:                                       # the copy we keep is signed (owner, 2026-10-14)
+        story.append(Spacer(1, 14))
+        sign = Table([[f"Prepared by: {_prepared_by()}", "Checked by: ______________________"]], colWidths=[CONTENT_WIDTH * 0.5] * 2)
+        sign.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), "Helvetica"), ("FONTSIZE", (0, 0), (-1, -1), 8.5), ("TEXTCOLOR", (0, 0), (-1, -1), GREY),
+                                  ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+        story.append(sign)
+    if show_payment_application and False:                     # dropped 2026-10-14 (owner): the check now sits beside its invoice
         _add_section(story, "Payment Application", styles)
         ledger = data["payment_ledger"]
         led_rows = [["Invoice", "Check Number", "Check Date", "Amount Applied (PHP)", "Balance (PHP)"]]
@@ -326,6 +370,20 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
             ParagraphStyle("Note", parent=styles["Normal"], fontSize=7, textColor=GREY),
         ))
     # (no trailing spacer: on a page the content fills almost to the bottom it spilled onto a page of its own -- a blank sheet with only the footer)
+
+
+def _prepared_by() -> str:
+    """The person printing it, by name (the copy we keep is signed)."""
+    try:
+        from engines.acting_user import acting_email
+        email = acting_email()
+        if not email:
+            return "______________________"
+        with get_conn(DB_PATH) as conn:
+            row = conn.execute("SELECT name FROM app_users WHERE lower(trim(email)) = ?", (email.strip().lower(),)).fetchone()
+        return (row[0] if row and row[0] else email) + "  ____________"
+    except Exception:                                   # noqa: BLE001 -- a signature line must never stop the printout
+        return "______________________"
 
 
 def _footer(canvas, doc) -> None:
@@ -430,7 +488,7 @@ def generate_bulk_summary_pdf(rows: list[dict], scope_label: str, statement_type
     story.append(Paragraph(
         f"<b>{len(rows)}</b> payment statement(s) &nbsp;·&nbsp; {scope_label} &nbsp;·&nbsp; {statement_type} &nbsp;·&nbsp; printed {manila_now():%Y-%m-%d %H:%M}", info_style))
     story.append(Spacer(1, 8))
-    table_rows = [["#", "Order statement", "Supplier", "Status", "Inv.", "Net total (PHP)", "Checks", "Checks total (PHP)"]]
+    table_rows = [["#", "Payment statement", "Supplier", "Status", "Inv.", "Net total (PHP)", "Checks", "Checks total (PHP)"]]
     for n, r in enumerate(rows, start=1):
         table_rows.append([str(n), r["ref"], r["supplier"][:34], r["stage"], str(r["invoices"]), _money(r["net_total"]), str(r["checks"]), _money(r["checks_total"])])
     table_rows.append(["", "TOTAL", "", "", str(sum(r["invoices"] for r in rows)), _money(sum(r["net_total"] for r in rows)),
@@ -492,7 +550,7 @@ def _thermal_lines(data: dict) -> list[dict]:
     if payment_kind(data):
         add(payment_kind(data), font=THERMAL_FONT_BODY, size=THERMAL_SIZE_BODY, align="center", gap_after=2)
     add_divider("=")
-    add(f"Ref: {_shown_ref(stmt['statement_ref'])}")
+    add(f"PS no.: {_shown_ref(stmt['statement_ref'])}")
     add(f"Supplier: {stmt['creditor_name']}")
     add(f"Status: {stmt['status']}")
     add(f"Date: {manila_now().strftime('%m/%d/%Y')}", gap_after=2)
@@ -503,9 +561,12 @@ def _thermal_lines(data: dict) -> list[dict]:
         add("  (none)")
     for i in data["invoices"]:
         add(i["doc_ref"])
-        add(f"  Recv {us_date(i['invoice_date'])}  Due {us_date(i['due_date'])}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, color=GREY)
+        due = f"  Due {us_date(i['due_date'])}" if str(i["due_date"] or "")[:10] != str(i["invoice_date"] or "")[:10] else ""
+        add(f"  Recv {us_date(i['invoice_date'])}{due}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, color=GREY)
         shown = "Covered by check" if str(i["display_status"]).startswith("Check issued") else i["display_status"]
         add(f"  Net PHP {_money(i['amount'])}   [{shown}]", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
+        if i.get("check_nos"):
+            add(f"  Check #{i['check_nos']}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, color=GREY)
     add_divider()
 
     if data["memos"]:
@@ -531,6 +592,8 @@ def _thermal_lines(data: dict) -> list[dict]:
     if live:
         add(f"TOTAL CHECKS ({len(live)}):  PHP {_money(sum(float(c['amount'] or 0) for c in live))}", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_BODY + 0.5)
     add_divider("=")
+    add("Received by: ____________________", gap_after=2)
+    add("Date: ______________", gap_after=4)
     add("Metrobank Account 1 - Branch 399", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_SMALL, align="center")
     add("*** Nothing follows ***", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_SMALL, align="center", gap_after=6)
 
