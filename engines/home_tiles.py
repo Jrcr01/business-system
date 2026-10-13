@@ -429,7 +429,8 @@ def _bank_loans():
 
 
 def _credit_cards():
-    n = _count("SELECT COUNT(*) FROM v_cc_due_alerts WHERE urgency_status LIKE 'CRITICAL%'")
+    n = _count("""SELECT COUNT(*) FROM v_cc_due_alerts WHERE urgency_status LIKE 'CRITICAL%'
+                  AND cc_statement_id NOT IN (SELECT cc_statement_id FROM cc_statements WHERE COALESCE(amount_paid, 0) > 0.005)""")     # paid in part = carried, not due (2026-10-13)
     from engines.card_reminders import missing_count
     m = missing_count()                                      # owner, 2026-10-13: the Missing statement check is not a page to open every day
     if n:

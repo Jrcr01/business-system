@@ -88,6 +88,7 @@ def credit_cards(request):
                 pays.setdefault(p["cc_statement_id"], []).append(p)
         for s in stmts:
             s["payments"] = pays.get(s["cc_statement_id"], [])
+            s["carried"] = max(float(s["total_amount_due"] or 0) - float(s["amount_paid"] or 0), 0.0)      # what a partial payment leaves: in the next statement's total
         # for the Add statement arithmetic shown as you type: each card's latest statement and what was recorded day by day against it
         latest = {r["card_id"]: r for r in _rows("""SELECT cs.card_id, cs.cc_statement_id, cs.total_amount_due, cs.due_date, cs.paid_confirmed,
                                                              (SELECT COALESCE(SUM(p.amount), 0) FROM cc_payments p WHERE p.cc_statement_id = cs.cc_statement_id) AS daily

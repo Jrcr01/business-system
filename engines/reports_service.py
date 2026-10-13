@@ -165,7 +165,10 @@ _PAYMENT_SCHEDULE_TEMPLATE = """
 # Daily payables (owner, 2026-10-09): a bank-loan installment is owed until it clears, a card statement until it is paid -- whatever their dates.
 _PAYMENT_SCHEDULE_UNION = (_PAYMENT_SCHEDULE_TEMPLATE.replace("__CHECKS__", owed_sql("c")).replace("__CMP__", ">=")
                            .replace("__BL__", bank_loan_owed_sql("bli")).replace("__CARD_DATE__", "1 = 1")
-                           .replace("__CARD_STATUS__", "cs.status IN ('Unpaid', 'Partially Paid')"))
+                           # a card with a payment on it, even partial, is settled for the month: the rest carries into the next statement, which will
+                           # show it in its own total (owner, 2026-10-13: "why those ticked in daily payables still reflect in calendar as payable?";
+                           # Daily payables has gone by this since 2026-10-09)
+                           .replace("__CARD_STATUS__", "cs.status = 'Unpaid' AND COALESCE(cs.amount_paid, 0) <= 0.005"))
 # What was paid on a day that has already passed (owner, 2026-09-30: "the calendar shows 0 on past days"): same four tracks, same references.
 # A check: cleared, dated before today. A card statement counts whether or not it was marked paid.
 _PAYMENT_PAST_UNION = (_PAYMENT_SCHEDULE_TEMPLATE.replace("__CHECKS__", "c.check_date < manila_today() AND c.settled_outside_at IS NULL "    # paid by the check, not outside the bank

@@ -67,3 +67,20 @@ def test_a_total_below_what_is_already_paid_is_refused_and_roles(web, db):
     viewer = _sign_in_new("view@slicks.test", "viewer")
     viewer.post("/credit-cards/", {"action": "correct_statement", "statement_id": sid, "month": "2026-01", "due": "2026-09-29"})
     assert _n("SELECT due_date FROM cc_statements WHERE cc_statement_id = ?", (sid,)) == "2026-09-30"      # not theirs to change
+
+
+def test_a_card_paid_in_part_leaves_the_calendar_and_shows_as_carried(web, db):
+    # owner, 2026-10-13: "why those ticked in daily payables still reflect in calendar as payable?"
+    from engines.clearing import pay_card
+    from engines.reports_service import get_payment_schedule_all_tracks
+    _admin(web)
+    card = _card(db)
+    a = _add(web, card, "2026-09", "2026-12-30", "10,000")
+    sched = get_payment_schedule_all_tracks()
+    assert float(sched[sched["track"] == "Credit Card"]["amount"].sum()) == 10000          # not paid at all: payable in full
+    ok, msg = pay_card(a, amount=4000)
+    assert ok, msg
+    sched = get_payment_schedule_all_tracks()
+    assert sched[sched["track"] == "Credit Card"].empty                                    # a payment, even partial: the rest carries, off the calendar
+    page = web.get(f"/credit-cards/?card={card}&show=all").content.decode()
+    assert "Partially Paid" in page and "6,000.00 carried to the next statement" in page
