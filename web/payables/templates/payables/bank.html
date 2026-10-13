@@ -26,7 +26,7 @@
     {% if pv.match.not_in_system %} <span class="pill warn">{{ pv.match.not_in_system }} not in the system</span>{% endif %}
     {% if pv.match.cancelled_check_cleared %} <span class="pill warn">{{ pv.match.cancelled_check_cleared }} voided check cleared</span>{% endif %}
     {% if pv.ticked_missing %} <span class="pill warn">{{ pv.ticked_missing }} ticked check(s) not shown</span>{% endif %}</p>
-  <details{% if not pv.ok %} open{% endif %}><summary>Capture check: {% if pv.ok %}passed{% else %}<b style="color:#b3261e">failed, so this file won't be imported</b>{% endif %}</summary>
+  <details{% if not pv.ok %} open{% endif %}><summary>Capture check: {% if pv.ok %}passed{% else %}<b style="color:var(--fg-b3261e)">failed, so this file won't be imported</b>{% endif %}</summary>
     <ul>{% for c in pv.capture %}<li>{% if c.ok %}✓{% else %}✗{% endif %} {{ c.name }}: {{ c.detail|usdates }}</li>{% endfor %}</ul></details>
   {% if pv.ok and pv.new %}<form method="post" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="action" value="import_file"><input type="hidden" name="file" value="{{ file }}">
     <button class="btn" type="submit"><span class="ms">upload_file</span>Import {{ pv.new }} line(s)</button></form>
@@ -46,7 +46,7 @@
         <button class="btn small ghost" name="action" value="tick_undo" type="submit">Undo the tick</button>
         <button class="btn small ghost" name="action" value="tick_keep" type="submit" onclick="return confirm('Keep it cleared although the bank statement does not show it?');">Still cleared</button></form></td></tr>{% endfor %}</table></div>{% endif %}
 
-  {% if link_for %}<div class="warnbox" style="background:#f1f5fa;border-left-color:var(--blue)"><b>Link this bank line to one of our checks</b> (same amount first, then the nearest date)
+  {% if link_for %}<div class="warnbox" style="background:var(--bg-f1f5fa);border-left-color:var(--bd-0b4f8a)"><b>Link this bank line to one of our checks</b> (same amount first, then the nearest date)
     <div class="scroll-x"><table class="list">{% for c in candidates %}<tr><td>{{ c.check_number|default:"(no number)" }}</td><td>{{ c.creditor_name }}</td><td>{{ c.check_date|dmy }}</td>
       <td class="num">{{ c.amount|floatformat:2|intcomma }}{% if c.same_amount %} <span class="pill">same amount</span>{% endif %}</td>
       <td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="link"><input type="hidden" name="txn_id" value="{{ link_for }}"><input type="hidden" name="check_id" value="{{ c.check_id }}">

@@ -1058,6 +1058,7 @@ CREATE TABLE IF NOT EXISTS app_users (
     last_seen_path TEXT,
     whats_new_seen TEXT,            -- migration 083: the newest "What's new" note the person has seen
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    theme TEXT,                     -- migration 098: 'dark' / 'auto' (follow the device); NULL or 'light' = the light look
     totp_secret TEXT,               -- the 6-digit sign-in code's key (migration 077); NULL = not set up
     totp_enabled_at DATETIME,       -- confirmed with a first correct code
     totp_last_step INTEGER,         -- the last code used, so the same code never works twice

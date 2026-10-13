@@ -70,3 +70,9 @@ def peso_wide_and_short(amount) -> str:
     except (TypeError, ValueError):
         return ""
     return format_html('<span class="pw"><span class="pw-full">{}</span><span class="pw-short">{}</span></span>', full, peso_short(amount))
+
+
+@register.filter
+def look_choices(text) -> list:
+    """'light:Light,dark:Dark' as [('light', 'Light'), ('dark', 'Dark')]: the choices of a small switch written in the page."""
+    return [tuple(part.split(":", 1)) for part in str(text).split(",")]

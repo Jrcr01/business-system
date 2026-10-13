@@ -15,6 +15,7 @@ urlpatterns = [
     path("password/", views.change_password, name="password"),
     path("whoami/", views.whoami, name="whoami"),
     path("search/", views.search, name="search"),
+    path("theme/", views.theme, name="theme"),
     path("notifications/", views.notifications, name="notifications"),
     path("whats-new/seen/", views.whats_new_seen, name="whats_new_seen"),
     path("related/<str:kind>/<int:doc_id>/", views.related, name="related"),

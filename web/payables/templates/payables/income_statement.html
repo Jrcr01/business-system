@@ -17,7 +17,7 @@ sale counts in the month it was sold; collections live on Collect payments.{% en
   <tr><td>Service income</td><td class="num">{{ now.services|floatformat:2|intcomma }}</td><td class="num">{{ before.services|floatformat:2|intcomma }}</td></tr>
   <tr><td>Cost of goods sold <span class="hint">(at moving-average cost)</span></td>
     <td class="num">({{ now.cogs|floatformat:2|intcomma }})</td><td class="num">({{ before.cogs|floatformat:2|intcomma }})</td></tr>
-  <tr style="font-weight:700;border-top:2px solid #1c2733"><td>Gross margin</td>
+  <tr style="font-weight:700;border-top:2px solid var(--bd-1c2733)"><td>Gross margin</td>
     <td class="num">{{ now.gross|floatformat:2|intcomma }}</td><td class="num">{{ before.gross|floatformat:2|intcomma }}</td></tr>
   <tr><td><a href="/expenses/?m={{ m }}">Expenses</a></td>
     <td class="num">({{ now.expenses_total|floatformat:2|intcomma }})</td><td class="num">({{ before.expenses_total|floatformat:2|intcomma }})</td></tr>
@@ -30,7 +30,7 @@ sale counts in the month it was sold; collections live on Collect payments.{% en
     <td class="num">({{ now.lender_interest|floatformat:2|intcomma }})</td><td class="num">({{ before.lender_interest|floatformat:2|intcomma }})</td></tr>
   <tr><td><a href="/bank-loans/">Interest on bank loans</a> <span class="hint">(the interest portion typed off the bank's document)</span></td>
     <td class="num">({{ now.bankloan_interest|floatformat:2|intcomma }})</td><td class="num">({{ before.bankloan_interest|floatformat:2|intcomma }})</td></tr>
-  <tr style="font-weight:700;border-top:2px solid #1c2733"><td>Profit for the month</td>
+  <tr style="font-weight:700;border-top:2px solid var(--bd-1c2733)"><td>Profit for the month</td>
     <td class="num {% if now.profit >= 0 %}pos{% else %}neg{% endif %}">{{ now.profit|floatformat:2|intcomma }}</td>
     <td class="num {% if before.profit >= 0 %}pos{% else %}neg{% endif %}">{{ before.profit|floatformat:2|intcomma }}</td></tr>
 </table></div>

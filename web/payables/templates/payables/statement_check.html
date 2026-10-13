@@ -76,12 +76,12 @@ document.addEventListener("DOMContentLoaded", function () {
     var key = find.value.toUpperCase().replace(/\s/g, ""); if (!key) return;
     var hit = Array.prototype.filter.call(form.querySelectorAll("tr[data-refs]"), function (tr) { return tr.dataset.refs.split(" ").indexOf(key) >= 0; });
     if (hit.length === 1) {
-      hit[0].querySelector(".sc_t").checked = true; hit[0].scrollIntoView({block: "center"}); hit[0].style.background = "#e7f6ee"; setTimeout(function () { hit[0].style.background = ""; }, 700);
-      msg.textContent = key + " ticked."; msg.style.color = "#0b6e4f";
+      hit[0].querySelector(".sc_t").checked = true; hit[0].scrollIntoView({block: "center"}); hit[0].style.background = "var(--bg-e7f6ee)"; setTimeout(function () { hit[0].style.background = ""; }, 700);
+      msg.textContent = key + " ticked."; msg.style.color = "var(--fg-0b6e4f)";
     } else {                                                   /* not on the list: start a typed line with it */
       blank(); var rows = typed.querySelectorAll("tr"), last = rows[rows.length - 1];
       last.querySelector('input[name="x_ref"]').value = find.value.trim(); last.querySelector('input[name="x_amount"]').focus(); blank();
-      msg.textContent = key + " is not in the list above: type its amount below."; msg.style.color = "#9a3412";
+      msg.textContent = key + " is not in the list above: type its amount below."; msg.style.color = "var(--fg-9a3412)";
     }
     find.value = ""; totals();
   });

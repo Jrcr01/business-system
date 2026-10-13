@@ -4,7 +4,7 @@
 {% if skipped %}{# the skipped-number pop-up #}
 <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="skip_title"><div class="dialog">
   {% for g in skipped %}
-  <h3 id="skip_title"><span class="ms" style="color:#b26a00">warning</span> Numbers skipped in {{ g.code }}</h3>
+  <h3 id="skip_title"><span class="ms" style="color:var(--fg-b26a00)">warning</span> Numbers skipped in {{ g.code }}</h3>
   <p>These leaves of the booklet have no check: <b>{% for n in g.leaves %}{{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}</b>. What happened to them?</p>
   <div class="actions" style="justify-content:flex-end">
     <form method="post">{% csrf_token %}<input type="hidden" name="action" value="chk_skip_later"><input type="hidden" name="booklet" value="{{ g.booklet }}">
@@ -19,7 +19,7 @@
 {% endif %}
 
 {% if num_checks %}{# numbering panel: from a booklet (the next free leaves, as in the old screens), or typed #}
-<div class="warnbox" style="background:#f1f5fa;border-left-color:var(--blue)" id="numbering">
+<div class="warnbox" style="background:var(--bg-f1f5fa);border-left-color:var(--bd-0b4f8a)" id="numbering">
   <b>{% if num_mode == "hand" %}Write by hand: number {{ num_checks|length }} check{{ num_checks|length|pluralize }}{% else %}Give {{ num_checks|length }} check{{ num_checks|length|pluralize }} their numbers{% endif %}</b>
   {% if booklets %}
   <form class="bar" method="get" style="margin-top:8px">
@@ -57,7 +57,7 @@
 {% endif %}
 
 {% if edit_check %}
-<div class="warnbox" style="background:#f1f5fa;border-left-color:var(--blue)"><b>Change the parked check of {{ edit_check.check_date|dmy }}</b>
+<div class="warnbox" style="background:var(--bg-f1f5fa);border-left-color:var(--bd-0b4f8a)"><b>Change the parked check of {{ edit_check.check_date|dmy }}</b>
   <form class="bar" method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="chk_edit"><input type="hidden" name="check_id" value="{{ edit_check.check_id }}">
     <div><label for="e_date">Dated</label><input id="e_date" type="date" name="date" value="{{ edit_check.check_date|slice:':10' }}"></div>
     <div><label for="e_amount">Amount</label><input id="e_amount" class="inline-input" inputmode="decimal" name="amount" value="{{ edit_check.amount|floatformat:2 }}"></div>
@@ -158,7 +158,7 @@
     var left = Math.round((remaining - t) * 100) / 100;
     var s = document.getElementById("park-sum");
     s.textContent = "Total ₱" + peso(t) + " · still to cover ₱" + peso(left);
-    s.style.color = left < -0.004 ? "#b3261e" : "";
+    s.style.color = left < -0.004 ? "var(--fg-b3261e)" : "";
   }
   function fill(list) {               /* list of [date, amount] */
     rows.forEach(function (r, k) { var x = list[k]; cell(r, "d").value = x ? x[0] : ""; cell(r, "a").value = x ? x[1].toFixed(2) : ""; r.hidden = k >= Math.max(6, list.length); });

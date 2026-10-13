@@ -38,6 +38,6 @@
 <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="discard"><input type="hidden" name="staged" value="{{ token }}">
   <button class="btn small ghost" type="submit"><span class="ms">delete_sweep</span>Discard what was read</button></form>
 {% if staged.raw %}<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Show the text read from each file (for a bad read)</summary>
-  {% for name, text in staged.raw.items %}<p class="hint"><b>{{ name }}</b></p><pre style="white-space:pre-wrap;font-size:.8rem;background:#f8fafc;padding:8px;border-radius:6px">{{ text }}</pre>{% endfor %}</details>{% endif %}
+  {% for name, text in staged.raw.items %}<p class="hint"><b>{{ name }}</b></p><pre style="white-space:pre-wrap;font-size:.8rem;background:var(--bg-f8fafc);padding:8px;border-radius:6px">{{ text }}</pre>{% endfor %}</details>{% endif %}
 {% endif %}
 {% endblock %}

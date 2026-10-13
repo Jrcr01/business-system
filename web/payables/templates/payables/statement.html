@@ -44,7 +44,7 @@
     <tr><th>Reference (SI or DR)</th><th>DR no.</th><th>Date received</th><th>Due</th><th>Amount</th><th>Less %</th><th>Net</th><th>Status</th>{% if editable %}<th></th>{% endif %}</tr>
     {% for r in invoices %}
       {% if editable and edit_inv == r.invoice_id|stringformat:"s" %}
-      <tr style="background:#f8fafc"><td colspan="9">
+      <tr style="background:var(--bg-f8fafc)"><td colspan="9">
         <form method="post" class="bar" style="margin:0">{% csrf_token %}<input type="hidden" name="invoice_id" value="{{ r.invoice_id }}"><input type="hidden" name="stamp" value="{{ r.stamp }}">
           <div><label>SI no.</label><input class="inline-input" name="doc" value="{% if r.doc_ref|slice:':3' != 'DR ' %}{{ r.doc_ref }}{% endif %}" placeholder="if there is one"></div>
           <div><label>DR no. (optional)</label><input class="inline-input" name="dr" value="{{ r.dr_no|default:'' }}"></div>
@@ -106,7 +106,7 @@
   <div class="scroll-x"><table class="list"><tr><th>Reference</th><th>Memo date</th><th>Amount</th><th>Reason</th>{% if editable %}<th></th>{% endif %}</tr>
     {% for m in memos %}
       {% if editable and edit_memo == m.credit_memo_id|stringformat:"s" %}
-      <tr style="background:#f8fafc"><td colspan="5"><form method="post" class="bar" style="margin:0">{% csrf_token %}<input type="hidden" name="memo_id" value="{{ m.credit_memo_id }}"><input type="hidden" name="stamp" value="{{ m.stamp }}">
+      <tr style="background:var(--bg-f8fafc)"><td colspan="5"><form method="post" class="bar" style="margin:0">{% csrf_token %}<input type="hidden" name="memo_id" value="{{ m.credit_memo_id }}"><input type="hidden" name="stamp" value="{{ m.stamp }}">
         <div><label>Reference</label><input class="inline-input" name="ref" value="{{ m.memo_ref }}" required></div>
         <div><label>Memo date</label><input type="date" name="date" value="{{ m.memo_date|slice:':10' }}"></div>
         <div><label>Amount</label><input class="inline-input" inputmode="decimal" name="amount" value="{{ m.amount|floatformat:2 }}"></div>

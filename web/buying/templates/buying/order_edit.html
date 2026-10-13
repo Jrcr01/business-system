@@ -77,10 +77,10 @@
 
 {% if confirm %}{# over the daily limit (owner, 2026-10-08): no approval step, a warning to weigh -- shown before the request goes out, the earliest point to change the date #}
 <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="over_title"><div class="dialog">
-  <h3 id="over_title"><span class="ms" style="color:#b26a00">warning</span> Over your daily limit</h3>
+  <h3 id="over_title"><span class="ms" style="color:var(--fg-b26a00)">warning</span> Over your daily limit</h3>
   <p>This order ({{ po.supplier }}, est. ₱{{ total|floatformat:2|intcomma }}) falls due on <b>{{ guard.pay_date|date:"D m/d" }}</b>.</p>
   <table class="kv"><tr><td>Already due that day</td><td class="num">₱{{ guard.already|floatformat:2|intcomma }}</td></tr>
-    <tr><td>With this order</td><td class="num" style="color:#b3261e;font-weight:700">₱{{ guard.with_order|floatformat:2|intcomma }}</td></tr>
+    <tr><td>With this order</td><td class="num" style="color:var(--fg-b3261e);font-weight:700">₱{{ guard.with_order|floatformat:2|intcomma }}</td></tr>
     <tr><td>Your daily limit</td><td class="num">₱{{ guard.limit|floatformat:2|intcomma }}</td></tr></table>
   {% if guard.suggestion %}<p class="tip">Nearest day that fits: deliver <b>{{ guard.suggestion.delivery_date|date:"D m/d" }}</b> → due <b>{{ guard.suggestion.pay_date|date:"D m/d" }}</b> (₱{{ guard.suggestion.with_order|floatformat:2|intcomma }} with this order)</p>
   {% else %}<p class="tip">No delivery day in the next three weeks keeps that day within the limit; the order alone may be above it.</p>{% endif %}

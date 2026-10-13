@@ -90,7 +90,7 @@
 
 {% if ask %}{# nothing is saved yet: a question first (owner, 2026-10-11) #}
 <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="ask_title"><div class="dialog">
-  <h3 id="ask_title"><span class="ms" style="color:#b26a00">help</span> Before this delivery is recorded</h3>
+  <h3 id="ask_title"><span class="ms" style="color:var(--fg-b26a00)">help</span> Before this delivery is recorded</h3>
   {% if ask.more %}<p><b>More than ordered.</b> Was it agreed with the supplier?</p><ul>{% for t in ask.more %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
   {% if ask.rest %}<p><b>An order should come on one DR or SI.</b> Part of it has not arrived:</p><ul>{% for t in ask.rest %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
   <form method="post">{% csrf_token %}{% for k, v in ask.carry %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}<input type="hidden" name="confirm_more" value="1">

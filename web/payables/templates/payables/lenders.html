@@ -122,8 +122,8 @@
       r.querySelector("[data-days]").textContent = days;
       r.querySelector("[data-total]").textContent = money(p + i);
       r.querySelector("[data-bal]").textContent = money(bal);
-      r.querySelector("[data-days]").style.color = days <= 0 ? "#b3261e" : "";
-      r.querySelector("[data-bal]").style.color = bal < -0.004 ? "#b3261e" : "";
+      r.querySelector("[data-days]").style.color = days <= 0 ? "var(--fg-b3261e)" : "";
+      r.querySelector("[data-bal]").style.color = bal < -0.004 ? "var(--fg-b3261e)" : "";
     });
     document.getElementById("t_p").textContent = money(tp);
     document.getElementById("t_i").textContent = money(ti);

@@ -48,7 +48,7 @@
       tr.querySelectorAll("input.sq").forEach(function (inp, k) { var q = parseFloat(inp.value.replace(/,/g, "")) || 0; used += q; amts[k] += q * price; });
       var left = Math.round((qty - used) * 100) / 100, cell = tr.querySelector(".left");
       cell.textContent = left === 0 ? "✓" : (left > 0 ? left + " left" : (-left) + " too many");
-      cell.style.color = left === 0 ? "" : "#b3261e";
+      cell.style.color = left === 0 ? "" : "var(--fg-b3261e)";
     });
     f.querySelectorAll(".pamt").forEach(function (b, k) { b.textContent = peso(Math.round(amts[k] * 100) / 100); });
   }

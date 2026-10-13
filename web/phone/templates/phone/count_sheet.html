@@ -1,7 +1,7 @@
 {% extends "phone/base.html" %}{% load humanize slicks %}
 {% block content %}
 {% comment %}Owner, 2026-10-12: the count sheet on the phone. Every scan adds 1 to its item; Save keeps the figures; Finish hands the differences to the laptop.{% endcomment %}
-<div class="ph-card" style="background:#f7f9fc"><b class="t">{{ c.count_no }} · {{ c.scope }}</b><span class="hint">{% if counting %}counting · <span id="ct_done">{{ done }}</span> of {{ rows|length }} typed{% if c.counted_by %} · {{ c.counted_by }}{% endif %}{% else %}finished: the differences wait for approval on the laptop{% endif %}</span></div>
+<div class="ph-card" style="background:var(--bg-f7f9fc)"><b class="t">{{ c.count_no }} · {{ c.scope }}</b><span class="hint">{% if counting %}counting · <span id="ct_done">{{ done }}</span> of {{ rows|length }} typed{% if c.counted_by %} · {{ c.counted_by }}{% endif %}{% else %}finished: the differences wait for approval on the laptop{% endif %}</span></div>
 {% if counting %}
 <div class="ph-scan"><input type="text" id="ct_scan" placeholder="Scan each piece: every scan adds 1" autocomplete="off" aria-label="Scan" autofocus>
   <button type="button" id="ct_cam" hidden aria-label="Camera"><span class="ms">photo_camera</span></button></div>
@@ -31,17 +31,17 @@ document.addEventListener("DOMContentLoaded", function () {
   function autosave() {                                        /* quietly, so a dropped phone loses little */
     var data = new FormData(form); data.append("action", "save"); data.append("quiet", "1");
     fetch(location.pathname, {method: "POST", body: data, credentials: "same-origin"}).then(function (r) { return r.json(); })
-      .then(function (d) { if (d.ok) { msg.textContent = "saved"; msg.style.color = "#0b6e4f"; } }).catch(function () {});
+      .then(function (d) { if (d.ok) { msg.textContent = "saved"; msg.style.color = "var(--fg-0b6e4f)"; } }).catch(function () {});
   }
   function scanned(code) {
     code = code.trim().toUpperCase(); if (!code) return;
     for (var lid in codes) { if (codes[lid].indexOf(code) >= 0) {
       var inp = form.querySelector('input[name="c_' + lid + '"]'); inp.value = (parseFloat(inp.value) || 0) + 1; inp.dispatchEvent(new Event("input", {bubbles: true}));
-      var card = document.getElementById("ln_" + lid); card.scrollIntoView({block: "center"}); card.style.background = "#e7f6ee"; setTimeout(function () { card.style.background = ""; }, 600);
-      msg.textContent = "+1 " + card.querySelector(".t").textContent + " = " + inp.value; msg.style.color = "#0b6e4f"; window.phone.beep();
+      var card = document.getElementById("ln_" + lid); card.scrollIntoView({block: "center"}); card.style.background = "var(--bg-e7f6ee)"; setTimeout(function () { card.style.background = ""; }, 600);
+      msg.textContent = "+1 " + card.querySelector(".t").textContent + " = " + inp.value; msg.style.color = "var(--fg-0b6e4f)"; window.phone.beep();
       if (++since >= 20) { since = 0; autosave(); }
       return; } }
-    msg.textContent = "No item on this sheet has the code " + code + "."; msg.style.color = "#b3261e";
+    msg.textContent = "No item on this sheet has the code " + code + "."; msg.style.color = "var(--fg-b3261e)";
   }
   scan.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); scanned(scan.value); scan.value = ""; } });
   window.phone.camera(document.getElementById("ct_cam"), document.getElementById("ct_video"), scanned);

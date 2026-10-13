@@ -11,5 +11,5 @@
     {% for id, label in batches %}<option value="{{ id }}"{% if id|stringformat:"s" == pre_batch %} selected{% endif %}>{{ label }}</option>{% endfor %}<option value="new">A new batch</option></select>
     <div class="hint">Left as "not in a batch yet", it waits on Order statements until you put it in a batch.</div></div>{% endif %}
 </div>
-<label style="display:flex;gap:6px;color:#1c2733;margin-top:8px"><input type="checkbox" name="update_prices" value="1"> Update the price list where the actual price differs</label>
+<label style="display:flex;gap:6px;color:var(--fg-1c2733);margin-top:8px"><input type="checkbox" name="update_prices" value="1"> Update the price list where the actual price differs</label>
 <div class="facts" style="margin-top:10px"><div><span>Amount (as ticked)</span><b id="sum_actual{{ k }}">₱0.00</b></div><div><span>Against the estimate</span><b id="sum_est{{ k }}">₱0.00</b></div></div>

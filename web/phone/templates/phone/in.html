@@ -7,7 +7,7 @@
   <p class="hint">Which order arrived?</p>
   {% for o in orders %}<a class="ph-big" href="/phone/in/?po={{ o.po_id }}" style="flex-wrap:wrap"><span class="ms">local_shipping</span><span>{{ o.po_no }}<br><span class="hint" style="font-weight:400">{{ o.supplier }} · {{ o.pcs|floatformat:"-2" }} pcs on {{ o.lines }} line{{ o.lines|pluralize }} · ordered {{ o.ordered_on|dmy }}</span></span></a>{% endfor %}
 {% else %}
-  <div class="ph-card" style="background:#f7f9fc"><b class="t">{{ order.po_no }} · {{ order.supplier }}</b>
+  <div class="ph-card" style="background:var(--bg-f7f9fc)"><b class="t">{{ order.po_no }} · {{ order.supplier }}</b>
     <span class="hint">ordered {{ order.ordered_on|dmy }} · {{ lines|length }} line{{ lines|length|pluralize }} still to come</span>
     {% if orders|length > 1 %} <a class="hint" href="/phone/in/?po=0">change order</a>{% endif %}</div>
   {% if ask %}
@@ -54,9 +54,9 @@
       for (var lid in codes) { if (codes[lid].indexOf(code) >= 0) {
         var inp = document.querySelector('input[name="qty_' + lid + '"]');
         inp.value = (parseFloat(inp.value) || 0) + 1; inp.dispatchEvent(new Event("input", {bubbles: true}));
-        var card = document.getElementById("line_" + lid); card.scrollIntoView({block: "center"}); card.style.background = "#e7f6ee"; setTimeout(function () { card.style.background = ""; }, 600);
-        msg.textContent = "+1 " + card.querySelector(".t").textContent; msg.style.color = "#0b6e4f"; window.phone.beep(); return; } }
-      msg.textContent = "No line on this order has the code " + code + "."; msg.style.color = "#b3261e";
+        var card = document.getElementById("line_" + lid); card.scrollIntoView({block: "center"}); card.style.background = "var(--bg-e7f6ee)"; setTimeout(function () { card.style.background = ""; }, 600);
+        msg.textContent = "+1 " + card.querySelector(".t").textContent; msg.style.color = "var(--fg-0b6e4f)"; window.phone.beep(); return; } }
+      msg.textContent = "No line on this order has the code " + code + "."; msg.style.color = "var(--fg-b3261e)";
     }
     q.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); scanned(q.value); q.value = ""; } });
     window.phone.camera(document.getElementById("in_cam"), document.getElementById("in_video"), scanned);

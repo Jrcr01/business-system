@@ -30,7 +30,7 @@
     <div><label for="contact_person">Contact person</label><input id="contact_person" type="text" name="contact_person" value="{{ edit.contact_person|default:'' }}"></div>
     <div><label for="contact_number">Contact number</label><input id="contact_number" type="text" name="contact_number" value="{{ edit.contact_number|default:'' }}"></div>
   </div>
-  <label style="display:flex;gap:6px;color:#1c2733;margin-top:8px"><input type="checkbox" name="is_affiliate" value="1"{% if edit and edit.is_affiliate %} checked{% endif %}> An affiliate: a relative's business we lend tires to and borrow from</label>
+  <label style="display:flex;gap:6px;color:var(--fg-1c2733);margin-top:8px"><input type="checkbox" name="is_affiliate" value="1"{% if edit and edit.is_affiliate %} checked{% endif %}> An affiliate: a relative's business we lend tires to and borrow from</label>
   <div class="actions"><button class="btn small" type="submit"><span class="ms">save</span>{% if edit %}Save{% else %}Add the customer{% endif %}</button>{% if edit %}<a class="btn small ghost" href="/customers/">Cancel</a>{% endif %}</div>
 </form>
 {% endblock %}

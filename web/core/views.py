@@ -18,6 +18,7 @@ def page_frame(request) -> dict:
     user = getattr(request, "slicks_user", None)
     return {
         "me": user,
+        "theme": (user or {}).get("theme") or "light",          # dark mode is each person's own choice; nobody signed in = the light look (2026-10-13)
         "idle_seconds": _idle_seconds() if user else 0,
         "phone_on": __import__("engines.settings_registry", fromlist=["phone_on"]).phone_on() if user else False,
         "role_label": ROLE_LABEL.get(user["role"], user["role"]) if user else "",
@@ -524,3 +525,12 @@ def notifications(request):
         return JsonResponse({"ok": ok, "msg": msg})
     mine = next((p for p in cr.people() if p["email"].lower() == me["email"].lower()), None)
     return render(request, "core/notifications.html", {"key": web_push.public_key(), "phones": web_push.phones(me["email"]), "mine": mine})
+
+
+def theme(request):
+    """The Look switch in the person menu (owner, 2026-10-13): light, dark, or auto. Saved on the person's account; back to the page they were on."""
+    from engines.auth_service import set_theme
+    if request.method == "POST" and getattr(request, "slicks_user", None):
+        set_theme(request.slicks_user["user_id"], request.POST.get("theme", ""))
+    back = request.POST.get("next") or "/"
+    return redirect(back if back.startswith("/") and not back.startswith("//") else "/")

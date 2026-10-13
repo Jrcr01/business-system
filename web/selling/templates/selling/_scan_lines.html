@@ -37,7 +37,7 @@
   var peso = function (n) { return n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
   var num = function (t) { var n = parseFloat(String(t).replace(/,/g, "")); return isNaN(n) ? 0 : n; };
   var csrf = function () { var m = document.cookie.match(/csrftoken=([^;]+)/); return m ? m[1] : ""; };
-  function say(text, bad) { msg.textContent = text; msg.style.color = bad ? "#b3261e" : ""; }
+  function say(text, bad) { msg.textContent = text; msg.style.color = bad ? "var(--fg-b3261e)" : ""; }
   function beep() {                                             /* heard at a noisy bay: a short blip on every accepted scan */
     try { var AC = window.AudioContext || window.webkitAudioContext; box._ac = box._ac || new AC(); var o = box._ac.createOscillator(), g = box._ac.createGain();
           o.frequency.value = 1320; g.gain.value = .07; o.connect(g); g.connect(box._ac.destination); o.start(); o.stop(box._ac.currentTime + .08); } catch (e) { }
@@ -48,7 +48,7 @@
     var ln = lines.filter(function (l) { return l.it.id === it.id; })[0];
     if (ln) ln.qty += qty || 1;
     else lines.push({it: it, qty: qty || 1, price: price != null ? price : (mode === "sale" ? "" : it.cost)});
-    say("✓ " + it.name + " added.", false); msg.style.color = "#0b6e4f"; beep(); draw(); changed();
+    say("✓ " + it.name + " added.", false); msg.style.color = "var(--fg-0b6e4f)"; beep(); draw(); changed();
   }
   function changed() { box.dispatchEvent(new CustomEvent("lines", {detail: {lines: lines, total: total(), profit: profit()}})); }
   function total() { return lines.reduce(function (s, l) { return s + l.qty * num(mode === "lend" ? l.it.cost : l.price); }, 0); }

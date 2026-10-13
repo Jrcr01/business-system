@@ -4,9 +4,9 @@
 <h2><span class="ms" style="font-size:28px">inventory_2</span> Items and stock</h2>
 <div class="facts"><div><span>Items</span><b>{{ sum.items|intcomma }}</b></div><div><span>Pieces on hand</span><b>{{ sum.pieces|floatformat:"-2"|intcomma }}</b></div>
   <div><span>Stock value at cost</span><b>₱{{ sum.value|floatformat:2|intcomma }}</b></div>
-  <div><span>Low stock</span><b{% if sum.low %} style="color:#9a3412"{% endif %}>{{ sum.low }}</b></div>
+  <div><span>Low stock</span><b{% if sum.low %} style="color:var(--fg-9a3412)"{% endif %}>{{ sum.low }}</b></div>
   <div><span>Below zero</span><b{% if sum.negative %} class="neg"{% endif %}>{{ sum.negative }}</b></div>
-  <div><span>Older than {{ old_years|floatformat:"-1" }} years</span><b{% if sum.old_pcs %} style="color:#9a3412"{% endif %}>{{ sum.old_pcs|floatformat:"-2" }} pcs</b></div></div>
+  <div><span>Older than {{ old_years|floatformat:"-1" }} years</span><b{% if sum.old_pcs %} style="color:var(--fg-9a3412)"{% endif %}>{{ sum.old_pcs|floatformat:"-2" }} pcs</b></div></div>
 <form class="scanbox" method="get" action="/stock/">
   <span class="ms">barcode_scanner</span>
   <input type="text" name="q" value="{{ q }}" autofocus autocomplete="off" placeholder="Scan a label, or type a size, brand or pattern (e.g. 2055516 westlake)" aria-label="Scan or search">

@@ -21,7 +21,7 @@
     <th>Next free</th><th>Up to no.</th><th>To account for</th><th></th></tr>
   {% for b in rows %}
   {% if b.gap_before %}{% if b.gap_confirmed %}<tr class="tentative"><td colspan="12" class="hint">{{ b.gap_before.0 }}–{{ b.gap_before.1 }}: the bank's own numbering jump (confirmed)</td></tr>
-  {% else %}<tr class="tentative"><td colspan="12"><span class="ms" style="font-size:16px;color:#b26a00">warning</span> {{ b.gap_before.0 }}–{{ b.gap_before.1 }} are in no booklet
+  {% else %}<tr class="tentative"><td colspan="12"><span class="ms" style="font-size:16px;color:var(--fg-b26a00)">warning</span> {{ b.gap_before.0 }}–{{ b.gap_before.1 }} are in no booklet
     {% if not request.view_only %}<form method="post" style="display:inline;margin-left:10px">{% csrf_token %}<input type="hidden" name="action" value="confirm_gap">
       <input type="hidden" name="booklet_id" value="{{ b.booklet_id }}"><button class="btn small ghost" type="submit" title="The bank gave a booklet that does not follow the last one">It is the bank's jump</button></form>{% endif %}</td></tr>{% endif %}{% endif %}
   <tr{% if b.status == "Archived" %} class="tentative"{% endif %}>
@@ -82,8 +82,8 @@
 
 {% if audit %}
 <div class="grp" id="audit">Gap audit · {{ audit.code }}</div>
-<div class="facts"><div><span>Leaves</span><b>{{ audit.total }}</b></div><div><span>Skipped numbers</span><b{% if audit.skipped_n %} style="color:#b3261e"{% endif %}>{{ audit.skipped_n }}</b></div>
-  <div><span>Duplicates</span><b{% if audit.dup_n %} style="color:#b3261e"{% endif %}>{{ audit.dup_n }}</b></div><div><span>Spoiled</span><b>{{ audit.spoiled_n }}</b></div></div>
+<div class="facts"><div><span>Leaves</span><b>{{ audit.total }}</b></div><div><span>Skipped numbers</span><b{% if audit.skipped_n %} style="color:var(--fg-b3261e)"{% endif %}>{{ audit.skipped_n }}</b></div>
+  <div><span>Duplicates</span><b{% if audit.dup_n %} style="color:var(--fg-b3261e)"{% endif %}>{{ audit.dup_n }}</b></div><div><span>Spoiled</span><b>{{ audit.spoiled_n }}</b></div></div>
 {% if audit.skipped_n %}
 <p><b>Skipped:</b> {{ audit.skipped }}. A skipped number is below a number already used, with no check and no spoiled entry.
   {% for n in audit.skipped_list|slice:":8" %}<a href="/search/?q={{ n }}" title="Search everything for {{ n }}">find {{ n }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}</p>
@@ -132,7 +132,7 @@
 
 {% if ask %}{# the range does not follow the booklet before it: nothing is saved yet #}
 <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="gap_title"><div class="dialog">
-  <h3 id="gap_title"><span class="ms" style="color:#b26a00">warning</span> Numbers in no booklet</h3>
+  <h3 id="gap_title"><span class="ms" style="color:var(--fg-b26a00)">warning</span> Numbers in no booklet</h3>
   <p>Check numbers <b>{{ ask.gap.0 }}–{{ ask.gap.1 }}</b> are in no booklet: this one does not follow the booklet before it.</p>
   <p class="hint">Is a booklet missing, or is the first number mistyped? If the bank simply jumped the numbers (you cannot control the sequences
     it gives), confirm it: the jump is recorded on the booklet, these numbers stop being warned about, and nothing goes on the Review list.</p>

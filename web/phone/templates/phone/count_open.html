@@ -2,13 +2,13 @@
 {% block content %}
 {% comment %}Owner, 2026-10-13: the opening count, add as you go. The sheet starts empty: find the tire in front of you and type how many; one the
 system does not have is added on the spot (the family only). Costs show only to a person who sees the price list. Approved on the laptop.{% endcomment %}
-<div class="ph-card" style="background:#f7f9fc"><b class="t">{{ c.count_no }} · Opening count</b><span class="hint">{% if counting %}counting · {{ rows|length }} item{{ rows|length|pluralize }} · {{ pieces|floatformat:"-2" }} pcs so far{% if c.counted_by %} · {{ c.counted_by }}{% endif %}{% else %}finished: it waits for approval on the laptop{% endif %}</span></div>
+<div class="ph-card" style="background:var(--bg-f7f9fc)"><b class="t">{{ c.count_no }} · Opening count</b><span class="hint">{% if counting %}counting · {{ rows|length }} item{{ rows|length|pluralize }} · {{ pieces|floatformat:"-2" }} pcs so far{% if c.counted_by %} · {{ c.counted_by }}{% endif %}{% else %}finished: it waits for approval on the laptop{% endif %}</span></div>
 {% if counting %}
 <div class="ph-scan"><input type="text" id="op_q" placeholder="Scan, or type size and brand" autocomplete="off" aria-label="Find an item" autofocus>
   <button type="button" id="ct_cam" hidden aria-label="Camera"><span class="ms">photo_camera</span></button></div>
 <video id="ct_video" playsinline hidden></video>
 <div id="op_found" class="op-list" hidden></div>
-<form method="post" id="op_pick" class="ph-card" style="border-color:var(--blue)" hidden>{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="item_id" id="op_item">
+<form method="post" id="op_pick" class="ph-card" style="border-color:var(--bd-0b4f8a)" hidden>{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="item_id" id="op_item">
   <b class="t" id="op_name"></b><span class="hint" id="op_code"></span>
   <div class="ph-row" style="margin-top:6px"><span class="hint">On the rack</span><input type="text" inputmode="decimal" class="ct_q" name="qty" id="op_qty" value="1" data-step="1" data-min="0" aria-label="How many on the rack"></div>
   <div class="ph-row" style="margin-top:6px">{% if show_cost %}<span id="op_costwrap" class="ph-row" style="flex:1 1 150px"><span class="hint">Cost each</span><input class="ph-field" style="flex:1 1 90px;text-align:right" type="text" inputmode="decimal" name="cost" id="op_cost" placeholder="notebook" aria-label="Cost each"></span>{% endif %}
@@ -47,8 +47,8 @@ document.addEventListener("DOMContentLoaded", function () {
     var lid = lines[it.id];
     if (lid) {                                                 /* already on the sheet: one more */
       var inp = form.querySelector('input[name="c_' + lid + '"]'), card = document.getElementById("ln_" + lid);
-      inp.value = (parseFloat(inp.value) || 0) + 1; card.scrollIntoView({block: "center"}); card.style.background = "#e7f6ee"; setTimeout(function () { card.style.background = ""; }, 600);
-      msg.textContent = "+1 " + it.name + " = " + inp.value; msg.style.color = "#0b6e4f"; window.phone.beep(); quiet(); return;
+      inp.value = (parseFloat(inp.value) || 0) + 1; card.scrollIntoView({block: "center"}); card.style.background = "var(--bg-e7f6ee)"; setTimeout(function () { card.style.background = ""; }, 600);
+      msg.textContent = "+1 " + it.name + " = " + inp.value; msg.style.color = "var(--fg-0b6e4f)"; window.phone.beep(); quiet(); return;
     }
     document.getElementById("op_item").value = it.id; document.getElementById("op_name").textContent = it.name; document.getElementById("op_code").textContent = it.code;
     document.getElementById("op_qty").value = 1;
@@ -87,7 +87,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var want = new URLSearchParams(location.search).get("pick");
     if (want) { var it = items.filter(function (x) { return String(x.id) === want; })[0]; if (it) choose(it); }
     else if (q.value.trim()) show();
-  }).catch(function () { msg.textContent = "The item list did not load. Check the signal and reload the page."; msg.style.color = "#b3261e"; });
+  }).catch(function () { msg.textContent = "The item list did not load. Check the signal and reload the page."; msg.style.color = "var(--fg-b3261e)"; });
 });
 </script>
 {% else %}

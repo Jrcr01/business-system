@@ -40,7 +40,7 @@
     var code = scan.value.trim().toUpperCase(); scan.value = "";
     if (!code) return;
     var row = rows.filter(function (r) { return r.dataset.codes.toUpperCase().split("|").indexOf(code) >= 0; })[0];
-    if (!row) { msg.textContent = code + " is not on this sheet."; msg.style.color = "#b3261e"; return; }
+    if (!row) { msg.textContent = code + " is not on this sheet."; msg.style.color = "var(--fg-b3261e)"; return; }
     var box = row.querySelector(".ct-q"), n = parseFloat(box.value.replace(/,/g, "")) || 0;
     box.value = n + 1; tally();
     msg.textContent = row.children[1].textContent + ": " + (n + 1); msg.style.color = "";

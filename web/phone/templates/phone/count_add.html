@@ -2,7 +2,7 @@
 {% block content %}
 {% comment %}Owner, 2026-10-13: the tire in front of you is not in the system -- add it and count it in one step (the family only). The same fields as
 the catalog, so the item is a full one from the start.{% endcomment %}
-<div class="ph-card" style="background:#f7f9fc"><b class="t">Not in the system: add it and count it</b><span class="hint">{{ c.count_no }} · Opening count</span></div>
+<div class="ph-card" style="background:var(--bg-f7f9fc)"><b class="t">Not in the system: add it and count it</b><span class="hint">{{ c.count_no }} · Opening count</span></div>
 <form method="post" id="ad_form" data-guard>{% csrf_token %}
   <label>Type</label>
   <div class="op-chips">{% for g in groups %}<label class="op-chip"><input type="radio" name="category" value="{{ g.code }}"{% if g.code == category %} checked{% endif %}><span>{{ g.label }}</span></label>{% endfor %}</div>

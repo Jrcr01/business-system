@@ -183,7 +183,8 @@ def _audit(conn, action: str, user_id, text: str, who: str | None = None) -> Non
 
 def _public(row) -> dict:
     return {"user_id": row["user_id"], "email": row["email"], "username": row["username"], "name": row["name"], "role": row["role"], "is_active": row["is_active"],
-            "must_change_password": row["must_change_password"], "device_epoch": int(row["device_epoch"] or 0) if "device_epoch" in row.keys() else 0}
+            "must_change_password": row["must_change_password"], "device_epoch": int(row["device_epoch"] or 0) if "device_epoch" in row.keys() else 0,
+            "theme": (row["theme"] if "theme" in row.keys() else None) or "light"}
 
 
 def get_user(user_id: int) -> dict | None:
@@ -709,3 +710,15 @@ def list_users() -> pd.DataFrame:
     """Everyone, without the password hashes: user_id, email, name, role, is_active, must_change_password, last_login_at, locked_until."""
     with get_conn() as conn:
         return pd.read_sql_query("SELECT user_id, username, email, name, role, is_active, must_change_password, last_login_at, locked_until FROM app_users ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'owner' THEN 1 ELSE 2 END, name", conn)
+
+
+THEMES = ("light", "dark", "auto")
+
+
+def set_theme(user_id: int, theme: str) -> bool:
+    """The person's own look (owner, 2026-10-13): light, dark, or auto = whatever their phone or laptop is set to. Theirs alone; not audited."""
+    if theme not in THEMES:
+        return False
+    with write_tx() as conn:
+        conn.execute("UPDATE app_users SET theme = ? WHERE user_id = ?", (theme, int(user_id)))
+    return True

@@ -19,7 +19,7 @@
 document.addEventListener("DOMContentLoaded", function () {
   var state = document.getElementById("nt_state"), on = document.getElementById("nt_on"), off = document.getElementById("nt_off"), test = document.getElementById("nt_test");
   var msg = document.getElementById("nt_msg"), token = document.querySelector("#nt_form input[name=csrfmiddlewaretoken]").value, key = "{{ key }}";
-  function say(text, bad) { msg.textContent = text; msg.style.color = bad ? "#b3261e" : "#0b6e4f"; }
+  function say(text, bad) { msg.textContent = text; msg.style.color = bad ? "var(--fg-b3261e)" : "var(--fg-0b6e4f)"; }
   function post(data) { return fetch("/notifications/", {method: "POST", credentials: "same-origin", headers: {"Content-Type": "application/json", "X-CSRFToken": token}, body: JSON.stringify(data)}).then(function (r) { return r.json(); }); }
   function bytes(b64) { var s = atob((b64 + "===".slice((b64.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/")), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) { state.textContent = "this browser cannot receive them"; return; }
