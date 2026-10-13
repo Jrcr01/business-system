@@ -68,6 +68,8 @@ body:has(main .home) { background: var(--bg-f2f4f7); }
 .card img { height: 54px; border-radius: 6px; display: block; margin-bottom: 12px; }
 .card h2 { margin-top: 0; }
 label { display: block; font-size: .88rem; color: var(--muted); margin: 12px 0 4px; }
+input.in, select.in { padding: 9px 11px; border: 1px solid var(--bd-cbd5e1); border-radius: 6px; font: inherit; max-width: 100%; }      /* the boxes on Expenses and Collect: they had no look of their own (2026-10-13) */
+input.in.num { text-align: right; }
 input[type=text], input[type=email], input[type=password] { width: 100%; padding: 9px 11px; border: 1px solid var(--bd-cbd5e1); border-radius: 6px; font: inherit; }
 input:focus { outline: 2px solid var(--bd-0b4f8a); border-color: var(--bd-0b4f8a); }
 .btn { display: inline-block; background: var(--blue); color: var(--fg-ffffff); border: 1px solid var(--bd-0b4f8a); border-radius: 6px; padding: 9px 16px; font: inherit; cursor: pointer;

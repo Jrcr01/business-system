@@ -4,14 +4,14 @@
 {% comment %}Owner, 2026-10-11: the drawer's money out -- electricity, rent, wages, meals, supplies -- one line each, a category from the owner's
 list, who and why. Taken back only with a reason. Feeds the Deposits page and the month's Income statement.{% endcomment %}
 <h2><span class="ms" style="font-size:28px">wallet</span> Expenses</h2>
-<form method="post" class="payrow" style="align-items:flex-end;gap:10px;flex-wrap:wrap">{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="m" value="{{ m }}">
-  <span><label for="e_date">Date</label><input id="e_date" class="in" type="date" name="expense_date" value="{{ today }}"></span>
-  <span><label for="e_cat">Category</label><select id="e_cat" class="in" name="category_id" required><option value="">Pick one</option>
-    {% for c in categories %}<option value="{{ c.category_id }}">{{ c.name }}</option>{% endfor %}</select></span>
-  <span><label for="e_from">Paid from</label><select id="e_from" class="in" name="paid_from">{% for s in sources %}<option>{{ s }}</option>{% endfor %}</select></span>
-  <span><label for="e_amt">Amount</label><input id="e_amt" class="in num" style="width:130px" inputmode="decimal" name="amount" required></span>
-  <span style="flex:1;min-width:220px"><label for="e_det">For / received by</label><input id="e_det" class="in" style="width:100%" name="detail" placeholder="e.g. Meralco bill Sept, OR 5512"></span>
-  <button class="btn" type="submit"><span class="ms">save</span>Save</button>
+<form method="post" class="bar">{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="m" value="{{ m }}">
+  <div><label for="e_date">Date</label><input id="e_date" type="date" name="expense_date" value="{{ today }}"></div>
+  <div><label for="e_cat">Category</label><select id="e_cat" name="category_id" required><option value="">Pick one</option>
+    {% for c in categories %}<option value="{{ c.category_id }}">{{ c.name }}</option>{% endfor %}</select></div>
+  <div><label for="e_from">Paid from</label><select id="e_from" name="paid_from">{% for s in sources %}<option>{{ s }}</option>{% endfor %}</select></div>
+  <div><label for="e_amt">Amount</label><input id="e_amt" type="text" inputmode="decimal" name="amount" style="width:150px;text-align:right" required></div>
+  <div class="grow"><label for="e_det">For / received by</label><input id="e_det" type="text" name="detail" placeholder="e.g. Meralco bill Sept, OR 5512"></div>
+  <button class="btn small" type="submit"><span class="ms">save</span>Save</button>
 </form>
 
 <div class="grp">{{ m }} — ₱{{ total|floatformat:2|intcomma }}{% if by_cat %} <span class="hint">({% for n, v in by_cat %}{{ n }} {{ v|floatformat:0|intcomma }}{% if not forloop.last %} · {% endif %}{% endfor %})</span>{% endif %}</div>
