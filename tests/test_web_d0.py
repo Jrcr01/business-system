@@ -26,7 +26,12 @@ def _code_step(c, r, email):
     assert r.status_code == 302 and r["Location"] in ("/2fa/", "/2fa/setup/"), getattr(r, "content", b"")[:300]
     if r["Location"] == "/2fa/setup/":
         assert c.get("/2fa/setup/").status_code == 200                      # makes the key
-    return c.post(r["Location"], {"code": code_for(email)})
+    from engines.auth_service import _now_step
+    began = _now_step()
+    out = c.post(r["Location"], {"code": code_for(email)})
+    if out.status_code == 200 and _now_step() != began:      # the half-minute turned over between making the code and checking it: the code (made one
+        out = c.post(r["Location"], {"code": code_for(email)})    # step back, to leave room for more sign-ins) had just expired. Once more, with a fresh one.
+    return out
 
 
 def username_of(email):
