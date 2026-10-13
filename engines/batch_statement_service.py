@@ -347,6 +347,13 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     chk_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (2, 1), (2, -1), "RIGHT")] + extra))
     story.append(chk_table)
 
+    if for_supplier and data.get("qr_url"):                    # owner, 2026-10-14: the supplier scans it and sees this statement, with what has cleared
+        story.append(Spacer(1, 12))
+        qr = Table([[_qr_drawing(data["qr_url"], QR_PAGE_PT), Paragraph(
+            f"<b>{QR_WORDS[0]}</b><br/>{QR_WORDS[1]}, any time. It opens this statement only.",
+            ParagraphStyle("QrNote", parent=styles["Normal"], fontSize=8.5, leading=11.5, textColor=GREY))]], colWidths=[QR_PAGE_PT + 10, CONTENT_WIDTH - QR_PAGE_PT - 10])
+        qr.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+        story.append(qr)
     if not for_supplier:                                       # the copy we keep is signed (owner, 2026-10-14)
         story.append(Spacer(1, 14))
         sign = Table([[f"Prepared by: {_prepared_by()}", "Checked by: ______________________"]], colWidths=[CONTENT_WIDTH * 0.5] * 2)
@@ -400,7 +407,7 @@ def _footer(canvas, doc) -> None:
 
 
 def generate_batch_statement_pdf(statement_id: int, include_full_history: bool = True, copies: str = "both", show_payment_application: bool = False,
-                                 include_unprinted_checks: bool = True) -> bytes | None:
+                                 include_unprinted_checks: bool = True, qr_base: str = "") -> bytes | None:
     """Batch Statement PDF. copies: "both" (internal filing + supplier, default),
     "filing" (internal filing copy only), or "supplier" (supplier copy only).
 
@@ -414,6 +421,7 @@ def generate_batch_statement_pdf(statement_id: int, include_full_history: bool =
     data = _fetch_batch_data(statement_id, include_full_history, include_unprinted_checks)
     if data is None:
         return None
+    data["qr_url"] = _qr_url(statement_id, qr_base)
     labels = []
     if copies in ("both", "filing"):
         labels.append("Internal Filing Copy")
@@ -526,6 +534,32 @@ THERMAL_SIZE_SMALL = 6.5
 THERMAL_SIZE_DETAIL = 8          # owner, 2026-10-14 ("Its blurred"): a 203-dot thermal head breaks thin Courier at 6.5 and dithers grey; detail lines are black Helvetica at 8
 
 
+QR_THERMAL_PT = 30 * mm
+QR_PAGE_PT = 26 * mm
+QR_WORDS = ("Scan to see the full statement", "and which checks have cleared")
+
+
+def _qr_drawing(url: str, size: float):
+    """The supplier's link as a QR code (engines/statement_links.py), drawn by reportlab itself."""
+    from reportlab.graphics.barcode.qr import QrCodeWidget
+    from reportlab.graphics.shapes import Drawing
+    w = QrCodeWidget(url, barLevel="M")
+    x0, y0, x1, y1 = w.getBounds()
+    d = Drawing(size, size, transform=[size / (x1 - x0), 0, 0, size / (y1 - y0), 0, 0])
+    d.add(w)
+    return d
+
+
+def _qr_url(statement_id: int, qr_base: str) -> str | None:
+    if not qr_base:
+        return None
+    try:
+        from engines.statement_links import url_for
+        return url_for(statement_id, qr_base)
+    except Exception:                                   # noqa: BLE001 -- a statement prints with or without its QR code
+        return None
+
+
 def _thermal_divider(ch: str = "-", font: str = THERMAL_FONT_MONO, size: float = THERMAL_SIZE_SMALL) -> str:
     char_w = stringWidth(ch, font, size)
     n = max(1, int(THERMAL_CONTENT_WIDTH_PT // char_w))
@@ -563,7 +597,14 @@ def _thermal_lines(data: dict) -> list[dict]:
         add(payment_kind(data), font=THERMAL_FONT_BODY, size=THERMAL_SIZE_BODY, align="center", gap_after=2)
     add_divider("=")
     add(f"PS no.: {_shown_ref(stmt['statement_ref'])}")
-    add(f"Supplier: {stmt['creditor_name']}")
+    words, piece = f"Supplier: {stmt['creditor_name']}".split(" "), ""       # a long name wraps instead of running off the strip
+    for w in words:
+        if piece and stringWidth(f"{piece} {w}", THERMAL_FONT_BODY, THERMAL_SIZE_BODY) > THERMAL_CONTENT_WIDTH_PT:
+            add(piece)
+            piece = "  " + w
+        else:
+            piece = f"{piece} {w}".strip() if piece.strip() else (piece + w)
+    add(piece)
     add(f"Date: {manila_now().strftime('%m/%d/%Y')}", gap_after=2)
     add_divider()
 
@@ -601,6 +642,10 @@ def _thermal_lines(data: dict) -> list[dict]:
     if live:
         row(f"Total ({len(live)})", "", _money(sum(float(c["amount"] or 0) for c in live)), bold=True)
     add_divider("=")
+    if data.get("qr_url"):                                       # owner, 2026-10-14: the supplier scans it and sees the full statement
+        lines.append({"text": "", "font": THERMAL_FONT_BODY, "size": THERMAL_SIZE_BODY, "align": "center", "height": QR_THERMAL_PT + 6, "color": colors.black, "qr": data["qr_url"]})
+        add(QR_WORDS[0], font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_DETAIL, align="center")
+        add(QR_WORDS[1], size=THERMAL_SIZE_DETAIL, align="center", gap_after=6)
     add("Received by: ____________________", gap_after=2)
     add("Date: ______________", gap_after=4)
     add("Metrobank Account 1 - Branch 399", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_SMALL, align="center")
@@ -616,6 +661,9 @@ def _draw_thermal(c: pdfcanvas.Canvas, lines: list[dict], y_start: float) -> Non
     y = y_start
     for spec in lines:
         y -= spec["height"]
+        if spec.get("qr"):
+            from reportlab.graphics import renderPDF
+            renderPDF.draw(_qr_drawing(spec["qr"], QR_THERMAL_PT), c, x_center - QR_THERMAL_PT / 2, y + 3)
         if spec["text"]:
             c.setFont(spec["font"], spec["size"])
             c.setFillColor(spec["color"])
@@ -632,7 +680,47 @@ def _draw_thermal(c: pdfcanvas.Canvas, lines: list[dict], y_start: float) -> Non
     c.setFillColor(colors.black)
 
 
-def generate_batch_statement_thermal_pdf(statement_id: int, include_full_history: bool = True, include_unprinted_checks: bool = True) -> bytes | None:
+def _thermal_pdf(lines: list[dict]) -> bytes:
+    """The lines as one continuous strip; a strip longer than the printer's longest roll page carries on in a second one."""
+    margin = THERMAL_MARGIN_MM * mm
+    room = THERMAL_MAX_HEIGHT_PT - 2 * margin
+    pages, page, used = [], [], 0.0
+    for spec in lines:
+        if page and used + spec["height"] > room:
+            pages.append(page)
+            page, used = [], 0.0
+        page.append(spec)
+        used += spec["height"]
+    pages.append(page)
+    buffer = io.BytesIO()
+    c = pdfcanvas.Canvas(buffer, pagesize=(THERMAL_WIDTH_PT, THERMAL_MAX_HEIGHT_PT))
+    for page in pages:
+        height = sum(l["height"] for l in page) + 2 * margin
+        c.setPageSize((THERMAL_WIDTH_PT, height))
+        _draw_thermal(c, page, height - margin)
+        c.showPage()
+    c.save()
+    return buffer.getvalue()
+
+
+def generate_thermal_many_pdf(statement_ids: list[int], include_full_history: bool = True, include_unprinted_checks: bool = True, qr_base: str = "") -> bytes | None:
+    """Several statements on ONE continuous strip, a "cut here" line between them (owner, 2026-10-14: "thermal printer cannot print bulk"). A file
+    of separate pages, each its own length, is what a thermal driver cannot print: it squeezes every page onto one paper length."""
+    lines: list[dict] = []
+    for sid in statement_ids:
+        data = _fetch_batch_data(sid, include_full_history, include_unprinted_checks)
+        if data is None:
+            continue
+        data["qr_url"] = _qr_url(sid, qr_base)
+        if lines:
+            blank = {"text": "", "font": THERMAL_FONT_BODY, "size": THERMAL_SIZE_SMALL, "align": "center", "height": 14, "color": colors.black}
+            lines += [blank, {"text": "- - - - - - - -  cut here  - - - - - - - -", "font": THERMAL_FONT_BODY, "size": THERMAL_SIZE_SMALL, "align": "center",
+                              "height": THERMAL_SIZE_SMALL * 1.45, "color": colors.black}, dict(blank, height=18)]
+        lines += _thermal_lines(data)
+    return _thermal_pdf(lines) if lines else None
+
+
+def generate_batch_statement_thermal_pdf(statement_id: int, include_full_history: bool = True, include_unprinted_checks: bool = True, qr_base: str = "") -> bytes | None:
     """80mm-wide thermal-printer Batch Statement: one continuous strip (no page
     breaks), auto-sized to the batch's actual content and capped at the
     printer's max continuous-roll length (3276mm) rather than always printing
@@ -640,15 +728,5 @@ def generate_batch_statement_thermal_pdf(statement_id: int, include_full_history
     data = _fetch_batch_data(statement_id, include_full_history, include_unprinted_checks)
     if data is None:
         return None
-    lines = _thermal_lines(data)
-    margin = THERMAL_MARGIN_MM * mm
-    content_height = sum(l["height"] for l in lines)
-    page_height = min(content_height + 2 * margin, THERMAL_MAX_HEIGHT_PT)
-
-    buffer = io.BytesIO()
-    c = pdfcanvas.Canvas(buffer, pagesize=(THERMAL_WIDTH_PT, page_height))
-    _draw_thermal(c, lines, page_height - margin)
-    c.showPage()
-    c.save()
-    buffer.seek(0)
-    return buffer.getvalue()
+    data["qr_url"] = _qr_url(statement_id, qr_base)
+    return _thermal_pdf(_thermal_lines(data))

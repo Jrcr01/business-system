@@ -77,6 +77,13 @@ NUMBERS = [
      "fingerprint sign-in for that phone or laptop; from then on the device's own fingerprint, face or screen lock stands in for typing the password "
      "there. The fingerprint never leaves the device. The password stays for a new device, Cloudflare in front is unchanged, and the Scanner account "
      "never uses it. A changed or reset password, or Sign out everywhere, removes the person's devices. 0: only the password signs in."),
+    ("supplier_qr", "Payment statements", "QR code for the supplier on the printed statement (1 = yes, 0 = no)", 1, 0, 1, 0, "",
+     "Owner, 2026-10-14: \"It is possible to have a qr code then if scanned it shows the a4?\" ... \"supplier\". 1: the thermal strip and the supplier's "
+     "copy of a numbered payment statement carry a QR code. Scanning it opens that one statement's supplier copy with no sign-in, showing which checks "
+     "have cleared; it opens nothing else, every opening is recorded on the statement's page, and one link can be switched off there. 0: no QR code is "
+     "printed and every link already printed stops opening."),
+    ("supplier_qr_days", "Payment statements", "The supplier's QR link works until this long after the statement's last check date", 90, 7, 730, 0, "days",
+     "After that the link says it has expired. Counted from the day the link was made when the statement has no check yet."),
     ("phone_pages", "Phone", "The phone pages are on (1 = yes, 0 = no)", 0, 0, 1, 0, "",
      "Owner, 2026-10-12: \"We need pricelist, inventory. Stock in, stock out. Those items need mobility without using a laptop.\" 1: /phone/ opens -- "
      "Price list, Stock, Stock in and Stock out on a phone, added to its home screen -- for everyone allowed those pages, and the Scanner role signs in "

@@ -292,6 +292,14 @@ def _merged_pdf(request, ids: list[int], scope: str, last: str | None):
     a4, history, unprinted = g.get("type", "a4") != "thermal", g.get("history") == "1", g.get("unprinted") == "1"
     copies = g.get("copies", "both") if g.get("copies") in ("both", "filing", "supplier") else "both"
     merged, made = PdfWriter(), 0
+    if not a4:                                                   # owner, 2026-10-14: one continuous strip, a cut line between statements; no letter-size summary page
+        from engines.batch_statement_service import generate_thermal_many_pdf
+        strip = generate_thermal_many_pdf(ids, history, unprinted, qr_base=f"{request.scheme}://{request.get_host()}")
+        if not strip:
+            raise Http404
+        resp = HttpResponse(strip, content_type="application/pdf")
+        resp["Content-Disposition"] = f'inline; filename="statements_{manila_now():%Y%m%d_%H%M}_thermal.pdf"'
+        return resp
     if g.get("summary") == "1":
         rows = bulk_summary_rows(ids, unprinted)
         if rows:
@@ -300,8 +308,9 @@ def _merged_pdf(request, ids: list[int], scope: str, last: str | None):
                 + ("" if unprinted else " · printed checks only")
             for page in PdfReader(io.BytesIO(generate_bulk_summary_pdf(rows, scope_text, type_text))).pages:
                 merged.add_page(page)
+    site = f"{request.scheme}://{request.get_host()}"
     for sid in ids:
-        one = generate_batch_statement_pdf(sid, history, copies, g.get("apply") == "1", unprinted) if a4 else generate_batch_statement_thermal_pdf(sid, history, unprinted)
+        one = generate_batch_statement_pdf(sid, history, copies, g.get("apply") == "1", unprinted, qr_base=site) if a4 else generate_batch_statement_thermal_pdf(sid, history, unprinted, qr_base=site)
         if not one:
             continue
         for page in PdfReader(io.BytesIO(one)).pages:

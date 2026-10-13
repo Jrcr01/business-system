@@ -190,6 +190,9 @@ def statement(request, sid: int):
     if ctx.get("may_park") and ctx.get("remaining", 0) > 0.004:
         from payables.batch_checks import park_context
         ctx.update(park_context(b, _rows, ctx["due_today"]))
+    from engines import statement_links
+    from engines.permissions import can
+    ctx.update({"qr_on": statement_links.on(), "qr": statement_links.state(sid), "qr_admin": can(request.slicks_user["role"], "settings.edit")})
     return render(request, "payables/statement.html", ctx)
 
 
@@ -302,6 +305,10 @@ def _statement_post(request, b: dict):
     if what == "cancel":
         _say(request, *cancel_order_statement(sid))
         return redirect(back)
+    if what in ("link_off", "link_on"):                          # owner, 2026-10-14: the supplier's QR link, switched off for one statement
+        from engines.statement_links import set_off
+        _say(request, *set_off(sid, what == "link_off"))
+        return redirect(back + "#print")
     if what == "delete_draft":                                   # owner, 2026-10-13: "Draft OS can delete. OS number is only cancelled"
         from engines.check_rules import delete_draft_statement
         ok, msg = delete_draft_statement(sid)
@@ -311,16 +318,21 @@ def _statement_post(request, b: dict):
     return redirect(back)
 
 
+def _site(request) -> str:
+    """This site's own address, for the supplier's QR link on a printout."""
+    return f"{request.scheme}://{request.get_host()}"
+
+
 @page_needed("order-statements")
 def statement_pdf(request, sid: int, kind: str):
     from engines.batch_statement_service import generate_batch_statement_pdf, generate_batch_statement_thermal_pdf
     b = _batch_or_404(sid)
     history = request.GET.get("history", "1") == "1"
     if kind == "thermal":
-        data, suffix = generate_batch_statement_thermal_pdf(sid, history), "_thermal"
+        data, suffix = generate_batch_statement_thermal_pdf(sid, history, qr_base=_site(request)), "_thermal"
     else:
         copies = request.GET.get("copies", "both") if request.GET.get("copies") in ("both", "filing", "supplier") else "both"
-        data = generate_batch_statement_pdf(sid, history, copies, request.GET.get("apply") == "1")
+        data = generate_batch_statement_pdf(sid, history, copies, request.GET.get("apply") == "1", qr_base=_site(request))
         suffix = {"both": "", "filing": "_filing", "supplier": "_supplier"}[copies]
     if not data:
         raise Http404

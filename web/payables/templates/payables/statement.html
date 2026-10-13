@@ -147,5 +147,19 @@
   <button class="btn small" type="submit"><span class="ms">picture_as_pdf</span>A4 statement (PDF)</button>
   <a class="btn small ghost" href="/order-statements/{{ b.statement_id }}/thermal.pdf" target="_blank"><span class="ms">receipt_long</span>Thermal 80mm (PDF)</a>
 </form>
-<p class="hint">Printing never locks or unlocks the payment statement. Sending the slip straight to the thermal printer comes with stage D5 (Release).</p>
+{% if qr_on %}{% comment %}Owner, 2026-10-14: the QR code on the strip and the supplier's copy opens this statement's supplier copy, no sign-in.{% endcomment %}
+<div class="grp">The supplier's QR link</div>
+{% if not qr %}<p class="hint">Made the first time this payment statement is printed with its number. The QR code on the thermal strip and the supplier's copy then opens the supplier copy of this statement only, with no sign-in.</p>
+{% else %}<form class="bar" method="post">{% csrf_token %}
+  <span>{% if qr.off %}<span class="pill off">switched off</span> The QR code on the printed copies opens nothing.
+    {% elif qr.expired %}<span class="pill off">expired</span> It stopped working after {{ qr.until|date:"m/d/Y" }}.
+    {% else %}<span class="pill">working</span> until {{ qr.until|date:"m/d/Y" }}.{% endif %}
+    Opened {{ qr.opens }} time{{ qr.opens|pluralize }}{% if qr.last %}, last {{ qr.last }}{% endif %}.</span>
+  {% if qr_admin %}<input type="hidden" name="action" value="{% if qr.off %}link_on{% else %}link_off{% endif %}">
+  <button class="btn small ghost" type="submit">{% if qr.off %}Switch on again{% else %}Switch off this link{% endif %}</button>{% endif %}</form>
+{% if qr.recent %}<details class="manual"><summary>The last {{ qr.recent|length }} opening{{ qr.recent|length|pluralize }}</summary>
+  <div class="scroll-x"><table class="list"><tr><th>When</th><th>Internet address</th><th>Country</th><th>Browser</th></tr>
+  {% for o in qr.recent %}<tr><td>{{ o.when }}</td><td>{{ o.ip }}</td><td>{{ o.country }}</td><td>{{ o.browser }}</td></tr>{% endfor %}</table></div></details>{% endif %}
+{% endif %}{% endif %}
+<p class="hint">Printing never locks or unlocks the payment statement. For the thermal strip, pick the thermal printer (XP-80C) in the print box, with Margins: None and Scale: 100%.</p>
 {% endblock %}

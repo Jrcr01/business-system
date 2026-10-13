@@ -54,6 +54,8 @@ class AccessMiddleware:
             return self.get_response(request)
         if request.path == EXEMPT_HEALTH and _from_the_server_itself(request):
             return self.get_response(request)
+        if request.path.startswith("/s/"):                          # the supplier's QR link (owner, 2026-10-14): a supplier has no Cloudflare pass; the code is the key
+            return self.get_response(request)
         email = verify(request.META.get(HEADER, ""), team, aud)
         if not email:
             return HttpResponse("Sign in through Cloudflare Access first.", status=403, content_type="text/plain")

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from payables import expenses, income_statement_view, analytics, bank, bankloans, booklets, bulk, calendar, cards, invoices, lenders, views
+from payables import public, expenses, income_statement_view, analytics, bank, bankloans, booklets, bulk, calendar, cards, invoices, lenders, views
 
 urlpatterns = [
     path("order-statements/", views.statements, name="statements"),
@@ -18,6 +18,7 @@ urlpatterns = [
     path("order-statements/<int:sid>/<str:kind>.pdf", views.statement_pdf, name="statement_pdf"),
     path("calendar/", calendar.payables_calendar, name="calendar"),
     path("reports/", views.reports, name="reports"),
+    path("s/<str:token>/", public.supplier_link, name="supplier_link"),
     path("expenses/", expenses.expenses, name="expenses"),
     path("income-statement/", income_statement_view.income_statement, name="income_statement"),
     path("analytics/", analytics.analytics, name="analytics"),
