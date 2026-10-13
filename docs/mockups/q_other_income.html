@@ -1,0 +1,81 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: Other income</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 980px; margin: 0 auto; padding: 18px 20px 60px; }
+h1 { color: var(--blue); font-size: 1.35rem; margin-top: 26px; }
+h2 { font-size: 1.2rem; margin: 0 0 12px; color: var(--navy); }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 76ch; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+.bar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; background: var(--soft); border-radius: 10px; padding: 12px; }
+.bar label { display: block; font-size: .8rem; color: var(--muted); font-weight: 600; margin-bottom: 3px; }
+.bar input, .bar select { font: inherit; border: 1px solid #b9c6d8; border-radius: 8px; padding: 7px 10px; background: #fff; }
+.grow { flex: 1; min-width: 200px; } .grow input { width: 100%; }
+.btn { display: inline-flex; align-items: center; gap: 7px; background: var(--blue); color: #fff; border: 1px solid var(--blue); border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; }
+.btn.ghost { background: #fff; color: var(--blue); border-color: #b9c6d8; padding: 5px 10px; font-size: .88rem; }
+.grp { font-weight: 700; margin: 16px 0 4px; } .hint { color: var(--muted); font-weight: 400; font-size: .9rem; }
+table.list { border-collapse: collapse; width: 100%; margin: 6px 0 10px; font-size: .95rem; font-variant-numeric: tabular-nums; }
+table.list th { text-align: left; color: var(--muted); font-weight: 600; font-size: .8rem; border-bottom: 2px solid var(--line); padding: 6px 10px; }
+table.list td { border-bottom: 1px solid var(--line); padding: 7px 10px; }
+.num { text-align: right !important; }
+.sub td { color: var(--muted); font-size: .88rem; } .sub td:first-child { padding-left: 28px; }
+.tot td { font-weight: 700; border-top: 2px solid var(--ink); }
+.pos { color: var(--ok); } .neg { color: var(--red); }
+.new { background: #eaf6ef; }
+.pill { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 1px 8px; background: #eaf6ef; color: var(--ok); font-weight: 600; }
+.menu { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.menu span { border: 1px solid #d5dbe3; border-radius: 8px; padding: 5px 10px; background: #fff; font-size: .9rem; }
+.menu .on { background: var(--blue); color: #fff; border-color: var(--blue); }
+</style></head><body><main>
+
+<h1>1. Bank → Other income (a new page, beside Expenses)</h1>
+<p class="why">Money that comes in and is not a sale. It works the same way as Expenses, so there is nothing new to learn:
+one line each, a kind from your own list, where it was received, and from whom. A wrong line is taken back with a reason; nothing is deleted.</p>
+<div class="screen">
+  <div class="menu"><span>Import bank statement</span><span>Bank and cash</span><span>Check booklets</span><span>Expenses</span><span class="on">Other income</span></div>
+  <h2><span class="ms" style="font-size:28px">savings</span> Other income</h2>
+  <div class="bar">
+    <div><label>Date</label><input type="date" value="2026-10-13"></div>
+    <div><label>Kind</label><select><option>Rent received</option><option>Supplier rebates and incentives</option><option>Others</option></select></div>
+    <div><label>Received in</label><select><option>Cash</option><option>Metrobank Account 1</option><option>GCash</option></select></div>
+    <div><label>Amount</label><input type="text" value="15,000.00" style="width:150px;text-align:right"></div>
+    <div class="grow"><label>From whom / what for</label><input type="text" value="Stall rent October, Mang Rudy"></div>
+    <button class="btn"><span class="ms">save</span>Save</button>
+  </div>
+  <div class="grp">2026-10 — ₱27,500.00 <span class="hint">(Rent received 15,000 · Supplier rebates and incentives 12,500)</span></div>
+  <table class="list">
+    <tr><th>No.</th><th>Date</th><th>Kind</th><th>Received in</th><th class="num">Amount</th><th>By</th><th></th></tr>
+    <tr><td>OI-0002</td><td>10/13/2026</td><td>Rent received <span class="hint">· Stall rent October, Mang Rudy</span></td><td>Cash</td><td class="num">15,000.00</td><td>JRCR</td><td class="num"><button class="btn ghost">Take back</button></td></tr>
+    <tr><td>OI-0001</td><td>10/05/2026</td><td>Supplier rebates and incentives <span class="hint">· New Century Q3 incentive</span></td><td>Metrobank Account 1</td><td class="num">12,500.00</td><td>JRCR</td><td class="num"><button class="btn ghost">Take back</button></td></tr>
+  </table>
+  <p class="hint" style="margin:0">Other income shows in the month's Income statement. It is not counted on Deposits.<br>
+    ▸ <u>The kinds (yours to edit; they are the statement's other income lines)</u> — only you see this, to add or rename a kind.</p>
+</div>
+
+<h1>2. Income statement — one new line, in green below</h1>
+<p class="why">"Other income" is added after Gross margin, with its kinds under it, and the profit for the month goes up by the same amount. The Excel copy gets the same rows.</p>
+<div class="screen">
+  <table class="list">
+    <tr><th></th><th class="num">October 2026</th><th class="num">September 2026</th></tr>
+    <tr><td>Sales of goods <span class="hint">(net of returns and voids)</span></td><td class="num">742,300.00</td><td class="num">688,150.00</td></tr>
+    <tr><td>Service income</td><td class="num">18,450.00</td><td class="num">15,200.00</td></tr>
+    <tr><td>Cost of goods sold <span class="hint">(at moving-average cost)</span></td><td class="num">(589,900.00)</td><td class="num">(548,300.00)</td></tr>
+    <tr class="tot"><td>Gross margin</td><td class="num">170,850.00</td><td class="num">155,050.00</td></tr>
+    <tr class="new"><td><u>Other income</u> <span class="pill">new</span></td><td class="num">27,500.00</td><td class="num">0.00</td></tr>
+    <tr class="sub new"><td>Rent received</td><td class="num">15,000.00</td><td class="num"></td></tr>
+    <tr class="sub new"><td>Supplier rebates and incentives</td><td class="num">12,500.00</td><td class="num"></td></tr>
+    <tr><td><u>Expenses</u></td><td class="num">(48,730.00)</td><td class="num">(41,900.00)</td></tr>
+    <tr><td><u>Shrinkage</u></td><td class="num">(5,600.00)</td><td class="num">(0.00)</td></tr>
+    <tr><td><u>Interest paid to lenders</u></td><td class="num">(14,200.00)</td><td class="num">(14,200.00)</td></tr>
+    <tr><td><u>Interest on bank loans</u></td><td class="num">(9,800.00)</td><td class="num">(9,800.00)</td></tr>
+    <tr class="tot"><td>Profit for the month</td><td class="num pos">120,020.00</td><td class="num pos">89,150.00</td></tr>
+  </table>
+</div>
+
+<p class="why" style="margin-top:22px"><b>Not changed:</b> Deposits, the Calendar, and supplier credit memos. A rebate the supplier takes off an invoice stays a credit memo;
+only money you actually receive is typed here. The figures above are examples.</p>
+</main></body></html>

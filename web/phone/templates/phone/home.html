@@ -3,6 +3,7 @@
 {% comment %}Owner, 2026-10-13: tapping the Slick's ERP icon while the app is open on these pages only brings the app back, still on POS (Android
 resumes it; only the POS shortcut carries an address). So the way across is here, at the top, in one tap.{% endcomment %}
 {% if me.role != "scanner" %}<a class="btn ghost" href="/" style="width:100%;justify-content:center;margin:0 0 12px"><span class="ms">home</span>Slick's ERP: the whole system</a>{% endif %}
+{% include "core/_fingerprint_offer.html" %}
 {% if mine.prices %}<a class="ph-big" href="/phone/prices/"><span class="ms">sell</span>Price list</a>{% endif %}
 {% if mine.stock %}<a class="ph-big" href="/phone/stock/"><span class="ms">inventory_2</span>Stock</a>{% endif %}
 {% if mine.in %}<a class="ph-big" href="/phone/in/"><span class="ms">move_to_inbox</span>Stock in{% if waiting %}<span class="pill warn">{{ waiting }} order{{ waiting|pluralize }} waiting</span>{% endif %}</a>{% endif %}

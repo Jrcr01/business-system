@@ -184,7 +184,7 @@ def test_a_person_allows_a_phone_tests_it_and_a_gone_phone_is_forgotten(web, db,
     from engines import web_push
     _admin(web)
     page = web.get("/notifications/").content.decode()
-    assert "Allow on this phone" in page and web_push.public_key() in page and 'href="/notifications/"' in web.get("/").content.decode()
+    assert "Allow on this device" in page and web_push.public_key() in page and 'href="/notifications/"' in web.get("/").content.decode()
     raw = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
     sub = {"endpoint": "https://push.example/a", "keys": {"p256dh": web_push._b64(raw), "auth": web_push._b64(b"0123456789abcdef")}}
     r = web.post("/notifications/", json.dumps({"action": "on", "subscription": sub}), content_type="application/json")

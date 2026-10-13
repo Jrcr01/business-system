@@ -36,6 +36,17 @@
   <button class="btn small" type="submit"><span class="ms">phonelink_lock</span>Allow authenticator set-up (24 hours)</button></form>{% endif %}
 <p class="hint">Everyone signs in with their password and the 6-digit code from Google Authenticator, once a day on each device. An authenticator is set up, or replaced after Reset code, only while you allow it.</p>
 
+<div class="grp">Fingerprint sign-in</div>
+{% if fp_devices %}<div class="scroll-x"><table class="list">
+  <tr><th>Device</th><th>Turned on</th><th>Last used</th><th></th></tr>
+  {% for d in fp_devices %}<tr><td>{{ d.device }}</td><td>{{ d.since }}</td><td>{{ d.used }}</td>
+    <td><form method="post" onsubmit="return confirm('Remove fingerprint sign-in for this device? It signs in with the password again.');">{% csrf_token %}
+      <input type="hidden" name="action" value="fp_remove"><input type="hidden" name="key_id" value="{{ d.key_id }}">
+      <button class="btn small ghost" type="submit">Remove</button></form></td></tr>{% endfor %}
+</table></div>{% else %}<p class="hint">Not turned on for any device.</p>{% endif %}
+<p class="hint">The device's own fingerprint or face unlock stands in for typing the password there. Remove a lost or sold device here.
+  A changed or reset password, or Sign out everywhere, removes them all.</p>
+
 <div class="grp">Sign-ins</div>
 <form class="bar" method="post" onsubmit="return confirm('Sign {{ u.name|escapejs }} out everywhere? Every device asks for the password and the code again.');">{% csrf_token %}
   <input type="hidden" name="action" value="signout_all"><span>{% if sign_ins %}The last {{ sign_ins|length }} sign-in{{ sign_ins|length|pluralize }}, newest first.{% else %}Ends all of their sign-ins at once.{% endif %}</span>

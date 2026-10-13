@@ -40,7 +40,8 @@
       <form method="post" action="/theme/" class="tb-look">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
         <span class="ms">dark_mode</span><span>Look</span>
         <span class="tb-seg">{% for k, label in "light:Light,dark:Dark,auto:Auto"|look_choices %}<button type="submit" name="theme" value="{{ k }}"{% if theme == k %} class="on" aria-pressed="true"{% endif %}>{{ label }}</button>{% endfor %}</span></form>
-      <a href="/notifications/"><span class="ms">notifications</span>Notifications on this phone</a>
+      <a href="/notifications/"><span class="ms">notifications</span>Notifications</a>
+      {% if fp_may %}<a href="/fingerprint/"><span class="ms">fingerprint</span>Fingerprint sign-in</a>{% endif %}
       <a href="/password/"><span class="ms">key</span>Change password</a>
       <form method="post" action="/logout/">{% csrf_token %}<button type="submit"><span class="ms">logout</span>Sign out</button></form>
     </div>

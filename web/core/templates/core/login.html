@@ -29,6 +29,13 @@
   <label for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" required>
   {% endif %}
   <button class="btn wide" type="submit">Sign in</button>
+  {% if fp_here %}{% comment %}Owner, 2026-10-13 (his Metrobank example): the password on top, the fingerprint as a link under it. Shown only in a browser
+  where the person turned it on.{% endcomment %}
+  <p style="text-align:center;margin:16px 0 0"><a href="#" id="fp_go" class="login-fp"><span class="ms">fingerprint</span>Sign in using fingerprint</a></p>
+  <p id="fp_msg" class="hint" role="status" style="text-align:center;margin:6px 0 0;min-height:1.2em"></p>
+  <script src="{% static 'core/fingerprint.js' %}?v=1"></script>
+  <script>document.getElementById("fp_go").addEventListener("click", function (e) { e.preventDefault();
+    slicksFp.signIn(document.querySelector("input[name=csrfmiddlewaretoken]").value, "{{ next|escapejs }}", document.getElementById("fp_msg")); });</script>{% endif %}
   <p class="login-help">Forgot your password? Ask the System admin to reset it.</p>
   <p class="login-foot"><span class="ms">lock</span>For authorized users only. Every action is recorded.</p>
 </form>

@@ -95,7 +95,7 @@ class SignInMiddleware:
         if user is None:
             if path in ("/sw.js", "/phone/manifest.webmanifest", "/phone/manifest-ops.webmanifest"):   # what Chrome reads to install the phone app, from the sign-in page too (2026-10-12)
                 return self.get_response(request)
-            if path == "/login/" or (path in ("/2fa/", "/2fa/setup/") and request.session.get("pending")):     # the code step, after a right password
+            if path in ("/login/", "/login/fingerprint/", "/login/fingerprint/options/") or (path in ("/2fa/", "/2fa/setup/") and request.session.get("pending")):     # the code step, after a right password
                 return self.get_response(request)
             return redirect("/login/" + (f"?next={quote(path)}" if path not in ("/", "/logout/") else ""))
         request.slicks_user = user

@@ -29,7 +29,38 @@ def page_frame(request) -> dict:
         "search_q": request.GET.get("q", "") if request.path == "/search/" else "",
         "page_notice": _page_notice() if user else "",
         "over_confirm": _over_confirm(request) if user else None,
+        **_fp_frame(request, user),
     }
+
+
+FP_SALT = "slicks.fingerprint"
+
+
+def _fp_cookie() -> str:
+    return settings.DEVICE_COOKIE_NAME + "_fp"
+
+
+def _fp_here(request) -> dict:
+    """Whose fingerprint sign-in was turned on in this browser: {"u": user id, "k": the key's id}, or {} (a signed cookie; it opens nothing by itself)."""
+    from django.core import signing
+    try:
+        got = signing.loads(request.COOKIES.get(_fp_cookie(), ""), salt=FP_SALT)
+    except signing.BadSignature:
+        return {}
+    return got if isinstance(got, dict) else {}
+
+
+def _fp_frame(request, user) -> dict:
+    """For every page: may this person use fingerprint sign-in, and is it already on in this browser (owner, 2026-10-13)."""
+    try:
+        from engines import fingerprint_signin as fp
+        if not fp.allowed(user):
+            return {"fp_may": False, "fp_offer": False}
+        here = _fp_here(request)
+        mine = here.get("u") == int(user["user_id"]) and here.get("k") in fp.key_ids(int(user["user_id"]))
+        return {"fp_may": True, "fp_offer": not mine and request.path in ("/", "/home/", "/phone/")}
+    except Exception:                                   # noqa: BLE001 -- never break a page
+        return {"fp_may": False, "fp_offer": False}
 
 
 def _idle_seconds() -> int:
@@ -124,7 +155,7 @@ def _log(request, user_id: int, result: str) -> bool:
                        city=m.get("HTTP_CF_IPCITY", "")[:60])
 
 
-def _half_signed_in(request, user: dict, nxt: str = "/"):
+def _half_signed_in(request, user: dict, nxt: str = "/", fingerprint: bool = False):
     """The password was right: next comes the code (or setting it up, the first time). Nothing else is open until then. Cloudflare Access in front does
     not stand in for the code any more (owner, 2026-10-11: a hacked inbox passes Cloudflare's email check; the phone is what proves it is them). The
     code is asked once a day per device: a device that gave this person's code today signs in with the password."""
@@ -132,14 +163,15 @@ def _half_signed_in(request, user: dict, nxt: str = "/"):
     from engines.settings_registry import authenticator_on
     cf = getattr(request, "cf_email", None)
     if not authenticator_on() and cf and cf == str(user.get("email") or "").strip().lower():
-        note_password_sign_in(int(user["user_id"]))             # the code is switched off (owner, 2026-10-12): Cloudflare's check of this very email is the second step
+        # the code is switched off (owner, 2026-10-12): Cloudflare's check of this very email is the second step
+        note_password_sign_in(int(user["user_id"]), *(("fingerprint on this device",) if fingerprint else ()))
         _sign_in(request, user, code=False)
-        _log(request, int(user["user_id"]), "CLOUDFLARE")
+        _log(request, int(user["user_id"]), "FINGERPRINT" if fingerprint else "CLOUDFLARE")
         return redirect(nxt or "/")
     if _code_given_today(request, user):
-        note_password_sign_in(int(user["user_id"]))
+        note_password_sign_in(int(user["user_id"]), *(("fingerprint; this device gave the code earlier today",) if fingerprint else ()))
         _sign_in(request, user)
-        _log(request, int(user["user_id"]), "REMEMBERED")
+        _log(request, int(user["user_id"]), "FINGERPRINT" if fingerprint else "REMEMBERED")
         return redirect(nxt or "/")
     request.session.cycle_key()
     request.session.pop("uid", None)
@@ -228,7 +260,117 @@ def login(request):
         if cf and not uid:
             msg = f"No account in the system uses {cf}. Ask the System admin."
         messages.error(request, msg)
-    return render(request, "core/login.html", {"email": email, "cf_email": cf, "next": nxt})
+    return render(request, "core/login.html", {"email": email, "cf_email": cf, "next": nxt, "fp_here": bool(_fp_login_user(request))})
+
+
+# --- fingerprint sign-in (owner, 2026-10-13; engines/fingerprint_signin.py): the device's own fingerprint or face unlock in place of typing the password.
+def _site(request) -> tuple[str, str]:
+    """(origin, id) of this site as the browser knows it."""
+    host = request.get_host()
+    return f"{request.scheme}://{host}", host.split(":")[0]
+
+
+def _fp_login_user(request) -> int | None:
+    """The account this browser may sign in to by fingerprint: the one that turned it on here, and only while it is the email Cloudflare verified."""
+    from engines import fingerprint_signin as fp
+    here = _fp_here(request)
+    uid = here.get("u")
+    if not uid or settings.SANDBOX_NO_SIGNIN or not fp.on() or here.get("k") not in fp.key_ids(int(uid)):
+        return None
+    cf = getattr(request, "cf_email", None)
+    if cf and _account_id(cf) != int(uid):
+        return None
+    return int(uid)
+
+
+def fingerprint_login_options(request):
+    from engines import fingerprint_signin as fp
+    uid = _fp_login_user(request)
+    if uid is None:
+        return JsonResponse({"ok": False, "msg": fp.NOT_VERIFIED}, status=400)
+    challenge = fp.new_challenge()
+    request.session["fp"] = {"c": challenge, "u": uid}
+    return JsonResponse({"ok": True, "publicKey": {"challenge": challenge, "rpId": _site(request)[1], "timeout": 60000, "userVerification": "required",
+                                                   "allowCredentials": [{"type": "public-key", "id": k} for k in fp.key_ids(uid)]}})
+
+
+@require_POST
+def fingerprint_login(request):
+    import json
+    from engines import fingerprint_signin as fp
+    asked, uid = request.session.pop("fp", None) or {}, _fp_login_user(request)
+    try:
+        payload = json.loads(request.body or b"{}")
+    except ValueError:
+        payload = {}
+    if uid is None or asked.get("u") != uid or not isinstance(payload, dict):
+        return JsonResponse({"ok": False, "msg": fp.NOT_VERIFIED}, status=400)
+    origin, rp_id = _site(request)
+    ok, user, msg = fp.verify(uid, payload, asked.get("c", ""), origin, rp_id)
+    if not ok:
+        _log(request, uid, "FINGERPRINT_REFUSED")
+        return JsonResponse({"ok": False, "msg": msg}, status=400)
+    nxt = str(payload.get("next") or "/")
+    if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
+        nxt = "/"
+    return JsonResponse({"ok": True, "next": _half_signed_in(request, user, nxt, fingerprint=True)["Location"]})
+
+
+def fingerprint(request):
+    """The person's own devices: turn fingerprint sign-in on for this one, remove any."""
+    from engines import fingerprint_signin as fp
+    user = request.slicks_user
+    if not fp.allowed(user):
+        return redirect("/")
+    here = _fp_here(request)
+    if request.method == "POST":
+        mine = {d["key_id"]: d for d in fp.devices(int(user["user_id"]))}
+        key_id = int(request.POST.get("key_id") or 0)
+        ok, msg = fp.remove(key_id, int(user["user_id"]))
+        (messages.success if ok else messages.error)(request, msg)
+        resp = redirect("/fingerprint/")
+        if ok and mine.get(key_id, {}).get("credential_id") == here.get("k"):
+            resp.delete_cookie(_fp_cookie())
+        return resp
+    rows = fp.devices(int(user["user_id"]))
+    for r in rows:
+        r["here"] = here.get("u") == int(user["user_id"]) and r["credential_id"] == here.get("k")
+    return render(request, "core/fingerprint.html", {"rows": rows, "on_here": any(r["here"] for r in rows)})
+
+
+def fingerprint_options(request):
+    from engines import fingerprint_signin as fp
+    user = request.slicks_user
+    if not fp.allowed(user):
+        return JsonResponse({"ok": False, "msg": "Fingerprint sign-in is not on for this account."}, status=400)
+    challenge = fp.new_challenge()
+    request.session["fp_new"] = challenge
+    return JsonResponse({"ok": True, "publicKey": {
+        "challenge": challenge, "rp": {"name": "Slick's ERP", "id": _site(request)[1]},
+        "user": {"id": fp.b64(f"slicks-{int(user['user_id'])}".encode()), "name": user["email"], "displayName": user["name"]},
+        "pubKeyCredParams": [{"type": "public-key", "alg": a} for a in fp.ALGS], "timeout": 60000, "attestation": "none",
+        "authenticatorSelection": {"authenticatorAttachment": "platform", "userVerification": "required", "residentKey": "discouraged"},
+        "excludeCredentials": [{"type": "public-key", "id": k} for k in fp.key_ids(int(user["user_id"]))]}})
+
+
+@require_POST
+def fingerprint_add(request):
+    import json
+    from django.core import signing
+    from engines import fingerprint_signin as fp
+    user = request.slicks_user
+    try:
+        payload = json.loads(request.body or b"{}")
+    except ValueError:
+        payload = {}
+    origin, rp_id = _site(request)
+    ok, msg, key = fp.register(user, payload if isinstance(payload, dict) else {}, request.session.pop("fp_new", ""), origin, rp_id,
+                               device=_browser(request.META.get("HTTP_USER_AGENT", "")))
+    resp = JsonResponse({"ok": ok, "msg": msg}, status=200 if ok else 400)
+    if ok:
+        resp.set_cookie(_fp_cookie(), signing.dumps({"u": int(user["user_id"]), "k": key}, salt=FP_SALT), max_age=400 * 86400, httponly=True,
+                        secure=settings.SESSION_COOKIE_SECURE, samesite="Lax")
+    return resp
 
 
 def _account_id(email: str) -> int | None:
@@ -516,10 +658,10 @@ def notifications(request):
             ok, msg = web_push.subscribe(me["email"], data.get("subscription") or {}, request.META.get("HTTP_USER_AGENT", ""))
         elif what == "off":
             web_push.unsubscribe(me["email"], str(data.get("endpoint") or ""))
-            ok, msg = True, "Notifications are off for this phone."
+            ok, msg = True, "Notifications are off for this device."
         elif what == "test":
-            n = web_push.send(me["email"], "Slick's ERP · test", "Notifications work on this phone.", "/notifications/", tag="test")
-            ok, msg = (True, f"Sent to {n} phone(s). It should appear in a few seconds.") if n else (False, "No phone took it. Press Allow on this phone first.")
+            n = web_push.send(me["email"], "Slick's ERP · test", "Notifications work on this device.", "/notifications/", tag="test")
+            ok, msg = (True, f"Sent to {n} device(s). It should appear in a few seconds.") if n else (False, "No device took it. Press Allow on this device first.")
         else:
             ok, msg = False, "Unknown action."
         return JsonResponse({"ok": ok, "msg": msg})

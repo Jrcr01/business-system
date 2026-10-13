@@ -446,14 +446,14 @@ def reset_totp(user_id: int, by_command: bool = False) -> tuple[bool, str]:
     return True, f"The sign-in code of {row[0]} is reset. Press \"Allow authenticator set-up\" when they are ready to set up the new one."
 
 
-def note_password_sign_in(user_id: int) -> None:
+def note_password_sign_in(user_id: int, how: str = "password; this device gave the code earlier today") -> None:
     """A sign-in with the password alone, on a device that already gave this person's code today (once a day per device; owner, 2026-10-11)."""
     with write_tx() as conn:
         row = conn.execute("SELECT email FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
         if row is None:
             return
         conn.execute("UPDATE app_users SET failed_attempts = 0, locked_until = NULL, last_login_at = ? WHERE user_id = ?", (manila_now().strftime(STAMP), int(user_id)))
-        _audit(conn, "USER_SIGNED_IN", int(user_id), f"{row[0]} (password; this device gave the code earlier today)", who=row[0])
+        _audit(conn, "USER_SIGNED_IN", int(user_id), f"{row[0]} ({how})", who=row[0])
 
 
 def sign_out_everywhere(user_id: int) -> tuple[bool, str]:
@@ -466,14 +466,22 @@ def sign_out_everywhere(user_id: int) -> tuple[bool, str]:
         if row is None:
             return False, "No such person."
         conn.execute("UPDATE app_users SET device_epoch = device_epoch + 1 WHERE user_id = ?", (int(user_id),))
+        _forget_fingerprints(conn, int(user_id))
         _audit(conn, "USER_SIGNED_OUT_EVERYWHERE", int(user_id), row[0])
     return True, f"{row[0]} is signed out everywhere. Every device asks for the password and the code again."
 
 
-SIGNED_IN = ("CODE", "REMEMBERED", "SET_UP", "CLOUDFLARE")
+def _forget_fingerprints(conn, user_id: int) -> None:
+    """A changed or reset password, or Sign out everywhere, ends fingerprint sign-in on every device of the person (owner, 2026-10-13)."""
+    from engines.fingerprint_signin import remove_all
+    remove_all(conn, user_id)
+
+
+SIGNED_IN = ("CODE", "REMEMBERED", "SET_UP", "CLOUDFLARE", "FINGERPRINT")
 SIGN_IN_RESULTS = {"CODE": "Signed in: password and code", "REMEMBERED": "Signed in: password (code given earlier that day on this device)",
                    "SET_UP": "Authenticator set up, signed in", "CLOUDFLARE": "Signed in: Cloudflare and password (the code is switched off)", "PASSWORD_REFUSED": "Not signed in: wrong password, locked or switched off",
-                   "WRONG_CODE": "Not signed in: wrong code", "SETUP_REFUSED": "Not signed in: authenticator set-up not allowed"}
+                   "WRONG_CODE": "Not signed in: wrong code",
+                   "FINGERPRINT": "Signed in: fingerprint on that device", "FINGERPRINT_REFUSED": "Not signed in: fingerprint not verified", "SETUP_REFUSED": "Not signed in: authenticator set-up not allowed"}
 
 
 def log_sign_in(user_id: int, result: str, device_id: str = "", browser: str = "", ip: str = "", country: str = "", city: str = "") -> bool:
@@ -651,6 +659,7 @@ def change_password(user_id: int, old_password: str, new_password: str) -> tuple
         new_hash = hash_password(new_password)
         _remember(conn, user_id, row["password_hash"])                         # the one being replaced goes into the history
         conn.execute("UPDATE app_users SET password_hash = ?, must_change_password = 0 WHERE user_id = ?", (new_hash, user_id))
+        _forget_fingerprints(conn, user_id)
         _audit(conn, "PASSWORD_CHANGED", user_id, row["email"], who=row["email"])
     return True, "Password changed."
 
@@ -670,6 +679,7 @@ def reset_password(user_id: int) -> tuple[bool, str, str | None]:
         if not row:
             return False, "Account not found.", None
         conn.execute("UPDATE app_users SET password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL WHERE user_id = ?", (hash_password(temp), user_id))
+        _forget_fingerprints(conn, user_id)
         _audit(conn, "PASSWORD_RESET", user_id, row[0])
     return True, f"New temporary password for {row[0]}.", temp
 

@@ -571,3 +571,6 @@ table.list tr.tentative td { color: var(--fg-6b7280); font-style: italic; }
 }
 /* headings in the shop sign's yellow on the dark page (the approved mock-up) */
 @media screen { html[data-theme="dark"] h2, html[data-theme="dark"] .ph-main h2 { color: var(--yellow); } }
+/* Fingerprint sign-in (owner, 2026-10-13): the link under the Sign in button, as on his bank's app */
+.login-fp { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 1.02rem; text-decoration: none; padding: 8px 10px; }
+.login-fp .ms { font-size: 30px; color: var(--fg-0b6e4f); }

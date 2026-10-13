@@ -233,6 +233,10 @@ def settings_user(request, user_id: int):
             ok, msg = au.reset_totp(user_id)
         elif what == "allow_code":                                     # an authenticator is set up only while the System admin allows it (owner, 2026-10-11)
             ok, msg = au.allow_totp_setup(user_id)
+        elif what == "fp_remove":                                      # a lost or sold phone (owner, 2026-10-13)
+            from engines import fingerprint_signin as fp
+            ok, msg = fp.remove(int(request.POST.get("key_id") or 0)) if any(
+                d["key_id"] == int(request.POST.get("key_id") or 0) for d in fp.devices(user_id)) else (False, "No such device.")
         elif what == "signout_all":
             ok, msg = au.sign_out_everywhere(user_id)
         else:
@@ -245,6 +249,7 @@ def settings_user(request, user_id: int):
                                                           "u": u, "role_label": ROLE_LABEL.get(u["role"], u["role"]), "roles": [(r, ROLE_LABEL[r]) for r in ROLES],
                                                           "is_me": is_me, "shown": shown, "code_since": (au.totp_enabled_at(user_id) or "")[:10],
                                                           "setup_until": au.shown_time(au.totp_setup_until(user_id)), "sign_ins": au.recent_sign_ins(user_id),
+                                                          "fp_devices": __import__("engines.fingerprint_signin", fromlist=["devices"]).devices(user_id),
                                                           **_switch_ctx(request, u, user_id)})
 
 

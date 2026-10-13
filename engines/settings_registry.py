@@ -72,6 +72,11 @@ NUMBERS = [
     ("signin_idle_minutes", "Sign-in", "Sign out after no activity for", 30, 5, 120, 0, "minutes",
      "Owner, 2026-10-12: \"30 minutes with the warning\". A person who opens no page and touches nothing for this long is signed out; a minute before, "
      "the page says so and offers to stay. Typing or clicking on an open page counts as activity. Two hours is the most the server allows."),
+    ("signin_fingerprint", "Sign-in", "Sign in with fingerprint or face on a person's own device (1 = yes, 0 = no)", 1, 0, 1, 0, "",
+     "Owner, 2026-10-13: \"For mobile view it is possible to have a biometrics for logging in?\". 1: after one password sign-in, a person can turn on "
+     "fingerprint sign-in for that phone or laptop; from then on the device's own fingerprint, face or screen lock stands in for typing the password "
+     "there. The fingerprint never leaves the device. The password stays for a new device, Cloudflare in front is unchanged, and the Scanner account "
+     "never uses it. A changed or reset password, or Sign out everywhere, removes the person's devices. 0: only the password signs in."),
     ("phone_pages", "Phone", "The phone pages are on (1 = yes, 0 = no)", 0, 0, 1, 0, "",
      "Owner, 2026-10-12: \"We need pricelist, inventory. Stock in, stock out. Those items need mobility without using a laptop.\" 1: /phone/ opens -- "
      "Price list, Stock, Stock in and Stock out on a phone, added to its home screen -- for everyone allowed those pages, and the Scanner role signs in "

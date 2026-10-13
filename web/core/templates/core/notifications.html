@@ -2,14 +2,14 @@
 {% block title %}Notifications{% endblock %}
 {% block content %}
 {% comment %}Owner, 2026-10-13: credit card reminders reach the phone through the installed Slick's ERP app. Each person allows it once, on the phone itself.{% endcomment %}
-<h2><span class="ms" style="font-size:28px">notifications</span> Notifications on this phone</h2>
+<h2><span class="ms" style="font-size:28px">notifications</span> Notifications on this device</h2>
 <p class="note" style="max-width:640px">Credit card reminders: the statement is out, the payment is due today, the annual fee is next month.
   {% if mine %}You receive them for <b>{% if mine.scope == "all" %}every card{% elif mine.scope == "own" %}your own cards{% else %}no card (the System admin can change this){% endif %}</b>.{% endif %}
-  Allow it once on each phone that should get them. Open this page in the Slick's ERP app on that phone.</p>
-<div class="facts" style="max-width:640px"><div><span>This phone</span><b id="nt_state">checking…</b></div><div><span>Your phones allowed</span><b>{{ phones }}</b></div></div>
-<p><button class="btn" type="button" id="nt_on" hidden><span class="ms">notifications_active</span>Allow on this phone</button>
+  Allow it once on each phone or laptop that should get them. On a phone, open this page in the Slick's ERP app.</p>
+<div class="facts" style="max-width:640px"><div><span>This device</span><b id="nt_state">checking…</b></div><div><span>Your devices allowed</span><b>{{ phones }}</b></div></div>
+<p><button class="btn" type="button" id="nt_on" hidden><span class="ms">notifications_active</span>Allow on this device</button>
   <button class="btn ghost" type="button" id="nt_test" hidden><span class="ms">send</span>Send me a test</button>
-  <button class="btn small ghost" type="button" id="nt_off" hidden>Switch off on this phone</button></p>
+  <button class="btn small ghost" type="button" id="nt_off" hidden>Switch off on this device</button></p>
 <p id="nt_msg" class="hint" style="min-height:1.3em" role="status"></p>
 <p class="hint" style="max-width:640px">If the phone's box says "Block", notifications stay off until you allow them again in the phone's settings for this app.
   A test that does not appear: check that the phone is not on Do Not Disturb and that battery saving is not stopping the app.</p>
@@ -36,7 +36,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
     on.addEventListener("click", function () {
       Notification.requestPermission().then(function (p) {
-        if (p !== "granted") { show(null); say("Not allowed. Nothing will be sent to this phone.", true); return; }
+        if (p !== "granted") { show(null); say("Not allowed. Nothing will be sent to this device.", true); return; }
         reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: bytes(key)}).then(function (sub) {
           return post({action: "on", subscription: sub.toJSON()}).then(function (d) { show(sub); say(d.msg, !d.ok); });
         }).catch(function () { say("The phone could not be registered. Check the signal and try again.", true); });

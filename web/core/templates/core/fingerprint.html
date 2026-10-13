@@ -1,0 +1,37 @@
+{% extends "core/base.html" %}{% load static %}
+{% block title %}Fingerprint sign-in{% endblock %}
+{% block content %}
+{% comment %}Owner, 2026-10-13: the device's own fingerprint or face unlock in place of typing the password, turned on per device by the person.{% endcomment %}
+<h2><span class="ms" style="font-size:28px">fingerprint</span> Fingerprint sign-in</h2>
+<p class="note" style="max-width:640px">Touch the fingerprint sensor (or use face unlock) instead of typing your password. Turn it on once on each phone or
+  laptop that is yours alone. Your fingerprint never leaves the device, and your password still works everywhere.</p>
+<div class="facts" style="max-width:640px"><div><span>This device</span><b id="fp_state">{% if on_here %}turned on{% else %}checking…{% endif %}</b></div>
+  <div><span>Your devices turned on</span><b>{{ rows|length }}</b></div></div>
+<form onsubmit="return false">{% csrf_token %}
+  <p><button class="btn" type="button" id="fp_on" hidden><span class="ms">fingerprint</span>Turn on for this device</button></p></form>
+<p id="fp_msg" class="hint" style="min-height:1.3em" role="status"></p>
+{% if rows %}<div class="scroll-x"><table class="list cards" style="max-width:760px">
+  <tr><th>Device</th><th>Turned on</th><th>Last used</th><th></th></tr>
+  {% for r in rows %}<tr><td class="c-t">{{ r.device }}{% if r.here %} <span class="pill">this device</span>{% endif %}</td><td data-l="turned on">{{ r.since }}</td><td data-l="last used">{{ r.used }}</td>
+    <td class="c-r"><form method="post" onsubmit="return confirm('Remove fingerprint sign-in for this device? It signs in with the password again.');">{% csrf_token %}
+      <input type="hidden" name="key_id" value="{{ r.key_id }}"><button class="btn small ghost" type="submit">Remove</button></form></td></tr>{% endfor %}
+</table></div>{% endif %}
+<p class="hint" style="max-width:640px">Do not turn it on for a phone other people unlock with their own finger: whoever can unlock that phone could sign in as you.
+  Changing your password removes every device; turn it on again after signing in with the new password.</p>
+<script src="{% static 'core/fingerprint.js' %}?v=1"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var on = document.getElementById("fp_on"), state = document.getElementById("fp_state"), here = {{ on_here|yesno:"true,false" }};
+  slicksFp.available().then(function (can) {
+    if (here) return;
+    state.textContent = can ? "not turned on" : "this device or browser cannot do it";
+    on.hidden = !can;
+  });
+  on.addEventListener("click", function () {
+    slicksFp.turnOn(document.querySelector("form input[name=csrfmiddlewaretoken]").value, document.getElementById("fp_msg")).then(function (ok) {
+      if (ok) setTimeout(function () { window.location.reload(); }, 1200);
+    });
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,91 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: fingerprint sign-in</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --red: #C62828; --yellow: #f5c518; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1080px; margin: 0 auto; padding: 18px 20px 60px; }
+h1 { color: var(--blue); font-size: 1.35rem; margin: 26px 0 6px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 78ch; }
+.row { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.col { width: 300px; } .cap { font-weight: 700; margin: 0 0 6px; } .cap small { display: block; font-weight: 400; color: var(--muted); }
+.phone { width: 300px; min-height: 540px; background: #fff; border: 8px solid #1c2733; border-radius: 30px; padding: 20px 18px; position: relative; overflow: hidden; }
+.logo { width: 64px; height: 64px; border-radius: 16px; background: var(--navy); color: var(--yellow); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.5rem; margin: 14px auto 8px; }
+.ttl { text-align: center; font-weight: 800; font-size: 1.15rem; color: var(--navy); margin-bottom: 14px; }
+.who { background: var(--soft); border-radius: 10px; padding: 8px 10px; font-size: .88rem; margin-bottom: 4px; }
+.hint { color: var(--muted); font-size: .85rem; } a { color: var(--blue); }
+.btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; background: var(--blue); color: #fff; border: 1px solid var(--blue); border-radius: 10px; padding: 13px 14px; font: inherit; font-weight: 700; margin-top: 10px; }
+.btn.big { padding: 18px 14px; font-size: 1.05rem; } .btn.big .ms { font-size: 30px; }
+.btn.ghost { background: #fff; color: var(--blue); border-color: #b9c6d8; }
+.btn.sm { display: inline-flex; width: auto; padding: 5px 10px; font-size: .85rem; margin: 0; }
+label { display: block; font-size: .8rem; color: var(--muted); font-weight: 600; margin: 12px 0 3px; }
+input { width: 100%; font: inherit; border: 1px solid #b9c6d8; border-radius: 8px; padding: 10px; }
+.or { text-align: center; color: var(--muted); font-size: .85rem; margin: 14px 0 0; }
+.card { border: 1px solid #b9d7c6; background: #eaf6ef; border-radius: 12px; padding: 14px; margin-top: 14px; }
+.card b { display: block; margin-bottom: 4px; }
+.dim { position: absolute; inset: 0; background: rgba(16,24,40,.55); }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; border-radius: 22px 22px 0 0; padding: 22px 18px 26px; text-align: center; }
+.sheet .ms { font-size: 64px; color: var(--blue); margin: 14px 0 8px; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+table.list { border-collapse: collapse; width: 100%; font-size: .95rem; }
+table.list th { text-align: left; color: var(--muted); font-weight: 600; font-size: .8rem; border-bottom: 2px solid var(--line); padding: 6px 10px; }
+table.list td { border-bottom: 1px solid var(--line); padding: 8px 10px; }
+.pill { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 1px 8px; background: #eaf6ef; color: var(--ok); font-weight: 600; }
+</style></head><body><main>
+
+<h1>Sign in with fingerprint (or face) on the phone</h1>
+<p class="why">The phone's own fingerprint or face unlock takes the place of typing the password. The fingerprint never leaves the phone.
+The password stays for a new phone or a wet finger. Cloudflare's email step in front is not changed.</p>
+
+<div class="row">
+  <div class="col"><p class="cap">1. Turning it on, once per phone<small>Shown after a normal password sign-in</small></p>
+    <div class="phone">
+      <div class="hint">Slick's ERP · Home</div>
+      <div class="card"><b><span class="ms">fingerprint</span> Sign in faster on this phone?</b>
+        <span class="hint" style="color:var(--ink)">Next time, touch the fingerprint sensor instead of typing your password.</span>
+        <button class="btn"><span class="ms">fingerprint</span>Turn on fingerprint</button>
+        <button class="btn ghost">Not on this phone</button>
+      </div>
+      <p class="hint" style="margin-top:12px">"Not on this phone" hides this box on this phone. It can still be turned on later from the person menu → Fingerprint sign-in.</p>
+    </div>
+  </div>
+
+  <div class="col"><p class="cap">2. The sign-in page afterwards<small>Like the Metrobank app: password on top, fingerprint under it</small></p>
+    <div class="phone">
+      <div class="logo">S</div><div class="ttl">Slick's ERP</div>
+      <div class="who"><span class="ms">verified_user</span> Verified by Cloudflare as <b>v.jrcroxas@gmail.com</b></div>
+      <div class="hint">Not you? <a>Use another email</a></div>
+      <label>Password</label><input type="password" placeholder="Enter password">
+      <button class="btn">Sign in</button>
+      <p style="text-align:center;margin:22px 0 0"><a style="font-weight:600;font-size:1.05rem"><span class="ms" style="font-size:30px;color:var(--ok)">fingerprint</span> Sign in using fingerprint</a></p>
+    </div>
+  </div>
+
+  <div class="col"><p class="cap">3. The phone asks for the finger<small>This box is the phone's own, not ours</small></p>
+    <div class="phone">
+      <div class="logo">S</div><div class="ttl">Slick's ERP</div>
+      <div class="dim"></div>
+      <div class="sheet"><b>Verify it's you</b><div class="hint">erp.slickstiresupply.com</div>
+        <span class="ms">fingerprint</span><div class="hint">Touch the fingerprint sensor</div>
+        <div style="margin-top:14px"><a>Use PIN or pattern</a> &nbsp;·&nbsp; <a>Cancel</a></div></div>
+    </div>
+  </div>
+</div>
+
+<h1>4. Settings → People: the devices of each person</h1>
+<p class="why">You see which phones have fingerprint sign-in turned on, and you can remove one (a lost or sold phone). Each person sees and removes their own from the person menu.</p>
+<div class="screen">
+  <table class="list">
+    <tr><th>Person</th><th>Device</th><th>Turned on</th><th>Last used</th><th></th></tr>
+    <tr><td>JRCR</td><td>Android phone (Chrome) <span class="pill">this phone</span></td><td>10/13/2026</td><td>today 4:10 PM</td><td><button class="btn ghost sm">Remove</button></td></tr>
+    <tr><td>JRCR</td><td>Windows laptop (Windows Hello)</td><td>10/13/2026</td><td>today 8:02 AM</td><td><button class="btn ghost sm">Remove</button></td></tr>
+    <tr><td>Rhodora</td><td>Android phone (Chrome)</td><td>10/14/2026</td><td>10/14/2026</td><td><button class="btn ghost sm">Remove</button></td></tr>
+  </table>
+  <p class="hint" style="margin:10px 0 0">A switch in Settings → Sign-in turns fingerprint sign-in on or off for the whole system.</p>
+</div>
+
+<p class="why" style="margin-top:22px"><b>To decide:</b> (a) phones only, or laptops with Windows Hello too; (b) the warehouse Scanner phone: allowed or not
+(anyone whose finger is saved in that phone could sign in as the Scanner account); (c) whether changing a password should remove that person's devices.</p>
+</main></body></html>

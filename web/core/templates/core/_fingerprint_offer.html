@@ -1,0 +1,28 @@
+{% load static %}{% comment %}Owner, 2026-10-13: offered once per device after a password sign-in, on Home and the phone's Home. Shown only where the device
+can do it and the person has not said "Not on this phone" (kept in this browser). The same can be done later from the person menu.{% endcomment %}
+{% if fp_offer %}
+<div id="fp_offer" hidden style="max-width:520px;background:var(--bg-ecfdf5);color:var(--fg-065f46);border-radius:10px;padding:12px 14px;margin:10px 0">
+  <b><span class="ms">fingerprint</span> Sign in faster on this device?</b>
+  <div style="margin:4px 0 10px">Next time, touch the fingerprint sensor instead of typing your password. Your fingerprint never leaves this device.</div>
+  <form onsubmit="return false" style="display:flex;gap:8px;flex-wrap:wrap">{% csrf_token %}
+    <button class="btn small" type="button" id="fp_yes"><span class="ms">fingerprint</span>Turn on fingerprint</button>
+    <button class="btn small ghost" type="button" id="fp_no">Not on this device</button></form>
+  <div id="fp_offer_msg" role="status" style="margin-top:6px"></div>
+</div>
+<style>#fp_offer[hidden] { display: none !important; }</style>
+<script src="{% static 'core/fingerprint.js' %}?v=1"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var box = document.getElementById("fp_offer"), key = "fp_no_{{ me.user_id }}", said = null;
+  try { said = localStorage.getItem(key); } catch (e) {}
+  if (said) return;
+  slicksFp.available().then(function (can) { if (can) box.hidden = false; });
+  document.getElementById("fp_no").addEventListener("click", function () { try { localStorage.setItem(key, "1"); } catch (e) {} box.hidden = true; });
+  document.getElementById("fp_yes").addEventListener("click", function () {
+    slicksFp.turnOn(box.querySelector("input[name=csrfmiddlewaretoken]").value, document.getElementById("fp_offer_msg")).then(function (ok) {
+      if (ok) { document.getElementById("fp_yes").hidden = true; document.getElementById("fp_no").hidden = true; }
+    });
+  });
+});
+</script>
+{% endif %}
