@@ -15,7 +15,7 @@
       <td class="num">{{ r.net_total|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>
   <p class="hint">{{ pool|length }} payment statement(s) · net ₱{{ summary_total|floatformat:2|intcomma }} · {{ n_checks }} check(s). Untick any you don't want.</p>
   <div class="bar">
-    <div><label for="type">Statement type</label><select id="type" name="type"><option value="a4">Payment statement (full page)</option><option value="thermal">Thermal strip (all on one strip)</option></select></div>
+    <div><label for="type">Statement type</label><select id="type" name="type"><option value="a4">Payment statement (full page, short bond)</option><option value="thermal">Thermal strip (all on one strip)</option></select></div>
     <div><label for="copies">Copies (full page)</label><select id="copies" name="copies"><option value="both">Both (filing + supplier)</option><option value="filing">Filing copy only</option><option value="supplier">Supplier copy only</option></select></div>
   </div>
   <label class="inline"><input type="checkbox" name="summary" value="1" checked> A summary page of the included statements in front</label>

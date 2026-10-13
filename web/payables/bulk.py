@@ -304,7 +304,7 @@ def _merged_pdf(request, ids: list[int], scope: str, last: str | None):
         rows = bulk_summary_rows(ids, unprinted)
         if rows:
             scope_text = f"Since last check print ({last})" if scope == "since" and last else dict(SCOPES)[scope]
-            type_text = ("Payment statement (A4)" + f" · {dict(both='both copies', filing='filing copy', supplier='supplier copy')[copies]}" if a4 else "Thermal 80mm") \
+            type_text = ("Payment statement (short bond)" + f" · {dict(both='both copies', filing='filing copy', supplier='supplier copy')[copies]}" if a4 else "Thermal 80mm") \
                 + ("" if unprinted else " · printed checks only")
             for page in PdfReader(io.BytesIO(generate_bulk_summary_pdf(rows, scope_text, type_text))).pages:
                 merged.add_page(page)

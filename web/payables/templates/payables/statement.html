@@ -144,8 +144,8 @@
   <div><label for="copies">Copies</label><select id="copies" name="copies"><option value="both">Both (filing + supplier)</option><option value="filing">Filing copy only</option><option value="supplier">Supplier copy only</option></select></div>
   <label class="inline"><input type="checkbox" name="history" value="1" checked> Full check history (incl. cancelled/replaced)</label>
   <label class="inline"><input type="checkbox" name="apply" value="1"> Payment application &amp; running balance</label>
-  <button class="btn small" type="submit"><span class="ms">picture_as_pdf</span>A4 statement (PDF)</button>
-  <a class="btn small ghost" href="/order-statements/{{ b.statement_id }}/thermal.pdf" target="_blank"><span class="ms">receipt_long</span>Thermal 80mm (PDF)</a>
+  <button class="btn small" type="submit"><span class="ms">picture_as_pdf</span>Full-page statement, short bond (PDF)</button>
+  <a class="btn small ghost" href="/order-statements/{{ b.statement_id }}/thermal.pdf" target="_blank"><span class="ms">receipt_long</span>Thermal strip (PDF)</a>
 </form>
 {% if qr_on %}{% comment %}Owner, 2026-10-14: the QR code on the strip and the supplier's copy opens this statement's supplier copy, no sign-in.{% endcomment %}
 <div class="grp">The supplier's QR link</div>
