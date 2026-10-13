@@ -53,7 +53,7 @@ def invoice_import(request, sid: int):
     b = _batch_or_404(sid)
     back = f"/order-statements/{sid}/import/"
     if b["status"] == "Cancelled" or b["is_locked"]:
-        _say(request, False, "This batch is closed or cancelled, so invoices cannot be added to it.")
+        _say(request, False, "This payment statement is closed or cancelled, so invoices cannot be added to it.")
         return redirect(f"/order-statements/{sid}/")
     if request.method == "POST":
         what = request.POST.get("action")
@@ -144,9 +144,9 @@ def _add_staged(request, b: dict):
     note = ""
     if added and p.get("promote") == "1" and str(b["statement_ref"]).startswith("DRAFT-") and not errors:
         try:
-            note = f" The batch is now {promote_draft_statement(sid, 'Issued')}."
+            note = f" The payment statement is now {promote_draft_statement(sid, 'Issued')}."
         except ValueError as e:
-            errors.append(f"The invoices were added, but the batch could not get its number: {e}")
+            errors.append(f"The invoices were added, but the payment statement could not get its number: {e}")
     if added:
         messages.success(request, f"{added} sales invoice(s) added.{note}")
     for e in errors:
@@ -236,7 +236,7 @@ def _create_many(request, suppliers: dict):
     if not results:
         _say(request, False, "No sheet had a supplier picked, so nothing was created.")
         return redirect("/order-statements/import-many/")
-    _say(request, True, f"{len(results)} batch(es) created.")
+    _say(request, True, f"{len(results)} payment statement(s) created.")
     return redirect("/order-statements/import-many/?done=" + _stage({"results": results}))
 
 
@@ -275,7 +275,7 @@ def print_many(request):
     if g.get("go") == "1":
         ids = [int(x) for x in g.getlist("ids") if x.isdigit()]
         if not ids:
-            _say(request, False, "Tick at least one batch.")
+            _say(request, False, "Tick at least one payment statement.")
             return redirect(f"/order-statements/print-many/?scope={scope}")
         return _merged_pdf(request, ids, scope, last)
     summary = bulk_summary_rows([int(r["statement_id"]) for r in pool], True) if pool else []
@@ -296,7 +296,7 @@ def _merged_pdf(request, ids: list[int], scope: str, last: str | None):
         rows = bulk_summary_rows(ids, unprinted)
         if rows:
             scope_text = f"Since last check print ({last})" if scope == "since" and last else dict(SCOPES)[scope]
-            type_text = ("Batch Statement (A4)" + f" · {dict(both='both copies', filing='filing copy', supplier='supplier copy')[copies]}" if a4 else "Thermal 80mm") \
+            type_text = ("Payment statement (A4)" + f" · {dict(both='both copies', filing='filing copy', supplier='supplier copy')[copies]}" if a4 else "Thermal 80mm") \
                 + ("" if unprinted else " · printed checks only")
             for page in PdfReader(io.BytesIO(generate_bulk_summary_pdf(rows, scope_text, type_text))).pages:
                 merged.add_page(page)

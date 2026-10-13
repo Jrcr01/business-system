@@ -14,7 +14,7 @@
   {% if pre_batch %}<input type="hidden" name="batch" value="{{ pre_batch }}">{% endif %}
 </form>
 {% if not coming and not waiting and not pending %}
-<p class="note"><span class="ms">inventory_2</span> No purchase order is waiting for goods from this supplier{% if may_inv %}, and no delivery is waiting for its document. A payable with no order is typed in on Order statements{% endif %}.</p>
+<p class="note"><span class="ms">inventory_2</span> No purchase order is waiting for goods from this supplier{% if may_inv %}, and no delivery is waiting for its document. A payable with no order is typed in on Invoices (Pay suppliers){% endif %}.</p>
 {% endif %}
 
 {% if pending %}
@@ -32,8 +32,8 @@
   <div class="bar" style="margin-top:8px">
     <div><label>SI no. <span class="hint">(if they gave one)</span></label><input type="text" name="doc" placeholder="blank = {{ r.ref|default:'type the SI no.' }}"></div>
     <div><label>Document date</label><input type="date" name="inv_date" value="{{ r.received_date|slice:':10' }}"></div>
-    <div class="grow"><label>Put it in (optional)</label><select name="batch"><option value="">Not in a batch yet</option>
-      {% for id, label in batches %}<option value="{{ id }}"{% if id|stringformat:"s" == pre_batch %} selected{% endif %}>{{ label }}</option>{% endfor %}<option value="new">A new batch</option></select></div>
+    <div class="grow"><label>Put it in (optional)</label><select name="batch"><option value="">Not in a payment statement yet</option>
+      {% for id, label in batches %}<option value="{{ id }}"{% if id|stringformat:"s" == pre_batch %} selected{% endif %}>{{ label }}</option>{% endfor %}<option value="new">A new payment statement</option></select></div>
     <button class="btn small" type="submit"><span class="ms">receipt_long</span>Record the document</button>
   </div>
 </form>

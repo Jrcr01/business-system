@@ -1,5 +1,6 @@
 import io
 import sqlite3
+from xml.sax.saxutils import escape
 from datetime import datetime
 
 from reportlab.lib import colors
@@ -121,12 +122,13 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
                FROM credit_memos WHERE statement_id = ? ORDER BY credit_memo_id""",
             (statement_id,),
         ).fetchall()
-        check_sql = "SELECT check_number, check_date, amount, status FROM checks_issued WHERE statement_id = ?"
+        check_sql = ("SELECT check_number, check_date, amount, status, (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL "
+                     "OR settled_outside_at IS NOT NULL) AS cleared FROM checks_issued WHERE statement_id = ?")
         if not include_full_history:
             check_sql += " AND status = 'Active'"
         if not include_unprinted:
             check_sql += " AND " + _printed_sql("checks_issued")
-        check_sql += " ORDER BY check_id"
+        check_sql += " ORDER BY (check_date IS NULL), check_date, check_number, check_id"      # by date: how the supplier banks them
         checks = cur.execute(check_sql, (statement_id,)).fetchall()
 
         # Payment application ledger source data: only Active checks count (a Cancelled/Replaced
@@ -165,11 +167,21 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
     return {"statement": stmt, "invoices": invoices, "memos": memos, "checks": checks, "payment_ledger": payment_ledger}
 
 
+def payment_kind(data: dict) -> str:
+    """'Single payment' when the statement pays one invoice, 'Batch payment' when it pays several (owner, 2026-10-13); '' with none yet."""
+    inv = data.get("invoices")
+    try:
+        n = int((inv["status"] != "Cancelled").sum()) if "status" in inv.columns else len(inv)
+    except (AttributeError, TypeError):
+        n = len(inv) if inv is not None else 0
+    return "Single payment" if n == 1 else ("Batch payment" if n > 1 else "")
+
+
 def _title_band(copy_label: str, styles) -> Table:
     title_style = ParagraphStyle("BandTitle", parent=styles["Normal"], textColor=colors.white, fontSize=16, leading=19, fontName="Helvetica-Bold")
     sub_style = ParagraphStyle("BandSub", parent=styles["Normal"], textColor=colors.white, fontSize=9, leading=12, alignment=2)
     band = Table(
-        [[Paragraph("BATCH / ORDER STATEMENT", title_style), Paragraph(copy_label.upper(), sub_style)]],
+        [[Paragraph("PAYMENT STATEMENT", title_style), Paragraph(copy_label.upper().replace("<BR/>", "<br/>"), sub_style)]],
         colWidths=[CONTENT_WIDTH * 0.68, CONTENT_WIDTH * 0.32],
     )
     band.setStyle(TableStyle([
@@ -183,14 +195,19 @@ def _title_band(copy_label: str, styles) -> Table:
     return band
 
 
-def _info_panel(stmt, styles) -> Table:
+def _shown_ref(ref) -> str:
+    """A statement with no number yet prints as 'Draft payment', not its internal DRAFT- placeholder."""
+    return "Draft payment" if str(ref or "").startswith("DRAFT-") else str(ref or "")
+
+
+def _info_panel(stmt, styles, for_supplier: bool = False) -> Table:
     label_style = ParagraphStyle("InfoLabel", parent=styles["Normal"], fontSize=7.5, textColor=GREY, leading=10)
     value_style = ParagraphStyle("InfoValue", parent=styles["Normal"], fontSize=9.5, leading=13, fontName="Helvetica-Bold")
     rows = [
         [Paragraph("STATEMENT REF", label_style), Paragraph("SUPPLIER", label_style),
-         Paragraph("STATUS", label_style), Paragraph("GENERATED", label_style)],
-        [Paragraph(stmt["statement_ref"], value_style), Paragraph(stmt["creditor_name"], value_style),
-         Paragraph(stmt["status"], value_style), Paragraph(manila_now().strftime("%m/%d/%Y %H:%M"), value_style)],
+         Paragraph("STATUS", label_style), Paragraph("DATE" if for_supplier else "GENERATED", label_style)],
+        [Paragraph(escape(_shown_ref(stmt["statement_ref"])), value_style), Paragraph(escape(str(stmt["creditor_name"])), value_style),   # "S&P" printed as "S&P;" unescaped
+         Paragraph(stmt["status"], value_style), Paragraph(manila_now().strftime("%m/%d/%Y" if for_supplier else "%m/%d/%Y %H:%M"), value_style)],
     ]
     panel = Table(rows, colWidths=[CONTENT_WIDTH * 0.3, CONTENT_WIDTH * 0.3, CONTENT_WIDTH * 0.18, CONTENT_WIDTH * 0.22])
     panel.setStyle(TableStyle([
@@ -216,17 +233,32 @@ def _add_section(story: list, text: str, styles) -> None:
     story.append(_section_heading(text, styles))
 
 
+def _check_status(c, for_supplier: bool) -> str:
+    """Our copy: the check's own status, and Cleared once the bank has paid it. The supplier's copy: only what means something to them --
+    Cleared, or that a check was cancelled or replaced; a check simply waiting to be banked says nothing."""
+    try:
+        cleared = bool(c["cleared"])
+    except (KeyError, IndexError):
+        cleared = False
+    if c["status"] == "Active":
+        return "Cleared" if cleared else ("" if for_supplier else "Active")
+    return str(c["status"])
+
+
 def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_application: bool = False, pad: float = 5) -> None:
     stmt = data["statement"]
 
-    story.append(_title_band(copy_label, styles))
+    kind = payment_kind(data)
+    story.append(_title_band(f"{kind}<br/>{copy_label}" if kind else copy_label, styles))      # two clean lines, not one that wraps
     story.append(Spacer(1, 10))
-    story.append(_info_panel(stmt, styles))
+    for_supplier = "supplier" in copy_label.lower()            # the supplier's copy says what a supplier needs; ours keeps the working detail
+    story.append(_info_panel(stmt, styles, for_supplier))
 
     _add_section(story, "Invoices", styles)
     inv_rows = [["Sales Invoice", "Invoice Date", "Due Date", "Gross (PHP)", "Net (PHP)", "Status"]]
     for i in data["invoices"]:
-        inv_rows.append([i["doc_ref"] + (f" (DR {i['dr_no']})" if i.get("dr_no") else ""), us_date(i["invoice_date"]), us_date(i["due_date"]), _money(i["gross_amount"]), _money(i["amount"]), i["display_status"]])
+        inv_rows.append([i["doc_ref"] + (f" (DR {i['dr_no']})" if i.get("dr_no") else ""), us_date(i["invoice_date"]), us_date(i["due_date"]), _money(i["gross_amount"]), _money(i["amount"]),
+                         ("Covered by check" if for_supplier and str(i["display_status"]).startswith("Check issued") else i["display_status"])])
     if len(inv_rows) == 1:
         inv_rows.append(["—", "—", "—", "—", "—", "—"])
     inv_table = Table(inv_rows, colWidths=[CONTENT_WIDTH * w for w in (0.15, 0.14, 0.14, 0.14, 0.14, 0.29)], repeatRows=1)
@@ -246,7 +278,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     totals_rows = [
         ["Gross Total", f"PHP {stmt['total_amount']:,.2f}"],
         ["Credit Memos", f"PHP {stmt['credit_memo_total']:,.2f}"],
-        ["Net Total (checks cut against this)", f"PHP {stmt['net_total']:,.2f}"],
+        ["Total to be paid", f"PHP {stmt['net_total']:,.2f}"],
     ]
     totals_table = Table(totals_rows, colWidths=[CONTENT_WIDTH * 0.72, CONTENT_WIDTH * 0.28])
     totals_table.setStyle(TableStyle([
@@ -262,13 +294,18 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     story.append(totals_table)
 
     _add_section(story, "Checks", styles)
-    chk_rows = [["Check Number", "Check Date", "Amount (PHP)", "Status"]]
+    chk_rows = [["Check Number", "Check Date", "Amount (PHP)", "Remarks" if for_supplier else "Status"]]
     for c in data["checks"]:
-        chk_rows.append([c["check_number"] or "Pending", us_date(c["check_date"], "—"), _money(c["amount"]), c["status"]])
+        chk_rows.append([c["check_number"] or "Pending", us_date(c["check_date"], "—"), _money(c["amount"]), _check_status(c, for_supplier)])
     if len(chk_rows) == 1:
         chk_rows.append(["—", "—", "—", "—"])
+    live = [c for c in data["checks"] if c["status"] == "Active"]
+    extra = []
+    if live:                                                   # the checks add up to what is to be paid, in plain sight
+        chk_rows.append([f"Total checks ({len(live)})", "", _money(sum(float(c["amount"] or 0) for c in live)), ""])
+        extra = [("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("LINEABOVE", (0, -1), (-1, -1), 1, ACCENT), ("BACKGROUND", (0, -1), (-1, -1), colors.white)]
     chk_table = Table(chk_rows, colWidths=[CONTENT_WIDTH * w for w in (0.3, 0.23, 0.22, 0.25)], repeatRows=1)
-    chk_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (2, 1), (2, -1), "RIGHT")]))
+    chk_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (2, 1), (2, -1), "RIGHT")] + extra))
     story.append(chk_table)
 
     if show_payment_application:
@@ -298,7 +335,7 @@ def _footer(canvas, doc) -> None:
     canvas.line(LEFT_MARGIN, BOTTOM_MARGIN - 10, LETTER[0] - RIGHT_MARGIN, BOTTOM_MARGIN - 10)
     canvas.setFont("Helvetica", 7.5)
     canvas.setFillColor(GREY)
-    canvas.drawString(LEFT_MARGIN, BOTTOM_MARGIN - 22, "AP Disbursement System — Metrobank Account 1 · Branch 399")
+    canvas.drawString(LEFT_MARGIN, BOTTOM_MARGIN - 22, "Slick's Tire Supply · Metrobank Account 1 · Branch 399")
     canvas.drawRightString(LETTER[0] - RIGHT_MARGIN, BOTTOM_MARGIN - 22, f"Page {doc.page}")
     canvas.restoreState()
 
@@ -391,7 +428,7 @@ def generate_bulk_summary_pdf(rows: list[dict], scope_label: str, statement_type
     story: list = [_title_band("Bulk print summary", styles), Spacer(1, 10)]
     info_style = ParagraphStyle("BulkInfo", parent=styles["Normal"], fontSize=9, leading=13, textColor=colors.HexColor("#374151"))
     story.append(Paragraph(
-        f"<b>{len(rows)}</b> order statement(s) &nbsp;·&nbsp; {scope_label} &nbsp;·&nbsp; {statement_type} &nbsp;·&nbsp; printed {manila_now():%Y-%m-%d %H:%M}", info_style))
+        f"<b>{len(rows)}</b> payment statement(s) &nbsp;·&nbsp; {scope_label} &nbsp;·&nbsp; {statement_type} &nbsp;·&nbsp; printed {manila_now():%Y-%m-%d %H:%M}", info_style))
     story.append(Spacer(1, 8))
     table_rows = [["#", "Order statement", "Supplier", "Status", "Inv.", "Net total (PHP)", "Checks", "Checks total (PHP)"]]
     for n, r in enumerate(rows, start=1):
@@ -450,13 +487,15 @@ def _thermal_lines(data: dict) -> list[dict]:
     def add_divider(ch="-"):
         add(_thermal_divider(ch), font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, align="center")
 
-    add("AP DISBURSEMENT SYSTEM", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_TITLE, align="center")
-    add("BATCH / ORDER STATEMENT", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION, align="center", gap_after=2)
+    add("SLICK'S TIRE SUPPLY", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_TITLE, align="center")
+    add("PAYMENT STATEMENT", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION, align="center", gap_after=0 if payment_kind(data) else 2)
+    if payment_kind(data):
+        add(payment_kind(data), font=THERMAL_FONT_BODY, size=THERMAL_SIZE_BODY, align="center", gap_after=2)
     add_divider("=")
-    add(f"Ref: {stmt['statement_ref']}")
+    add(f"Ref: {_shown_ref(stmt['statement_ref'])}")
     add(f"Supplier: {stmt['creditor_name']}")
     add(f"Status: {stmt['status']}")
-    add(f"Generated: {manila_now().strftime('%m/%d/%Y %H:%M')}", gap_after=2)
+    add(f"Date: {manila_now().strftime('%m/%d/%Y')}", gap_after=2)
     add_divider()
 
     add("INVOICES", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION)
@@ -465,7 +504,8 @@ def _thermal_lines(data: dict) -> list[dict]:
     for i in data["invoices"]:
         add(i["doc_ref"])
         add(f"  Recv {us_date(i['invoice_date'])}  Due {us_date(i['due_date'])}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, color=GREY)
-        add(f"  Net PHP {_money(i['amount'])}   [{i['display_status']}]", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
+        shown = "Covered by check" if str(i["display_status"]).startswith("Check issued") else i["display_status"]
+        add(f"  Net PHP {_money(i['amount'])}   [{shown}]", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
     add_divider()
 
     if data["memos"]:
@@ -477,15 +517,19 @@ def _thermal_lines(data: dict) -> list[dict]:
 
     add(f"Gross Total:   PHP {stmt['total_amount']:,.2f}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_BODY)
     add(f"Credit Memos:  PHP {stmt['credit_memo_total']:,.2f}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_BODY)
-    add(f"NET TOTAL:     PHP {stmt['net_total']:,.2f}", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_BODY + 0.5)
+    add(f"TO BE PAID:    PHP {stmt['net_total']:,.2f}", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_BODY + 0.5)
     add_divider()
 
     add("CHECKS", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION)
     if not data["checks"]:
         add("  (none)")
     for c in data["checks"]:
-        add(f"Check #{c['check_number'] or 'Pending'}   [{c['status']}]")
+        mark = _check_status(c, True)                            # the strip goes to the supplier with the checks: only Cleared / Cancelled / Replaced is said
+        add(f"Check #{c['check_number'] or 'Pending'}" + (f"   [{mark}]" if mark else ""))
         add(f"  {us_date(c['check_date'], '--')}   PHP {_money(c['amount'])}", font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL)
+    live = [c for c in data["checks"] if c["status"] == "Active"]
+    if live:
+        add(f"TOTAL CHECKS ({len(live)}):  PHP {_money(sum(float(c['amount'] or 0) for c in live))}", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_BODY + 0.5)
     add_divider("=")
     add("Metrobank Account 1 - Branch 399", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_SMALL, align="center")
     add("*** Nothing follows ***", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_SMALL, align="center", gap_after=6)

@@ -7,9 +7,9 @@
   <div><label for="override{{ k }}">Total on the document, if it differs</label><input id="override{{ k }}" type="text" inputmode="decimal" name="override" placeholder="as ticked">
     <div class="hint">Only when its total is not quantity × price (freight, rounding).</div></div>
   {% if may_batch %}<div><label for="batch{{ k }}">Put it in (optional)</label><select id="batch{{ k }}" name="batch">
-    <option value="">Not in a batch yet: decide when preparing the order statement</option>
-    {% for id, label in batches %}<option value="{{ id }}"{% if id|stringformat:"s" == pre_batch %} selected{% endif %}>{{ label }}</option>{% endfor %}<option value="new">A new batch</option></select>
-    <div class="hint">Left as "not in a batch yet", it waits on Order statements until you put it in a batch.</div></div>{% endif %}
+    <option value="">Not in a payment statement yet: decide when preparing the payment statement</option>
+    {% for id, label in batches %}<option value="{{ id }}"{% if id|stringformat:"s" == pre_batch %} selected{% endif %}>{{ label }}</option>{% endfor %}<option value="new">A new payment statement</option></select>
+    <div class="hint">Left as "not in a payment statement yet", it waits on Payment statements until you put it in a payment statement.</div></div>{% endif %}
 </div>
 <label style="display:flex;gap:6px;color:var(--fg-1c2733);margin-top:8px"><input type="checkbox" name="update_prices" value="1"> Update the price list where the actual price differs</label>
 <div class="facts" style="margin-top:10px"><div><span>Amount (as ticked)</span><b id="sum_actual{{ k }}">₱0.00</b></div><div><span>Against the estimate</span><b id="sum_est{{ k }}">₱0.00</b></div></div>

@@ -57,7 +57,7 @@ def test_an_unbatched_si_shows_and_paid_or_cancelled_ones_do_not(web, db):
                             VALUES (?, ?, ?, ?, 5000, 5000, ?)""", (cid, doc, _future(0), _future(30), status))
     inv = _sched()
     inv = inv[inv["stage"] == "invoice"]
-    assert list(inv["reference"]) == ["SI U-1 · no check yet"] and list(inv["batch"]) == ["Not in a batch"]
+    assert list(inv["reference"]) == ["SI U-1 · no check yet"] and list(inv["batch"]) == ["Not in a payment statement"]
 
 
 def test_goods_received_without_an_si_are_owed_at_the_po_price_until_the_si_comes(db):

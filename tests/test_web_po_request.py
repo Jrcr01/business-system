@@ -320,7 +320,7 @@ def test_a_dr_alone_records_the_payable(web, db):
     page = web.get("/purchase-orders/receive/").content.decode()
     assert "document not recorded yet" not in page and "Nothing to receive" in page      # nothing waits for an SI that will never come
     order = web.get(f"/purchase-orders/{po}/").content.decode()
-    assert "Deliveries" in order and "DR 77" in order and "2 × Tire A" in order and "not in a batch yet" in order
+    assert "Deliveries" in order and "DR 77" in order and "2 × Tire A" in order and "not in a payment statement yet" in order
 
 
 def test_neither_si_nor_dr_is_refused(web, db):

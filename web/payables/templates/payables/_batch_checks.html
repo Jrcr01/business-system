@@ -94,7 +94,7 @@
         {% if c.stage == "Written" or c.stage == "Released" %}{% if may_void %}<a class="btn small ghost" href="?tab=checks&void={{ c.check_id }}">Void / replace</a>{% endif %}{% endif %}
         {% if c.stage == "Released" and may_release %}<button class="btn small ghost" type="submit" form="unrel_{{ c.check_id }}">Undo release</button>{% endif %}
       </td></tr>
-    {% empty %}<tr><td colspan="6" class="note">No checks on this batch yet.</td></tr>{% endfor %}</table></div>
+    {% empty %}<tr><td colspan="6" class="note">No checks on this payment statement yet.</td></tr>{% endfor %}</table></div>
 
   {% if checks %}<div class="actions" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
     {% if may_write and n_parked %}

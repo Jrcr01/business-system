@@ -1,0 +1,96 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Invoices{% endblock %}
+{% block content %}
+{% comment %}Owner, 2026-10-13: an invoice is recorded on its own, the moment it arrives; a payment statement is made only when it is paid. This page
+is every invoice in no payment statement yet: add one, tick the ones being paid, Make checks (one statement per supplier).{% endcomment %}
+<h2><span class="ms" style="font-size:28px">receipt_long</span> Invoices</h2>
+<p class="note">Every supplier invoice not yet in a payment statement. Record one as soon as it arrives: it is owed from then on. Tick the ones you are paying and make their checks.
+  <a href="/order-statements/">Payment statements →</a></p>
+
+<div class="grp">Record an invoice</div>
+{% if warnings %}<div class="warnbox"><b>Check before saving</b>{% for w in warnings %}<div>· {{ w }}</div>{% endfor %}
+  <div class="hint">If it is right, press "Save anyway". Otherwise correct it below.</div></div>{% endif %}
+<form method="post" class="bar" id="add">{% csrf_token %}<input type="hidden" name="action" value="add">{% if warnings %}<input type="hidden" name="confirmed" value="1">{% endif %}
+  <div class="grow"><label for="fi_s">Supplier</label><select id="fi_s" name="s" required><option value="">Pick the supplier</option>
+    {% for id, name in suppliers %}<option value="{{ id }}"{% if typed.s == id|stringformat:"s" %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+  <div><label for="fi_doc">SI no.</label><input id="fi_doc" type="text" name="doc" value="{{ typed.doc }}" style="width:130px" autocomplete="off"></div>
+  <div><label for="fi_dr">DR no.</label><input id="fi_dr" type="text" name="dr" value="{{ typed.dr }}" style="width:130px" autocomplete="off"></div>
+  <div><label for="fi_date">Date received</label><input id="fi_date" type="date" name="date" value="{{ typed.date }}" required></div>
+  <div><label for="fi_gross">Amount</label><input id="fi_gross" type="text" inputmode="decimal" name="gross" value="{{ typed.gross }}" style="width:150px;text-align:right" required></div>
+  <div><label for="fi_less">Less %</label><input id="fi_less" type="text" inputmode="decimal" name="less" value="{{ typed.less }}" style="width:80px;text-align:right" placeholder="0"></div>
+  <button class="btn small" type="submit"><span class="ms">add</span>{% if warnings %}Save anyway{% else %}Add invoice{% endif %}</button>
+</form>
+<p class="hint">Give the SI no., the DR no., or both. The due date comes from the supplier's terms. A delivery received on a purchase order records its invoice by itself and shows up here too.</p>
+
+{% if edit %}
+<div class="grp" id="edit">Correct {{ edit.ref }} · {{ edit.supplier }}</div>
+<form method="post" class="bar">{% csrf_token %}<input type="hidden" name="invoice_id" value="{{ edit.invoice_id }}"><input type="hidden" name="stamp" value="{{ edit.stamp }}">
+  <div><label for="fe_doc">SI no.</label><input id="fe_doc" type="text" name="doc" value="{{ edit.doc_ref }}" style="width:130px"></div>
+  <div><label for="fe_dr">DR no.</label><input id="fe_dr" type="text" name="dr" value="{{ edit.dr_no|default:'' }}" style="width:130px"></div>
+  <div><label for="fe_date">Date received</label><input id="fe_date" type="date" name="date" value="{{ edit.invoice_date|slice:':10' }}" required></div>
+  <div><label for="fe_gross">Amount</label><input id="fe_gross" type="text" inputmode="decimal" name="gross" value="{{ edit.gross_amount|floatformat:2|intcomma }}" style="width:150px;text-align:right"></div>
+  <div><label for="fe_less">Less %</label><input id="fe_less" type="text" inputmode="decimal" name="less" value="{{ edit.less|floatformat:'-2' }}" style="width:80px;text-align:right"></div>
+  <button class="btn small" type="submit" name="action" value="save"><span class="ms">save</span>Save</button>
+  {% if not edit.po_no %}<button class="btn small danger" type="submit" name="action" value="delete" onclick="return confirm('Delete invoice {{ edit.ref }}? It will no longer be owed.');"><span class="ms">delete</span>Delete</button>{% endif %}
+  <a class="btn small ghost" href="/order-statements/invoices/">Cancel</a>
+</form>
+{% if edit.po_no %}<p class="hint">It came from purchase order {{ edit.po_no }}, so it can be corrected but not deleted here.</p>{% endif %}
+{% endif %}
+
+<div class="grp">Not yet in a payment statement <span class="hint" style="font-weight:400">· {{ n }} invoice{{ n|pluralize }} · ₱{{ total|floatformat:2|intcomma }}</span></div>
+{% if groups %}
+<form method="post" id="pay_form">{% csrf_token %}<input type="hidden" name="action" value="pay">
+<div class="scroll-x"><table class="list cards">
+  <tr><th style="width:52px">Pay</th><th>Date</th><th>SI / DR no.</th><th>Due</th><th style="text-align:right">Amount</th><th></th><th></th></tr>
+  {% for g in groups %}
+  <tr class="fi-sup"><td class="c-k"><input type="checkbox" class="fi-all" data-s="{{ g.creditor_id }}" aria-label="Tick all of {{ g.supplier }}" style="width:20px;height:20px"></td>
+    <td colspan="3" class="c-t"><b>{{ g.supplier }}</b> <span class="hint">· {{ g.rows|length }} invoice{{ g.rows|length|pluralize }}{% if g.terms %} · terms {{ g.terms }}{% if g.terms != "COD" %} days{% endif %}{% endif %}</span></td>
+    <td class="num c-big"><b>{{ g.total|floatformat:2|intcomma }}</b></td><td colspan="2"></td></tr>
+  {% for r in g.rows %}<tr>
+    <td class="c-k"><input type="checkbox" class="fi-t" name="pay" value="{{ r.invoice_id }}" data-s="{{ g.creditor_id }}" data-a="{{ r.amount|stringformat:'.2f' }}" style="width:20px;height:20px" aria-label="Pay {{ r.ref }}"></td>
+    <td data-l="received">{{ r.invoice_date|dmy }}</td><td class="c-t"><b>{{ r.ref }}</b></td><td data-l="due">{{ r.due_date|dmy }}</td>
+    <td class="num c-big">{{ r.amount|floatformat:2|intcomma }}</td>
+    <td>{% if r.po_no %}<span class="pill">from {{ r.po_no }}</span>{% else %}<span class="pill warn">No PO</span>{% endif %}</td>
+    <td class="c-r"><a href="?edit={{ r.invoice_id }}#edit">Edit</a></td></tr>{% endfor %}
+  {% endfor %}
+</table></div>
+<div class="fi-bar"><span id="fi_sum">Tick the invoices you are paying.</span>
+  <button class="btn" type="submit" id="fi_go" disabled><span class="ms">payments</span>Make checks for the ticked</button></div>
+</form>
+<p class="hint">Making checks puts the ticked invoices in a new payment statement, one per supplier, and opens it on its Checks tab. It gets its number with its first check.
+  Until then it is a draft: deleting it puts the invoices back here.</p>
+<style>
+.fi-sup td { background: var(--bg-f7f9fc); border-bottom: 2px solid var(--line); }
+.fi-bar { position: sticky; bottom: 0; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--bg-f1f5fa); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-top: 12px; }
+@media (max-width: 480px) {      /* the phone: the bar stays small so the list shows above it, the form's boxes fill their half, a supplier's row reads as a heading */
+  .fi-bar { padding: 8px 10px; gap: 6px; font-size: .92rem; border-radius: 12px 12px 0 0; }
+  .fi-bar .btn { width: 100%; justify-content: center; padding: 9px 10px; }
+  form.bar input[type=text], form.bar input[type=date] { width: 100% !important; }
+  table.cards tr.fi-sup { border: 0; background: none; box-shadow: none; padding: 10px 2px 2px; margin-bottom: 2px; }
+  .fi-sup td { background: none; border: 0; }
+}
+</style>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var form = document.getElementById("pay_form"), sum = document.getElementById("fi_sum"), go = document.getElementById("fi_go");
+  function redo() {
+    var n = 0, total = 0, sups = {};
+    form.querySelectorAll(".fi-t:checked").forEach(function (t) { n++; total += parseFloat(t.dataset.a) || 0; sups[t.dataset.s] = 1; });
+    var k = Object.keys(sups).length;
+    go.disabled = !n;
+    sum.innerHTML = n ? "<b>" + n + " invoice" + (n === 1 ? "" : "s") + " ticked</b> · " + (k === 1 ? "one supplier" : k + " suppliers: one payment statement each") + " · <b>₱" +
+      total.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + "</b>" : "Tick the invoices you are paying.";
+    form.querySelectorAll(".fi-all").forEach(function (a) {
+      var mine = form.querySelectorAll('.fi-t[data-s="' + a.dataset.s + '"]'), on = form.querySelectorAll('.fi-t[data-s="' + a.dataset.s + '"]:checked').length;
+      a.checked = on === mine.length && on > 0; a.indeterminate = on > 0 && on < mine.length;
+    });
+  }
+  form.addEventListener("change", function (e) {
+    if (e.target.classList.contains("fi-all")) form.querySelectorAll('.fi-t[data-s="' + e.target.dataset.s + '"]').forEach(function (t) { t.checked = e.target.checked; });
+    redo();
+  });
+  redo();
+});
+</script>
+{% else %}<p class="note">No invoice is waiting: every one recorded is in a payment statement.</p>{% endif %}
+{% endblock %}

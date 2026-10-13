@@ -52,7 +52,7 @@ def test_without_a_batch_a_new_one_is_created_for_the_invoice(db):
     assert ok, msg
     assert fetchone(db, "SELECT COUNT(*) FROM order_statements WHERE creditor_id = ?", (cid,))[0] == 1
     status, ref = fetchone(db, "SELECT status, statement_ref FROM order_statements WHERE creditor_id = ?", (cid,))
-    assert status == "Issued" and " - OS " in ref                   # parking checks promotes a Draft batch to Issued with its permanent OS number
+    assert status == "Issued" and " - PS " in ref                   # parking checks promotes a Draft batch to Issued with its permanent OS number
     assert fetchone(db, "SELECT statement_id FROM checks_issued WHERE check_id = ?", (ids[0],))[0] == fetchone(db, "SELECT statement_id FROM order_statements")[0]
 
 

@@ -1,7 +1,7 @@
 {% extends "core/base.html" %}{% load humanize %}
 {% block title %}Add invoices from files{% endblock %}
 {% block content %}
-<p class="note"><a href="/order-statements/{{ b.statement_id }}/">← {% if b.statement_ref|slice:":6" == "DRAFT-" %}Draft batch{% else %}{{ b.statement_ref }}{% endif %} · {{ b.creditor_name }}</a></p>
+<p class="note"><a href="/order-statements/{{ b.statement_id }}/">← {% if b.statement_ref|slice:":6" == "DRAFT-" %}Draft payment{% else %}{{ b.statement_ref }}{% endif %} · {{ b.creditor_name }}</a></p>
 <h2>Add invoices from photos, PDFs or a spreadsheet</h2>
 
 {% if not staged %}
@@ -32,8 +32,8 @@
       <td class="hint">{% if r.due %}{{ r.due|date:"m/d/Y" }}{% else %}—{% endif %}</td>
       <td><input class="inline-input" inputmode="decimal" name="gross_{{ r.i }}" value="{{ r.gross }}"></td><td><input class="inline-input" style="width:60px" inputmode="decimal" name="less_{{ r.i }}" value="{{ r.less }}"></td></tr>
     {% endfor %}</table></div>
-  {% if b.statement_ref|slice:":6" == "DRAFT-" %}<label class="inline" style="margin-top:10px"><input type="checkbox" name="promote" value="1" checked> Also give the batch its OS number once they are added</label>{% endif %}
-  <div class="actions"><button class="btn" type="submit"><span class="ms">playlist_add</span>{% if warnings %}Yes, add them anyway{% else %}Add these invoices to the batch{% endif %}</button></div>
+  {% if b.statement_ref|slice:":6" == "DRAFT-" %}<label class="inline" style="margin-top:10px"><input type="checkbox" name="promote" value="1" checked> Also give the payment statement its number once they are added</label>{% endif %}
+  <div class="actions"><button class="btn" type="submit"><span class="ms">playlist_add</span>{% if warnings %}Yes, add them anyway{% else %}Add these invoices to the payment statement{% endif %}</button></div>
 </form>
 <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="discard"><input type="hidden" name="staged" value="{{ token }}">
   <button class="btn small ghost" type="submit"><span class="ms">delete_sweep</span>Discard what was read</button></form>

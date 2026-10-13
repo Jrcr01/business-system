@@ -23,7 +23,7 @@
 
 {% if days %}
 <div class="scroll-x"><table class="list">
-  <tr><th>Pay to</th><th>Kind</th>{% if show_ref %}<th>Reference</th>{% endif %}<th>Batch</th><th style="text-align:right">Amount</th></tr>
+  <tr><th>Pay to</th><th>Kind</th>{% if show_ref %}<th>Reference</th>{% endif %}<th>Payment statement</th><th style="text-align:right">Amount</th></tr>
   {% for d in days %}
   <tr class="subhead"><td colspan="{% if show_ref %}4{% else %}3{% endif %}"><b>{{ d.day|date:"D m/d" }}</b> · {{ d.n }} payment{{ d.n|pluralize }}{% if d.shifted %} <span class="hint">(includes a weekend or holiday due date)</span>{% endif %}</td>
     <td class="num"><b>₱{{ d.total|floatformat:2|intcomma }}</b></td></tr>

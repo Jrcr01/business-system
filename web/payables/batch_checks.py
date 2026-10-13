@@ -263,7 +263,7 @@ def post(request, b: dict, say, can, loan_note_id: int | None = None) -> HttpRes
         nums =[n for n in p.get("leaves", "").split(",") if n.strip()]
         done, errors = 0, []
         for n in nums:
-            ok, msg = cr.log_spoiled_check(n.strip(), "Skipped when numbering checks (logged from the batch's Checks tab)")
+            ok, msg = cr.log_spoiled_check(n.strip(), "Skipped when numbering checks (logged from the payment statement's Checks tab)")
             done += ok
             if not ok:
                 errors.append(msg)

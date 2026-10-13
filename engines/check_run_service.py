@@ -344,7 +344,7 @@ def placeholder_cheque_number(check_id: int, statement_ref: str | None = None, s
     (2026-09-27, per user). Lender checks come after every order statement (90000 + loan note id); a batch still on a DRAFT- ref sits
     just before them (80000 + statement id). Unique per check because the id is; unmistakably not a real number (real ones start 399)."""
     import re
-    m = re.search(r"OS\s*(\d+)\s*$", statement_ref or "")
+    m = re.search(r"(?:OS|PS)\s*(\d+)\s*$", statement_ref or "")      # OS = numbered before 2026-10-13, PS = after: one count
     if m:
         key = int(m.group(1))
     elif statement_id is not None:

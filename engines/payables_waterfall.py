@@ -31,14 +31,14 @@ def uncovered_invoices() -> pd.DataFrame:
     counts too). Unbatched: the invoice's full amount (not paid, not cancelled, not paid by card, not an opening-balance line)."""
     rows = []
     for b, parts in _batches():
-        batch = "Draft batch" if str(b.batch or "").startswith("DRAFT-") else b.batch
+        batch = "Draft payment" if str(b.batch or "").startswith("DRAFT-") else b.batch
         for p in parts:
             rows.append((p["due"], b.supplier, "Supplier", f"SI {p['doc_ref']} · no check yet", batch, p["amount"], "invoice"))
     loose = _read("""SELECT i.due_date, c.creditor_name AS supplier, i.doc_ref, i.amount FROM invoices i JOIN creditors c ON c.creditor_id = i.creditor_id
                      WHERE i.statement_id IS NULL AND i.status NOT IN ('Cancelled', 'Paid') AND i.is_opening_balance = 0 AND i.paid_via_card_id IS NULL
                        AND i.amount > 0.005""")
     for r in loose.itertuples():
-        rows.append((str(r.due_date)[:10], r.supplier, "Supplier", f"SI {r.doc_ref} · no check yet", "Not in a batch", round(float(r.amount), 2), "invoice"))
+        rows.append((str(r.due_date)[:10], r.supplier, "Supplier", f"SI {r.doc_ref} · no check yet", "Not in a payment statement", round(float(r.amount), 2), "invoice"))
     return pd.DataFrame(rows, columns=COLS)
 
 

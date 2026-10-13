@@ -43,5 +43,5 @@ def test_summary_pdf_lists_every_batch_and_the_totals(db):
         text = doc.pages[0].extract_text()
     assert "Bulk print summary".upper() in text.upper()
     assert "2026 - OS 0001" in text and "Alpha Co" in text and "2026 - OS 0002" in text and "Beta Co" in text
-    assert "2 order statement(s)" in text and "Since last check print" in text
+    assert "2 payment statement(s)" in text and "Since last check print" in text
     assert "TOTAL" in text and "5,000.00" in text        # 3000 + 2000 net

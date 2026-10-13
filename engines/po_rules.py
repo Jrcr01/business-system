@@ -1017,13 +1017,13 @@ def receive_into_batch(creditor_id: int, statement_id: int | None, doc_ref: str,
                  if statement_id is not None else (creditor_id, "Draft", 0))
         creditor = conn.execute("SELECT terms FROM creditors WHERE creditor_id = ?", (creditor_id,)).fetchone()
         if not batch or not creditor:
-            return False, "Batch or supplier not found.", None
+            return False, "Payment statement or supplier not found.", None
         if int(batch[0]) != int(creditor_id):
-            return False, "That batch belongs to another supplier.", None
+            return False, "That payment statement belongs to another supplier.", None
         if batch[1] == "Cancelled":
-            return False, "That batch is cancelled.", None
+            return False, "That payment statement is cancelled.", None
         if batch[2]:
-            return False, "That batch is locked (closed: its checks cover it in full). Put the invoice in a new batch.", None
+            return False, "That payment statement is locked (closed: its checks cover it in full). Put the invoice in a new payment statement.", None
         if conn.execute("SELECT 1 FROM invoices WHERE creditor_id = ? AND doc_ref = ?", (creditor_id, doc)).fetchone():
             return False, f"Invoice {doc} already exists for this supplier.", None
         rows = []
@@ -1166,7 +1166,7 @@ def receive_into_batch(creditor_id: int, statement_id: int | None, doc_ref: str,
     for po_id in sorted({r["po_id"] for r in rows}):
         update_cash_flag(po_id)
     changed = sum(1 for r in rows if abs(r["price"] - r["est_price"]) > 0.005)
-    return True, (f"Invoice {doc} for {gross:,.2f} " + ("added to the batch" if statement_id is not None else "saved, waiting for a batch")
+    return True, (f"Invoice {doc} for {gross:,.2f} " + ("added to the payment statement" if statement_id is not None else "saved, waiting for a payment statement")
                   + f" from {len({r['po_id'] for r in rows})} order(s)" + (f"; {changed} price(s) differ from the estimate." if changed else ".")
                   + (" Price list: " + "; ".join(price_notes) + "." if price_notes else "")), int(inv_id)
 
@@ -1446,15 +1446,15 @@ def _undo_block(conn, receipt_id: int) -> str:
     if not inv:
         return ""
     if inv[0] != "Unpaid":
-        return f"Its payable is already {str(inv[0]).lower()}. Use a credit memo on the batch instead."
+        return f"Its payable is already {str(inv[0]).lower()}. Use a credit memo on the payment statement instead."
     if conn.execute("SELECT 1 FROM invoice_check_allocations WHERE invoice_id = ? LIMIT 1", (rec[0],)).fetchone():
-        return "A check is already tied to its payable. Use a credit memo on the batch instead."
+        return "A check is already tied to its payable. Use a credit memo on the payment statement instead."
     if inv[1] is not None:
         locked = conn.execute("SELECT is_locked FROM order_statements WHERE statement_id = ?", (inv[1],)).fetchone()
         if locked and locked[0]:
-            return "Its batch is locked (its checks cover it). Use a credit memo on the batch instead."
+            return "Its payment statement is locked (its checks cover it). Use a credit memo on the payment statement instead."
         if conn.execute("SELECT 1 FROM checks_issued WHERE statement_id = ? AND status = 'Active' LIMIT 1", (inv[1],)).fetchone():
-            return "Its batch already has checks. Use a credit memo on the batch instead."
+            return "Its payment statement already has checks. Use a credit memo on the payment statement instead."
     return ""
 
 
@@ -1590,7 +1590,7 @@ def add_si_to_receipt(receipt_id: int, si_no: str) -> tuple[bool, str]:
         if not str(doc).upper().startswith("DR "):
             return False, f"This delivery already has its SI no. ({doc})."
         if statement_id is not None and (conn.execute("SELECT is_locked FROM order_statements WHERE statement_id = ?", (statement_id,)).fetchone() or [0])[0]:
-            return False, "Its batch is locked. Unlock the batch first to change the reference."
+            return False, "Its payment statement is locked. Unlock the payment statement first to change the reference."
         if conn.execute("SELECT 1 FROM invoices WHERE creditor_id = ? AND doc_ref = ? AND invoice_id != ?", (cid, si, inv_id)).fetchone():
             return False, f"Invoice {si} already exists for this supplier."
         conn.execute("UPDATE invoices SET doc_ref = ?, dr_no = COALESCE(NULLIF(dr_no, ''), ?) WHERE invoice_id = ?", (si, str(doc)[3:].strip(), inv_id))

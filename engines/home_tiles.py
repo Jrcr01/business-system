@@ -464,7 +464,7 @@ for _t in (
         A("New order", "From a supplier's price list", ":material/add_shopping_cart:", needs="po.create", po_mode="New order"),
         A("Orders", "Open, late and over-plan orders; PO PDF", ":material/list_alt:", po_mode="Orders")]),
     Tile("purchase-orders", "buy", "Receive", _receive_goods, key="receive-goods", icon=":material/inventory_2:", state=(("po_mode", "Receive"),), needs="po.receive_goods"),
-    Tile("order-statements", "pay", "Order statements", _order_statements, actions=[
+    Tile("order-statements", "pay", "Payment statements", _order_statements, actions=[
         A("Find a batch", "Open a supplier's batch: invoices, checks, void, print", ":material/search:", os_mode="Browse batches"),
         A("New batch", "Start a batch for a supplier", ":material/add:", os_mode="New batch"),
         A("Print statements in bulk", "One PDF for many batches", ":material/picture_as_pdf:", os_mode="Browse batches", bulk_print_exp=True)]),

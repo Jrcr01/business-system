@@ -150,7 +150,7 @@ def apply_check_correction(check_id: int, correction_type: str, new_value: str, 
         if correction_type in ("Amount", "Check Date") and printed_at is None:
             return False, "This check hasn't been printed yet — edit it via 'Edit parked checks' instead."
         if batch_is_cancelled(cur, statement_id):
-            return False, "This batch is cancelled, so its checks can't be corrected."
+            return False, "This payment statement is cancelled, so its checks can't be corrected."
 
         if correction_type == "Check Number":
             new_number = (new_value or "").strip()
@@ -187,7 +187,7 @@ def apply_check_correction(check_id: int, correction_type: str, new_value: str, 
                 net_total, active_sum, _ = get_batch_balance(statement_id)
                 other_active_sum = active_sum - old_amount
                 if other_active_sum + new_amount > net_total + 0.005:
-                    return False, f"New amount would push total checks issued to {php(other_active_sum + new_amount)}, exceeding the batch's net total of {php(net_total)}."
+                    return False, f"New amount would push total checks issued to {php(other_active_sum + new_amount)}, exceeding the payment statement's net total of {php(net_total)}."
 
             old_value = str(old_amount)
             cur.execute("UPDATE checks_issued SET amount = ? WHERE check_id = ?", (new_amount, check_id))
@@ -370,7 +370,7 @@ def assign_check_numbers_manual(assignments: dict[int, str], booklet_id: int | N
         if not num:
             return False, f"Check {check_id}: check number is required.", []
         if num in seen:
-            return False, f"Check number {num} is entered more than once in this batch.", []
+            return False, f"Check number {num} is entered more than once in this payment statement.", []
         seen.add(num)
 
     # Phase F1.5: all or nothing -- one bad number (taken, spoiled, the check changed meanwhile) saves NONE of the batch. Before, the
@@ -434,7 +434,7 @@ def cancel_check(check_id: int, reason: str = "") -> tuple[bool, str]:
         if status != "Active":
             return False, f"Only Active checks can be cancelled (current status: {status})."
         if batch_is_cancelled(cur, statement_id):
-            return False, "This batch is cancelled, so its checks can't be changed."
+            return False, "This payment statement is cancelled, so its checks can't be changed."
         cur.execute("UPDATE checks_issued SET status = 'Cancelled', cancelled_at = CURRENT_TIMESTAMP, cancel_reason = ? WHERE check_id = ?",
                     (reason or None, check_id))
         cur.execute(
@@ -449,6 +449,39 @@ def cancel_check(check_id: int, reason: str = "") -> tuple[bool, str]:
         sync_invoice_payment_status(statement_id)
     sync_batch_lock(statement_id)
     return True, f"Check cancelled ({php(amount)})."
+
+
+def delete_draft_statement(statement_id: int) -> tuple[bool, str]:
+    """A draft payment statement is removed outright (owner, 2026-10-13: "Draft OS can delete. OS number is only cancelled"). Only one that never
+    got its number and has no check, credit memo or anything else filed under it. The invoices it holds are NOT deleted: they go back to the
+    Invoices page, still owed. One with a number is never deleted: it is cancelled and stays on record. The removal is in the audit log."""
+    _ok, _msg = require_permission('check.void')
+    if not _ok:
+        return False, _msg
+    with get_conn() as conn:
+        cur = conn.cursor()
+        row = cur.execute("""SELECT os.statement_ref, c.creditor_name FROM order_statements os JOIN creditors c ON c.creditor_id = os.creditor_id
+                             WHERE os.statement_id = ?""", (int(statement_id),)).fetchone()
+        if not row:
+            return False, "Payment statement not found."
+        ref, supplier = row
+        if not str(ref or "").startswith("DRAFT-"):
+            return False, f"{ref} has its number, so it stays on record: cancel it instead."
+        holds = []
+        for (table,) in cur.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT IN ('order_statements', 'invoices')").fetchall():
+            if any(c[1] == "statement_id" for c in cur.execute(f'PRAGMA table_info("{table}")').fetchall()):
+                n = cur.execute(f'SELECT COUNT(*) FROM "{table}" WHERE statement_id = ?', (int(statement_id),)).fetchone()[0]
+                if n:
+                    holds.append(f"{n} in {table.replace('_', ' ')}")
+        if holds:
+            return False, "This draft has more than invoices under it (" + ", ".join(holds) + "). Remove those first, or cancel it."
+        docs = [r[0] for r in cur.execute("SELECT doc_ref FROM invoices WHERE statement_id = ? ORDER BY invoice_id", (int(statement_id),)).fetchall()]
+        cur.execute("UPDATE invoices SET statement_id = NULL WHERE statement_id = ?", (int(statement_id),))      # still owed: back on the Invoices page
+        cur.execute("DELETE FROM order_statements WHERE statement_id = ?", (int(statement_id),))
+        cur.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'DRAFT_BATCH_DELETED', 'order_statements', ?, ?)",
+                    (int(statement_id), f"{ref} for {supplier}: a draft, never numbered" + (f"; its invoices went back to Invoices: {', '.join(docs)}" if docs else "")))
+        conn.commit()
+    return True, (f"The draft for {supplier} is deleted." + (f" Its {len(docs)} invoice(s) are back on the Invoices page." if docs else ""))
 
 
 def cancel_order_statement(statement_id: int) -> tuple[bool, str]:
@@ -466,9 +499,9 @@ def cancel_order_statement(statement_id: int) -> tuple[bool, str]:
         cur.execute("SELECT status FROM order_statements WHERE statement_id = ?", (statement_id,))
         row = cur.fetchone()
         if not row:
-            return False, "Order statement not found."
+            return False, "Payment statement not found."
         if row[0] == "Cancelled":
-            return False, "This batch is already cancelled."
+            return False, "This payment statement is already cancelled."
         cur.execute("SELECT check_id FROM checks_issued WHERE statement_id = ? AND status = 'Active'", (statement_id,))
         active_check_ids = [r[0] for r in cur.fetchall()]
 
@@ -491,10 +524,10 @@ def cancel_order_statement(statement_id: int) -> tuple[bool, str]:
         )
         cur.execute(
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BATCH_CANCELLED', 'order_statements', ?, ?)",
-            (statement_id, f"Cancelled batch: {cancelled_checks} check(s) cancelled, {cancelled_invoices} invoice(s) marked Cancelled"),
+            (statement_id, f"Cancelled payment statement: {cancelled_checks} check(s) cancelled, {cancelled_invoices} invoice(s) marked Cancelled"),
         )
         conn.commit()
-    return True, f"Batch cancelled — {cancelled_checks} check(s) cancelled, {cancelled_invoices} invoice(s) marked Cancelled."
+    return True, f"Payment statement cancelled — {cancelled_checks} check(s) cancelled, {cancelled_invoices} invoice(s) marked Cancelled."
 
 
 def create_booklet(bank_account_id: int, booklet_code: str, start_num: int, end_num: int, date_received: date) -> tuple[bool, str]:
@@ -541,7 +574,7 @@ def edit_parked_check(check_id: int, new_amount: float, new_check_date: date) ->
         if status != "Active":
             return False, f"Only Active checks can be edited (current status: {status})."
         if check_number is not None:
-            return False, "This check already has a check number — use 'Correct an active check' instead (requires unlocking the batch)."
+            return False, "This check already has a check number — use 'Correct an active check' instead (requires unlocking the payment statement)."
         if new_amount <= 0:
             return False, "Amount must be greater than zero."
 
@@ -564,7 +597,7 @@ def edit_parked_check(check_id: int, new_amount: float, new_check_date: date) ->
             net_total, active_sum, _ = get_batch_balance(statement_id)
             other_active_sum = active_sum - old_amount
             if other_active_sum + new_amount > net_total + 0.005:
-                return False, f"New amount would push total checks issued to {php(other_active_sum + new_amount)}, exceeding the batch's net total of {php(net_total)}."
+                return False, f"New amount would push total checks issued to {php(other_active_sum + new_amount)}, exceeding the payment statement's net total of {php(net_total)}."
 
         new_date_s = str(new_check_date)
         changes = []
@@ -702,7 +735,7 @@ def issue_check(
         elif statement_id is not None:
             net_total, active_sum, remaining = get_batch_balance(statement_id)
             if amount > remaining + 0.005:
-                return False, f"Amount {php(amount)} exceeds the batch's remaining balance of {php(remaining)}.", None
+                return False, f"Amount {php(amount)} exceeds the payment statement's remaining balance of {php(remaining)}.", None
 
         check_id = cur.execute(
             """INSERT INTO checks_issued
@@ -750,7 +783,7 @@ def issue_checks_grid(
         net_total, active_sum, remaining = get_batch_balance(statement_id)
         grid_total = sum(r["amount"] for r in cleaned)
         if grid_total > remaining + 0.005:
-            return False, f"These checks total {php(grid_total)}, exceeding the batch's remaining balance of {php(remaining)}.", None
+            return False, f"These checks total {php(grid_total)}, exceeding the payment statement's remaining balance of {php(remaining)}.", None
         cur = conn.cursor()
         check_ids = []
         for r in cleaned:
@@ -900,7 +933,7 @@ def replace_check(check_id: int, new_check_date: date, reason: str) -> tuple[boo
         if status != "Active":
             return False, f"Only Active checks can be replaced (current status: {status}).", None
         if batch_is_cancelled(cur, statement_id):
-            return False, "This batch is cancelled, so its checks can't be changed.", None
+            return False, "This payment statement is cancelled, so its checks can't be changed.", None
 
         cur.execute(
             """INSERT INTO checks_issued
@@ -998,7 +1031,7 @@ def retract_check_number(check_id: int) -> tuple[bool, str]:
         if number is None:
             return False, "This check has no number to retract."
         if batch_is_cancelled(cur, statement_id):
-            return False, "This batch is cancelled, so its checks can't be changed."
+            return False, "This payment statement is cancelled, so its checks can't be changed."
         cur.execute("UPDATE checks_issued SET check_number = NULL, booklet_id = NULL WHERE check_id = ?", (check_id,))
         pointer_note = ""
         if booklet_id is not None:
@@ -1089,7 +1122,7 @@ def unpark_checks(statement_id: int, check_ids: list[int]) -> tuple[bool, str]:
     with get_conn() as conn:
         cur = conn.cursor()
         if batch_is_cancelled(cur, statement_id):
-            return False, "This batch is cancelled, so its checks can't be changed."
+            return False, "This payment statement is cancelled, so its checks can't be changed."
         details, exported, print_batches = [], 0, set()
         for cid in ids:
             cur.execute("SELECT print_batch_id FROM checks_issued WHERE check_id = ?", (cid,))
@@ -1099,7 +1132,7 @@ def unpark_checks(statement_id: int, check_ids: list[int]) -> tuple[bool, str]:
             cur.execute("SELECT statement_id, status, check_number, printed_at, amount, check_date FROM checks_issued WHERE check_id = ?", (cid,))
             row = cur.fetchone()
             if not row or row[0] != statement_id:
-                return False, f"Check {cid} isn't part of this batch."
+                return False, f"Check {cid} isn't part of this payment statement."
             _, status, number, printed_at, amount, check_date = row
             if status != "Active":
                 return False, f"Check {cid} is {status}, so it can't be un-parked."
@@ -1121,7 +1154,7 @@ def unpark_checks(statement_id: int, check_ids: list[int]) -> tuple[bool, str]:
             cur.execute("DELETE FROM checks_issued WHERE check_id = ?", (cid,))
             cur.execute(
                 "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'CHECK_UNPARKED', 'checks_issued', ?, ?)",
-                (cid, f"parked check {php(amount)} dated {check_date} removed from batch {statement_id}"),
+                (cid, f"parked check {php(amount)} dated {check_date} removed from payment statement {statement_id}"),
             )
         cur.execute(
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values) VALUES (acting_user(), 'CHECKS_UNPARKED', 'order_statements', ?, ?)",

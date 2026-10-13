@@ -24,7 +24,7 @@
         <input type="hidden" name="type" value="{{ v.type }}"><div class="hint">Can't change: it has {{ history }}.</div>
       {% else %}
         <select id="type" name="type">{% for k, label in types %}<option value="{{ k }}"{% if k == v.type %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-        <div class="hint">Supplier = invoices and order statements · Lender = private loan notes · Bank loan = bank dues.</div>
+        <div class="hint">Supplier = invoices and payment statements · Lender = private loan notes · Bank loan = bank dues.</div>
       {% endif %}</div>
     <div><label for="terms">Terms (suppliers)</label><select id="terms" name="terms">{% for t in terms %}<option value="{{ t }}"{% if t == v.terms %} selected{% endif %}>{% if not t %}—{% elif t == "COD" %}COD{% else %}{{ t }} days{% endif %}</option>{% endfor %}</select>
       <div class="hint">Due date = received date + terms.</div></div>

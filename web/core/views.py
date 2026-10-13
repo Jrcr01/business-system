@@ -332,23 +332,23 @@ def _tile_url(tile) -> str:
 CREATE_CARDS = [
     ("buy", "New order", "note_add", "/purchase-orders/new/", "purchase-orders", None),
     ("buy", "Import a price list", "upload_file", "/price-lists/", "price-lists", None),
-    ("pay", "New batch", "note_add", "/order-statements/", "order-statements", None),
+    ("pay", "Record an invoice", "receipt_long", "/order-statements/invoices/", "order-statements", None),
     ("bank", "Import bank statement", "upload_file", "/bank-cash/?tab=import", "bank-cash", None),
     ("other", "New loan note", "note_add", "/lenders/?new=1#new", "lenders", "loans.use"),
 ]
 MY_HOME = ["purchase-orders", "order-statements", "checks", "calendar", "review"]     # the everyday cards, first row
-MY_HOME_CREATE = ["New order", "New batch"]
+MY_HOME_CREATE = ["New order", "Record an invoice"]
 
 # The order of the cards in each row (owner, 2026-10-11: "organize the tiles have a logical sequence"): left to right in the order the work is done.
 # A card that STARTS something ("New order", "Import ...") sits just before the page it lands on. Named by a tile's id (its key, else its page id) or
 # by a "New ..." card's title; a card not named here goes after the others, in its old order. The rows themselves follow the goods, then the money:
 # Buy -> Stock -> Sell -> Pay suppliers -> Bank -> Other payables -> Records -> Analytics -> Set-up (engines/home_tiles.GROUPS).
 ROW_ORDER = {
-    "mine": ["New order", "purchase-orders", "New batch", "order-statements", "calendar", "checks", "review"],
+    "mine": ["New order", "purchase-orders", "Record an invoice", "order-statements", "calendar", "checks", "review"],
     "buy": ["Import a price list", "price-lists", "New order", "purchase-orders", "receive-goods"],
     "stock": ["stock", "stock-counts", "affiliates"],
     "sell": ["scan-out", "sales", "sales-today", "collect", "customers", "si-booklets"],
-    "pay": ["New batch", "order-statements", "payment-run", "calendar", "over-limit-days", "payables-due", "checks", "release"],
+    "pay": ["Record an invoice", "order-statements", "payment-run", "calendar", "over-limit-days", "payables-due", "checks", "release"],
     "bank": ["Import bank statement", "bank-cash", "booklets", "expenses"],
     "other": ["New loan note", "lenders", "bank-loans", "credit-cards"],
     "analytics": ["an-purchasing", "an-payables", "an-bank", "an-lenders"],

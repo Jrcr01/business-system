@@ -36,7 +36,7 @@ def test_a_new_batch_and_its_invoices_with_the_due_date_from_the_terms(web, db):
     inv_id, gross, net, due, status = _inv("INV-1")
     assert (gross, net, due[:10]) == (10000.0, 9500.0, "2027-01-08")           # 120 days = 4 whole months: the same day of the month
     page = web.get(f"/order-statements/{sid}/").content.decode()
-    assert "INV-1" in page and "9,500.00" in page and "Draft batch" in page and "Give it its OS number" in page
+    assert "INV-1" in page and "9,500.00" in page and "Draft payment" in page and "Give it its number" in page
     listing = web.get("/order-statements/").content.decode()
     assert "Goodyear Philippines" in listing and "9,500.00" in listing
 
@@ -106,11 +106,11 @@ def test_os_number_reopen_and_cancel(web, db):
     _add_inv(web, sid)
     web.post(f"/order-statements/{sid}/", {"action": "number"})
     ref = fetchone(_db(), "SELECT statement_ref, status FROM order_statements WHERE statement_id = ?", (sid,))
-    assert ref[1] == "Issued" and " - OS " in ref[0]
+    assert ref[1] == "Issued" and " - PS " in ref[0]
     with __import__("sqlite3").connect(_db()) as c:                             # as if its checks covered it
         c.execute("UPDATE order_statements SET is_locked = 1 WHERE statement_id = ?", (sid,))
     page = web.get(f"/order-statements/{sid}/").content.decode()
-    assert "Edit this batch" in page and "Add invoice" not in page
+    assert "Edit this payment statement" in page and "Add invoice" not in page
     web.post(f"/order-statements/{sid}/", {"action": "reopen", "reason": "wrong amount"})
     assert fetchone(_db(), "SELECT is_locked FROM order_statements WHERE statement_id = ?", (sid,))[0] == 0
     web.post(f"/order-statements/{sid}/", {"action": "cancel"})
@@ -272,14 +272,14 @@ def test_a_matched_invoice_can_wait_for_a_batch_and_be_put_in_one_later(web, db)
     inv_id, statement_id = fetchone(_db(), "SELECT invoice_id, statement_id FROM invoices WHERE doc_ref = 'SI-W1'")
     assert statement_id is None
     listing = web.get("/order-statements/").content.decode()
-    assert "Sales invoices waiting for a batch" in listing and "Goodyear Philippines" in listing
+    assert "not yet in a payment statement" in listing and "Goodyear Philippines" in web.get("/order-statements/invoices/").content.decode()
     sid = _new_batch(web, cid)
     page = web.get(f"/order-statements/{sid}/").content.decode()
-    assert "Waiting for a batch: 1 sales invoice(s)" in page and f'name="pick_{inv_id}"' in page
+    assert "Waiting for a payment statement: 1 sales invoice(s)" in page and f'name="pick_{inv_id}"' in page
     web.post(f"/order-statements/{sid}/", {"action": "put_in_batch", f"pick_{inv_id}": "1"})
     assert fetchone(_db(), "SELECT statement_id FROM invoices WHERE invoice_id = ?", (inv_id,))[0] == sid
     assert fetchone(_db(), "SELECT net_total FROM v_batch_net_totals WHERE statement_id = ?", (sid,))[0] == 200.0
-    assert "Sales invoices waiting for a batch" not in web.get("/order-statements/").content.decode()
+    assert "not yet in a payment statement" not in web.get("/order-statements/").content.decode()
     web.post(f"/order-statements/{sid}/", {"action": "take_out", "invoice_id": inv_id, "stamp": _stamp_of(web, sid, inv_id)})
     assert fetchone(_db(), "SELECT statement_id FROM invoices WHERE invoice_id = ?", (inv_id,))[0] is None
     assert fetchone(_db(), "SELECT net_total FROM v_batch_net_totals WHERE statement_id = ?", (sid,))[0] == 0.0
@@ -290,7 +290,7 @@ def test_the_match_form_offers_no_batch_first_and_keeps_the_batch_it_came_from(w
     cid, line = _ordered_and_received(db)
     sid = _new_batch(web, cid)
     plain = web.get(f"/purchase-orders/match/?s={cid}", follow=True).content.decode()
-    assert "Not in a batch yet" in plain and " selected>" not in plain.split('name="batch"')[1].split("</select>")[0]
+    assert "Not in a payment statement yet" in plain and " selected>" not in plain.split('name="batch"')[1].split("</select>")[0]
     chosen = web.get(f"/purchase-orders/match/?s={cid}&batch={sid}", follow=True).content.decode()
     assert f'value="{sid}" selected' in chosen
 
@@ -302,7 +302,7 @@ def test_two_people_batching_the_same_invoice_at_once(db):
     from engines.statement_rules import create_order_statement, put_in_batch
     cid, line = _ordered_and_received(db)
     ok, msg, inv = receive_into_batch(cid, None, "SI-W2", date(2026, 10, 3), [{"line_id": line, "qty": 2, "actual_unit_price": 100.0}], goods_received=True)
-    assert ok and "waiting for a batch" in msg
+    assert ok and "waiting for a payment statement" in msg
     a, b = create_order_statement(cid), create_order_statement(cid)
     start, results = threading.Barrier(2), {}
 
@@ -316,3 +316,37 @@ def test_two_people_batching_the_same_invoice_at_once(db):
         t.join()
     assert sorted(r[0] for r in results.values()) == [False, True]
     assert fetchone(db, "SELECT statement_id FROM invoices WHERE invoice_id = ?", (inv,))[0] in (a, b)
+
+
+def test_an_empty_draft_is_deleted_and_a_numbered_batch_is_only_cancelled(web, db):
+    # owner, 2026-10-13: "Draft OS can delete. OS number is only cancelled"
+    from engines.check_rules import delete_draft_statement
+    _admin(web)
+    cid = make_creditor(db, "AMK Auto Parts")
+    empty = _new_batch(web, cid)
+    assert "Delete this draft" in web.get(f"/order-statements/{empty}/").content.decode()
+    r = web.post(f"/order-statements/{empty}/", {"action": "delete_draft"})
+    assert r["Location"] == "/order-statements/" and fetchone(_db(), "SELECT COUNT(*) FROM order_statements WHERE statement_id = ?", (empty,))[0] == 0
+    assert fetchone(_db(), "SELECT COUNT(*) FROM audit_logs WHERE user_action = 'DRAFT_BATCH_DELETED'")[0] == 1
+    # a draft cancelled earlier, still empty: deletable too
+    gone = _new_batch(web, cid)
+    web.post(f"/order-statements/{gone}/", {"action": "cancel"})
+    page = web.get(f"/order-statements/{gone}/").content.decode()
+    assert "Cancelled" in page and "Delete this draft" in page
+    assert web.post(f"/order-statements/{gone}/", {"action": "delete_draft"})["Location"] == "/order-statements/"
+    # a draft holding an invoice: deleted too, and the invoice goes back to Invoices, still owed (the invoice itself is never deleted)
+    back = _new_batch(web, cid)
+    _add_inv(web, back, doc="INV-8")
+    assert "Delete this draft" in web.get(f"/order-statements/{back}/").content.decode()
+    ok, msg = delete_draft_statement(back)
+    assert ok and "back on the Invoices page" in msg
+    assert fetchone(_db(), "SELECT statement_id, status FROM invoices WHERE doc_ref = 'INV-8'") == (None, "Unpaid")
+    held = _new_batch(web, cid)
+    _add_inv(web, held, doc="INV-9")
+    # once it has its OS number it stays on record
+    web.post(f"/order-statements/{held}/", {"action": "number"})
+    ref = fetchone(_db(), "SELECT statement_ref FROM order_statements WHERE statement_id = ?", (held,))[0]
+    assert not ref.startswith("DRAFT-")
+    ok, msg = delete_draft_statement(held)
+    assert not ok and "cancel it instead" in msg
+    assert fetchone(_db(), "SELECT COUNT(*) FROM order_statements WHERE statement_id = ?", (held,))[0] == 1

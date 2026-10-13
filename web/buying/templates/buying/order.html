@@ -33,9 +33,9 @@
     <td><b>{{ d.doc }}</b>{% if d.dr_no and not d.dr_only %} <span class="hint">· DR {{ d.dr_no }}</span>{% endif %}</td>
     <td>{{ d.items }}</td><td class="num">{{ d.amount|floatformat:2|intcomma }}</td>
     <td>{% if not d.invoice_id %}<span class="pill warn">document not recorded yet</span>
-      {% elif d.statement_id %}<a href="/order-statements/{{ d.statement_id }}/">in {{ d.batch|default:"its batch" }}</a> · {{ d.checks }} · {{ d.inv_status }}
-        {% for m in d.memos %}<div class="hint">credit memo {{ m.ref }} −₱{{ m.amount|floatformat:2|intcomma }} on the batch{% if m.reason %} ({{ m.reason }}){% endif %}</div>{% endfor %}
-      {% else %}not in a batch yet · no check yet · {{ d.inv_status }}{% endif %}</td>
+      {% elif d.statement_id %}<a href="/order-statements/{{ d.statement_id }}/">in {{ d.batch|default:"its payment statement" }}</a> · {{ d.checks }} · {{ d.inv_status }}
+        {% for m in d.memos %}<div class="hint">credit memo {{ m.ref }} −₱{{ m.amount|floatformat:2|intcomma }} on the payment statement{% if m.reason %} ({{ m.reason }}){% endif %}</div>{% endfor %}
+      {% else %}not in a payment statement yet · no check yet · {{ d.inv_status }}{% endif %}</td>
     <td>
       {% if d.dr_only and may_inv %}<details><summary class="hint" style="cursor:pointer">Add the SI no.</summary>
         <form method="post" class="bar" style="margin-top:4px">{% csrf_token %}<input type="hidden" name="action" value="add_si"><input type="hidden" name="receipt_id" value="{{ d.receipt_id }}">
@@ -51,7 +51,7 @@
     </td></tr>{% endfor %}
 </table></div>
 {% if to_come and to_come.pcs %}<p class="note">Still to come: {{ to_come.pcs|floatformat:"-2" }} pc(s) (₱{{ to_come.amount|floatformat:2|intcomma }}).</p>{% endif %}
-<p class="hint">Recorded wrongly and not yet paid by check? Undo it and record it again. Once its batch has a check, use a credit memo on the batch for goods returned or a price reduction.</p>
+<p class="hint">Recorded wrongly and not yet paid by check? Undo it and record it again. Once its payment statement has a check, use a credit memo on the payment statement for goods returned or a price reduction.</p>
 {% endif %}
 
 <div class="actions" style="margin-top:12px">

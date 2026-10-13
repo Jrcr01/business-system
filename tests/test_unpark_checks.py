@@ -41,7 +41,7 @@ def test_unpark_refuses_numbered_or_foreign_checks_and_changes_nothing(db):
     assert fetchone(db, "SELECT COUNT(*) FROM checks_issued WHERE statement_id = ?", (statement_id,))[0] == 2   # all-or-nothing
 
     ok, msg = app.unpark_checks(statement_id, [99999])
-    assert not ok and "isn't part of this batch" in msg
+    assert not ok and "isn't part of this payment statement" in msg
 
 
 def test_unnumbered_check_already_exported_can_still_be_unparked_and_edited(db):
@@ -74,7 +74,7 @@ def test_issued_batch_goes_back_to_draft_and_keeps_its_number_when_emptied(db):
     conn.commit()
     conn.close()
     ref = promote_draft_statement(statement_id, "Issued")
-    assert ref.startswith(f"{date.today().year} - OS ")
+    assert ref.startswith(f"{date.today().year} - PS ")
 
     ok, msg = app.unpark_checks(statement_id, ids)
 

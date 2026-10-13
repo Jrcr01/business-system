@@ -53,7 +53,7 @@ def test_two_checks_at_once_never_overpay_a_batch(db, monkeypatch):
     _slow(monkeypatch, check_rules, "get_batch_balance")
     results = _together(check_rules.issue_check, [(sup, 800.0, date(2026, 10, 1), sid), (sup, 800.0, date(2026, 10, 2), sid)])
     assert sorted(r[0] for r in results) == [False, True]
-    assert "exceeds the batch's remaining balance" in next(r[1] for r in results if not r[0])
+    assert "exceeds the payment statement's remaining balance" in next(r[1] for r in results if not r[0])
     with get_conn(db) as conn:
         assert conn.execute("SELECT COALESCE(SUM(amount), 0) FROM checks_issued WHERE statement_id = ? AND status = 'Active'",
                             (sid,)).fetchone()[0] == 800.0
@@ -74,7 +74,7 @@ def test_two_promotions_at_once_get_different_numbers(db, monkeypatch):
     a, b = statement_rules.create_order_statement(sup), statement_rules.create_order_statement(sup)
     _slow(monkeypatch, db_engine, "next_doc_number")
     refs = _together(promote_draft_statement, [(a, "Issued"), (b, "Issued")])
-    assert len(set(refs)) == 2 and all(" - OS " in r for r in refs)
+    assert len(set(refs)) == 2 and all(" - PS " in r for r in refs)
 
 
 def test_two_loan_note_promotions_at_once_get_different_numbers(db, monkeypatch):

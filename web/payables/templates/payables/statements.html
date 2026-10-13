@@ -1,28 +1,19 @@
 {% extends "core/base.html" %}{% load humanize %}
-{% block title %}Order statements{% endblock %}
+{% block title %}Payment statements{% endblock %}
 {% block content %}
-<h2><span class="ms" style="font-size:28px">description</span> Order statements</h2>
-<p class="note">The batches: each holds a supplier's invoices and credit memos, and the checks that pay them. Click a number to open it.</p>
-<form class="bar" method="post" action="/order-statements/new/">{% csrf_token %}
-  <div class="grow"><label for="new_s">New batch for</label><select id="new_s" name="s">{% for id, name in all_suppliers %}<option value="{{ id }}">{{ name }}</option>{% endfor %}</select></div>
-  <button class="btn small" type="submit"{% if not all_suppliers %} disabled{% endif %}><span class="ms">note_add</span>New batch</button>
-</form>
+<h2><span class="ms" style="font-size:28px">description</span> Payment statements</h2>
+<p class="note">Each holds the invoices of one supplier being paid together, their credit memos, and the checks that pay them. A payment statement starts on
+  <a href="/order-statements/invoices/">Invoices</a>: tick what you are paying and make the checks. Click a number to open one.</p>
 <div class="actions" style="margin-bottom:12px">
-  <a class="btn small ghost" href="/order-statements/print-many/"><span class="ms">picture_as_pdf</span>Print many batches</a>
-  <a class="btn small ghost" href="/order-statements/import-many/"><span class="ms">upload_file</span>Many batches from Excel</a>
+  <a class="btn small ghost" href="/order-statements/print-many/"><span class="ms">picture_as_pdf</span>Print many payment statements</a>
+  <a class="btn small ghost" href="/order-statements/import-many/"><span class="ms">upload_file</span>Many payment statements from Excel</a>
   <a class="btn small ghost" href="/order-statements/check/"><span class="ms">fact_check</span>Supplier statement check</a>
   <a class="btn small ghost" href="/order-statements/soa/"><span class="ms">upload_file</span>Vendor SOA matcher (from a file)</a>
 </div>
-{% if waiting_by %}
-<div class="warnbox"><b>Sales invoices waiting for a batch</b>
-  <div class="scroll-x"><table class="list" style="margin-top:6px"><tr><th>Supplier</th><th>Invoices</th><th>Total</th><th>First due</th><th></th></tr>
-    {% for w in waiting_by %}<tr><td>{{ w.supplier }}</td><td class="num">{{ w.n }}</td><td class="num">{{ w.total|floatformat:2|intcomma }}</td><td>{{ w.first_due|dmy }}</td>
-      <td><form method="post" action="/order-statements/new/">{% csrf_token %}<input type="hidden" name="s" value="{{ w.creditor_id }}">
-        <button class="btn small" type="submit"><span class="ms">note_add</span>New batch for them</button></form></td></tr>{% endfor %}</table></div>
-  <p class="hint" style="margin-bottom:0">A new batch (or an open one of the supplier's) lists its waiting invoices to tick. Not batched = not on an order statement yet.</p></div>
-{% endif %}
+{% if waiting_n %}<p class="warnbox" style="margin-top:0"><a href="/order-statements/invoices/"><b>{{ waiting_n }} invoice{{ waiting_n|pluralize }}</b> not yet in a payment statement
+  (₱{{ waiting_total|floatformat:2|intcomma }})</a>: owed, and waiting on Invoices until you pay {{ waiting_n|pluralize:"it,them" }}.</p>{% endif %}
 <form class="bar" method="get" action="/order-statements/">
-  <div class="grow"><label for="q">Search</label><input id="q" type="text" name="q" value="{{ q }}" placeholder="Order statement number"></div>
+  <div class="grow"><label for="q">Search</label><input id="q" type="text" name="q" value="{{ q }}" placeholder="Payment statement number (PS or OS)"></div>
   <div><label for="s">Supplier</label><select id="s" name="s" onchange="this.form.submit()"><option value="">All suppliers</option>
     {% for id, name in suppliers %}<option value="{{ id }}"{% if id|stringformat:"s" == sup %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
   <div><label for="stage">Status</label><select id="stage" name="stage" onchange="this.form.submit()"><option value="">All</option>
@@ -32,16 +23,17 @@
 </form>
 {% if rows %}
 <div class="scroll-x"><table class="list cards">
-  <tr><th>Order statement</th><th>Supplier</th><th>Status</th><th>Gross</th><th>Credit memos</th><th>Net</th><th>Outstanding</th><th>Changed</th><th></th></tr>
+  <tr><th>Payment statement</th><th>Supplier</th><th>Kind</th><th>Status</th><th>Gross</th><th>Credit memos</th><th>Net</th><th>Outstanding</th><th>Changed</th><th></th></tr>
   {% for r in rows %}<tr>
     <td class="c-t"><a href="/order-statements/{{ r.statement_id }}/">{% if r.is_draft %}Draft · {{ r.created_at|dmy }}{% else %}{{ r.statement_ref }}{% endif %}</a></td>
     <td>{{ r.creditor_name }}</td>
+    <td data-l="kind">{% if r.n_invoices == 1 %}<span class="pill">Single</span>{% elif r.n_invoices > 1 %}<span class="pill">Batch · {{ r.n_invoices }}</span>{% else %}<span class="hint">—</span>{% endif %}</td>
     <td><span class="pill{% if r.stage == 'Draft' or r.stage == 'Cancelled' %} off{% elif r.stage == 'Parked' %} warn{% endif %}">{{ r.stage }}</span></td>
     <td class="num" data-l="gross">{{ r.total_amount|floatformat:2|intcomma }}</td><td class="num" data-l="memos">{% if r.credit_memo_total %}{{ r.credit_memo_total|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
     <td class="num c-big">{{ r.net_total|floatformat:2|intcomma }}</td><td class="num" data-l="outstanding">{{ r.outstanding|floatformat:2|intcomma }}</td><td data-l="changed">{{ r.last_modified|dmy }}</td>
     <td class="c-r">{% if r.is_locked and r.stage != "Cancelled" %}<span class="pill">Locked</span>{% endif %}{% if r.needs_reprint %} <span class="pill warn">Needs reprint</span>{% endif %}</td></tr>{% endfor %}
 </table></div>
-<p class="hint">{{ rows|length }} batch(es). Draft = no checks yet · Parked = checks parked, none printed · Issued = at least one check printed.</p>
-{% else %}<p class="note">No batches here yet.</p>{% endif %}
+<p class="hint">{{ rows|length }} payment statement(s). Single = one invoice, Batch = several · Draft = no checks yet · Parked = checks parked, none printed · Issued = at least one check printed.</p>
+{% else %}<p class="note">No payment statements here yet.</p>{% endif %}
 
 {% endblock %}

@@ -1,0 +1,130 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: invoices on their own, payment statements</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --bad: #b3261e; --yellow: #F3E03B; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1160px; margin: 0 auto; padding: 18px 16px 60px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 92ch; }
+.lap { background: #fff; border: 8px solid #1c2733; border-radius: 14px; padding: 16px 18px; margin-bottom: 22px; }
+.num { display: inline-flex; width: 26px; height: 26px; border-radius: 50%; background: var(--yellow); color: var(--navy); font-weight: 800; align-items: center; justify-content: center; margin-right: 6px; }
+.cap { font-size: .8rem; color: var(--muted); margin: 0 0 6px 2px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+h2 { font-size: 1.25rem; margin: 0 0 8px; color: var(--blue); }
+.menu { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; font-size: .9rem; }
+.menu span { padding: 4px 12px; border-radius: 8px; background: var(--soft); } .menu span.on { background: var(--navy); color: #fff; } .menu span.new { outline: 2px solid var(--yellow); }
+.bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
+label { display: block; font-size: .78rem; color: var(--muted); margin-bottom: 3px; }
+.field { border: 1px solid #b9c6d8; border-radius: 10px; padding: 7px 10px; font: inherit; background: #fff; }
+.btn { display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; border: 1px solid var(--blue); border-radius: 10px; padding: 8px 14px; font: inherit; font-weight: 600; }
+.btn.ghost { background: #fff; color: var(--blue); border-color: #b9c6d8; } .btn.small { padding: 4px 10px; font-size: .88rem; }
+table { border-collapse: collapse; width: 100%; font-size: .93rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--muted); font-size: .78rem; border-bottom: 2px solid var(--line); padding: 6px 8px; } td { border-bottom: 1px solid var(--line); padding: 7px 8px; }
+.r { text-align: right; } .hint { color: var(--muted); font-size: .85rem; } .note { color: var(--muted); margin: 0 0 10px; }
+.tick { width: 20px; height: 20px; border-radius: 5px; border: 2px solid #94a3b8; display: inline-block; vertical-align: middle; } .tick.on { background: var(--blue); border-color: var(--blue); position: relative; } .tick.on::after { content: "✓"; color: #fff; position: absolute; left: 3px; top: -3px; font-weight: 800; font-size: .9rem; }
+.pill { display: inline-block; font-size: .74rem; border-radius: 999px; padding: 1px 9px; background: #eef3fa; color: var(--blue); white-space: nowrap; }
+.pill.off { background: var(--soft); color: var(--muted); } .pill.warn { background: #fff7e0; color: var(--warn); } .pill.ok { background: #e3f5ec; color: var(--ok); }
+.sup { background: #f7f9fc; font-weight: 700; } .sup td { border-bottom: 2px solid var(--line); }
+.stick { display: flex; gap: 12px; align-items: center; background: #f1f5fa; border: 1px solid #cfe0f3; border-radius: 12px; padding: 10px 14px; margin-top: 12px; }
+.facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; } .facts div { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; } .facts span { display: block; font-size: .78rem; color: var(--muted); } .facts b { font-size: 1.1rem; }
+.paper { background: #fff; border: 1px solid #c9d1dc; box-shadow: 0 2px 10px rgba(16,24,40,.12); padding: 18px 22px; max-width: 560px; font-size: .92rem; }
+.paper h3 { margin: 0; font-size: 1.05rem; letter-spacing: .04em; } .paper .sub { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
+.flow { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; margin: 0 0 22px; }
+.flow div { flex: 1 1 200px; background: #fff; border-radius: 12px; padding: 10px 14px; border: 1px solid var(--line); } .flow b { display: block; color: var(--navy); } .flow .ar { flex: 0 0 auto; background: none; border: 0; align-self: center; font-size: 1.4rem; color: #9aa8b8; padding: 0; }
+.q { background: #fff7e0; border: 1px solid #f1d38a; border-radius: 10px; padding: 12px 16px; max-width: 940px; }
+@media (max-width: 800px) { .facts { grid-template-columns: 1fr 1fr; } }
+</style></head><body><main>
+<p class="why"><b>Sample figures, not your data.</b> An invoice is recorded on its own, the moment it arrives: it is a payable from then on. A
+<b>payment statement</b> is made only when you pay: you tick the invoices you are paying and make the checks. One invoice makes it a single payment, several a
+batch payment. Nothing already recorded is renumbered or moved.</p>
+
+<div class="flow">
+  <div><b>1. The invoice arrives</b>Type it on Invoices (or it comes by itself from a delivery received on a purchase order).</div><div class="ar">→</div>
+  <div><b>2. It floats</b>It is owed, on its due date, on the Calendar. It is in no payment statement yet.</div><div class="ar">→</div>
+  <div><b>3. You pay</b>Tick the invoices of one supplier → Make checks. The payment statement is made at that moment.</div><div class="ar">→</div>
+  <div><b>4. Checks</b>Write the checks as today. The statement gets its number, 2026 - PS 0032, with its first check.</div>
+</div>
+
+<p class="cap"><span class="num">1</span>New page: Pay suppliers → Invoices</p>
+<div class="lap">
+  <div class="menu"><span>Buy</span><span>Stock</span><span>Sell</span><span class="on">Pay suppliers ▾</span><span class="new">Invoices</span><span>Payment statements</span><span>Calendar</span><span>Daily payables</span></div>
+  <h2><span class="ms" style="font-size:26px">receipt_long</span> Invoices</h2>
+  <p class="note">Every supplier invoice not yet in a payment statement. Record one as soon as it arrives; tick the ones you are paying and make their checks.</p>
+  <div class="bar">
+    <div><label>Supplier</label><select class="field" style="min-width:230px"><option>New Century City Marketing Corp.</option></select></div>
+    <div><label>SI no.</label><input class="field" value="38531" style="width:110px"></div>
+    <div><label>DR no.</label><input class="field" value="219386" style="width:110px"></div>
+    <div><label>Date received</label><input class="field" value="10/13/2026" style="width:130px"></div>
+    <div><label>Amount</label><input class="field r" value="315,371.85" style="width:140px"></div>
+    <div><label>Less %</label><input class="field r" placeholder="0" style="width:70px"></div>
+    <button class="btn"><span class="ms">add</span>Add invoice</button>
+  </div>
+  <p class="hint" style="margin:-4px 0 12px">Due 02/10/2027, from this supplier's terms (120 days). A number this supplier already has is refused; one that looks like a double asks first.</p>
+  <table>
+    <tr><th style="width:44px">Pay</th><th>Date</th><th>SI / DR no.</th><th>Due</th><th class="r">Amount</th><th></th><th></th></tr>
+    <tr class="sup"><td colspan="4">New Century City Marketing Corp. <span class="hint" style="font-weight:400">· 4 invoices · terms 120 days</span></td><td class="r">737,712.02</td><td colspan="2"></td></tr>
+    <tr><td><span class="tick on"></span></td><td>10/08/2026</td><td><b>216420</b></td><td>02/05/2027</td><td class="r">90,168.77</td><td><span class="pill">from PO-0031</span></td><td class="r"><a href="#">Edit</a></td></tr>
+    <tr><td><span class="tick on"></span></td><td>10/13/2026</td><td><b>216838</b></td><td>02/10/2027</td><td class="r">48,426.65</td><td><span class="pill">from PO-0031</span></td><td class="r"><a href="#">Edit</a></td></tr>
+    <tr><td><span class="tick on"></span></td><td>10/13/2026</td><td><b>219386</b> · SI 38531</td><td>02/10/2027</td><td class="r">315,371.85</td><td><span class="pill warn">No PO</span></td><td class="r"><a href="#">Edit</a> · <a href="#">Delete</a></td></tr>
+    <tr><td><span class="tick"></span></td><td>10/13/2026</td><td><b>219402</b></td><td>02/10/2027</td><td class="r">283,744.75</td><td><span class="pill warn">No PO</span></td><td class="r"><a href="#">Edit</a> · <a href="#">Delete</a></td></tr>
+    <tr class="sup"><td colspan="4">Battery Depot of Central Luzon Inc. <span class="hint" style="font-weight:400">· 1 invoice · terms 60 days</span></td><td class="r">59,060.00</td><td colspan="2"></td></tr>
+    <tr><td><span class="tick"></span></td><td>10/10/2026</td><td><b>2033888</b></td><td>12/09/2026</td><td class="r">59,060.00</td><td><span class="pill">from PO-0029</span></td><td class="r"><a href="#">Edit</a></td></tr>
+  </table>
+  <div class="stick"><span><b>3 invoices ticked</b> · New Century City Marketing Corp. · <b>₱453,967.27</b></span>
+    <button class="btn" style="margin-left:auto"><span class="ms">payments</span>Make checks for the ticked</button></div>
+  <p class="hint">One supplier at a time. Pressing it makes the payment statement and opens its Checks tab, where the checks are written as today.</p>
+</div>
+
+<p class="cap"><span class="num">2</span>What it opens: the payment statement, already holding the three invoices</p>
+<div class="lap">
+  <p class="note" style="margin-bottom:4px"><a href="#">← Payment statements</a></p>
+  <h2>Draft payment · New Century City Marketing Corp. <span class="pill off">Draft</span> <span class="pill">Batch payment · 3 invoices</span></h2>
+  <div class="facts"><div><span>Net</span><b>₱453,967.27</b></div><div><span>Checks</span><b>₱0.00 (0)</b></div><div><span>Balance</span><b>₱453,967.27</b></div><div><span>Terms</span><b>120 days</b></div></div>
+  <div class="bar"><button class="btn small ghost">Invoices (3)</button><button class="btn small">Checks</button><button class="btn small ghost">Credit memos</button><button class="btn small ghost">Print</button>
+    <span style="margin-left:auto"></span><button class="btn small ghost" style="color:var(--bad);border-color:#e8a19b"><span class="ms">delete</span>Delete this draft</button></div>
+  <p class="hint">It gets its number, <b>2026 - PS 0032</b>, when its first check is written. Until then it is a draft: deleting it puts the three invoices back on the Invoices page.
+    Once it has a number it can only be cancelled, never deleted.</p>
+</div>
+
+<p class="cap"><span class="num">3</span>The list, renamed: Payment statements</p>
+<div class="lap">
+  <h2><span class="ms" style="font-size:26px">description</span> Payment statements</h2>
+  <p class="note">Each holds the invoices of one supplier being paid together, and the checks that pay them. <a href="#">5 invoices are not yet in a payment statement (₱796,772.02)</a>.</p>
+  <table>
+    <tr><th>Payment statement</th><th>Supplier</th><th>Kind</th><th>Status</th><th class="r">Net</th><th class="r">Outstanding</th><th>Changed</th></tr>
+    <tr><td><a href="#">Draft · 10/13/2026 14:05</a></td><td>New Century City Marketing Corp.</td><td><span class="pill">Batch · 3</span></td><td><span class="pill off">Draft</span></td><td class="r">453,967.27</td><td class="r">453,967.27</td><td>10/13/2026 14:05</td></tr>
+    <tr><td><a href="#">2026 - PS 0032</a></td><td>Stonewell Philippines Wheels &amp; Tires, Inc.</td><td><span class="pill">Single</span></td><td><span class="pill">Issued</span></td><td class="r">160,000.00</td><td class="r">160,000.00</td><td>10/13/2026 11:20</td></tr>
+    <tr><td><a href="#">2026 - OS 0031</a></td><td>Henry Bakal</td><td><span class="pill">Single</span></td><td><span class="pill">Issued</span></td><td class="r">13,500.00</td><td class="r">0.00</td><td>10/09/2026 07:52</td></tr>
+    <tr><td><a href="#">2026 - OS 0030</a></td><td>Buenaventura Associates Company</td><td><span class="pill">Batch · 4</span></td><td><span class="pill">Issued</span></td><td class="r">22,664.25</td><td class="r">22,664.25</td><td>10/07/2026 17:27</td></tr>
+  </table>
+  <p class="hint">Old numbers keep "OS", matching the printed copies your suppliers hold. New ones continue the same count as "PS". There is no "New batch" button: a payment statement starts from the Invoices page.</p>
+</div>
+
+<p class="cap"><span class="num">4</span>The printed copy</p>
+<div class="lap" style="background:#f7f9fc">
+  <div class="paper">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h3>PAYMENT STATEMENT</h3><span class="sub">Batch payment · supplier's copy</span></div><b>2026 - PS 0033</b></div>
+    <p style="margin:10px 0 6px"><b>New Century City Marketing Corp.</b><br><span class="hint">Slick's Tire Supply · 10/13/2026</span></p>
+    <table><tr><th>Date</th><th>SI / DR no.</th><th class="r">Amount</th></tr>
+      <tr><td>10/08/2026</td><td>216420</td><td class="r">90,168.77</td></tr><tr><td>10/13/2026</td><td>216838</td><td class="r">48,426.65</td></tr><tr><td>10/13/2026</td><td>219386 · SI 38531</td><td class="r">315,371.85</td></tr>
+      <tr><td colspan="2"><b>Total</b></td><td class="r"><b>453,967.27</b></td></tr></table>
+    <p class="hint" style="margin:8px 0 0">Paid by: check 3992554601 dated 02/05/2027 ₱226,983.64 · check 3992554602 dated 02/10/2027 ₱226,983.63</p>
+  </div>
+  <p class="hint" style="margin-top:10px">Only the heading changes: "BATCH / ORDER STATEMENT" becomes "PAYMENT STATEMENT", with "Single payment" or "Batch payment" under it. The layout stays as you have it.</p>
+</div>
+
+<div class="q"><b>What stays the same</b>
+<ul style="margin:6px 0 10px">
+  <li>A delivery received on a purchase order still records its invoice by itself; it simply shows up on the Invoices page.</li>
+  <li>Inside an open payment statement you can still add an invoice directly, as today.</li>
+  <li>Checks, the daily limit, credit memos, "Many from Excel", "Print many" and every existing statement work as now.</li>
+</ul>
+<b>Questions before I build</b>
+<ol style="margin:6px 0 0">
+  <li><b>Several suppliers at once:</b> should Make checks accept ticks across suppliers and make one payment statement per supplier, or stay one supplier at a time as drawn?</li>
+  <li><b>The supplier's printed copy:</b> "PAYMENT STATEMENT" as drawn, or another heading for what the supplier receives?</li>
+  <li><b>The draft's name:</b> "Draft payment" on screen until it has its PS number: fine?</li>
+  <li><b>Who may record an invoice here:</b> everyone who can open Payment statements, or also the people who receive goods?</li>
+</ol></div>
+</main></body></html>

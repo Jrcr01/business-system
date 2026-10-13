@@ -78,14 +78,14 @@ def test_relocking_without_changes_starts_nothing(db):
     _print(sid, FakeDrive())
     unlock_statement(sid)
     ok, msg = lock_statement(sid)
-    assert ok and msg == "Batch locked." and not needs_reprint(sid) and _versions(db, sid) == 1
+    assert ok and msg == "Payment statement locked." and not needs_reprint(sid) and _versions(db, sid) == 1
 
 
 def test_a_never_printed_batch_is_not_flagged(db):
     creditor_id, sid = _batch(db)
     unlock_statement(sid)
     app.add_invoice(creditor_id, "INV-2", date(2026, 9, 2), date(2026, 10, 2), 500.0, [], sid)
-    assert lock_statement(sid) == (True, "Batch locked.") and not needs_reprint(sid) and _versions(db, sid) == 0
+    assert lock_statement(sid) == (True, "Payment statement locked.") and not needs_reprint(sid) and _versions(db, sid) == 0
 
 
 def test_assigning_check_numbers_after_printing_is_not_a_revision(db):

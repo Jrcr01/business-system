@@ -1,29 +1,32 @@
 {% extends "core/base.html" %}{% load humanize %}
-{% block title %}{% if b.statement_ref|slice:":6" == "DRAFT-" %}Draft batch · {{ b.creditor_name }}{% else %}{{ b.statement_ref }}{% endif %}{% endblock %}
+{% block title %}{% if b.statement_ref|slice:":6" == "DRAFT-" %}Draft payment · {{ b.creditor_name }}{% else %}{{ b.statement_ref }}{% endif %}{% endblock %}
 {% block content %}
-<p class="note"><a href="/order-statements/">← Order statements</a></p>
-<h2>{% if b.statement_ref|slice:":6" == "DRAFT-" %}Draft batch{% else %}{{ b.statement_ref }}{% endif %} · {{ b.creditor_name }}
+<p class="note"><a href="/order-statements/">← Payment statements</a></p>
+<h2>{% if b.statement_ref|slice:":6" == "DRAFT-" %}Draft payment{% else %}{{ b.statement_ref }}{% endif %} · {{ b.creditor_name }}
   <span class="pill{% if b.stage == 'Draft' or b.stage == 'Cancelled' %} off{% elif b.stage == 'Parked' %} warn{% endif %}">{{ b.stage }}</span>
+  {% if b.n_invoices == 1 %}<span class="pill">Single payment</span>{% elif b.n_invoices > 1 %}<span class="pill">Batch payment · {{ b.n_invoices }} invoices</span>{% endif %}
   {% if not cancelled %}<span class="pill{% if not locked %} off{% endif %}">{% if locked %}Locked{% else %}Unlocked{% endif %}</span>{% endif %}
   {% if b.needs_reprint %}<span class="pill warn">Needs reprint</span>{% endif %}</h2>
 <div class="facts"><div><span>Net</span><b>₱{{ b.net_total|floatformat:2|intcomma }}</b></div><div><span>Checks</span><b>₱{{ checks_total|floatformat:2|intcomma }} ({{ n }})</b></div>
   <div><span>Balance</span><b>{% if balance > 0.005 or balance < -0.005 %}₱{{ balance|floatformat:2|intcomma }}{% else %}fully covered{% endif %}</b></div>
   <div><span>Terms</span><b>{% if b.terms %}{{ b.terms }}{% if b.terms != "COD" %} days{% endif %}{% else %}not set{% endif %}</b></div></div>
 <div class="steps">{% for label, state in steps %}<span class="{{ state }}">{% if state == "done" %}✔{% elif state == "part" %}◔{% else %}○{% endif %} {{ label }}</span>{% endfor %}</div>
-{% if cancelled %}<p class="note">Cancelled: permanently locked.</p>
+{% if cancelled %}<p class="note">Cancelled: permanently locked.{% if may_delete %} It is a draft that never got its number, so it can be deleted.{% endif %}</p>
 {% elif locked %}<p class="note"><span class="ms">lock</span> Fully covered by checks: closed.</p>
 {% elif n %}<p class="note"><span class="ms">lock_open</span> {% if balance > 0.005 %}₱{{ balance|floatformat:2|intcomma }} still to cover.{% else %}Reopened for editing: closes again when you save.{% endif %}</p>
 {% else %}<p class="note">Locks by itself once its checks cover the full amount.</p>{% endif %}
 
 <div class="actions">
   <button class="btn small ghost" type="button" data-rmap="/related/statement/{{ b.statement_id }}/"><span class="ms">account_tree</span>Relationship map</button>
-  <a class="btn small ghost" href="#print"><span class="ms">print</span>Print this batch</a>
-  {% if may_number %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="number"><button class="btn small" type="submit"><span class="ms">tag</span>Give it its OS number</button></form>{% endif %}
-  {% if may_cancel %}<form method="post" onsubmit="return confirm('Cancel this batch? Its {{ n }} active check(s) are cancelled and its invoices are marked Cancelled. This cannot be undone.');">{% csrf_token %}
-    <input type="hidden" name="action" value="cancel"><button class="btn small danger" type="submit"><span class="ms">cancel</span>Cancel batch</button></form>{% endif %}
+  <a class="btn small ghost" href="#print"><span class="ms">print</span>Print this payment statement</a>
+  {% if may_number %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="number"><button class="btn small" type="submit"><span class="ms">tag</span>Give it its number</button></form>{% endif %}
+  {% if may_cancel %}<form method="post" onsubmit="return confirm('Cancel this payment statement? Its {{ n }} active check(s) are cancelled and its invoices are marked Cancelled. This cannot be undone.');">{% csrf_token %}
+    <input type="hidden" name="action" value="cancel"><button class="btn small danger" type="submit"><span class="ms">cancel</span>Cancel payment statement</button></form>{% endif %}
+  {% if may_delete %}<form method="post" onsubmit="return confirm('Delete this draft? It never got its number. Any invoices in it go back to the Invoices page, still owed.');">{% csrf_token %}
+    <input type="hidden" name="action" value="delete_draft"><button class="btn small danger" type="submit"><span class="ms">delete</span>Delete this draft</button></form>{% endif %}
 </div>
 {% if may_reopen %}
-<details style="margin-top:10px"><summary class="hint" style="cursor:pointer"><b>Edit this batch</b>: reopen it to change an invoice or credit memo</summary>
+<details style="margin-top:10px"><summary class="hint" style="cursor:pointer"><b>Edit this payment statement</b>: reopen it to change an invoice or credit memo</summary>
   <form class="bar" method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="reopen">
     <div class="grow"><label for="why">Why is it reopened?</label><input id="why" type="text" name="reason" required placeholder="e.g. wrong amount on INV 88290"></div>
     <button class="btn small" type="submit"><span class="ms">edit</span>Reopen</button></form>
@@ -53,7 +56,7 @@
           <div><label>Less %</label><input class="inline-input" style="width:60px" inputmode="decimal" name="less" value="{{ r.less_pct|floatformat:'-2' }}"></div>
           <button class="btn small" type="submit" name="action" value="save_invoice" onclick="return confirm('Save the changes to {{ r.doc_ref|escapejs }}?');">Save</button>
           <button class="btn small danger" type="submit" name="action" value="delete_invoice" onclick="return confirm('Delete invoice {{ r.doc_ref|escapejs }} ({{ r.amount|floatformat:2|intcomma }})?');">Delete</button>
-          <button class="btn small ghost" type="submit" name="action" value="take_out" onclick="return confirm('Take {{ r.doc_ref|escapejs }} out of this batch? It waits for another batch.');">Take out of the batch</button>
+          <button class="btn small ghost" type="submit" name="action" value="take_out" onclick="return confirm('Take {{ r.doc_ref|escapejs }} out of this payment statement? It waits for another payment statement.');">Take out of the payment statement</button>
           <a class="hint" href="?tab=invoices">Cancel</a>
         </form><p class="hint" style="margin:4px 0 0">The due date is worked out again from the date and the supplier's terms when you save.</p></td></tr>
       {% else %}
@@ -62,17 +65,17 @@
         <td class="num">{% if r.less_pct %}{{ r.less_pct|floatformat:"-2" }}{% else %}—{% endif %}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td><td>{{ r.status }}</td>
         {% if editable %}<td><a href="?tab=invoices&amp;edit_inv={{ r.invoice_id }}">Edit</a></td>{% endif %}</tr>
       {% endif %}
-    {% empty %}<tr><td colspan="9" class="note">No invoices in this batch yet.</td></tr>{% endfor %}
+    {% empty %}<tr><td colspan="9" class="note">No invoices in this payment statement yet.</td></tr>{% endfor %}
   </table></div>
   {% if editable and waiting %}
-  <div class="grp" id="waiting">Waiting for a batch: {{ waiting|length }} sales invoice(s) from {{ b.creditor_name }}</div>
+  <div class="grp" id="waiting">Waiting for a payment statement: {{ waiting|length }} sales invoice(s) from {{ b.creditor_name }}</div>
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="put_in_batch">
     <div class="scroll-x"><table class="list"><tr><th>Include</th><th>Reference (SI or DR)</th><th>DR no.</th><th>Date</th><th>Due</th><th>Net</th><th></th></tr>
       {% for w in waiting %}<tr><td><input type="checkbox" name="pick_{{ w.invoice_id }}" value="1" aria-label="Include {{ w.doc_ref }}"></td><td>{{ w.doc_ref }}</td><td>{{ w.dr_no|default:"" }}</td>
         <td>{{ w.invoice_date|dmy }}</td><td>{{ w.due_date|dmy }}</td><td class="num">{{ w.amount|floatformat:2|intcomma }}</td>
         <td>{% if not w.from_po %}<span class="pill warn">No PO</span>{% endif %}</td></tr>{% endfor %}</table></div>
-    <div class="actions"><button class="btn small" type="submit"><span class="ms">playlist_add</span>Put the ticked invoices in this batch</button>
-      <span class="hint">Matched from purchase orders and left out of a batch; tick the ones this order statement covers.</span></div>
+    <div class="actions"><button class="btn small" type="submit"><span class="ms">playlist_add</span>Put the ticked invoices in this payment statement</button>
+      <span class="hint">Matched from purchase orders and left out of a payment statement; tick the ones this payment statement covers.</span></div>
   </form>
   {% endif %}
   {% if editable %}
@@ -97,12 +100,12 @@
   })();
   </script>
   <p class="hint"><b>Every invoice needs a document reference: the SI no. or the DR no.</b> (either, or both). With only a DR, the invoice is listed as "DR 342". Due = date received + the supplier's terms (today's invoice would be due {{ due_today|date:"m/d/Y" }}). A number this supplier already has is refused.
-    <a href="/purchase-orders/match/?s={{ b.creditor_id }}&amp;batch={{ b.statement_id }}">From a purchase order</a> opens Receive with this batch chosen.
+    <a href="/purchase-orders/match/?s={{ b.creditor_id }}&amp;batch={{ b.statement_id }}">From a purchase order</a> opens Receive with this payment statement chosen.
     <a href="/order-statements/{{ b.statement_id }}/import/">From photos, PDFs or a spreadsheet</a> reads many at once.</p>
-  {% else %}<p class="hint">{% if cancelled %}This batch is cancelled and can't be edited.{% else %}Closed (fully covered by checks). To change an invoice, use Edit this batch above; a new invoice for this supplier goes in a new batch.{% endif %}</p>{% endif %}
+  {% else %}<p class="hint">{% if cancelled %}This payment statement is cancelled and can't be edited.{% else %}Closed (fully covered by checks). To change an invoice, use Edit this payment statement above; a new invoice for this supplier goes in a new payment statement.{% endif %}</p>{% endif %}
 
 {% elif tab == "memos" %}
-  <p class="note">Applied before checks are issued: a credit memo lowers what the batch's checks must cover.</p>
+  <p class="note">Applied before checks are issued: a credit memo lowers what the payment statement's checks must cover.</p>
   <div class="scroll-x"><table class="list"><tr><th>Reference</th><th>Memo date</th><th>Amount</th><th>Reason</th>{% if editable %}<th></th>{% endif %}</tr>
     {% for m in memos %}
       {% if editable and edit_memo == m.credit_memo_id|stringformat:"s" %}
@@ -118,7 +121,7 @@
       <tr><td>{{ m.memo_ref }}</td><td>{{ m.memo_date|dmy }}</td><td class="num">{{ m.amount|floatformat:2|intcomma }}</td><td>{{ m.reason|default:"" }}</td>
         {% if editable %}<td><a href="?tab=memos&amp;edit_memo={{ m.credit_memo_id }}">Edit</a></td>{% endif %}</tr>
       {% endif %}
-    {% empty %}<tr><td colspan="5" class="note">No credit memos on this batch.</td></tr>{% endfor %}
+    {% empty %}<tr><td colspan="5" class="note">No credit memos on this payment statement.</td></tr>{% endfor %}
   </table></div>
   {% if editable %}
   {% if memo_warnings %}<div class="msg warning" id="add_memo"><b>Is this a double entry?</b><ul>{% for w in memo_warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
@@ -136,7 +139,7 @@
   {% include "payables/_batch_checks.html" %}
 {% endif %}
 
-<div class="grp" id="print">Print this batch</div>
+<div class="grp" id="print">Print this payment statement</div>
 <form class="bar" method="get" action="/order-statements/{{ b.statement_id }}/a4.pdf" target="_blank">
   <div><label for="copies">Copies</label><select id="copies" name="copies"><option value="both">Both (filing + supplier)</option><option value="filing">Filing copy only</option><option value="supplier">Supplier copy only</option></select></div>
   <label class="inline"><input type="checkbox" name="history" value="1" checked> Full check history (incl. cancelled/replaced)</label>
@@ -144,5 +147,5 @@
   <button class="btn small" type="submit"><span class="ms">picture_as_pdf</span>A4 statement (PDF)</button>
   <a class="btn small ghost" href="/order-statements/{{ b.statement_id }}/thermal.pdf" target="_blank"><span class="ms">receipt_long</span>Thermal 80mm (PDF)</a>
 </form>
-<p class="hint">Printing never locks or unlocks the batch. Sending the slip straight to the thermal printer comes with stage D5 (Release).</p>
+<p class="hint">Printing never locks or unlocks the payment statement. Sending the slip straight to the thermal printer comes with stage D5 (Release).</p>
 {% endblock %}

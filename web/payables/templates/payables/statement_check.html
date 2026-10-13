@@ -3,7 +3,7 @@
 {% block content %}
 {% comment %}Owner, 2026-10-13: suppliers' statements come as photos and paper in different layouts; every line is a document number, a date and an
 amount. Nothing is uploaded: the page lists what OUR records say we owe, the person ticks what is on the paper and types only what we do not have.{% endcomment %}
-<p class="note noprint"><a href="/order-statements/">← Order statements</a></p>
+<p class="note noprint"><a href="/order-statements/">← Payment statements</a></p>
 <h2><span class="ms" style="font-size:28px">fact_check</span> Supplier statement check{% if kept %} <span class="pill off">saved {{ kept.saved_at|dmy }} by {{ kept.saved_by }}</span>{% endif %}</h2>
 {% if not kept %}
 <form method="get" class="bar noprint"><div><label for="sc_s">Supplier</label><select id="sc_s" name="s" onchange="this.form.submit()"><option value="">Pick the supplier</option>

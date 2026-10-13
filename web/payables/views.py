@@ -21,6 +21,7 @@ STAGES = ["Draft", "Parked", "Issued", "Cancelled"]
 BATCHES_SQL = """SELECT os.statement_id, os.statement_ref, os.creditor_id, c.creditor_name, c.terms, os.total_amount, v.credit_memo_total, v.net_total,
        v.net_total - COALESCE((SELECT SUM(amount) FROM checks_issued WHERE statement_id = os.statement_id AND status = 'Active'
                                 AND (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)), 0) AS outstanding,
+       (SELECT COUNT(*) FROM invoices i WHERE i.statement_id = os.statement_id AND i.status != 'Cancelled') AS n_invoices,
        os.status, os.is_locked, os.needs_reprint, datetime(os.created_at, '+8 hours') AS created_at, {modified} AS last_modified,
        CASE WHEN os.status = 'Cancelled' THEN 'Cancelled'
             WHEN EXISTS (SELECT 1 FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' AND k.printed_at IS NOT NULL) THEN 'Issued'
@@ -84,13 +85,11 @@ def statements(request):
         r["is_draft"] = str(r["statement_ref"]).startswith("DRAFT-")
         out.append(r)
     from engines.statement_rules import unbatched_invoices
+    if g.get("view") == "invoices":                             # the menu's Invoices entry (a shortcut of this page: the same rights)
+        return redirect("/order-statements/invoices/")
     waiting = unbatched_invoices()
-    waiting_by = []
-    if not waiting.empty:
-        for (cid, name), g in waiting.groupby(["creditor_id", "supplier"], sort=False):
-            waiting_by.append({"creditor_id": int(cid), "supplier": name, "n": len(g), "total": float(g["amount"].sum()), "first_due": str(g["due_date"].min())[:10]})
     return render(request, "payables/statements.html", {"page_id": "order-statements", "rows": out, "q": search, "sup": sup, "stage": stage, "created": created,
-                                                        "suppliers": suppliers, "stages": STAGES, "createds": CREATED, "all_suppliers": _suppliers(), "waiting_by": waiting_by})
+                                                        "suppliers": suppliers, "stages": STAGES, "createds": CREATED, "waiting_n": len(waiting), "waiting_total": float(waiting["amount"].sum()) if len(waiting) else 0.0})
 
 
 @page_needed("order-statements")
@@ -104,7 +103,7 @@ def statement_new(request):
         _say(request, False, "Pick the supplier.")
         return redirect("/order-statements/")
     sid = create_order_statement(cid)
-    _say(request, True, "Draft batch created. Add its invoices below.")
+    _say(request, True, "Draft payment created. Add its invoices below.")
     return redirect(f"/order-statements/{sid}/")
 
 
@@ -167,6 +166,7 @@ def statement(request, sid: int):
            "no_po": sum(1 for r in invoices if not r["from_po"] and r["status"] != "Cancelled"), "waiting": waiting,
            "cancelled": cancelled, "locked": locked, "editable": not cancelled and not locked,
            "may_reopen": locked and not cancelled and _can(request, "check.void"), "may_cancel": not cancelled and _can(request, "check.void"),
+           "may_delete": str(b["statement_ref"]).startswith("DRAFT-") and not memos and not checks and _can(request, "check.void"),
            "may_number": b["status"] == "Draft" and str(b["statement_ref"]).startswith("DRAFT-") and n_inv > 0 and not cancelled,
            "today": manila_today(), "due_today": resolve_due_date(manila_today(), b["terms"] or ""),
            "edit_inv": request.GET.get("edit_inv", ""), "edit_memo": request.GET.get("edit_memo", ""),
@@ -284,24 +284,29 @@ def _statement_post(request, b: dict):
         return redirect(back + "?tab=memos")
     if what == "number":
         try:
-            _say(request, True, f"The batch is now {promote_draft_statement(sid, 'Issued')}.")
+            _say(request, True, f"The payment statement is now {promote_draft_statement(sid, 'Issued')}.")
         except ValueError as e:
             _say(request, False, str(e))
         return redirect(back)
     if what == "reopen":
         if not _can(request, "check.void"):
-            _say(request, False, "Your role cannot reopen a closed batch.")
+            _say(request, False, "Your role cannot reopen a closed payment statement.")
             return redirect(back)
         reason = " ".join(p.get("reason", "").split())
         if not reason:
-            _say(request, False, "Say why the batch is reopened.")
+            _say(request, False, "Say why the payment statement is reopened.")
             return redirect(back)
-        ok, msg = unlock_statement(sid, f"Batch reopened to edit: {reason}")
+        ok, msg = unlock_statement(sid, f"Payment statement reopened to edit: {reason}")
         _say(request, ok, "Reopened for editing. It closes again by itself when you save and the checks still cover it." if ok else msg)
         return redirect(back)
     if what == "cancel":
         _say(request, *cancel_order_statement(sid))
         return redirect(back)
+    if what == "delete_draft":                                   # owner, 2026-10-13: "Draft OS can delete. OS number is only cancelled"
+        from engines.check_rules import delete_draft_statement
+        ok, msg = delete_draft_statement(sid)
+        _say(request, ok, msg)
+        return redirect("/order-statements/" if ok else back)
     _say(request, False, "Unknown action.")
     return redirect(back)
 

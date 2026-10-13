@@ -1,10 +1,11 @@
 from django.urls import path
 
-from payables import expenses, income_statement_view, analytics, bank, bankloans, booklets, bulk, calendar, cards, lenders, views
+from payables import expenses, income_statement_view, analytics, bank, bankloans, booklets, bulk, calendar, cards, invoices, lenders, views
 
 urlpatterns = [
     path("order-statements/", views.statements, name="statements"),
     path("order-statements/new/", views.statement_new, name="statement_new"),
+    path("order-statements/invoices/", invoices.invoices, name="invoices"),
     path("order-statements/import-many/", bulk.import_many, name="import_many"),
     path("order-statements/entry-workbook.xlsm", bulk.entry_workbook, name="entry_workbook"),
     path("order-statements/invoice-template.csv", bulk.invoice_template_csv, name="invoice_template_csv"),

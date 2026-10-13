@@ -65,7 +65,7 @@ def invoice_warnings(creditor_id: int, rows: list) -> list[str]:
             hit_ref = norm_on_file.get(norm)
             if hit_ref and hit_ref[0].strip().lower() != str(doc_ref).strip().lower():
                 out.append(f"Invoice {doc_ref} looks like the same number as {hit_ref[0]} already on file for this supplier"
-                           + (f" (batch {hit_ref[1]})" if hit_ref[1] else "") + " -- just written differently.")
+                           + (f" (payment statement {hit_ref[1]})" if hit_ref[1] else "") + " -- just written differently.")
             hit = conn.execute(
                 """SELECT i.doc_ref, os.statement_ref FROM invoices i LEFT JOIN order_statements os ON os.statement_id = i.statement_id
                    WHERE i.creditor_id = ? AND i.status != 'Cancelled' AND ABS(i.gross_amount - ?) < 0.005
@@ -74,7 +74,7 @@ def invoice_warnings(creditor_id: int, rows: list) -> list[str]:
             ).fetchone()
             if hit:
                 out.append(f"Invoice {doc_ref}: this supplier already has invoice {hit[0]} for {_php(gross)} on the same date"
-                           + (f" (batch {hit[1]})." if hit[1] else "."))
+                           + (f" (payment statement {hit[1]})." if hit[1] else "."))
     return out
 
 
@@ -101,7 +101,7 @@ def credit_memo_warnings(creditor_id: int, memo_ref: str, memo_date, amount: flo
                WHERE os.creditor_id = ? AND (LOWER(cm.memo_ref) = LOWER(?) OR (ABS(cm.amount - ?) < 0.005 AND cm.memo_date = ?)) LIMIT 1""",
             (creditor_id, memo_ref.strip(), float(amount), str(memo_date)),
         ).fetchone()
-    return [f"This supplier already has credit memo {hit[0]} (batch {hit[1]}) with the same reference, or the same amount on the same date."] if hit else []
+    return [f"This supplier already has credit memo {hit[0]} (payment statement {hit[1]}) with the same reference, or the same amount on the same date."] if hit else []
 
 
 def loan_note_warnings(creditor_id: int, issue_date, principal: float) -> list[str]:

@@ -34,7 +34,7 @@ def test_invoices_from_a_spreadsheet_are_checked_then_added(web, db):
         form.update({f"keep_{i}": "1", f"doc_{i}": doc, f"date_{i}": day, f"gross_{i}": gross, f"less_{i}": less})
     web.post(f"/order-statements/{sid}/import/", form)
     assert fetchone(_db(), "SELECT COUNT(*), SUM(amount) FROM invoices WHERE statement_id = ?", (sid,)) == (2, 3375.0)
-    assert " - OS " in fetchone(_db(), "SELECT statement_ref FROM order_statements WHERE statement_id = ?", (sid,))[0]
+    assert " - PS " in fetchone(_db(), "SELECT statement_ref FROM order_statements WHERE statement_id = ?", (sid,))[0]
 
 
 def test_a_double_entry_asks_and_keeps_the_corrections(web, db):
@@ -88,8 +88,8 @@ def test_many_batches_from_one_workbook(web, db):
     token = r["Location"].split("staged=")[1]
     r = web.post("/order-statements/import-many/", {"action": "create", "staged": token, "sup_0": str(a), "sup_1": str(b), "promote": "1"})
     done = web.get(r["Location"]).content.decode()
-    assert "Done: the new batches are below." in done
-    assert fetchone(_db(), "SELECT COUNT(*) FROM order_statements WHERE creditor_id = ? AND statement_ref LIKE '% - OS %'", (b,))[0] == 1
+    assert "Done: the new payment statements are below." in done
+    assert fetchone(_db(), "SELECT COUNT(*) FROM order_statements WHERE creditor_id = ? AND statement_ref LIKE '% - PS %'", (b,))[0] == 1
     assert fetchone(_db(), "SELECT COUNT(*) FROM invoices WHERE creditor_id = ?", (b,))[0] == 2
 
 
