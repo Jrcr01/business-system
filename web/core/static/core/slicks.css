@@ -2,6 +2,7 @@
 :root { --navy: #0f2a4a; --navy-hover: #1b3f6b; --blue: #0B4F8A; --blue-dark: #0a2c4d; --yellow: #F3E03B; --red: #C62828; --ink: #1c2733; --muted: #4b5563;
         --line: #e5e7eb; --bg: #ffffff; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }      /* "hidden" always hides: a flex or grid rule on the same element used to show it anyway (2026-10-13) */
 html, body { margin: 0; }
 body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: var(--bg); font-size: 16px; }
 .ms { font-family: "Material Symbols Rounded"; font-weight: normal; font-style: normal; line-height: 1; display: inline-block; vertical-align: middle;

@@ -30,7 +30,7 @@ Scan what was sold, type the amount received; profit shows at once. A slip of th
   <div id="ps_warn" class="warnbox" hidden><b>To note. You can still save.</b><div id="ps_warn_list"></div>
     <div id="ps_below" hidden style="margin-top:6px"><label for="below_reason">Why below cost?</label><input class="ph-field" id="below_reason" type="text" name="below_reason" placeholder="e.g. old stock, loyal customer"></div></div>
   <label>Paid how</label>
-  <div class="ph-row" id="ps_methods">{% for k, label in methods %}<label class="btn small{% if k == method %} main{% else %} ghost{% endif %}" style="flex:1 1 30%;margin:0;color:inherit"><input type="radio" name="method" value="{{ k }}"{% if k == method %} checked{% endif %} style="display:none">{{ label }}</label>{% endfor %}</div>
+  <div class="ph-pay" id="ps_methods">{% for k, label in methods %}<label class="btn small{% if k == method %} main{% else %} ghost{% endif %}"{% if label|length > 20 %} style="grid-column:1 / -1"{% endif %}><input type="radio" name="method" value="{{ k }}"{% if k == method %} checked{% endif %} style="display:none">{{ label }}</label>{% endfor %}</div>
   <div class="ph-row" id="ps_check" hidden><div style="flex:1 1 120px"><label for="check_no">Check no.</label><input class="ph-field" id="check_no" type="text" name="check_no" inputmode="numeric"></div>
     <div style="flex:1 1 120px"><label for="check_date">Check date</label><input class="ph-field" id="check_date" type="date" name="check_date"></div>
     <div style="flex:1 1 120px"><label for="bank">Bank</label><input class="ph-field" id="bank" type="text" name="bank"></div></div>
