@@ -82,6 +82,7 @@ def test_cloudflare_in_front_does_not_stand_in_for_the_code(web, access):
     web.post("/logout/", **_h(_pass()))
     page = web.get("/login/", **_h(_pass())).content.decode()
     assert "Verified by Cloudflare as <b>admin@slicks.test</b>" in page and 'type="email"' not in page    # only the password is typed (owner, 2026-10-09)
+    assert 'href="/cdn-cgi/access/logout"' in page and "Use another email" in page                       # another person on this device: end Cloudflare's verification (2026-10-13)
     other = Client()                                                              # another device holding the same Cloudflare pass
     r = other.post("/login/", {"password": PW}, **_h(_pass()))
     assert r.status_code == 302 and r["Location"] == "/2fa/"                      # the code is asked

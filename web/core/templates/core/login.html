@@ -19,6 +19,9 @@
   <input type="hidden" name="next" value="{{ next }}">
   {% if cf_email %}
   <p class="login-who"><span class="ms">verified_user</span>Verified by Cloudflare as <b>{{ cf_email }}</b></p>
+  {% comment %}Owner, 2026-10-13: "There should be change of email address especially another user is logging in". The email is the one Cloudflare
+  verified on this device; to change it, that verification is ended (Cloudflare's own sign-out), and the next visit asks for an email again.{% endcomment %}
+  <p class="hint" style="margin:-4px 0 12px">Not you? <a href="/cdn-cgi/access/logout">Use another email</a></p>
   <input type="hidden" name="email" value="{{ cf_email }}" autocomplete="username">
   <label for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" required autofocus>
   {% else %}
