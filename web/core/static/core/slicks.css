@@ -612,3 +612,12 @@ table.list tr.tentative td { color: var(--fg-6b7280); font-style: italic; }
 .callegend .sw.rok { background: var(--bg-e7f6ee); border-color: var(--bd-b7e0c8); } .callegend .sw.rtight { background: var(--bg-fff4e5); border-color: var(--bd-f0b46a); }
 .callegend .sw.rover { background: var(--bg-fdecea); border-color: var(--bd-e8a19b); }
 .cal .d.later { background: var(--bg-f7f9fc); } .cal .d.later .amt { color: var(--fg-8a94a3); font-weight: 500; } .callegend .sw.later { background: var(--bg-f7f9fc); }
+
+/* Analytics -> Credit cards (owner, 2026-10-15): charged vs paid pairs, finance-charge bars, credit used */
+.hbar.pair .two { display: flex; flex-direction: column; gap: 3px; } .hbar.pair .track { height: 9px; }
+.hbar .fill.paidf, .sw2.paidf { background: var(--ok); } .hbar .fill.finf { background: var(--fg-b3261e); }
+.sw2 { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--blue); margin: 0 3px 0 6px; vertical-align: -1px; }
+.kpi.warnk { border-color: var(--bd-f0b46a); background: var(--bg-fff4e5); }
+.pill.ok { background: var(--bg-e7f6ee); color: var(--ok); }
+.usebar { display: inline-block; width: 54px; height: 8px; background: var(--bg-eef1f5); border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
+.usebar i { display: block; height: 100%; background: var(--blue); }

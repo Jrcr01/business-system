@@ -10,7 +10,7 @@ from django.shortcuts import render
 from masters.views import page_needed
 from engines.common import us_date
 
-TABS = [("sales", "Sales"), ("cash", "Cash ahead"), ("purchasing", "Purchasing"), ("payables", "Payables"), ("bank", "Bank and cash"), ("lenders", "Lenders")]     # owner, 2026-10-14: sales and liquidity first
+TABS = [("sales", "Sales"), ("cash", "Cash ahead"), ("purchasing", "Purchasing"), ("payables", "Payables"), ("bank", "Bank and cash"), ("lenders", "Lenders"), ("cards", "Credit cards")]     # owner, 2026-10-14: sales and liquidity first
 PERIODS = [("month", "This month"), ("quarter", "This quarter"), ("year", "This year"), ("custom", "From … to …")]
 TRACK_OF = {"payables": "Supplier", "lenders": "Lender"}
 
@@ -139,6 +139,12 @@ def _lenders(today, start, end) -> dict:
             "chart_a": ("Lender payments, next 8 weeks", _weeks("Lender", today)),
             "chart_b": ("Owed per lender", _bars([(r["name"], float(r["value"])) for _, r in pareto.iterrows()])),
             "chart_c": ("Interest due by month", _bars([(date.fromisoformat(m + "-01").strftime("%b %Y"), float(v)) for m, v in interest]))}
+
+
+def _cards(today, start, end) -> dict:
+    """Owner, 2026-10-15: credit card analysis with the finance charges incurred (engines/card_analysis); drawn by analytics_cards.html."""
+    from engines.card_analysis import analysis
+    return {"cc": analysis(today), "include": "payables/analytics_cards.html"}
 
 
 def _bank(today, start, end) -> dict:

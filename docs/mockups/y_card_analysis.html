@@ -1,0 +1,115 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: credit card analysis</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+main { max-width: 1080px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 22px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+.why { color: var(--muted); margin: 0 0 12px; max-width: 84ch; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 16px 18px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 2px solid var(--line); margin-bottom: 14px; }
+.tabs span { padding: 7px 12px; color: var(--muted); font-weight: 600; font-size: .92rem; }
+.tabs span.on { color: var(--blue); border-bottom: 3px solid var(--blue); margin-bottom: -2px; }
+.tabs span.new { color: var(--blue); }
+.tabs span.new::after { content: "new"; font-size: .65rem; background: #fff4e5; color: var(--warn); border-radius: 999px; padding: 0 6px; margin-left: 5px; vertical-align: 2px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpi { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; } .kpi span { font-size: .8rem; color: var(--muted); display: block; } .kpi b { font-size: 1.35rem; }
+.kpi em { font-style: normal; font-size: .78rem; display: block; margin-top: 2px; } .kpi.warn { border-color: #f0b46a; background: #fffaf2; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 16px; }
+.chart { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; } .chart h3 { margin: 0 0 8px; font-size: .95rem; color: var(--navy); }
+.hb { display: grid; grid-template-columns: 130px 1fr 80px; gap: 6px; align-items: center; font-size: .84rem; margin: 3px 0; }
+.hb i { display: block; height: 12px; border-radius: 3px; background: #6b93c4; } .hb .v { text-align: right; font-variant-numeric: tabular-nums; }
+.hb i.red { background: #e08a83; }
+.cols { display: flex; align-items: flex-end; gap: 10px; height: 140px; padding-top: 6px; }
+.cols .m { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; font-size: .74rem; color: var(--muted); }
+.cols .pair { display: flex; gap: 3px; align-items: flex-end; height: 115px; } .cols .pair i { width: 13px; display: block; border-radius: 2px 2px 0 0; }
+.c1 { background: #6b93c4; } .c2 { background: #7fc1a0; }
+.leg { font-size: .78rem; color: var(--muted); margin-top: 6px; } .leg i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: -1px; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--muted); font-weight: 600; font-size: .78rem; border-bottom: 2px solid var(--line); padding: 6px 8px; white-space: nowrap; }
+td { border-bottom: 1px solid var(--line); padding: 7px 8px; vertical-align: middle; } .num { text-align: right; }
+.pill { display: inline-block; font-size: .72rem; border-radius: 999px; padding: 1px 8px; font-weight: 600; margin: 1px 2px 1px 0; white-space: nowrap; }
+.pill.warn { background: #fff4e5; color: var(--warn); } .pill.bad { background: #fdecea; color: var(--red); } .pill.ok { background: #e7f6ee; color: var(--ok); } .pill.off { background: var(--soft); color: var(--muted); }
+.use { display: inline-block; width: 60px; height: 8px; background: var(--soft); border-radius: 4px; vertical-align: middle; margin-right: 6px; overflow: hidden; } .use i { display: block; height: 100%; background: #6b93c4; } .use i.hi { background: #e08a83; }
+.scroll { overflow-x: auto; }
+.q { background: #fffbea; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 14px; margin-top: 18px; }
+.q ol { margin: 6px 0 0 18px; padding: 0; } .q li { margin: 4px 0; }
+.note { font-size: .82rem; color: var(--muted); }
+@media (max-width: 600px) { .hb { grid-template-columns: 100px 1fr 70px; } }
+</style></head><body><main>
+
+<h1>Analytics → Credit cards <small>mock-up, sample figures</small></h1>
+<p class="why">A new tab beside Lenders. It answers three questions: how much do we owe on cards, is that debt growing or shrinking, and which cards are costing us finance charges or nearing their limit. Everything comes from the statements already typed; nothing new to enter.</p>
+
+<div class="screen">
+  <div class="tabs"><span>Sales</span><span>Cash ahead</span><span>Purchasing</span><span>Payables</span><span>Bank and cash</span><span>Lenders</span><span class="on new">Credit cards</span></div>
+
+  <div class="kpis">
+    <div class="kpi"><span>Owed on cards (latest statements)</span><b>₱1,284,600</b><em class="note">27 cards with a balance</em></div>
+    <div class="kpi"><span>Due next 30 days</span><b>₱612,300</b><em class="note">14 statements</em></div>
+    <div class="kpi warn"><span>Finance charges incurred, this year</span><b>₱40,647</b><em style="color:var(--warn)">₱21,180 in October · on 5 cards</em></div>
+    <div class="kpi"><span>Credit used</span><b>38%</b><em class="note">₱1.28M of ₱3.40M limits</em></div>
+    <div class="kpi warn"><span>Statements not yet typed</span><b>3</b><em style="color:var(--warn)">October, past their statement day</em></div>
+  </div>
+
+  <div class="charts">
+    <div class="chart"><h3>Charged vs paid, by month</h3>
+      <div class="cols">
+        <div class="m"><div class="pair"><i class="c1" style="height:70px"></i><i class="c2" style="height:66px"></i></div>May</div>
+        <div class="m"><div class="pair"><i class="c1" style="height:82px"></i><i class="c2" style="height:72px"></i></div>Jun</div>
+        <div class="m"><div class="pair"><i class="c1" style="height:95px"></i><i class="c2" style="height:80px"></i></div>Jul</div>
+        <div class="m"><div class="pair"><i class="c1" style="height:88px"></i><i class="c2" style="height:90px"></i></div>Aug</div>
+        <div class="m"><div class="pair"><i class="c1" style="height:105px"></i><i class="c2" style="height:84px"></i></div>Sep</div>
+        <div class="m"><div class="pair"><i class="c1" style="height:98px"></i><i class="c2" style="height:61px"></i></div>Oct</div>
+      </div>
+      <div class="leg"><i class="c1"></i>New charges<i class="c2"></i>Paid</div>
+      <p class="note" style="margin:6px 0 0">When the blue bar stays above the green, card debt is growing.</p>
+    </div>
+    <div class="chart"><h3>Card payments, next 8 weeks</h3>
+      <div class="hb"><span>10/19 – 10/25</span><i style="width:62%"></i><span class="v">₱184,200</span></div>
+      <div class="hb"><span>10/26 – 11/01</span><i style="width:88%"></i><span class="v">₱262,900</span></div>
+      <div class="hb"><span>11/02 – 11/08</span><i style="width:30%"></i><span class="v">₱90,100</span></div>
+      <div class="hb"><span>11/09 – 11/15</span><i style="width:25%"></i><span class="v">₱75,100</span></div>
+      <div class="hb"><span>11/16 – 11/22</span><i style="width:0%"></i><span class="v">—</span></div>
+      <div class="hb"><span>11/23 – 11/29</span><i style="width:40%"></i><span class="v">₱121,000</span></div>
+      <div class="hb"><span>11/30 – 12/06</span><i style="width:52%"></i><span class="v">₱158,700</span></div>
+      <div class="hb"><span>12/07 – 12/13</span><i style="width:20%"></i><span class="v">₱60,400</span></div>
+      <p class="note" style="margin:6px 0 0">Weeks after the last typed statement use the card reserve (average of the last 3).</p>
+    </div>
+    <div class="chart"><h3>Owed per cardholder</h3>
+      <div class="hb"><span>JRCR</span><i style="width:90%"></i><span class="v">₱512,400</span></div>
+      <div class="hb"><span>Rhodora</span><i style="width:58%"></i><span class="v">₱331,700</span></div>
+      <div class="hb"><span>Co-owner 2</span><i style="width:44%"></i><span class="v">₱250,900</span></div>
+      <div class="hb"><span>Co-owner 3</span><i style="width:33%"></i><span class="v">₱189,600</span></div>
+    </div>
+    <div class="chart"><h3>Finance charges incurred, by month</h3>
+      <div class="hb"><span>Jun 2026</span><i class="red" style="width:0%"></i><span class="v">—</span></div>
+      <div class="hb"><span>Jul 2026</span><i class="red" style="width:0%"></i><span class="v">—</span></div>
+      <div class="hb"><span>Aug 2026</span><i class="red" style="width:0%"></i><span class="v">—</span></div>
+      <div class="hb"><span>Sep 2026</span><i class="red" style="width:78%"></i><span class="v">₱19,468</span></div>
+      <div class="hb"><span>Oct 2026</span><i class="red" style="width:85%"></i><span class="v">₱21,180</span></div>
+      <p class="note" style="margin:6px 0 0"><b>₱40,647 this year</b>. The figure is the finance charge on each statement, by its statement month. It is money paid for nothing: the cheapest card debt to stop.</p>
+    </div>
+    <div class="chart"><h3>Finance charges per card, this year</h3>
+      <div class="hb"><span>BPI Amore ·4411</span><i class="red" style="width:85%"></i><span class="v">₱8,920</span></div>
+      <div class="hb"><span>RCBC Plat ·5003</span><i class="red" style="width:45%"></i><span class="v">₱4,710</span></div>
+      <div class="hb"><span>Metro Titan ·0912</span><i class="red" style="width:31%"></i><span class="v">₱3,260</span></div>
+      <div class="hb"><span>EW Plat ·7720</span><i class="red" style="width:15%"></i><span class="v">₱1,560</span></div>
+      <p class="note" style="margin:6px 0 0">A finance charge appears when a statement is paid less than in full or late.</p>
+    </div>
+  </div>
+
+  <h3 style="margin:0 0 6px;color:var(--navy);font-size:1rem">Each card, latest statement</h3>
+  <div class="scroll"><table>
+    <tr><th>Card</th><th>Holder</th><th class="num">Limit</th><th>Used</th><th class="num">New charges</th><th class="num">Paid</th><th class="num">Carried over</th><th class="num">Finance charge</th><th>Watch</th></tr>
+    <tr><td>BPI Amore ·4411</td><td>JRCR</td><td class="num">₱300,000</td><td><span class="use"><i style="width:86%"></i></span>86%</td><td class="num">₱142,300</td><td class="num">₱60,000</td><td class="num">₱198,400</td><td class="num">₱3,610</td><td><span class="pill warn">Carried over 3 months</span></td></tr>
+    <tr><td>RCBC Plat ·5003</td><td>Rhodora</td><td class="num">₱250,000</td><td><span class="use"><i style="width:52%"></i></span>52%</td><td class="num">₱96,500</td><td class="num">₱80,000</td><td class="num">₱34,200</td><td class="num">₱1,280</td><td><span class="pill warn">Finance charge</span></td></tr>
+    <tr><td>Metro Titan ·0912</td><td>JRCR</td><td class="num">₱400,000</td><td><span class="use"><i style="width:31%"></i></span>31%</td><td class="num">₱124,000</td><td class="num">₱124,000</td><td class="num">₱0</td><td class="num">₱0</td><td><span class="pill ok">Paid in full</span><span class="pill off">Annual fee Nov</span></td></tr>
+    <tr><td>EW Plat ·7720</td><td>Co-owner 2</td><td class="num">—</td><td class="note">no limit on file</td><td class="num">₱58,900</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td><span class="pill warn">October statement not typed</span></td></tr>
+  </table></div>
+  <p class="note">Each card name opens its page under Credit cards. Sorted: cards to watch first.</p>
+</div>
+
+<div class="q"><b>Agreed 2026-10-15</b>: all charts kept; no limit warning (credit used shown as information only); the family owners see the tab too, every card.</div>
+</main></body></html>

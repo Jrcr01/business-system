@@ -1,0 +1,44 @@
+{% load humanize %}{% comment %}Owner, 2026-10-15: "Add credit card analysis", "include finance charges incurred" (engines/card_analysis; mock-up y_card_analysis).
+No limit warning (owner: "not need"): credit used is information only.{% endcomment %}
+<div class="kpis">
+  <a class="kpi" href="/calendar/"><span>Owed on cards</span><b>₱{{ cc.owed|floatformat:0|intcomma }}</b><small>{{ cc.owed_cards }} card{{ cc.owed_cards|pluralize }} with a balance</small></a>
+  <a class="kpi" href="/checks/"><span>Due next 30 days</span><b>₱{{ cc.due30|floatformat:0|intcomma }}</b><small>{{ cc.due30_n }} statement{{ cc.due30_n|pluralize }}</small></a>
+  <a class="kpi{% if cc.finance_year %} warnk{% endif %}" href="/credit-cards/"><span>Finance charges incurred, {{ cc.year }}</span><b>₱{{ cc.finance_year|floatformat:0|intcomma }}</b>
+    <small>{% if cc.finance_year %}₱{{ cc.finance_this_month|floatformat:0|intcomma }} this month · on {{ cc.finance_cards }} card{{ cc.finance_cards|pluralize }}{% else %}none this year{% endif %}</small></a>
+  <a class="kpi" href="/credit-cards/"><span>Credit used</span><b>{% if cc.used_pct is not None %}{{ cc.used_pct }}%{% else %}—{% endif %}</b>
+    <small>{% if cc.limit_sum %}₱{{ cc.used_sum|floatformat:0|intcomma }} of ₱{{ cc.limit_sum|floatformat:0|intcomma }} limits (latest statements){% else %}no limits on file{% endif %}</small></a>
+  <a class="kpi{% if cc.missing %} warnk{% endif %}" href="/credit-cards/"><span>Statements not yet typed</span><b>{{ cc.missing }}</b><small>this month, past their statement day</small></a>
+</div>
+<div class="charts">
+  <div class="chart"><div class="ct">Charged vs paid, by statement month</div>
+    {% for m in cc.flow %}<div class="hbar pair"><span class="n">{{ m.label }}</span>
+      <span class="two"><span class="track"><span class="fill" style="width:{% widthratio m.charged cc.flow_top 100 %}%"></span></span>
+        <span class="track"><span class="fill paidf" style="width:{% widthratio m.paid cc.flow_top 100 %}%"></span></span></span>
+      <span class="v">₱{{ m.charged|floatformat:0|intcomma }}<br><small class="pos">₱{{ m.paid|floatformat:0|intcomma }}</small></span></div>{% endfor %}
+    <p class="hint"><i class="sw2"></i>new charges <i class="sw2 paidf"></i>paid. When charges stay above what is paid, card debt is growing. A statement counts as paid once it is marked paid.</p></div>
+  <div class="chart"><div class="ct">Finance charges incurred, by month</div>
+    {% for label, v in cc.finance_by_month %}<div class="hbar"><span class="n">{{ label }}</span><span class="track"><span class="fill finf" style="width:{% widthratio v cc.finance_top 100 %}%"></span></span><span class="v">{% if v %}₱{{ v|floatformat:0|intcomma }}{% else %}—{% endif %}</span></div>{% endfor %}
+    <p class="hint"><b>₱{{ cc.finance_year|floatformat:2|intcomma }} in {{ cc.year }}</b>, by statement month. A finance charge comes when a statement is paid less than in full or late.</p></div>
+  <div class="chart"><div class="ct">Card payments, next 8 weeks</div>
+    {% for b in cc.weeks %}<div class="hbar"><span class="n">{{ b.label }}</span><span class="track"><span class="fill" style="width:{{ b.pct }}%"></span></span><span class="v">{% if b.amount %}₱{{ b.amount|floatformat:0|intcomma }}{% else %}—{% endif %}</span></div>{% endfor %}
+    <p class="hint">An unpaid statement past its due date sits on this week.</p></div>
+  <div class="chart"><div class="ct">Owed per cardholder</div>
+    {% for b in cc.holders %}<div class="hbar"><span class="n" title="{{ b.label }}">{{ b.label }}</span><span class="track"><span class="fill" style="width:{{ b.pct }}%"></span></span><span class="v">₱{{ b.amount|floatformat:0|intcomma }}</span></div>
+    {% empty %}<p class="hint">Nothing owed.</p>{% endfor %}</div>
+  <div class="chart"><div class="ct">Finance charges per card, {{ cc.year }}</div>
+    {% for b in cc.fin_cards %}<div class="hbar"><span class="n" title="{{ b.label }}">{{ b.label }}</span><span class="track"><span class="fill finf" style="width:{{ b.pct }}%"></span></span><span class="v">₱{{ b.amount|floatformat:0|intcomma }}</span></div>
+    {% empty %}<p class="hint">No finance charges this year.</p>{% endfor %}</div>
+</div>
+<div class="chart" style="margin-top:12px"><div class="ct">Each card, latest statement <small class="hint">cards to watch first</small></div>
+<div class="scroll-x"><table class="list"><tr><th>Card</th><th>Holder</th><th>Statement</th><th class="num">Limit</th><th>Used</th><th class="num">New charges</th><th class="num">Paid</th>
+  <th class="num">Carried over</th><th class="num">Finance charge</th><th class="num">Owed</th><th>Watch</th></tr>
+  {% for c in cc.cards %}<tr><td><a href="/credit-cards/?card={{ c.card_id }}">{{ c.name }}</a></td><td>{{ c.holder }}</td><td>{{ c.month }}</td>
+    <td class="num">{% if c.limit %}₱{{ c.limit|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+    <td>{% if c.used is not None %}<span class="usebar"><i style="width:{% if c.used > 100 %}100{% else %}{{ c.used }}{% endif %}%"></i></span>{{ c.used }}%{% else %}<span class="hint">no limit</span>{% endif %}</td>
+    <td class="num">₱{{ c.charged|floatformat:0|intcomma }}</td><td class="num">{% if c.paid %}₱{{ c.paid|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num">{% if c.carried %}₱{{ c.carried|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+    <td class="num">{% if c.finance %}<b class="neg">₱{{ c.finance|floatformat:2|intcomma }}</b>{% else %}—{% endif %}</td>
+    <td class="num">{% if c.owed %}₱{{ c.owed|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
+    <td>{% for k, w in c.watch %}<span class="pill {{ k }}">{{ w }}</span> {% endfor %}</td></tr>
+  {% empty %}<tr><td colspan="11" class="hint">No card statements typed yet.</td></tr>{% endfor %}
+</table></div></div>
