@@ -11,6 +11,32 @@ from engines.common import get_conn, write_tx
 
 OVERDUE_DAYS = 30
 RUN_OUT_DAYS = 7
+STALE_BANK_DAYS = 3           # a bank balance older than this is said to be old (owner, 2026-10-14: "not actual unless bank statement is uploaded")
+OLD_STATEMENT_DAYS = 7        # a card statement missing longer than this is repeated on Mondays only
+
+
+def _reply_to() -> str:
+    """Replies go to the System admin, not to a mailbox nobody reads."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT email FROM app_users WHERE role = 'admin' AND is_active = 1 ORDER BY user_id LIMIT 1").fetchone()
+    return row[0] if row else ""
+
+
+def _cards_to_type(today: date) -> list[str]:
+    """Cards whose statement should be out and is not typed yet. A card missing for more than a week is named on Mondays only: a line that says
+    the same thing every morning stops being read."""
+    from engines.cc_service import get_statement_coverage
+    cov = get_statement_coverage(today)
+    out = []
+    for r in ([] if cov.empty else cov.to_dict("records")):
+        exp = r.get("expected_by")
+        exp = date.fromisoformat(exp[:10]) if isinstance(exp, str) and exp else None
+        if r["status"] != "Missing this month" and not (r["status"] == "Not yet expected" and exp and (today - exp).days >= 2):
+            continue
+        age = (today - exp).days if exp else OLD_STATEMENT_DAYS + 1
+        if age <= OLD_STATEMENT_DAYS or today.weekday() == 0:
+            out.append(f"{r['card_name']} {r['card_number_last4']}")
+    return out
 
 
 def on() -> bool:
@@ -62,7 +88,7 @@ def content(email: str, name: str, today: date) -> dict:
     out: dict = {"name": (name or "").split(" ")[0] or "there", "today": today, "yesterday": yesterday, "also": []}
     if "sales" not in hidden:
         from engines.bi_service import _totals, shift_months
-        y, before = _totals(yesterday, yesterday), _totals(yesterday - timedelta(days=1), yesterday - timedelta(days=1))
+        y, before = _totals(yesterday, yesterday), _totals(yesterday - timedelta(days=7), yesterday - timedelta(days=7))     # the same weekday a week before: a fair comparison
         month = _totals(today.replace(day=1), yesterday) if yesterday >= today.replace(day=1) else None
         last = _totals(shift_months(today.replace(day=1), 1), shift_months(yesterday, 1)) if month else None
         with get_conn() as conn:
@@ -70,12 +96,32 @@ def content(email: str, name: str, today: date) -> dict:
                                         JOIN sales s ON s.sale_id = p.sale_id WHERE s.status = 'SAVED' AND s.is_opening = 0 AND s.sale_date = ? GROUP BY 1""", (str(yesterday),)))
         out["sales"] = {"y": y, "vs": _pct(y["sales"], before["sales"]), "up": y["sales"] >= before["sales"], "cash": float(paid.get("cash", 0)), "credit": float(paid.get("credit", 0)),
                         "month": month, "month_vs": _pct(month["sales"], last["sales"]) if month else "", "month_up": bool(month) and month["sales"] >= last["sales"],
-                        "last_label": shift_months(today, 1).strftime("%B")}
+                        "last_label": shift_months(today, 1).strftime("%B"), "vs_label": f"last {yesterday:%a}"}
+        if today.weekday() == 0:                                  # Mondays: last week in one line
+            mon = today - timedelta(days=7)
+            wk, prev = _totals(mon, mon + timedelta(days=6)), _totals(mon - timedelta(days=7), mon - timedelta(days=1))
+            out["sales"]["week"] = {"sales": wk["sales"], "vs": _pct(wk["sales"], prev["sales"]), "up": wk["sales"] >= prev["sales"]}
+        if today.day == 1 and "income-statement" not in hidden:    # the 1st: last month's profit in one line
+            try:
+                from engines.income_statement import month_report
+                out["sales"]["profit"] = {"label": yesterday.strftime("%B"), "profit": month_report(yesterday.strftime("%Y-%m"))["profit"]}
+            except Exception:                                   # noqa: BLE001
+                pass
     if "bank-cash" not in hidden:
+        # Owner, 2026-10-14: the bank figure is only as fresh as the last statement imported, so it is said with its date and its age; what goes out
+        # is the next 7 days of the schedule of payments (what the Calendar shows), not a forecast that old uncleared checks would distort.
         try:
-            from engines.bi_service import liquidity
-            q = liquidity(today)
-            out["cash"] = None if q.get("none") else {"bank": q["opening"], "as_of": q["as_of"], "lowest": q["lowest"], "lowest_day": q["lowest_day"]}
+            import pandas as pd
+            from engines.cash_insights_service import cash_position
+            from engines.reports_service import get_payment_schedule_all_tracks
+            pos, df = cash_position(), get_payment_schedule_all_tracks()
+            if not df.empty:
+                # by the ORIGINAL due date: an old check never marked cleared is "payable today" on the schedule, and would swamp the week
+                due = pd.to_datetime(df["due_date"]).dt.date
+                first = today - timedelta(days=2) if today.weekday() == 0 else today          # a weekend's dues are paid on Monday
+                df = df[(due >= first) & (due <= today + timedelta(days=6))]
+            out["cash"] = {"bank": pos["balance"] if pos else None, "as_of": pos["as_of"] if pos else None, "age": (today - pos["as_of"]).days if pos else None,
+                           "out7": float(df["amount"].sum()) if not df.empty else 0.0}
         except Exception:                               # noqa: BLE001 -- a figure that cannot be made is left out, the email still goes
             out["cash"] = None
     rows: list[tuple[str, str]] = []
@@ -104,10 +150,9 @@ def content(email: str, name: str, today: date) -> dict:
                                                  WHERE p.method = 'CHARGE' AND s.customer_id IS NOT NULL AND s.status = 'SAVED'""")] if "collect" not in hidden else []
     if "credit-cards" not in hidden:
         try:
-            from engines.card_reminders import missing_count
-            n = missing_count(today)
-            if n:
-                rows.append((f"Card statement{'s' if n != 1 else ''} to type", str(n)))
+            cards = _cards_to_type(today)
+            if cards:
+                rows.append((f"Card statement{'s' if len(cards) != 1 else ''} to type", ", ".join(cards[:3]) + (f" +{len(cards) - 3} more" if len(cards) > 3 else "")))
         except Exception:                               # noqa: BLE001
             pass
     if charged:
@@ -125,8 +170,12 @@ def subject(c: dict) -> str:
     head = f"{c['today']:%a %b} {c['today'].day}"
     if "sales" in c:
         s = c["sales"]["y"]["sales"]
-        return f"{head} · Sales {_peso(s)} yesterday" if s else f"{head} · No sales recorded yesterday"
-    return f"{head} · Slick's ERP this morning"
+        if s:
+            return f"{head} · Sales {_peso(s)} yesterday"
+    if c.get("rows"):                                   # a quiet sales day: lead with what today holds
+        a, b = c["rows"][0]
+        return f"{head} · {a}" + (f" {b}" if b.startswith("₱") else "")
+    return f"{head} · Nothing dated today"
 
 
 def render(c: dict, site: str = "") -> tuple[str, str]:
@@ -145,12 +194,12 @@ def render(c: dict, site: str = "") -> tuple[str, str]:
         text.append("YESTERDAY'S SALES")
         if y["sales"] or y["invoices"]:
             colour = "#0b6e4f" if s["up"] else "#C62828"
-            cells = [("Sales", _peso(y["sales"]), f'<span style="color:{colour}">{s["vs"]}</span>' if s["vs"] else ""), ("Margin", _peso(y["margin"]), f"{y['margin_pct']}%"),
+            cells = [("Sales", _peso(y["sales"]), f'<span style="color:{colour}">{s["vs"]} vs {s["vs_label"]}</span>' if s["vs"] else ""), ("Margin", _peso(y["margin"]), f"{y['margin_pct']}%"),
                      ("Pieces", str(y["pieces"]), f"{y['invoices']} invoice{'s' if y['invoices'] != 1 else ''}"), ("Cash taken", _peso(s["cash"]), f"{_peso(s['credit'])} credit" if s["credit"] else "")]
             html.append('<table style="width:100%;border-collapse:separate;border-spacing:4px 0"><tr>' + "".join(
                 f'<td style="background:#f3f5f8;border-radius:8px;padding:7px 8px;vertical-align:top;width:25%"><span style="display:block;font-size:11px;color:#4b5563">{a}</span>'
                 f'<b style="font-size:15px">{b}</b><span style="display:block;font-size:11px;color:#4b5563">{d}</span></td>' for a, b, d in cells) + "</tr></table>")
-            text.append(f"Sales {_peso(y['sales'])} {s['vs']} · margin {_peso(y['margin'])} ({y['margin_pct']}%) · {y['pieces']} pieces, {y['invoices']} invoices · cash {_peso(s['cash'])}"
+            text.append(f"Sales {_peso(y['sales'])} {s['vs']}{' vs ' + s['vs_label'] if s['vs'] else ''} · margin {_peso(y['margin'])} ({y['margin_pct']}%) · {y['pieces']} pieces, {y['invoices']} invoices · cash {_peso(s['cash'])}"
                         + (f", credit {_peso(s['credit'])}" if s["credit"] else ""))
         else:
             html.append(f'<p style="margin:0;font-size:14px;color:#4b5563">No sales recorded for {c["yesterday"]:%A}.</p>')
@@ -160,13 +209,32 @@ def render(c: dict, site: str = "") -> tuple[str, str]:
             vs = f' <span style="color:{colour}">{s["month_vs"]} vs {s["last_label"]}</span>' if s["month_vs"] else ""
             html.append(f'<p style="margin:7px 0 0;font-size:14px;color:#4b5563">{c["today"]:%B} so far: {_peso(s["month"]["sales"])}{vs}</p>')
             text.append(f"{c['today']:%B} so far: {_peso(s['month']['sales'])}" + (f" {s['month_vs']} vs {s['last_label']}" if s["month_vs"] else ""))
+        for key, words in (("week", "Last week"), ("profit", None)):
+            w = s.get(key)
+            if not w:
+                continue
+            if key == "week":
+                colour = "#0b6e4f" if w["up"] else "#C62828"
+                vs = f' <span style="color:{colour}">{w["vs"]} vs the week before</span>' if w["vs"] else ""
+                html.append(f'<p style="margin:4px 0 0;font-size:14px;color:#4b5563">Last week: {_peso(w["sales"])}{vs}</p>')
+                text.append(f"Last week: {_peso(w['sales'])}" + (f" {w['vs']} vs the week before" if w["vs"] else ""))
+            else:
+                colour = "#0b6e4f" if w["profit"] >= 0 else "#C62828"
+                html.append(f'<p style="margin:4px 0 0;font-size:14px;color:#4b5563">{w["label"]} profit: <b style="color:{colour}">{_peso(w["profit"])}</b></p>')
+                text.append(f"{w['label']} profit: {_peso(w['profit'])}")
         html.append("</div>")
         text.append("")
     if c.get("cash"):
         k = c["cash"]
-        html.append(f'<div {sec}><h2 {h2}>Cash</h2><p style="margin:0;font-size:14px">Bank <b>{_peso(k["bank"])}</b> <span {grey}>({k["as_of"]:%b} {k["as_of"].day})</span> · '
-                    f'lowest ahead <b>{_peso(k["lowest"])}</b> <span {grey}>on {k["lowest_day"]:%b} {k["lowest_day"].day}</span></p></div>')
-        text += ["CASH", f"Bank {_peso(k['bank'])} ({k['as_of']:%b} {k['as_of'].day}) · lowest ahead {_peso(k['lowest'])} on {k['lowest_day']:%b} {k['lowest_day'].day}", ""]
+        if k["bank"] is None:
+            bank_h = bank_t = "No bank statement imported yet"
+        else:
+            old = f", {k['age']} days ago: import a newer statement" if k["age"] > STALE_BANK_DAYS else ""
+            bank_h = f'Bank <b>{_peso(k["bank"])}</b> <span {grey}>as of {k["as_of"]:%b} {k["as_of"].day}{old}</span>'
+            bank_t = f"Bank {_peso(k['bank'])} as of {k['as_of']:%b} {k['as_of'].day}{old}"
+        html.append(f'<div {sec}><h2 {h2}>Cash</h2><p style="margin:0;font-size:14px">{bank_h}</p>'
+                    f'<p style="margin:4px 0 0;font-size:14px">Going out in the next 7 days <b>{_peso(k["out7"])}</b></p></div>')
+        text += ["CASH", bank_t, f"Going out in the next 7 days {_peso(k['out7'])}", ""]
     if c.get("show_today"):
         html.append(f'<div {sec}><h2 {h2}>Today</h2>')
         text.append("TODAY")
@@ -195,7 +263,7 @@ def send_to(email: str, name: str, today: date, site: str = "") -> tuple[bool, s
     from engines import mail_out
     c = content(email, name, today)
     html, text = render(c, site)
-    return mail_out.send(email, subject(c), html, text)
+    return mail_out.send(email, subject(c), html, text, reply_to=_reply_to())
 
 
 def run(now=None, force: bool = False, site: str = "") -> str:

@@ -9,6 +9,7 @@ from pathlib import Path
 
 PROVIDERS = {"resend": "Resend", "brevo": "Brevo"}
 AGENT = "slicks-erp/1.0"
+SENDER_NAME = "Slick's Tire Supply"          # owner, 2026-10-14: the name the family knows, not the system's
 
 
 def _path() -> Path:
@@ -79,17 +80,17 @@ def _post(url: str, headers: dict, body: dict) -> tuple[int, str]:
         return 0, str(e)[:300]
 
 
-def send(to: str, subject: str, html: str, text: str) -> tuple[bool, str]:
+def send(to: str, subject: str, html: str, text: str, reply_to: str = "") -> tuple[bool, str]:
     c = _read()
     if not ready():
         return False, "Email sending is not set up yet (Settings > Notifications)."
-    who = c.get("name") or "Slick's ERP"
+    who = SENDER_NAME
     if c["provider"] == "resend":
         status, answer = _post("https://api.resend.com/emails", {"Authorization": f"Bearer {c['key']}"},
-                               {"from": f"{who} <{c['sender']}>", "to": [to], "subject": subject, "html": html, "text": text})
+                               {"from": f"{who} <{c['sender']}>", "to": [to], "subject": subject, "html": html, "text": text, **({"reply_to": reply_to} if reply_to else {})})
     else:
         status, answer = _post("https://api.brevo.com/v3/smtp/email", {"api-key": c["key"]},
-                               {"sender": {"email": c["sender"], "name": who}, "to": [{"email": to}], "subject": subject, "htmlContent": html, "textContent": text})
+                               {"sender": {"email": c["sender"], "name": who}, "to": [{"email": to}], "subject": subject, "htmlContent": html, "textContent": text, **({"replyTo": {"email": reply_to}} if reply_to else {})})
     if 200 <= status < 300:
         return True, "sent"
     return False, f"The mail service answered {status or 'nothing'}: {answer}"
