@@ -382,6 +382,13 @@ def _price_lists():
 
 def _lenders():
     n = _count("SELECT COUNT(*) FROM loan_notes WHERE status = 'Active'")
+    try:                                                     # owner, 2026-10-14: an open loan's month not paid shows here without opening anything
+        from engines.open_loans import unpaid_months
+        late = unpaid_months()
+    except Exception:                                        # noqa: BLE001
+        late = 0
+    if late:
+        return str(n), f"active loan notes · {late} open-loan month{'s' if late != 1 else ''} unpaid", "warn"
     return str(n), "active loan notes", "ok" if n else "none"
 
 

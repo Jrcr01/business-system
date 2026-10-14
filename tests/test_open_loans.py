@@ -135,3 +135,20 @@ def test_loans_paid_early_on_daily_payables(web, db):
     with acting_as("admin@slicks.test", "admin"):
         ok, msg = mark_loan_cleared(biid, today)
     assert ok, msg
+
+
+
+def test_the_open_loans_tab_and_an_unpaid_month(web, db):
+    from engines.clock import manila_today
+    from engines.open_loans import listing, unpaid_months
+    _admin(web)
+    lnid, cid, start = _open_loan(web, db)
+    page = web.get("/lenders/?tab=open").content.decode()
+    assert "Open loans" in page and "2,000,000.00" in page and "40,000.00" in page and "Months unpaid" in page
+    before = unpaid_months()                                 # this month's day may already have passed
+    with sqlite3.connect(_db()) as conn:                     # a later month moved into the past, nothing paid
+        conn.execute("UPDATE loan_installments SET due_date = ? WHERE installment_id = (SELECT MAX(installment_id) FROM loan_installments WHERE loan_note_id = ?)",
+                     ((manila_today() - timedelta(days=3)).isoformat(), lnid))
+    assert unpaid_months() == before + 1 and listing()[0]["late_amt"] == 40000.0 * (before + 1)
+    from engines.home_tiles import _lenders
+    assert "open-loan month" in _lenders()[1] and _lenders()[2] == "warn"

@@ -3,10 +3,26 @@
 {% block content %}
 <h2><span class="ms" style="font-size:28px">handshake</span> Lenders</h2>
 <nav class="tabs">
-  <a href="/lenders/"{% if tab != "guarantees" %} class="on"{% endif %}>Loan notes</a>
+  <a href="/lenders/"{% if tab != "guarantees" and tab != "open" %} class="on"{% endif %}>Loan notes</a>
+  <a href="/lenders/?tab=open"{% if tab == "open" %} class="on"{% endif %}>Open loans</a>
   <a href="/lenders/?tab=guarantees"{% if tab == "guarantees" %} class="on"{% endif %}>Guarantee checks{% if g_exposure.held %} <span class="pill warn">{{ g_exposure.held }} held</span>{% endif %}</a>
 </nav>
-{% if tab == "guarantees" %}
+{% if tab == "open" %}{% comment %}Owner, 2026-10-14: open loans watched on their own -- no end date; the question each month is whether the interest was paid.{% endcomment %}
+<p class="note">Loans with no end date: interest every month on the principal still owed, until the principal is paid. Open one to pay its interest or principal.</p>
+<div class="facts"><div><span>Principal owed</span><b>₱{{ o_owed|floatformat:2|intcomma }}</b></div><div><span>Interest a month</span><b>₱{{ o_interest|floatformat:2|intcomma }}</b></div>
+  <div><span>Months unpaid</span><b{% if o_late %} class="neg"{% endif %}>{{ o_late }}</b></div></div>
+{% if o_rows %}<div class="scroll-x"><table class="list cards">
+  <tr><th>Lender</th><th>Loan</th><th class="num">Principal owed</th><th class="num">Interest a month</th><th>Next interest</th><th>Months unpaid</th><th>Guarantee checks held</th></tr>
+  {% for r in o_rows %}<tr>
+    <td class="c-t"><a href="/lenders/{{ r.loan_note_id }}/">{{ r.lender }}</a></td><td data-l="loan"><a href="/lenders/{{ r.loan_note_id }}/">{{ r.ref }}</a></td>
+    <td class="num c-big">{{ r.owed|floatformat:2|intcomma }}</td><td class="num" data-l="a month">{{ r.interest|floatformat:2|intcomma }} <span class="hint">({{ r.rate|floatformat:"-2" }}%, day {{ r.day }})</span></td>
+    <td data-l="next">{{ r.next|dmy|default:"—" }}</td>
+    <td data-l="unpaid">{% if r.late_n %}<span class="pill warn">{{ r.late_n }} · ₱{{ r.late_amt|floatformat:0|intcomma }}</span>{% else %}0{% endif %}</td>
+    <td data-l="guarantees">{% if r.g_n %}{{ r.g_n }} · ₱{{ r.g_amt|floatformat:0|intcomma }}{% else %}<span class="hint">none</span>{% endif %}</td></tr>{% endfor %}
+  <tr><th>Total</th><th></th><th class="num">{{ o_owed|floatformat:2|intcomma }}</th><th class="num">{{ o_interest|floatformat:2|intcomma }}</th><th></th><th>{{ o_late }}</th><th></th></tr>
+</table></div>{% else %}<p class="note">No open loan yet. Make one with "New open loan" on the Loan notes tab, or "Make this an open loan" on a loan note.</p>{% endif %}
+<p class="hint">A month counts as unpaid once its day has passed and it is neither ticked paid nor paid by a cleared check.</p>
+{% elif tab == "guarantees" %}
 <p class="note">Checks given to a lender as security. They are not payments: never in payables or the schedule. Held ones are what a lender could
   present; mark them returned when the loan is settled. One the bank pays turns Presented and shows on Bank and cash.</p>
 <div class="facts"><div><span>Held</span><b>{{ g_exposure.held }} · ₱{{ g_exposure.total|floatformat:2|intcomma }}</b></div>

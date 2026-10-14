@@ -244,3 +244,29 @@ def schedule_rows():
                                            'Interest · ' || n.note_ref AS reference, NULL AS batch, i.interest AS amount, 'interest' AS stage
                                     FROM loan_installments i JOIN loan_notes n ON n.loan_note_id = i.loan_note_id JOIN creditors cr ON cr.creditor_id = n.creditor_id
                                     WHERE n.is_open = 1 AND n.status = 'Active' AND i.kind = 'INTEREST' AND i.check_id IS NULL AND i.paid_at IS NULL""", conn)
+
+
+def listing(today: date | None = None) -> list[dict]:
+    """The Open loans tab (owner, 2026-10-14: "should these be monitored separately"): one line per active open loan."""
+    today = today or manila_today()
+    with get_conn() as conn:
+        notes = conn.execute("""SELECT n.loan_note_id, n.note_ref, cr.creditor_name, n.monthly_interest_rate, n.interest_day FROM loan_notes n
+                                JOIN creditors cr ON cr.creditor_id = n.creditor_id WHERE n.is_open = 1 AND n.status = 'Active'
+                                ORDER BY cr.creditor_name, n.issue_date""").fetchall()
+        out = []
+        for lnid, ref, who, rate, day in notes:
+            owed = principal_owed(lnid, conn)
+            nxt = conn.execute("""SELECT MIN(due_date) FROM loan_installments WHERE loan_note_id = ? AND kind = 'INTEREST' AND paid_at IS NULL
+                                  AND check_id IS NULL AND due_date >= ?""", (lnid, today.isoformat())).fetchone()[0]
+            late = conn.execute("""SELECT COUNT(*), COALESCE(SUM(interest), 0) FROM loan_installments i LEFT JOIN checks_issued c ON c.check_id = i.check_id
+                                   WHERE i.loan_note_id = ? AND i.kind = 'INTEREST' AND i.due_date < ? AND i.paid_at IS NULL
+                                   AND (i.check_id IS NULL OR NOT (c.bank_cleared_date IS NOT NULL OR c.manual_cleared_at IS NOT NULL OR c.settled_outside_at IS NOT NULL))""",
+                                (lnid, today.isoformat())).fetchone()
+            g = conn.execute("SELECT COUNT(*), COALESCE(SUM(face_amount), 0) FROM guarantee_checks WHERE loan_note_id = ? AND status = 'Held'", (lnid,)).fetchone()
+            out.append({"loan_note_id": lnid, "ref": ref, "lender": who, "owed": owed, "interest": round(owed * float(rate or 0) / 100, 2), "rate": rate,
+                        "day": day, "next": nxt, "late_n": int(late[0]), "late_amt": float(late[1]), "g_n": int(g[0]), "g_amt": float(g[1])})
+    return out
+
+
+def unpaid_months(today: date | None = None) -> int:
+    return sum(r["late_n"] for r in listing(today))

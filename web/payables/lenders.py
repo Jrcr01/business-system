@@ -52,6 +52,13 @@ def lenders(request):
     if request.GET.get("tab") == "guarantees":
         return _guarantees(request)
     _ensure_interest()
+    if request.GET.get("tab") == "open":                             # owner, 2026-10-14: open loans watched on their own
+        from engines.guarantee_check_service import exposure
+        from engines.open_loans import listing
+        rows = listing()
+        return render(request, "payables/lenders.html", {"page_id": "lenders", "tab": "open", "o_rows": rows, "g_exposure": exposure(),
+                                                         "o_owed": sum(r["owed"] for r in rows), "o_interest": sum(r["interest"] for r in rows),
+                                                         "o_late": sum(r["late_n"] for r in rows), "may_write": _can(request, "loans.use"), "today": date.today()})
     today = date.today().isoformat()
     lenders_all = _rows("SELECT creditor_id, creditor_name FROM creditors WHERE creditor_type = 'LENDER' AND is_lessor = 0 AND is_active = 1 ORDER BY creditor_name")
     q, who, status = request.GET.get("q", "").strip(), request.GET.get("s", ""), request.GET.get("status", "open")
