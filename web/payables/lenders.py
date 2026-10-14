@@ -226,6 +226,8 @@ def loan_note(request, lnid: int):
             ctx.update(booklet_plan(request, ctx["num_checks"]))
         one = int(request.GET.get("void") or 0)
         ctx["void_check"] = next((c for c in checks if c["check_id"] == one and c["status"] == "Active" and c["stage"] != "Cleared"), None) if one else None
+        fix = int(request.GET.get("fix") or 0)
+        ctx["fix_check"] = next((c for c in checks if c["check_id"] == fix and c["status"] == "Active" and c["stage"] in ("Written", "Released")), None) if fix else None
     ctx["guarantees"] = _rows("""SELECT check_number, face_amount, given_on, status, returned_on, note FROM guarantee_checks WHERE loan_note_id = ?
                                  ORDER BY guarantee_id""", (lnid,))
     if note.get("is_open"):                                          # owner, 2026-10-14: open loans

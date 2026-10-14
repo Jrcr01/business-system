@@ -147,7 +147,7 @@ def apply_check_correction(check_id: int, correction_type: str, new_value: str, 
         # assign_check_number() instead (no lock needed -- nothing to overwrite yet).
         if correction_type == "Check Number" and old_check_number is None:
             return False, "This check has no number yet — use 'Assign a check number' instead of correcting one."
-        if correction_type in ("Amount", "Check Date") and printed_at is None:
+        if correction_type in ("Amount", "Check Date") and printed_at is None and not old_check_number:     # a numbered check is written (by hand too)
             return False, "This check hasn't been printed yet — edit it via 'Edit parked checks' instead."
         if batch_is_cancelled(cur, statement_id):
             return False, "This payment statement is cancelled, so its checks can't be corrected."

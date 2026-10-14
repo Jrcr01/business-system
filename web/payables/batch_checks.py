@@ -295,6 +295,30 @@ def post(request, b: dict, say, can, loan_note_id: int | None = None) -> HttpRes
         say(*undo_release(int(p.get("check_id") or 0)))
         return redirect(back)
 
+    if what == "chk_fix":                                       # owner, 2026-10-15: a written check typed wrong (e.g. 2026 for 2027) is corrected, not voided
+        if not can("check.void"):
+            say(False, "Correcting checks is switched off for you.")
+            return redirect(back)
+        field = {"date": "Check Date", "amount": "Amount", "number": "Check Number"}.get(p.get("field", ""))
+        reason = " ".join(p.get("reason", "").split())
+        cid = int(p.get("check_id") or 0)
+        if not field or not reason:
+            say(False, "Pick what is wrong and say why.")
+            return redirect(back + f"&fix={cid}")
+        if field == "Check Date":
+            day = _date(p.get("new_date"))
+            if not day:
+                say(False, "Give the right date.")
+                return redirect(back + f"&fix={cid}")
+            value = day.isoformat()
+        elif field == "Amount":
+            value = p.get("new_amount", "").replace(",", "").strip()
+        else:
+            value = p.get("new_number", "").strip()
+        ok, msg = cr.apply_check_correction(cid, field, value, reason)
+        say(ok, f"Check corrected: {field.lower()} is now {value}. The change is in the audit log." if ok else msg)
+        return redirect(back if ok else back + f"&fix={cid}")
+
     if what == "chk_void":
         if not can("check.void"):
             say(False, "Voiding checks is switched off for you.")

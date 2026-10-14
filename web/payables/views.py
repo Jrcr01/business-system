@@ -187,6 +187,8 @@ def statement(request, sid: int):
         one = int(request.GET.get("edit") or request.GET.get("void") or 0)
         ctx["edit_check"] = next((c for c in checks if c["check_id"] == one and c["stage"] == "Parked"), None) if request.GET.get("edit") else None
         ctx["void_check"] = next((c for c in checks if c["check_id"] == one and c["status"] == "Active" and c["stage"] != "Cleared"), None) if request.GET.get("void") else None
+        fix = int(request.GET.get("fix") or 0)
+        ctx["fix_check"] = next((c for c in checks if c["check_id"] == fix and c["status"] == "Active" and c["stage"] in ("Written", "Released")), None) if fix else None
     if ctx.get("may_park") and ctx.get("remaining", 0) > 0.004:
         from payables.batch_checks import park_context
         ctx.update(park_context(b, _rows, ctx["due_today"]))

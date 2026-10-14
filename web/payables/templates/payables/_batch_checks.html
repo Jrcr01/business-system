@@ -63,6 +63,21 @@
     <div><label for="e_amount">Amount</label><input id="e_amount" class="inline-input" inputmode="decimal" name="amount" value="{{ edit_check.amount|floatformat:2 }}"></div>
     <button class="btn small" type="submit"><span class="ms">save</span>Save</button> <a class="btn small ghost" href="?tab=checks">Cancel</a></form></div>
 {% endif %}
+{% if fix_check %}{% comment %}Owner, 2026-10-15: a written check typed wrong is corrected in place -- same check, same number -- with a reason, in the audit log.{% endcomment %}
+<div class="warnbox" style="background:var(--bg-f1f5fa);border-left-color:var(--bd-0b4f8a)"><b>Correct check {{ fix_check.check_number|default:"(no number)" }} of ₱{{ fix_check.amount|floatformat:2|intcomma }} dated {{ fix_check.check_date|dmy }}</b>
+  <p class="hint" style="margin:4px 0 8px">For a mistake in what was typed: the paper check is right, the system is not. A damaged or lost check is voided and replaced instead.</p>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="chk_fix"><input type="hidden" name="check_id" value="{{ fix_check.check_id }}">
+    <div class="bar">
+      <div><label for="f_field">What is wrong</label><select id="f_field" name="field" onchange="document.querySelectorAll('.fx').forEach(function (d) { d.hidden = d.dataset.f !== this.value; }, this);">
+        <option value="date">The date</option><option value="amount">The amount</option><option value="number">The check number</option></select></div>
+      <div class="fx" data-f="date"><label for="f_date">Right date</label><input id="f_date" type="date" name="new_date" value="{{ fix_check.check_date|slice:':10' }}"></div>
+      <div class="fx" data-f="amount" hidden><label for="f_amt">Right amount</label><input id="f_amt" type="text" inputmode="decimal" name="new_amount" value="{{ fix_check.amount|floatformat:2 }}" style="width:140px;text-align:right"></div>
+      <div class="fx" data-f="number" hidden><label for="f_num">Right number</label><input id="f_num" type="text" inputmode="numeric" name="new_number" value="{{ fix_check.check_number|default:'' }}" style="width:150px"></div>
+      <div class="grow"><label for="f_reason">Why</label><input id="f_reason" type="text" name="reason" required placeholder="e.g. typed 2026 instead of 2027"></div>
+    </div>
+    <div class="actions"><button class="btn small" type="submit"><span class="ms">edit</span>Correct</button> <a class="btn small ghost" href="?tab=checks">Cancel</a></div>
+  </form></div>
+{% endif %}
 {% if void_check %}
 <div class="warnbox"><b>Void or replace check {{ void_check.check_number|default:"(no number)" }} of ₱{{ void_check.amount|floatformat:2|intcomma }} dated {{ void_check.check_date|dmy }}</b>
   <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="check_id" value="{{ void_check.check_id }}">
@@ -91,7 +106,8 @@
         {% if c.stage == "Cancelled" and c.cancel_reason %}<span class="hint">{{ c.cancel_reason|usdates }}</span>{% endif %}</td>
       <td style="white-space:nowrap">
         {% if c.stage == "Parked" and may_park and editable %}<a class="btn small ghost" href="?tab=checks&edit={{ c.check_id }}">Edit</a>{% endif %}
-        {% if c.stage == "Written" or c.stage == "Released" %}{% if may_void %}<a class="btn small ghost" href="?tab=checks&void={{ c.check_id }}">Void / replace</a>{% endif %}{% endif %}
+        {% if c.stage == "Written" or c.stage == "Released" %}{% if may_void %}<a class="btn small ghost" href="?tab=checks&fix={{ c.check_id }}">Correct</a>
+          <a class="btn small ghost" href="?tab=checks&void={{ c.check_id }}">Void / replace</a>{% endif %}{% endif %}
         {% if c.stage == "Released" and may_release %}<button class="btn small ghost" type="submit" form="unrel_{{ c.check_id }}">Undo release</button>{% endif %}
       </td></tr>
     {% empty %}<tr><td colspan="6" class="note">No checks on this payment statement yet.</td></tr>{% endfor %}</table></div>
