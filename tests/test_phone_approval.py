@@ -33,6 +33,8 @@ def test_the_phone_approves_and_only_that_computer_is_signed_in(web, db):
     phone = _admin(web)                                                          # the phone: signed in, fingerprint turned on
     computer = Client()
     assert b"Sign in with your phone" in computer.get("/login/").content
+    phone_ua = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36"
+    assert b"Sign in with your phone" not in Client().get("/login/", HTTP_USER_AGENT=phone_ua).content      # not on a phone
     _turn_on(phone)
     token, number = _ask(computer)
     assert _status(computer)["state"] == "pending"

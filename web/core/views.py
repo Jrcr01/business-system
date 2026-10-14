@@ -331,6 +331,9 @@ def _phone_way(request) -> bool:
     from engines import phone_approval as pa
     if settings.SANDBOX_NO_SIGNIN or not pa.on():
         return False
+    ua = request.META.get("HTTP_USER_AGENT", "")
+    if any(k in ua for k in ("Android", "iPhone", "iPad", "Mobile")):      # owner, 2026-10-14: on the phone itself the phone is the key (its fingerprint)
+        return False
     cf = getattr(request, "cf_email", None)
     return pa.may_use(_account_id(cf)) if cf else True
 
