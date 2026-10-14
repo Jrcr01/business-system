@@ -162,6 +162,13 @@ def render(c: dict, site: str = "") -> tuple[str, str]:
     html = [f'<div style="font-family:Segoe UI,Arial,sans-serif;color:#1c2733;font-size:15px;max-width:440px;margin:0 auto;border:1px solid #d5dbe3;border-radius:10px;overflow:hidden">',
             f'<div style="background:#0f2a4a;color:#fff;padding:13px 16px"><b style="font-size:17px;display:block">Good morning, {escape(c["name"])}</b>'
             f'<span style="color:#f5c518;font-size:13px">{c["today"]:%A, %B} {c["today"].day}, {c["today"].year}</span></div>']
+    # what the inbox shows beside the subject, before the email is opened: the day in one line, not the greeting run into the date
+    peek = []
+    if "sales" in c:
+        y = c["sales"]["y"]
+        peek.append(f"Sales {_peso(y['sales'])} yesterday" if y["sales"] else f"No sales recorded for {c['yesterday']:%A}")
+    peek += [f"{a} {b}" for a, b in c.get("rows", [])[:2] if len(b) <= 14] + c["also"][:1]
+    html.insert(0, f'<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px">{escape(" · ".join(peek) or "Nothing dated today")}</div>')
     text = [f"Good morning, {c['name']}", f"{c['today']:%A, %B} {c['today'].day}, {c['today'].year}", ""]
     if "sales" in c:
         s = c["sales"]
