@@ -25,7 +25,7 @@
 <div class="scroll-x"><table class="list" style="font-variant-numeric:tabular-nums;white-space:nowrap;max-width:980px">
   <tr><th>Date</th><th>Supplier</th><th>SI</th><th>DR</th><th class="num">Amount</th><th></th></tr>
   {% for r in no_po %}<tr><td>{{ r.day|dmy }}</td><td>{{ r.supplier }}</td><td>{{ r.doc_ref }}</td><td>{{ r.dr_no|default:"" }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td>
-    <td>{% if r.statement_id %}<a href="/order-statements/{{ r.statement_id }}/">its payment statement</a>{% endif %}</td></tr>{% endfor %}
+    <td>{% if r.statement_id %}<a href="/order-statements/{{ r.statement_id|floatformat:0 }}/">its payment statement</a>{% endif %}</td></tr>{% endfor %}
 </table></div>
 {% else %}<p class="note">Every purchase of {{ month_label }} went through an order.</p>{% endif %}
 {% else %}<p class="note">No purchases recorded yet.</p>{% endif %}
