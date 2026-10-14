@@ -204,8 +204,12 @@ def render(c: dict, site: str = "") -> tuple[str, str]:
         html.append(f'<div {sec}><h2 {h2}>Today</h2>')
         text.append("TODAY")
         if c["rows"]:
+            # an amount or a count sits at the right of its line; a list of names goes under its label and wraps (owner, 2026-10-14: on the phone a long
+            # list of cards squeezed its label into three lines and ran off the screen)
+            cell = "padding:5px 0;border-bottom:1px solid #f0f2f5"
             html.append('<table style="width:100%;border-collapse:collapse;font-size:14px">' + "".join(
-                f'<tr><td style="padding:4px 0;border-bottom:1px solid #f0f2f5">{escape(a)}</td><td style="padding:4px 0;border-bottom:1px solid #f0f2f5;text-align:right;white-space:nowrap">{escape(b)}</td></tr>'
+                (f'<tr><td style="{cell}">{escape(a)}</td><td style="{cell};text-align:right;white-space:nowrap;padding-left:10px">{escape(b)}</td></tr>' if len(b) <= 14 else
+                 f'<tr><td colspan="2" style="{cell}">{escape(a)}<div style="color:#4b5563;font-size:13px;margin-top:2px">{escape(b)}</div></td></tr>')
                 for a, b in c["rows"]) + "</table>")
             text += [f"{a}: {b}" for a, b in c["rows"]]
         else:
