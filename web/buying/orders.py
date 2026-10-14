@@ -497,8 +497,11 @@ def _calendar_ctx(request, cid: int, delivery, total: float, po_id: int | None) 
     if forecast_shown() and total > 0:
         from engines.po_rules import cash_check
         cash = cash_check(cid, total, delivery, exclude_po_id=po_id)
+    from engines.order_room import weeks as room_weeks
+    room = room_weeks(exclude_po_id=po_id, order_pay_day=pay, order_amount=total)
     return {"pay": pay, "guard": guard, "weeks": weeks, "sched": sched, "sched_rows": sched["rows"].to_dict("records") if sched else [], "daysched": day, "looked_is_pay": looked == pay,
-            "show_ref": not hide_check_details(request.slicks_user["role"]), "cash": cash, "cal": cal}
+            "show_ref": not hide_check_details(request.slicks_user["role"]), "cash": cash, "cal": cal, "room": room,
+            "room_pick": next((w for w in room["weeks"] if w["selected"]), None)}
 
 
 @page_needed("purchase-orders")

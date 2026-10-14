@@ -40,8 +40,13 @@ def soft_line() -> float:
     return min(lines) if lines else 0.0
 
 
-def level(total: float) -> str:
-    """'ok' (at or under the target), 'near' (above the target, at or under the ceiling), 'over' (above the ceiling), or '' when the rule is off."""
+def level(total: float, day: date | None = None) -> str:
+    """'ok' (at or under the target), 'near' (above the target, at or under the ceiling), 'over' (above the ceiling), or '' when the rule is off.
+    A day beyond the order window is not judged (owner, 2026-10-15): '' too."""
+    if day is not None:
+        from engines.order_room import in_window
+        if not in_window(day):
+            return ""
     t, c = target(), ceiling()
     if c > 0 and total > c + 0.005:
         return "over"
@@ -66,6 +71,12 @@ def card_reserve_rows(start: date, end: date) -> pd.DataFrame:
     from engines.settings_registry import int_value
     if not int_value(RESERVE_KEY):
         return pd.DataFrame(columns=COLS)
+    from engines.order_room import window_end
+    far = window_end()
+    if far is not None:
+        end = min(end, far)                                     # no reserves beyond the reach of a new order (owner, 2026-10-15)
+        if end < start:
+            return pd.DataFrame(columns=COLS)
     with get_conn() as conn:
         rows = pd.read_sql_query(
             """SELECT cs.card_id, cs.due_date, cs.total_amount_due, cs.new_charges, cs.unpaid_balance_next, cc.statement_day,
@@ -142,6 +153,12 @@ def loads(start: date, end: date, exclude_po_id: int | None = None, requests: bo
 def day_totals(start: date, end: date, exclude_po_id: int | None = None, requests: bool = False) -> dict:
     df = loads(start, end, exclude_po_id, requests)
     return {} if df.empty else {d: float(v) for d, v in df.groupby("day")["amount"].sum().items()}
+
+
+def judged(day: date) -> bool:
+    """Is this day within the reach of a new order (the window)? Beyond it the limit does not apply."""
+    from engines.order_room import in_window
+    return in_window(day)
 
 
 def over_days(adds: list[tuple[date, float]], minus: list[tuple[date, float]] | None = None) -> list[dict]:

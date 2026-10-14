@@ -600,3 +600,15 @@ table.list tr.tentative td { color: var(--fg-6b7280); font-style: italic; }
 .ap-choices span { display: block; text-align: center; border: 2px solid var(--bd-b9c6d8); border-radius: 12px; padding: 14px 0; font-size: 1.6rem; font-weight: 800; }
 .ap-choices input:checked + span { border-color: var(--fg-0b4f8a); background: var(--bg-eef3fa); color: var(--fg-0b4f8a); }
 .ap-choices input:focus-visible + span { outline: 2px solid var(--fg-0b4f8a); outline-offset: 2px; }
+
+/* Room for new orders (owner, 2026-10-15): the week strip on the order page; days beyond the order window are shown, not judged */
+.roomstrip { display: flex; gap: 4px; overflow-x: auto; padding: 4px 0; max-width: 760px; }
+.roomstrip .rw { flex: 0 0 auto; min-width: 58px; display: flex; flex-direction: column; align-items: center; padding: 4px 6px; border: 1px solid var(--bd-d6dde6); border-radius: 6px; text-decoration: none; color: var(--ink); background: var(--bg-ffffff); }
+.roomstrip .rw .wk { font-size: .72rem; color: var(--muted); } .roomstrip .rw .rm { font-weight: 700; font-size: .82rem; }
+.roomstrip .rw.ok { background: var(--bg-e7f6ee); border-color: var(--bd-b7e0c8); } .roomstrip .rw.ok .rm { color: var(--fg-0b6e4f); }
+.roomstrip .rw.tight { background: var(--bg-fff4e5); border-color: var(--bd-f0b46a); } .roomstrip .rw.tight .rm { color: var(--fg-8a4b00); }
+.roomstrip .rw.over { background: var(--bg-fdecea); border-color: var(--bd-e8a19b); } .roomstrip .rw.over .rm { color: var(--fg-b3261e); }
+.roomstrip .rw.pick { outline: 2px solid var(--bd-0b4f8a); outline-offset: 1px; }
+.callegend .sw.rok { background: var(--bg-e7f6ee); border-color: var(--bd-b7e0c8); } .callegend .sw.rtight { background: var(--bg-fff4e5); border-color: var(--bd-f0b46a); }
+.callegend .sw.rover { background: var(--bg-fdecea); border-color: var(--bd-e8a19b); }
+.cal .d.later { background: var(--bg-f7f9fc); } .cal .d.later .amt { color: var(--fg-8a94a3); font-weight: 500; } .callegend .sw.later { background: var(--bg-f7f9fc); }

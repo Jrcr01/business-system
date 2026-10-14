@@ -115,6 +115,13 @@ NUMBERS = [
      "Tires at or above this age show as Old stock, to be sold first. The age comes from the DOT week and year typed when the tires are received."),
     ("affiliate_open_days", "Stock", "Flag tires lent or borrowed and still open after", 30, 1, 365, 0, "days",
      "A lend to (or a borrow from) a relative's business that is not returned, paid or set off after this many days goes on the Review list. Nothing is blocked."),
+    ("po_window_months", "Daily payment limit", "Judge days against the limit, and reserve for cards, this far ahead (months; 0 = every day)", 6, 0, 24, 0, "months",
+     "Owner, 2026-10-15: orders are the variable payable; checks a supplier has collected cannot move. A new order can fall due as far ahead as the longest "
+     "supplier terms (150 days) plus delivery, so days within this window are judged (red / amber, the confirmation) and card reserves are placed; days "
+     "beyond it are shown in grey and not judged, since nothing decided today can land there."),
+    ("po_cash_in_week", "Daily payment limit", "Expected cash in per week, typed (used while sales history is under 8 weeks; 0 = none)", 0, 0, 1_000_000_000, 2, "₱",
+     "Owner, 2026-10-15: the room for new orders rests on expected cash in, averaged from the last 8 weeks of recorded sales. Until that much history "
+     "exists, the average is too small to mean anything; a typed weekly figure (what the shop usually takes in a week) stands in for it until then."),
     ("card_reserve_on", "Daily payment limit", "Reserve room for card dues before their SOA arrives (1 = yes, 0 = no)", 1, 0, 1, 0, "",
      "A card's SOA comes about a month before its due date. Until then, its usual due day carries an estimate -- the average of its last 3 statements -- "
      "shown as \"Card reserve (estimate)\", so the day is not filled by orders or checks."),

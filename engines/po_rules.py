@@ -660,6 +660,9 @@ def day_guard(creditor_id: int, delivery, estimate: float, exclude_po_id: int | 
     from engines.settings_registry import value
     limit = float(value("po_daily_payables_limit"))
     pay = expected_pay_date(creditor_id, delivery) if delivery else None
+    from engines.day_cap import judged
+    if pay is not None and not judged(pay):                 # beyond the order window: not judged (owner, 2026-10-15)
+        return {"on": False, "limit": limit, "pay_date": pay, "already": 0.0, "with_order": 0.0, "over": False, "suggestion": None, "later": True}
     if limit <= 0 or not estimate or estimate <= 0 or pay is None:
         return {"on": False, "limit": limit, "pay_date": pay, "already": 0.0, "with_order": 0.0, "over": False, "suggestion": None}
     from engines.day_cap import loads, soft_line           # everything that goes out on a day, cards outside Metrobank and the card reserve included (owner, 2026-10-10)
@@ -836,6 +839,7 @@ def month_calendar(month, pay_date=None, exclude_po_id: int | None = None) -> di
     start = first - timedelta(days=first.weekday())
     end = nxt - timedelta(days=1)
     end = end + timedelta(days=6 - end.weekday())
+    from engines import day_cap
     from engines.day_cap import loads, target
     rows = loads(min(start, manila_today()), end, exclude_po_id, requests=True)
     rows = rows[(rows["day"] >= start) & (rows["day"] <= end)] if not rows.empty else rows
@@ -856,14 +860,16 @@ def month_calendar(month, pay_date=None, exclude_po_id: int | None = None) -> di
             payees = mine.groupby("payee")["amount"].sum().sort_values(ascending=False) if not mine.empty else pd.Series(dtype=float)
             mark = marks.get(d) or {}
             closed = not is_bank_day(d, blocked)
-            level = "over" if limit > 0 and total > limit else ("near" if limit > 0 and total > near else "")
+            judged = day_cap.judged(d)                           # beyond the order window: shown, not judged (owner, 2026-10-15)
+            level = ("over" if limit > 0 and total > limit else ("near" if limit > 0 and total > near else "")) if judged else "later"
             week.append({"day": d, "in_month": d.month == first.month, "total": total, "estimate": round(estimate, 2),
-                         "committed": round(total - estimate, 2), "closed": closed, "past": d < today,
+                         "committed": round(total - estimate, 2), "closed": closed, "past": d < today, "judged": judged,
                          "label": mark.get("label") or ("Holiday" if mark.get("kind") == "holiday" else ""), "level": level, "selected": d == pay,
                          "payees": "; ".join(f"{p} ₱{a:,.0f}" for p, a in payees.head(6).items()) + (f"; +{len(payees) - 6} more" if len(payees) > 6 else "")})
             d += timedelta(days=1)
         weeks.append(week)
-    return {"month": first, "prev": (first - timedelta(days=1)).replace(day=1), "next": nxt, "limit": limit, "weeks": weeks}
+    from engines.order_room import window_end
+    return {"month": first, "prev": (first - timedelta(days=1)).replace(day=1), "next": nxt, "limit": limit, "weeks": weeks, "window_end": window_end()}
 
 
 def committed_load(pay_date, new_amount: float = 0.0, exclude_po_id: int | None = None) -> dict | None:

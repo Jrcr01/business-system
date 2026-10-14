@@ -73,6 +73,9 @@ def test_delivery_for_day_gives_that_pay_day_or_none(db):
     cid = make_creditor(db, "Acme Tires", terms="30")
     start = manila_today() + timedelta(days=40)
     target = start + timedelta(days=(7 - start.weekday()) % 7)                # a Monday
+    from engines.po_rules import _blocked_days
+    while target.isoformat() in {str(x)[:10] for x in _blocked_days()}:          # ... not a holiday (11/30/2026 is Bonifacio Day)
+        target += timedelta(days=7)
     d = delivery_for_day(cid, target, manila_today())
     assert d is not None and expected_pay_date(cid, d) == target
     assert delivery_for_day(cid, target + timedelta(days=5), manila_today()) is None       # a Saturday is never a pay day

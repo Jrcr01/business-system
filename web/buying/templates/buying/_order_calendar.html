@@ -5,6 +5,7 @@
 <div class="grp" id="payables">Payables when this order falls due</div>
 {% if not pay %}<p class="note">Pick the expected delivery date to see the payables for that day.</p>
 {% else %}
+  {% if guard.later %}<p class="hint">This order falls due beyond the order window ({{ guard.pay_date|date:"m/d/Y" }}): the daily limit is not applied there.</p>{% endif %}
   {% if guard.on and guard.over %}
   <div class="warnbox"><b>High payables on {{ guard.pay_date|date:"D m/d" }}.</b> ₱{{ guard.already|floatformat:2|intcomma }} is already due that day; with this order it would be ₱{{ guard.with_order|floatformat:2|intcomma }},
     over your daily limit of ₱{{ guard.limit|floatformat:2|intcomma }}. You can still send it: you are asked to confirm, and it is noted on the Review list when it becomes a purchase order.
@@ -15,6 +16,21 @@
   </div>
   {% endif %}
   {% if cash %}{% if cash.known %}{% if cash.ok %}<div class="msg success">Fits the cash plan.</div>{% else %}<div class="warnbox">Over the cash plan: when this falls due the balance would drop ₱{{ cash.shortfall|floatformat:2|intcomma }} under the buffer. You can still order it; the owner is told.</div>{% endif %}{% else %}<p class="note">{{ cash.message }}</p>{% endif %}{% endif %}
+  {% if room %}{% comment %}Owner, 2026-10-15: orders are the variable payable. Per week: expected cash in less the fixed payables less the orders
+  already placed = room for new orders. The order lands in a week with room.{% endcomment %}
+  <div class="grp" style="margin-top:6px">Room for new orders, week by week <span class="hint">· expected cash in − fixed payables − orders already placed{% if room.window_end %} · to {{ room.window_end|date:"m/d/Y" }}{% endif %}</span></div>
+  {% if not room.known %}<p class="note">Room cannot be shown yet: expected cash in is averaged from 8 weeks of recorded sales, and there are only {{ room.history_days }} day{{ room.history_days|pluralize }} so far.
+    Until then, type what the shop usually takes in a week on <a href="/settings/#po_cash_in_week">Settings → Daily payment limit</a> and the strip uses that.</p>
+  {% else %}
+  <div class="roomstrip">{% for w in room.weeks %}<a class="rw {{ w.level }}{% if w.selected %} pick{% endif %}" href="?{{ qs }}view=month&m={{ w.week_start|date:'Y-m-d' }}#payables"
+      title="Week of {{ w.week_start|date:'m/d' }}: expected in ₱{{ w.cash_in|floatformat:0|intcomma }} · fixed ₱{{ w.fixed|floatformat:0|intcomma }} · orders ₱{{ w.orders|floatformat:0|intcomma }}{% if w.this_order %} · this order ₱{{ w.this_order|floatformat:0|intcomma }}{% endif %}">
+      <span class="wk">{{ w.week_start|date:"m/d" }}</span><span class="rm">{{ w.room|pw }}</span></a>{% endfor %}</div>
+  {% if room_pick %}<p class="hint" style="margin:4px 0 0">Week of {{ room_pick.week_start|date:"m/d" }}: expected in ₱{{ room_pick.cash_in|floatformat:0|intcomma }} · fixed ₱{{ room_pick.fixed|floatformat:0|intcomma }}
+    · orders already placed ₱{{ room_pick.orders|floatformat:0|intcomma }} · <b>room ₱{{ room_pick.room|floatformat:0|intcomma }}</b>{% if room_pick.this_order %} · this order ₱{{ room_pick.this_order|floatformat:0|intcomma }}
+    → {% if room_pick.level == "ok" %}<span class="pos">fits</span>{% elif room_pick.level == "tight" %}<span class="neg">uses ₱{{ room_pick.after|floatformat:0|intcomma|cut:"-" }} more than the room</span>{% else %}<span class="neg">the week is short before it</span>{% endif %}{% endif %}</p>{% endif %}
+  <p class="callegend"><span><i class="sw rok"></i>Room</span><span><i class="sw rtight"></i>This order uses more than the room</span><span><i class="sw rover"></i>Short before this order</span>
+    <span class="hint">{% if room.known == "typed" %}Expected cash in = the weekly figure typed in Settings ({{ room.history_days }} day{{ room.history_days|pluralize }} of sales so far; the 8-week average takes over after 56).{% else %}Expected cash in = customer checks and invoices due that week + the usual takings per weekday (last 8 weeks).{% endif %}</span></p>
+  {% endif %}{% endif %}
   {% if cal %}
   <div class="calhead"><b>Payables by pay day</b>{% if cal.limit %} <span class="note">· limit ₱{{ cal.limit|floatformat:0|intcomma }}/day</span>{% endif %}
     <span class="calnav"><a class="btn small ghost" href="?{{ qs }}view=month&m={{ cal.prev|date:'Y-m-d' }}#payables" aria-label="Previous month"><span class="ms">chevron_left</span></a>
@@ -32,7 +48,7 @@
         title="{{ c.day|date:'D m/d' }}{% if c.total %} · ₱{{ c.total|floatformat:2|intcomma }}: {{ c.payees }}{% else %}: nothing due yet{% endif %} — click to make the order fall due this day"><span class="n">{{ c.day|date:"j" }}</span>
         {% if c.label %}<span class="lbl">{{ c.label }}</span>{% endif %}<span class="amt">{% if c.total %}{{ c.total|pw }}{% else %}—{% endif %}</span>{% if c.estimate %}<span class="est">est. {{ c.estimate|pw }}</span>{% endif %}</button>{% endif %}{% endfor %}{% endfor %}
   </form>
-  <p class="callegend"><span><i class="sw over"></i>Over limit</span><span><i class="sw near"></i>Near the limit</span><span><i class="sw closed"></i>Weekend, holiday or marked day</span><span><i class="sw pick"></i>This order's pay day</span><span><b class="est" style="display:inline">est.</b> the part of the day that is an estimate</span></p>
+  <p class="callegend"><span><i class="sw over"></i>Over limit</span><span><i class="sw near"></i>Near the limit</span>{% if cal.window_end %}<span><i class="sw later"></i>Beyond {{ cal.window_end|date:"m/d/Y" }}: not judged yet</span>{% endif %}<span><i class="sw closed"></i>Weekend, holiday or marked day</span><span><i class="sw pick"></i>This order's pay day</span><span><b class="est" style="display:inline">est.</b> the part of the day that is an estimate</span></p>
   <p class="hint">Click a day: the delivery date is set so the order falls due that day (by {{ supplier_name }}'s terms), and that day's list shows below.
     Requests sent to a supplier and not confirmed yet are counted here, so a day already asked for does not look free.</p>
   {% endif %}
