@@ -14,6 +14,12 @@ RUN_OUT_DAYS = 7
 OLD_STATEMENT_DAYS = 7        # a card statement missing longer than this is repeated on Mondays only
 
 
+def role_of(email: str) -> str:
+    with get_conn() as conn:
+        row = conn.execute("SELECT role FROM app_users WHERE lower(trim(email)) = ?", ((email or "").strip().lower(),)).fetchone()
+    return row[0] if row else ""
+
+
 def _whose_cards(email: str) -> tuple[str, int | None]:
     """Which cards a person hears about: the same choice as the phone reminders (Settings > Notifications): 'all', 'own' (with their cardholder) or 'off'."""
     from engines.card_reminders import people
@@ -155,6 +161,15 @@ def content(email: str, name: str, today: date) -> dict:
         late = [v for v in late if v > 0.005]
         if late:
             out["also"].insert(0, f"{len(late)} customer{'s' if len(late) != 1 else ''} over {OVERDUE_DAYS} days ({_peso(sum(late))})")
+    if role_of(email) == "admin":                            # the System admin alone hears what went wrong on the server yesterday
+        try:
+            from engines.server_health import errors_on
+            found = errors_on(yesterday)
+            if found and found[0]:
+                n, top = found
+                out["also"].append(f"{n} error{'s' if n != 1 else ''} on the server yesterday" + (f": {top[0]}" if top else ""))
+        except Exception:                                   # noqa: BLE001
+            pass
     out["rows"] = rows
     out["show_today"] = not {"order-statements", "lenders", "credit-cards", "purchase-orders"} <= set(hidden)
     return out

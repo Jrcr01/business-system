@@ -72,3 +72,19 @@ def test_a_person_can_be_left_out_and_a_refusal_is_recorded_not_raised(web, db, 
     r = web.post("/settings/notifications/", {"action": "mail_test"}, follow=True)
     assert "Today&#x27;s email was sent to admin@slicks.test" in r.content.decode() or "Today's email was sent to admin@slicks.test" in r.content.decode()
     assert sent[-1]["to"] == ["admin@slicks.test"]
+
+
+def test_the_admin_alone_hears_of_yesterdays_server_errors(web, db, monkeypatch):
+    from datetime import date
+    from engines import morning_email, server_health
+    from engines.clock import manila_today
+    _admin(web)
+    _sign_in_new("ana@slicks.test", "owner")
+    log = "Oct 14 gunicorn[1]: [2026-10-14 01:08:44 +0000] [1] [ERROR] Control server error: denied\nOct 14 gunicorn[2]: ERROR django.request: Internal Server Error: /calendar/\nOct 14 gunicorn[2]: ERROR django.request: Internal Server Error: /calendar/\n"
+    assert server_health.summarise(log) == (2, ["ERROR django.request: Internal Server Error: /calendar/ (×2)"])
+    monkeypatch.setattr(server_health, "errors_on", lambda day: server_health.summarise(log))
+    mine = morning_email.content("admin@slicks.test", "Admin", manila_today())
+    hers = morning_email.content("ana@slicks.test", "Ana", manila_today())
+    assert any("2 errors on the server yesterday" in a for a in mine["also"]) and not any("error" in a for a in hers["also"])
+    monkeypatch.setattr(server_health, "errors_on", lambda day: None)                       # no log to read: nothing said
+    assert not any("error" in a for a in morning_email.content("admin@slicks.test", "Admin", manila_today())["also"])

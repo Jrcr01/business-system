@@ -37,6 +37,13 @@ def main() -> int:
         statement_files()
     except Exception as e:
         print(f"Statement files step could not run: {e}")
+    try:
+        from datetime import timedelta
+        from engines.server_health import errors_on
+        found = errors_on(manila_now().date() - timedelta(days=1)) or errors_on(manila_now().date())
+        print("Errors in the server log:", found[0] if found else "could not read", *(found[1] if found else []))
+    except Exception as e:                                   # noqa: BLE001
+        print(f"Error count could not run: {e}")
     return 0
 
 

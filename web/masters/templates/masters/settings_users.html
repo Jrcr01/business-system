@@ -7,6 +7,8 @@
   Give it to them now; it is shown only this once. They must choose their own at first sign-in.</div>
 {% endif %}
 <p class="note">Only the System admin sees this. People are switched off, never deleted. Every change is in the audit log.</p>
+{% if one_admin %}<p class="note" style="background:var(--bg-fff4e5)"><span class="ms">warning</span> <b>You are the only System admin.</b> If your phone is lost and the password forgotten, nobody can let you back in.
+  Make one trusted family member a System admin as a spare: open their name below and change the role.</p>{% endif %}
 <div class="scroll-x">
 <table class="list cards">
   <tr><th>Name</th><th>Email (sign-in)</th><th>Username</th><th>Role</th><th>Status</th><th>Last signed in</th><th></th></tr>

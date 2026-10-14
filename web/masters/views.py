@@ -194,7 +194,8 @@ def settings_users(request):
         u["role_label"] = ROLE_LABEL.get(u["role"], u["role"])
     return render(request, "masters/settings_users.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/users/",
                                                            "users": users, "roles": [(r, ROLE_LABEL[r]) for r in ROLES], "shown": shown,
-                                                           "me_id": int(request.slicks_user["user_id"])})
+                                                           "me_id": int(request.slicks_user["user_id"]),
+                                                           "one_admin": sum(1 for u in users if u["role"] == "admin" and u["is_active"]) == 1})
 
 
 @page_needed("settings")
