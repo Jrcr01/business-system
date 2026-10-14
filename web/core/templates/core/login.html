@@ -14,7 +14,7 @@
     {{ p.name }} <span class="hint">({{ p.username|default:p.email }})</span></button>{% endfor %}
 </form>
 {% else %}
-<form class="login-card" method="post" action="/login/">{% csrf_token %}
+<form class="login-card" method="post" action="/login/" autocomplete="off">{% csrf_token %}
   <h2>Sign in</h2>
   <input type="hidden" name="next" value="{{ next }}">
   {% if cf_email %}
@@ -22,13 +22,15 @@
   {% comment %}Owner, 2026-10-13: "There should be change of email address especially another user is logging in". The email is the one Cloudflare
   verified on this device; to change it, that verification is ended (Cloudflare's own sign-out), and the next visit asks for an email again.{% endcomment %}
   <p class="hint" style="margin:-4px 0 12px">Not you? <a href="/cdn-cgi/access/logout">Use another email</a></p>
-  <input type="hidden" name="email" value="{{ cf_email }}" autocomplete="username">
-  <label for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" required autofocus>
+  <input type="hidden" name="email" value="{{ cf_email }}">
+  <label for="pw_box">Password</label><input id="pw_box" class="pw-mask" type="text" name="{{ fp }}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore required autofocus>
   {% else %}
-  <label for="email">Email</label><input id="email" type="email" name="email" value="{{ email }}" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
-  <label for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" required>
+  <label for="em_box">Email</label><input id="em_box" type="text" inputmode="email" name="{{ fe }}" value="{{ email }}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore required autofocus>
+  <label for="pw_box">Password</label><input id="pw_box" class="pw-mask" type="text" name="{{ fp }}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore required>
   {% endif %}
   <button class="btn wide" type="submit">Sign in</button>
+  <script>(function () { var b = document.getElementById("pw_box");           // a browser that cannot mask a text box gets a real password box
+    if (b && !(window.CSS && CSS.supports && CSS.supports("-webkit-text-security", "disc"))) { b.type = "password"; b.autocomplete = "new-password"; } })();</script>
   {% if fp_here %}{% comment %}Owner, 2026-10-13 (his Metrobank example): the password on top, the fingerprint as a link under it. Shown only in a browser
   where the person turned it on.{% endcomment %}
   <p style="text-align:center;margin:16px 0 0"><a href="#" id="fp_go" class="login-fp"><span class="ms">fingerprint</span>Sign in using fingerprint</a></p>

@@ -259,8 +259,9 @@ def login(request):
         return render(request, "core/login.html", {"sandbox_people": people, "next": nxt})
     if request.method == "POST":
         # owner, 2026-10-09: the email, not the username -- the one Cloudflare Access verified (only the password is typed), else the one typed
-        email = cf or request.POST.get("email", "")
-        ok, user, msg = authenticate(email, request.POST.get("password", ""), where="web", by_email=True)
+        names = request.session.get("login_fields") or {}
+        email = cf or request.POST.get(names.get("e", ""), "") or request.POST.get("email", "")
+        ok, user, msg = authenticate(email, request.POST.get(names.get("p", ""), "") or request.POST.get("password", ""), where="web", by_email=True)
         if ok:
             return _half_signed_in(request, user, nxt)
         uid = _account_id(email)
@@ -269,7 +270,15 @@ def login(request):
         if cf and not uid:
             msg = f"No account in the system uses {cf}. Ask the System admin."
         messages.error(request, msg)
-    return render(request, "core/login.html", {"email": email, "cf_email": cf, "next": nxt, "fp_here": bool(_fp_login_user(request)), "phone_way": _phone_way(request)})
+    # Owner, 2026-10-15: Chrome must not save or fill the password ("2nd layer of security can easily bypassed ... their google account is hacked"; "there
+    # websites even saved in chrome cant use it to login"). As the banks do: the boxes get new names on every page, the password box is a plain text box
+    # masked by the page (Chrome does not see a password to save), and nothing invites autofill. login.html falls back to a real password box in a browser
+    # that cannot mask.
+    import secrets
+    names = {"e": "e_" + secrets.token_hex(6), "p": "p_" + secrets.token_hex(6)}
+    request.session["login_fields"] = names
+    return render(request, "core/login.html", {"email": email, "cf_email": cf, "next": nxt, "fp_here": bool(_fp_login_user(request)), "phone_way": _phone_way(request),
+                                              "fe": names["e"], "fp": names["p"]})
 
 
 # --- fingerprint sign-in (owner, 2026-10-13; engines/fingerprint_signin.py): the device's own fingerprint or face unlock in place of typing the password.

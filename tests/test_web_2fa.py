@@ -129,7 +129,7 @@ def test_sign_in_is_by_email_not_the_username(web):
     assert c.post("/login/", {"email": "FAMILY@Slicks.test", "password": PW})["Location"] == "/2fa/setup/"    # capitals don't matter
     assert authenticate("family@slicks.test", PW)[0] and authenticate("family", PW)[0]               # the old screens' sign-in takes either
     page = Client().get("/login/").content.decode()
-    assert 'name="email"' in page and 'name="username"' not in page
+    assert 'id="em_box"' in page and 'name="username"' not in page                      # the email box (its name changes every time, 2026-10-15)
 
 
 def test_a_new_person_gets_the_username_typed_and_old_accounts_get_one_from_the_email(web):
@@ -173,3 +173,19 @@ def test_the_admin_changes_a_persons_email_and_they_sign_in_with_the_new_one(web
     assert b"Another account already uses admin@slicks.test" in r.content
     r = web.post(f"/settings/users/{uid}/", {"action": "email", "email": "not-an-email"}, follow=True)
     assert b"Type a valid email address" in r.content
+
+
+def test_the_sign_in_boxes_are_not_ones_chrome_saves_or_fills(web):
+    # owner, 2026-10-15: "disable auto fill of chrome passwords"; as the banks do: new box names every time, no password box for Chrome to save
+    import re
+    _admin(web)
+    _new()
+    c = Client()
+    page = c.get("/login/").content.decode()
+    assert 'type="password"' not in page and 'autocomplete="current-password"' not in page and 'autocomplete="username"' not in page
+    fe, fp = re.search(r'name="(e_[0-9a-f]{12})"', page).group(1), re.search(r'name="(p_[0-9a-f]{12})"', page).group(1)
+    again = c.get("/login/").content.decode()
+    assert fp not in again                                                   # a new name on every page
+    fe, fp = re.search(r'name="(e_[0-9a-f]{12})"', again).group(1), re.search(r'name="(p_[0-9a-f]{12})"', again).group(1)
+    r = c.post("/login/", {fe: "family@slicks.test", fp: PW})
+    assert r.status_code == 302 and r["Location"].startswith("/2fa")         # the password typed in the new boxes signs in

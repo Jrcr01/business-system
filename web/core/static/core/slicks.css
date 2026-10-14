@@ -621,3 +621,6 @@ table.list tr.tentative td { color: var(--fg-6b7280); font-style: italic; }
 .pill.ok { background: var(--bg-e7f6ee); color: var(--ok); }
 .usebar { display: inline-block; width: 54px; height: 8px; background: var(--bg-eef1f5); border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
 .usebar i { display: block; height: 100%; background: var(--blue); }
+
+/* Sign-in (owner, 2026-10-15): the password box is masked by the page, so Chrome neither saves nor fills it */
+.pw-mask { -webkit-text-security: disc; text-security: disc; font-family: inherit; letter-spacing: .08em; }

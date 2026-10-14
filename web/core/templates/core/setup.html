@@ -8,9 +8,9 @@
   <label for="name">Your name</label><input id="name" type="text" name="name" value="{{ form.name }}" required>
   <label for="username">Username (what you sign in with)</label><input id="username" type="text" name="username" value="{{ form.username }}" autocomplete="username" autocapitalize="none" spellcheck="false" required>
   <label for="email">Email (for records; not used to sign in)</label><input id="email" type="email" name="email" value="{{ form.email }}" autocomplete="email" required>
-  <label for="password">Password</label><input id="password" type="password" name="password" autocomplete="new-password" required>
-  <label for="password2">Password again</label><input id="password2" type="password" name="password2" autocomplete="new-password" required>
+  <label for="password">Password</label><input id="password" class="pw-mask" type="text" name="password" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore required>
+  <label for="password2">Password again</label><input id="password2" class="pw-mask" type="text" name="password2" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore required>
   <p class="note">At least 8 characters, with a letter and a digit.</p>
   <button class="btn wide" type="submit">Create the account</button>
-</form>
+<script>if (!(window.CSS && CSS.supports && CSS.supports("-webkit-text-security", "disc"))) document.querySelectorAll(".pw-mask").forEach(function (b) { b.type = "password"; });</script></form>
 {% endblock %}
