@@ -14,20 +14,36 @@ RUN_OUT_DAYS = 7
 OLD_STATEMENT_DAYS = 7        # a card statement missing longer than this is repeated on Mondays only
 
 
-def _cards_to_type(today: date) -> list[str]:
-    """Cards whose statement should be out and is not typed yet. A card missing for more than a week is named on Mondays only: a line that says
-    the same thing every morning stops being read."""
+def _whose_cards(email: str) -> tuple[str, int | None]:
+    """Which cards a person hears about: the same choice as the phone reminders (Settings > Notifications): 'all', 'own' (with their cardholder) or 'off'."""
+    from engines.card_reminders import people
+    me = next((p for p in people() if p["email"].lower() == (email or "").lower()), None)
+    return (me["scope"], me["cardholder_id"]) if me else ("off", None)
+
+
+def _cards_to_type(today: date, email: str = "") -> list[str]:
+    """Cards whose statement should be out and is not typed yet, each with its cardholder's first name (owner, 2026-10-15: "what are these i cant see
+    this"). A person gets the cards they get phone reminders for: all of them, their own, or none. A card missing for more than a week is named on
+    Mondays only: a line that says the same thing every morning stops being read."""
     from engines.cc_service import get_statement_coverage
+    scope, holder = _whose_cards(email) if email else ("all", None)
+    if scope == "off" or (scope == "own" and not holder):
+        return []
     cov = get_statement_coverage(today)
+    with get_conn() as conn:
+        holder_of = dict(conn.execute("SELECT card_id, cardholder_id FROM credit_cards"))
     out = []
     for r in ([] if cov.empty else cov.to_dict("records")):
+        if scope == "own" and holder_of.get(int(r["card_id"])) != int(holder):
+            continue
         exp = r.get("expected_by")
         exp = date.fromisoformat(exp[:10]) if isinstance(exp, str) and exp else None
         if r["status"] != "Missing this month" and not (r["status"] == "Not yet expected" and exp and (today - exp).days >= 2):
             continue
         age = (today - exp).days if exp else OLD_STATEMENT_DAYS + 1
         if age <= OLD_STATEMENT_DAYS or today.weekday() == 0:
-            out.append(f"{r['card_name']} {r['card_number_last4']}")
+            who = str(r.get("cardholder") or "").split(" ")[0]
+            out.append(f"{r['card_name']} {r['card_number_last4']}" + (f" ({who})" if who else ""))
     return out
 
 
@@ -108,10 +124,12 @@ def content(email: str, name: str, today: date) -> dict:
             if n:
                 rows.append((f"Checks dated today ({n})", _peso(total)))
         if "credit-cards" not in hidden:
-            for card, due in conn.execute("""SELECT cc.card_name || ' ' || cc.card_number_last4, cs.total_amount_due FROM cc_statements cs
-                                             JOIN credit_cards cc ON cc.card_id = cs.card_id
-                                             WHERE cs.due_date = ? AND cs.status = 'Unpaid' AND COALESCE(cs.amount_paid, 0) <= 0.005""", (str(today),)):
-                rows.append((f"Card due: {card}", _peso(due)))
+            scope, holder = _whose_cards(email)                  # the person's own cards, or all of them (as the phone reminders)
+            for card, due, who, hid in conn.execute("""SELECT cc.card_name || ' ' || cc.card_number_last4, cs.total_amount_due, COALESCE(h.name, ''), cc.cardholder_id
+                                             FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id LEFT JOIN cardholders h ON h.cardholder_id = cc.cardholder_id
+                                             WHERE cs.due_date = ? AND cs.status = 'Unpaid' AND COALESCE(cs.amount_paid, 0) <= 0.005""", (str(today),)).fetchall():
+                if scope == "all" or (scope == "own" and holder and hid == int(holder)):
+                    rows.append((f"Card due: {card}" + (f" ({who.split(' ')[0]})" if who else ""), _peso(due)))
         if "purchase-orders" not in hidden:
             n = conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE status IN ('ORDERED', 'PARTIAL') AND expected_delivery_date = ?", (str(today),)).fetchone()[0]
             if n:
@@ -126,7 +144,7 @@ def content(email: str, name: str, today: date) -> dict:
                                                  WHERE p.method = 'CHARGE' AND s.customer_id IS NOT NULL AND s.status = 'SAVED'""")] if "collect" not in hidden else []
     if "credit-cards" not in hidden:
         try:
-            cards = _cards_to_type(today)
+            cards = _cards_to_type(today, email)
             if cards:
                 rows.append((f"Card statement{'s' if len(cards) != 1 else ''} to type", ", ".join(cards[:3]) + (f" +{len(cards) - 3} more" if len(cards) > 3 else "")))
         except Exception:                               # noqa: BLE001
