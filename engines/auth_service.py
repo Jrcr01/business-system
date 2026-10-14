@@ -477,11 +477,11 @@ def _forget_fingerprints(conn, user_id: int) -> None:
     remove_all(conn, user_id)
 
 
-SIGNED_IN = ("CODE", "REMEMBERED", "SET_UP", "CLOUDFLARE", "FINGERPRINT")
+SIGNED_IN = ("CODE", "REMEMBERED", "SET_UP", "CLOUDFLARE", "FINGERPRINT", "PHONE")
 SIGN_IN_RESULTS = {"CODE": "Signed in: password and code", "REMEMBERED": "Signed in: password (code given earlier that day on this device)",
                    "SET_UP": "Authenticator set up, signed in", "CLOUDFLARE": "Signed in: Cloudflare and password (the code is switched off)", "PASSWORD_REFUSED": "Not signed in: wrong password, locked or switched off",
                    "WRONG_CODE": "Not signed in: wrong code",
-                   "FINGERPRINT": "Signed in: fingerprint on that device", "FINGERPRINT_REFUSED": "Not signed in: fingerprint not verified", "SETUP_REFUSED": "Not signed in: authenticator set-up not allowed"}
+                   "FINGERPRINT": "Signed in: fingerprint on that device", "PHONE": "Signed in: approved by the person's phone", "FINGERPRINT_REFUSED": "Not signed in: fingerprint not verified", "SETUP_REFUSED": "Not signed in: authenticator set-up not allowed"}
 
 
 def log_sign_in(user_id: int, result: str, device_id: str = "", browser: str = "", ip: str = "", country: str = "", city: str = "") -> bool:

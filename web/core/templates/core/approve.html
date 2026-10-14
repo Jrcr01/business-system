@@ -1,0 +1,25 @@
+{% extends "core/base.html" %}
+{% block title %}Sign in on a computer{% endblock %}
+{% block content %}
+{% comment %}Owner, 2026-10-14: the phone's side of "Sign in with your phone". Reached by scanning the computer's QR code, after the phone's own sign-in.{% endcomment %}
+<div style="max-width:420px;margin:0 auto">
+{% if done %}
+  <div style="text-align:center;padding:30px 0"><span class="ms" style="font-size:64px;color:var(--fg-0b6e4f)">{% if ok %}task_alt{% else %}block{% endif %}</span>
+    <h2 style="margin:10px 0 6px">{{ done }}</h2><p class="hint">You can close this page.</p></div>
+{% elif why %}
+  <h2><span class="ms" style="font-size:28px">qr_code_2</span> Sign in on a computer</h2>
+  <p class="note">{{ why }}</p>
+  <p><a class="btn ghost" href="/">Home</a></p>
+{% else %}
+  <h2><span class="ms" style="font-size:28px">qr_code_2</span> Sign in on a computer?</h2>
+  <div class="facts"><div><span>Asking now</span><b>{{ info.browser }}</b></div><div><span>For</span><b style="overflow-wrap:anywhere">{{ info.email }}</b></div></div>
+  <form method="post">{% csrf_token %}
+    <p style="margin:14px 0 6px"><b>Which number does that computer show?</b></p>
+    <div class="ap-choices">{% for n in info.choices %}<label><input type="radio" name="number" value="{{ n }}" required><span>{{ n }}</span></label>{% endfor %}</div>
+    <button class="btn wide" type="submit" name="answer" value="yes" style="margin-top:14px"><span class="ms">check</span>Approve</button>
+    <button class="btn wide ghost" type="submit" name="answer" value="no" formnovalidate style="margin-top:8px">It is not me</button>
+  </form>
+  <p class="hint" style="margin-top:12px">Only approve a computer you are sitting at. If you did not ask for this, tap "It is not me".</p>
+{% endif %}
+</div>
+{% endblock %}

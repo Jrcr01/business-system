@@ -1,0 +1,91 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: sign in on a computer with your phone</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --red: #C62828; --yellow: #f5c518; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 16px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1120px; margin: 0 auto; padding: 18px 20px 60px; }
+h1 { color: var(--blue); font-size: 1.35rem; margin: 6px 0 6px; } .why { color: var(--muted); margin: 0 0 16px; max-width: 82ch; }
+.row { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 26px; }
+.cap { font-weight: 700; margin: 0 0 6px; } .cap small { display: block; font-weight: 400; color: var(--muted); }
+.pc { width: 400px; background: var(--navy); border-radius: 12px; padding: 22px 20px; border: 6px solid #1c2733; }
+.card { background: #fff; border-radius: 12px; padding: 18px 18px; }
+.card h2 { margin: 0 0 10px; font-size: 1.15rem; }
+.who { background: #ecfdf5; color: #065f46; border-radius: 8px; padding: 8px 10px; font-size: .88rem; margin-bottom: 4px; }
+.hint { color: var(--muted); font-size: .85rem; } a { color: var(--blue); }
+label { display: block; font-size: .8rem; color: var(--muted); font-weight: 600; margin: 10px 0 3px; }
+input { width: 100%; font: inherit; border: 1px solid #b9c6d8; border-radius: 8px; padding: 9px; }
+.btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; background: var(--blue); color: #fff; border: 1px solid var(--blue); border-radius: 10px; padding: 11px 14px; font: inherit; font-weight: 700; margin-top: 10px; }
+.btn.ghost { background: #fff; color: var(--blue); border-color: #b9c6d8; }
+.link { text-align: center; margin: 16px 0 0; font-weight: 600; } .link .ms { font-size: 26px; color: var(--ok); }
+.qr { width: 150px; height: 150px; margin: 6px auto; background:
+  repeating-linear-gradient(0deg, #111 0 6px, transparent 6px 12px), repeating-linear-gradient(90deg, #111 0 6px, #fff 6px 12px); border: 8px solid #fff; outline: 1px solid #d5dbe3; }
+.num { font-size: 3rem; font-weight: 800; text-align: center; letter-spacing: 4px; color: var(--navy); margin: 4px 0; }
+.phone { width: 280px; min-height: 470px; background: #fff; border: 8px solid #1c2733; border-radius: 28px; padding: 18px 16px; }
+.top { font-size: .8rem; color: var(--muted); margin-bottom: 10px; }
+.box { background: var(--soft); border-radius: 10px; padding: 10px 12px; font-size: .92rem; margin: 10px 0; }
+.choices { display: flex; gap: 8px; margin: 10px 0; } .choices span { flex: 1; text-align: center; border: 2px solid #b9c6d8; border-radius: 12px; padding: 12px 0; font-size: 1.5rem; font-weight: 800; }
+.choices .on { border-color: var(--blue); background: #eef3fa; color: var(--blue); }
+.done { text-align: center; padding: 30px 0 10px; } .done .ms { font-size: 60px; color: var(--ok); }
+.side { flex: 1; min-width: 280px; } .side li { margin: 6px 0; } .side h3 { margin: 0 0 6px; color: var(--navy); font-size: 1rem; }
+</style></head><body><main>
+<h1>Sign in on a computer with your phone</h1>
+<p class="why">No Bluetooth. The computer shows a QR code and a two-digit number; your phone, with your fingerprint, approves it. It proves the person at the computer holds that person's own phone.
+The password stays as the other way in (a choice, to start).</p>
+
+<div class="row">
+  <div><p class="cap">1. The computer's sign-in page<small>one new link under the Sign in button</small></p>
+    <div class="pc"><div class="card"><h2>Sign in</h2>
+      <div class="who"><span class="ms">verified_user</span> Verified by Cloudflare as <b>v.jrcroxas@gmail.com</b></div>
+      <div class="hint">Not you? <a>Use another email</a></div>
+      <label>Password</label><input type="password" placeholder="Enter password">
+      <div class="btn">Sign in</div>
+      <p class="link"><a><span class="ms">qr_code_2</span> Sign in with your phone</a></p>
+    </div></div></div>
+
+  <div><p class="cap">2. The computer waits<small>the code works once, for two minutes</small></p>
+    <div class="pc"><div class="card" style="text-align:center"><h2>Scan with your phone</h2>
+      <div class="qr"></div>
+      <div class="hint">Then pick this number on your phone:</div>
+      <div class="num">47</div>
+      <div class="hint">Waiting for your phone… 1:52 left</div>
+      <div class="btn ghost">Use my password instead</div>
+    </div></div></div>
+</div>
+
+<div class="row">
+  <div><p class="cap">3. The phone, after scanning<small>your fingerprint first, as at every phone sign-in</small></p>
+    <div class="phone"><div class="top">Slick's ERP</div>
+      <b style="font-size:1.1rem">Sign in on a computer?</b>
+      <div class="box"><b>Chrome on Windows</b><br><span class="hint">asked just now · for v.jrcroxas@gmail.com</span></div>
+      <div class="hint" style="color:var(--ink)">Which number does that computer show?</div>
+      <div class="choices"><span>18</span><span class="on">47</span><span>73</span></div>
+      <div class="btn"><span class="ms">check</span>Approve</div>
+      <div class="btn ghost">It is not me</div>
+      <p class="hint" style="margin-top:10px">Only approve a computer you are sitting at. If you did not ask for this, tap "It is not me".</p>
+    </div></div>
+
+  <div><p class="cap">4. Done<small>the computer signs in by itself</small></p>
+    <div class="phone"><div class="top">Slick's ERP</div>
+      <div class="done"><span class="ms">task_alt</span><p><b>Approved.</b><br>The computer is signed in.</p></div>
+      <p class="hint" style="text-align:center">You can close this page.</p>
+    </div></div>
+
+  <div class="side">
+    <h3>What protects it</h3>
+    <ul>
+      <li><b>The number.</b> Only the person looking at that computer can pick the right one of three. A wrong pick cancels the code.</li>
+      <li><b>The fingerprint.</b> The phone must sign in to the system first, with the fingerprint already turned on for that phone.</li>
+      <li><b>The same person.</b> The phone's account must be the email Cloudflare verified on that computer. Nobody can approve a computer for someone else.</li>
+      <li><b>One use, two minutes.</b> A photo of the QR is useless afterwards.</li>
+      <li><b>Recorded.</b> The sign-in record shows "Signed in: approved by the phone", and "It is not me" goes to Checks and review.</li>
+    </ul>
+    <h3>Who</h3>
+    <ul><li>Everyone except the Scanner account.</li><li>A person who has not turned on fingerprint on a phone does not see the link.</li></ul>
+    <h3>Later, if you want it stricter</h3>
+    <ul><li>One switch in Settings → Sign-in can make the phone a <b>must</b> on computers, with the password refused there.</li></ul>
+  </div>
+</div>
+</main></body></html>

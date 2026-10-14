@@ -1,0 +1,86 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: open loans</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1080px; margin: 0 auto; padding: 18px 20px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 28px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+.why { color: var(--muted); margin: 0 0 12px; max-width: 84ch; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 16px 18px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+h2 { margin: 0 0 10px; font-size: 1.2rem; color: var(--navy); }
+.facts { display: flex; gap: 22px; flex-wrap: wrap; margin: 6px 0 12px; } .facts div span { display: block; font-size: .78rem; color: var(--muted); } .facts b { font-size: 1.1rem; }
+.pill { display: inline-block; font-size: .74rem; border-radius: 999px; padding: 1px 8px; font-weight: 600; background: #eef3fa; color: var(--blue); }
+.pill.ok { background: #e7f6ee; color: var(--ok); } .pill.warn { background: #fff4e5; color: var(--warn); } .pill.off { background: var(--soft); color: var(--muted); }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--muted); font-weight: 600; font-size: .78rem; border-bottom: 2px solid var(--line); padding: 6px 8px; }
+td { border-bottom: 1px solid var(--line); padding: 7px 8px; vertical-align: middle; } .num { text-align: right; }
+.btn { display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; border: 1px solid var(--blue); border-radius: 8px; padding: 6px 11px; font: inherit; font-weight: 600; font-size: .88rem; }
+.btn.ghost { background: #fff; color: var(--blue); border-color: #b9c6d8; }
+.bar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; background: var(--soft); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.bar label { display: block; font-size: .78rem; color: var(--muted); font-weight: 600; margin-bottom: 3px; }
+.bar input, .bar select { font: inherit; border: 1px solid #b9c6d8; border-radius: 8px; padding: 6px 9px; background: #fff; }
+.grp { font-weight: 700; margin: 16px 0 6px; color: var(--navy); }
+.box { border: 2px solid #b7e0c8; background: #f2fbf6; border-radius: 12px; padding: 12px 14px; }
+.note { background: #fff7e0; border-radius: 8px; padding: 8px 12px; font-size: .9rem; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } @media (max-width: 820px) { .cols { grid-template-columns: 1fr; } }
+.kpi { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; } .kpi span { font-size: .8rem; color: var(--muted); display: block; } .kpi b { font-size: 1.4rem; }
+</style></head><body><main>
+<h1 style="margin-top:4px">Open loans <small>sample figures; Luz's loan as you described it</small></h1>
+<p class="why">An open loan has no end date: interest every month on the principal still owed, until the principal is paid. The guarantee checks stay where they are, as security; they are returned when the loan is closed.</p>
+
+<h1>1. A loan note, made an open loan</h1>
+<div class="screen">
+  <h2>Luz · PENDING-21 <span class="pill">open loan</span></h2>
+  <div class="facts"><div><span>Principal still owed</span><b>₱2,000,000.00</b></div><div><span>Interest</span><b>2% a month · ₱40,000</b></div>
+    <div><span>Paid on</span><b>the 13th</b></div><div><span>Guarantee checks held</span><b>1 · ₱2,000,000</b></div></div>
+  <div class="grp">Interest, month by month <span style="font-weight:400;color:var(--muted)">(the system adds next month's by itself)</span></div>
+  <table><tr><th>Month</th><th>Due</th><th class="num">Interest</th><th>How paid</th><th></th></tr>
+    <tr><td>September</td><td>09/13/2026</td><td class="num">40,000.00</td><td><span class="pill ok">check 3992554214 · cleared</span></td><td></td></tr>
+    <tr><td>October</td><td>10/13/2026</td><td class="num">40,000.00</td><td><span class="pill ok">transfer · 10/13</span></td><td></td></tr>
+    <tr><td>November</td><td>11/13/2026</td><td class="num">40,000.00</td><td><span class="pill warn">not yet</span></td><td><span class="btn ghost">Write check</span> <span class="btn ghost">Mark paid</span></td></tr>
+    <tr><td>December</td><td>12/14/2026 <span style="color:var(--muted);font-size:.8rem">(13th is a Sunday)</span></td><td class="num">40,000.00</td><td><span class="pill off">later</span></td><td></td></tr></table>
+  <div class="grp">Pay principal</div>
+  <div class="bar"><div><label>Amount</label><input value="500,000.00" style="width:140px;text-align:right"></div><div><label>Date</label><input value="11/20/2026" style="width:120px"></div>
+    <div><label>Paid by</label><select><option>Check</option><option>Cash</option><option>Transfer</option></select></div><span class="btn">Pay principal</span></div>
+  <p class="why" style="margin:4px 0 0">After ₱500,000: still owed ₱1,500,000, and the interest from December on becomes ₱30,000. Months already paid do not change.</p>
+</div>
+
+<h1>2. The Calendar day</h1>
+<div class="screen">
+  <div class="grp" style="margin-top:0">Friday, November 13</div>
+  <table><tr><th>Pay to</th><th>Kind</th><th>Reference</th><th class="num">Amount</th><th></th></tr>
+    <tr><td>Luz</td><td>Lender</td><td>Interest · PENDING-21 (November)</td><td class="num">40,000.00</td><td><span class="btn ghost">Write check</span> <span class="btn ghost">Mark paid</span></td></tr>
+    <tr><td>Felix T Cruz</td><td>Lender</td><td>Interest · LN 0031 (November)</td><td class="num">20,000.00</td><td><span class="btn ghost">Write check</span> <span class="btn ghost">Mark paid</span></td></tr></table>
+  <p class="why" style="margin:6px 0 0">Mark paid asks how (cash or transfer) and the date. Once a check is written, the row becomes that check, as for any lender check today. It also shows on Daily payables and in the 8 AM email's Today list.</p>
+</div>
+
+<div class="cols">
+<div><h1>3. The last peso of principal</h1>
+<div class="screen">
+  <div class="box"><b><span class="ms" style="color:var(--ok)">task_alt</span> PENDING-21 is fully paid and closed.</b>
+    <p style="margin:6px 0 8px">Its guarantee checks can now be taken back from Luz:</p>
+    <table><tr><th></th><th>Check no.</th><th class="num">Amount</th></tr><tr><td>☑</td><td>3992554212</td><td class="num">2,000,000.00</td></tr></table>
+    <p style="margin:10px 0 0"><span class="btn">Mark the ticked returned</span> <span class="btn ghost">Later</span></p></div>
+  <p class="why" style="margin:8px 0 0">No interest month is added after the loan is closed.</p>
+</div></div>
+
+<div><h1>4. What we owe</h1>
+<div class="screen">
+  <div class="kpi"><span>Analytics → Lenders: open loans</span><b>₱5,000,000</b><span>principal still owed · interest ₱100,000 a month · 4 loans</span></div>
+  <p class="why" style="margin:8px 0 0">The same principal is added to "Owed to lenders" on Analytics and the Home card. The guarantee checks themselves are still not counted: they are security, not money owed twice.</p>
+</div></div>
+</div>
+
+<h1>5. Making one</h1>
+<div class="screen">
+  <div class="bar"><div><label>Lender</label><select><option>Felix T Cruz</option></select></div><div><label>Given on</label><input value="12/13/2025" style="width:120px"></div>
+    <div><label>Principal</label><input value="1,000,000.00" style="width:130px;text-align:right"></div><div><label>Interest a month</label><input value="2%" style="width:70px"></div>
+    <div><label>Paid on day</label><input value="13" style="width:60px"></div><div><label>Track interest from</label><input value="November 2026" style="width:130px"></div><span class="btn">Save open loan</span></div>
+  <p class="why" style="margin:4px 0 0">"Track interest from" keeps old months out: the system starts the monthly rows there, so nothing from before appears as unpaid. An existing note (like Luz's) gets the same form as "Make this an open loan".</p>
+  <p class="note" style="margin:10px 0 0"><b>Your loans, as you told me:</b> Luz ₱2,000,000 at 2% (13th). Felix three loans of ₱1,000,000 at 2%, given 12/13/2025, 03/07/2026 and 04/09/2026; their ₱1M and ₱20k guarantee checks move onto each. Felix's ₱720,000 note stays as it is.
+    <b>To confirm:</b> which month to start tracking (November?), and Felix's interest days (the 13th, 7th and 9th?).</p>
+</div>
+</main></body></html>

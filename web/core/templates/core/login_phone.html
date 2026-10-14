@@ -1,0 +1,43 @@
+{% extends "core/base.html" %}{% load static %}
+{% block title %}Sign in with your phone{% endblock %}
+{% block content %}
+{% comment %}Owner, 2026-10-14: the computer shows a QR code and a number; the person's own phone, signed in by its fingerprint, approves it.{% endcomment %}
+<div class="login-bg" aria-hidden="true"></div>
+<div class="login-wrap">
+<div class="login-big"><img src="{% static 'assets/slicks_logo.jpg' %}" alt=""><b>Slick's Tire Supply</b><span>Business system</span></div>
+<div class="login-card" style="text-align:center">
+  <h2>Scan with your phone</h2>
+  <div id="lp_wait">
+    <div class="login-qr">{{ qr }}</div>
+    <p class="hint" style="margin:8px 0 0">Open your phone's camera and point it at the code. Then pick this number on your phone:</p>
+    <div class="login-num" aria-label="The number to pick">{{ number }}</div>
+    <p class="hint" id="lp_left" role="status">Waiting for your phone…</p>
+  </div>
+  <p id="lp_msg" class="msg error" role="alert" hidden style="text-align:left"></p>
+  <form method="post" action="/login/phone/" id="lp_again" hidden>{% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
+    <button class="btn wide" type="submit"><span class="ms">qr_code_2</span>Show a new code</button></form>
+  <a class="btn wide ghost" href="/login/{% if next and next != "/" %}?next={{ next|urlencode }}{% endif %}" style="margin-top:8px">Use my password instead</a>
+</div>
+</div>
+<form id="lp_form">{% csrf_token %}</form>
+<script>
+(function () {
+  var left = {{ seconds }}, wait = document.getElementById("lp_wait"), label = document.getElementById("lp_left"), msg = document.getElementById("lp_msg");
+  var again = document.getElementById("lp_again"), token = document.querySelector("#lp_form input[name=csrfmiddlewaretoken]").value, done = false;
+  function stop(text) { done = true; wait.hidden = true; msg.textContent = text; msg.hidden = false; again.hidden = false; }
+  function clock() { var m = Math.floor(left / 60), s = left % 60; label.textContent = "Waiting for your phone… " + m + ":" + (s < 10 ? "0" : "") + s + " left"; }
+  setInterval(function () { if (!done && left > 0) { left -= 1; clock(); } }, 1000);
+  clock();
+  function ask() {
+    if (done) return;
+    fetch("/login/phone/status/", {method: "POST", credentials: "same-origin", headers: {"X-CSRFToken": token}}).then(function (r) { return r.json(); }).then(function (s) {
+      if (s.state === "approved") { done = true; label.textContent = "Approved. Signing in…"; window.location.href = s.next || "/"; return; }
+      if (s.state === "denied") { stop("The phone did not approve. Nobody was signed in."); return; }
+      if (s.state === "gone") { stop("The code ran out. Show a new one, or use your password."); return; }
+      setTimeout(ask, 2000);
+    }).catch(function () { setTimeout(ask, 4000); });
+  }
+  setTimeout(ask, 2000);
+})();
+</script>
+{% endblock %}

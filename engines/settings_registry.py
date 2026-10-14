@@ -90,6 +90,11 @@ NUMBERS = [
      "printed and every link already printed stops opening."),
     ("supplier_qr_days", "Payment statements", "The supplier's QR link works until this long after the statement's last check date", 90, 7, 730, 0, "days",
      "After that the link says it has expired. Counted from the day the link was made when the statement has no check yet."),
+    ("signin_phone_approval", "Sign-in", "Sign in on a computer with your phone (1 = yes, 0 = no)", 1, 0, 1, 0, "",
+     "Owner, 2026-10-14: \"it ensures they are the one logging in\". 1: a computer's sign-in page offers \"Sign in with your phone\" beside the password. "
+     "It shows a QR code and a two-digit number; the person scans it with their own phone, signed in by its fingerprint, picks the number and approves, "
+     "and the computer signs in. No Bluetooth. Only for a person with fingerprint sign-in turned on, never the Scanner account; a code works once, for "
+     "two minutes. 0: the link is not shown."),
     ("phone_pages", "Phone", "The phone pages are on (1 = yes, 0 = no)", 0, 0, 1, 0, "",
      "Owner, 2026-10-12: \"We need pricelist, inventory. Stock in, stock out. Those items need mobility without using a laptop.\" 1: /phone/ opens -- "
      "Price list, Stock, Stock in and Stock out on a phone, added to its home screen -- for everyone allowed those pages, and the Scanner role signs in "

@@ -590,3 +590,13 @@ table.list tr.tentative td { color: var(--fg-6b7280); font-style: italic; }
 .kpi small.pos, .bi-cmp small.pos, .kpi b.pos { color: var(--fg-1b7f3b); } .kpi small.neg, .bi-cmp small.neg, .kpi b.neg { color: var(--fg-b3261e); }
 .hbar .fill.g { background: var(--bg-1d9e75); } .hbar .fill.o { background: var(--bg-c26a00); }
 .chart .ct small { font-weight: 400; margin-left: 6px; }
+
+/* Sign in with your phone (owner, 2026-10-14): the QR code and the number on the computer; the three numbers on the phone */
+.login-qr svg { width: 190px; height: 190px; display: block; margin: 0 auto; background: #fff; border-radius: 8px; }
+.login-num { font-size: 3rem; font-weight: 800; letter-spacing: 4px; color: var(--fg-0b4f8a); margin: 2px 0 4px; }
+.ap-choices { display: flex; gap: 10px; }
+.ap-choices label { flex: 1; cursor: pointer; }
+.ap-choices input { position: absolute; opacity: 0; }
+.ap-choices span { display: block; text-align: center; border: 2px solid var(--bd-b9c6d8); border-radius: 12px; padding: 14px 0; font-size: 1.6rem; font-weight: 800; }
+.ap-choices input:checked + span { border-color: var(--fg-0b4f8a); background: var(--bg-eef3fa); color: var(--fg-0b4f8a); }
+.ap-choices input:focus-visible + span { outline: 2px solid var(--fg-0b4f8a); outline-offset: 2px; }

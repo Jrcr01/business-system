@@ -155,7 +155,7 @@ def _log(request, user_id: int, result: str) -> bool:
                        city=m.get("HTTP_CF_IPCITY", "")[:60])
 
 
-def _half_signed_in(request, user: dict, nxt: str = "/", fingerprint: bool = False):
+def _half_signed_in(request, user: dict, nxt: str = "/", fingerprint: bool = False, via: str = ""):
     """The password was right: next comes the code (or setting it up, the first time). Nothing else is open until then. Cloudflare Access in front does
     not stand in for the code any more (owner, 2026-10-11: a hacked inbox passes Cloudflare's email check; the phone is what proves it is them). The
     code is asked once a day per device: a device that gave this person's code today signs in with the password."""
@@ -164,14 +164,14 @@ def _half_signed_in(request, user: dict, nxt: str = "/", fingerprint: bool = Fal
     cf = getattr(request, "cf_email", None)
     if not authenticator_on() and cf and cf == str(user.get("email") or "").strip().lower():
         # the code is switched off (owner, 2026-10-12): Cloudflare's check of this very email is the second step
-        note_password_sign_in(int(user["user_id"]), *(("fingerprint on this device",) if fingerprint else ()))
+        note_password_sign_in(int(user["user_id"]), *((("approved by their phone" if via else "fingerprint on this device"),) if fingerprint else ()))
         _sign_in(request, user, code=False)
-        _log(request, int(user["user_id"]), "FINGERPRINT" if fingerprint else "CLOUDFLARE")
+        _log(request, int(user["user_id"]), via or ("FINGERPRINT" if fingerprint else "CLOUDFLARE"))
         return redirect(nxt or "/")
     if _code_given_today(request, user):
         note_password_sign_in(int(user["user_id"]), *(("fingerprint; this device gave the code earlier today",) if fingerprint else ()))
         _sign_in(request, user)
-        _log(request, int(user["user_id"]), "FINGERPRINT" if fingerprint else "REMEMBERED")
+        _log(request, int(user["user_id"]), via or ("FINGERPRINT" if fingerprint else "REMEMBERED"))
         return redirect(nxt or "/")
     request.session.cycle_key()
     request.session.pop("uid", None)
@@ -269,7 +269,7 @@ def login(request):
         if cf and not uid:
             msg = f"No account in the system uses {cf}. Ask the System admin."
         messages.error(request, msg)
-    return render(request, "core/login.html", {"email": email, "cf_email": cf, "next": nxt, "fp_here": bool(_fp_login_user(request))})
+    return render(request, "core/login.html", {"email": email, "cf_email": cf, "next": nxt, "fp_here": bool(_fp_login_user(request)), "phone_way": _phone_way(request)})
 
 
 # --- fingerprint sign-in (owner, 2026-10-13; engines/fingerprint_signin.py): the device's own fingerprint or face unlock in place of typing the password.
@@ -323,6 +323,76 @@ def fingerprint_login(request):
     if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
         nxt = "/"
     return JsonResponse({"ok": True, "next": _half_signed_in(request, user, nxt, fingerprint=True)["Location"]})
+
+
+# --- sign in on a computer with your phone (owner, 2026-10-14; engines/phone_approval.py): the site's own QR code, approved on the person's phone.
+def _phone_way(request) -> bool:
+    """Is "Sign in with your phone" offered on this sign-in page: the switch is on and, where Cloudflare says who it is, that person may use it."""
+    from engines import phone_approval as pa
+    if settings.SANDBOX_NO_SIGNIN or not pa.on():
+        return False
+    cf = getattr(request, "cf_email", None)
+    return pa.may_use(_account_id(cf)) if cf else True
+
+
+def _qr_svg(text: str):
+    import qrcode
+    import qrcode.image.svg
+    from django.utils.safestring import mark_safe
+    svg = qrcode.make(text, image_factory=qrcode.image.svg.SvgPathImage, box_size=9, border=2).to_string(encoding="unicode")
+    return mark_safe(svg[svg.find("<svg"):])
+
+
+@require_POST
+def login_phone(request):
+    """The computer asks: a QR code and a number, good for two minutes."""
+    from engines import phone_approval as pa
+    nxt = request.POST.get("next") or "/"
+    if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
+        nxt = "/"
+    if not _phone_way(request):
+        return redirect("/login/")
+    cf = getattr(request, "cf_email", None)
+    m = request.META
+    made = pa.create(_account_id(cf) if cf else None, _browser(m.get("HTTP_USER_AGENT", "")), (m.get("HTTP_CF_CONNECTING_IP") or m.get("REMOTE_ADDR") or ""), nxt)
+    request.session["phone_req"] = made["request_id"]
+    return render(request, "core/login_phone.html", {"qr": _qr_svg(f"{_site(request)[0]}/approve/{made['token']}/"), "number": made["number"], "seconds": made["seconds"], "next": nxt})
+
+
+@require_POST
+def login_phone_status(request):
+    """The waiting computer asks every two seconds; once the phone approved, this very browser (and only it) is signed in."""
+    from engines import phone_approval as pa
+    from engines.auth_service import get_user
+    rid = request.session.get("phone_req")
+    if not rid:
+        return JsonResponse({"state": "gone"})
+    s = pa.state(int(rid))
+    if s["state"] != "approved":
+        if s["state"] != "pending":
+            request.session.pop("phone_req", None)
+        return JsonResponse({"state": s["state"], "left": s.get("left", 0)})
+    uid, nxt = pa.collect(int(rid))
+    request.session.pop("phone_req", None)
+    user = get_user(uid) if uid else None
+    cf = getattr(request, "cf_email", None)
+    if not user or not user["is_active"] or (cf and cf != str(user["email"]).strip().lower()):
+        return JsonResponse({"state": "gone"})
+    if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
+        nxt = "/"
+    return JsonResponse({"state": "approved", "next": _half_signed_in(request, user, nxt, fingerprint=True, via="PHONE")["Location"]})
+
+
+def approve(request, token: str):
+    """The phone's side, after scanning the computer's code. The phone is signed in already (the sign-in page sent it back here)."""
+    from engines import phone_approval as pa
+    me = request.slicks_user
+    if request.method == "POST":
+        yes = request.POST.get("answer") == "yes"
+        ok, msg = pa.answer(token, me, request.POST.get("number"), yes)
+        return render(request, "core/approve.html", {"done": msg, "ok": yes} if ok else {"why": msg})
+    info, why = pa.for_phone(token, me)
+    return render(request, "core/approve.html", {"info": info, "why": why})
 
 
 def fingerprint(request):
