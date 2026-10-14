@@ -129,7 +129,10 @@ def _lenders(today, start, end) -> dict:
                         WHERE n.status = 'Active' AND n.is_lease = 0 AND i.due_date >= ? GROUP BY 1 ORDER BY 1 LIMIT 6""", (str(today.replace(day=1)),))
     notes = _rows("SELECT COUNT(*) FROM loan_notes WHERE status = 'Active' AND is_lease = 0")[0][0]
     pareto = get_lender_pareto(10)
+    from engines.open_loans import owed_total
+    open_owed, open_interest, open_n = owed_total()
     return {"cards": [("Owed to lenders", s.get("Private Lender (Loan Notes)", 0), "peso", "/lenders/"),
+                      (f"Open loans ({open_n}): principal · ₱{open_interest:,.0f} interest a month", open_owed, "peso", "/lenders/?open=1"),
                       ("Payments next 30 days", float(nxt), "peso", "/lenders/"),
                       ("Interest, next 6 months", sum(float(v) for _, v in interest), "peso", "/lenders/"),
                       ("Active loan notes", notes, "count", "/lenders/")],

@@ -130,7 +130,7 @@ def unmark_cleared(check_id: int) -> tuple[bool, str]:
 
 
 def mark_loan_cleared(installment_id: int, on: date | None = None, note: str = "") -> tuple[bool, str]:
-    """The tick for a bank-loan installment (auto-debit): paid on `on` (default today). Not a future date, not before its due date; one the bank already
+    """The tick for a bank-loan installment (auto-debit): paid on `on` (default today). Not a future date; early is fine (owner, 2026-10-14); one the bank already
     shows needs no tick."""
     ok, why = require_permission("payables.mark_paid")
     if not ok:
@@ -147,8 +147,7 @@ def mark_loan_cleared(installment_id: int, on: date | None = None, note: str = "
         due, amount, ref, ticked, done = row
         if done:
             return False, f"{ref} due {us_date(due)} is already paid" + (f" (ticked {us_date(ticked)})." if ticked else " (on the bank statement).")
-        if str(due)[:10] > on.isoformat():
-            return False, f"{ref} is due {us_date(due)}: it can't be paid before its date."
+        # a loan may be paid before its due date (owner, 2026-10-14: "for loans on daily payables allow loans to be paid early")
         conn.execute("UPDATE bank_loan_installments SET cleared_at = ?, cleared_by = acting_user(), cleared_note = ? WHERE installment_id = ?",
                      (on.isoformat(), (note or "").strip() or None, installment_id))
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'BANK_LOAN_MARKED_PAID', 'bank_loan_installments', ?, ?)",
@@ -287,7 +286,16 @@ def daily_payables() -> pd.DataFrame:
         cards["note"] = [f"paid so far {p:,.2f}" if p and p > 0.005 else None for p in cards.pop("paid_so_far")]
     else:
         cards = cards.drop(columns=["paid_so_far"])
-    df = pd.concat([checks, loans, cards, card_paid], ignore_index=True)
+    try:                                                       # open loans' interest months (owner, 2026-10-14): ticked paid in cash or by transfer
+        with get_conn() as conn:
+            oloans = pd.read_sql_query(
+                """SELECT 'oloan' AS kind, i.installment_id AS item_id, i.due_date AS day, cr.creditor_name AS payee, 'Interest · ' || n.note_ref AS ref,
+                          i.interest AS amount, 'Lender' AS track, NULL AS ticked, NULL AS note
+                   FROM loan_installments i JOIN loan_notes n ON n.loan_note_id = i.loan_note_id JOIN creditors cr ON cr.creditor_id = n.creditor_id
+                   WHERE n.is_open = 1 AND n.status = 'Active' AND i.kind = 'INTEREST' AND i.check_id IS NULL AND i.paid_at IS NULL""", conn)
+    except Exception:                                          # noqa: BLE001 -- a database from before migration 103
+        oloans = pd.DataFrame()
+    df = pd.concat([x for x in (checks, loans, cards, card_paid, oloans) if not x.empty] or [checks], ignore_index=True)
     if df.empty:
         return df.assign(due=pd.Series(dtype=bool), pay_day=pd.Series(dtype=str))
     df["day"] = df["day"].astype(str).str[:10]
@@ -296,6 +304,7 @@ def daily_payables() -> pd.DataFrame:
     df["pay_day"] = df["day"].map(bank)                     # a weekend or marked day off is paid the next banking day (owner, 2026-10-12); "day" stays the item's own date
     df["ticked"] = df["ticked"].where(df["ticked"].notna(), None)
     df["due"] = df["day"] <= today.isoformat()
+    df["early"] = (~df["due"]) & df["kind"].isin(["card", "loan", "oloan"]) | ((~df["due"]) & (df["kind"] == "check") & (df["track"] == "Lender"))
     order = {"Lender": 0, "Bank loan": 1, "Supplier": 2, "Card": 3}
     df["_o"] = df["track"].map(order)
     return df.sort_values(["day", "_o", "amount"]).drop(columns="_o").reset_index(drop=True)

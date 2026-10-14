@@ -158,6 +158,10 @@ CREATE TABLE IF NOT EXISTS loan_notes (
     -- page and out of debt figures; lease_description is the property / what is rented.
     is_lease INTEGER NOT NULL DEFAULT 0 CHECK(is_lease IN (0, 1)),
     lease_description TEXT,
+    -- migration 103 (2026-10-14): an OPEN loan -- no maturity; interest every month on the principal still owed, on interest_day, tracked from interest_from
+    is_open INTEGER NOT NULL DEFAULT 0,
+    interest_day INTEGER,
+    interest_from DATE,
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id)
 );
 
@@ -176,6 +180,10 @@ CREATE TABLE IF NOT EXISTS loan_installments (
     status TEXT NOT NULL DEFAULT 'Pending' CHECK(status IN ('Pending', 'Active')),
     check_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    kind TEXT NOT NULL DEFAULT '',            -- migration 103: 'INTEREST' / 'PRINCIPAL' on an open loan; '' on the older rows
+    paid_at DATE,                             -- migration 103: paid in cash or by transfer (a row with a check is paid when the bank pays it)
+    paid_how TEXT,
+    paid_by TEXT,
     FOREIGN KEY (loan_note_id) REFERENCES loan_notes(loan_note_id),
     FOREIGN KEY (check_id) REFERENCES checks_issued(check_id)
 );

@@ -1,0 +1,34 @@
+{% load humanize %}{% comment %}Owner, 2026-10-14 (mock-up x_open_loans.html): an open loan -- interest every month on the principal still owed until it
+is paid; the last peso closes it and its guarantee checks are taken back.{% endcomment %}
+{% if to_return and may_loans %}
+<div class="box-ok" style="border:2px solid var(--bd-b7e0c8);background:var(--bg-e7f6ee);border-radius:12px;padding:12px 14px;margin:12px 0">
+  <b><span class="ms" style="color:var(--fg-0b6e4f)">task_alt</span> {{ n.note_ref }} is fully paid and closed.</b>
+  <p style="margin:6px 0 8px">Its guarantee checks can now be taken back from {{ n.creditor_name }}:</p>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="return_all">
+    {% for g in to_return %}<label class="inline" style="display:block"><input type="checkbox" name="g_{{ g.guarantee_id }}" value="1" checked> {{ g.check_number }}{% if g.face_amount %} · ₱{{ g.face_amount|floatformat:2|intcomma }}{% endif %}</label>{% endfor %}
+    <div class="bar" style="margin-top:8px"><div><label for="ret_on">Taken back on</label><input id="ret_on" type="date" name="on" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></div>
+      <button class="btn small" type="submit">Mark the ticked returned</button></div></form>
+</div>{% endif %}
+{% if n.is_open %}
+<div class="facts" style="margin-top:10px"><div><span>Open loan</span><b><span class="pill">no end date</span></b></div>
+  <div><span>Principal still owed</span><b>₱{{ owed|floatformat:2|intcomma }}</b></div><div><span>Interest a month</span><b>₱{{ interest_month|floatformat:2|intcomma }}</b></div>
+  <div><span>Paid on</span><b>day {{ n.interest_day }}</b></div><div><span>Tracked from</span><b>{{ from_label }}</b></div></div>
+{% if n.status == "Active" and may_loans %}
+<details class="manual"{% if owed %} open{% endif %}><summary>Pay principal</summary>
+  <form method="post" class="bar" onsubmit="return confirm('Record this principal payment? The months not yet paid are worked out again on what is still owed.');">{% csrf_token %}<input type="hidden" name="action" value="pay_principal">
+    <div><label for="pp_a">Amount</label><input id="pp_a" type="text" inputmode="decimal" name="amount" style="width:150px;text-align:right" required></div>
+    <div><label for="pp_d">Date</label><input id="pp_d" type="date" name="on" value="{{ today|date:'Y-m-d' }}"></div>
+    <div><label for="pp_h">Paid by</label><select id="pp_h" name="how"><option value="CHECK">check (parked here)</option><option value="CASH">cash</option><option value="TRANSFER">transfer</option></select></div>
+    <button class="btn small" type="submit"><span class="ms">payments</span>Pay principal</button></form>
+  <p class="hint">Still owed after it: the interest of the months not yet paid is worked out again. Paying all of it closes the loan.</p></details>
+{% endif %}
+{% elif n.status == "Active" or n.status == "Pending Setup" %}{% if may_loans %}
+<details class="manual"><summary>Make this an open loan (no end date)</summary>
+  <form method="post" class="bar">{% csrf_token %}<input type="hidden" name="action" value="make_open">
+    <div><label for="mo_p">Principal</label><input id="mo_p" type="text" inputmode="decimal" name="principal" value="{{ n.principal_amount|default_if_none:''|floatformat:2 }}" style="width:150px;text-align:right" required></div>
+    <div><label for="mo_r">Interest a month (%)</label><input id="mo_r" type="text" inputmode="decimal" name="rate" value="{{ n.monthly_interest_rate|default_if_none:'' }}" style="width:80px" required></div>
+    <div><label for="mo_d">Paid on day</label><input id="mo_d" type="number" min="1" max="31" name="day" style="width:70px" required></div>
+    <div><label for="mo_f">Track interest from</label><input id="mo_f" type="month" name="from" required></div>
+    <button class="btn small" type="submit">Make it an open loan</button></form>
+  <p class="hint">Interest every month on the principal still owed, from the month you pick (older months are not tracked), until the principal is paid. The rows already here stay as they are.</p>
+</details>{% endif %}{% endif %}

@@ -50,7 +50,7 @@
     <span class="hint">· {{ d.items|length }} item{{ d.items|length|pluralize }} · ₱{{ d.total|floatformat:2|intcomma }}{% if d.n_open and show == "all" %} · {{ d.n_open }} not paid{% endif %}</span></td></tr>
   {% for r in d.items %}
   <tr class="dp-row" data-q="{{ r.payee|lower }} {{ r.ref|lower }}">
-    <td class="c-k">{% if not r.ticked and may_tick %}<input type="checkbox" name="tick_{{ r.kind }}_{{ r.item_id }}" value="1" data-amt="{{ r.amount }}" data-due="{% if r.due %}1{% else %}0{% endif %}"{% if not r.due and r.kind != "card" %} disabled title="Not due yet: it can't be paid before its date"{% endif %} aria-label="Paid: {{ r.payee }} {{ r.ref }}">{% endif %}</td>
+    <td class="c-k">{% if not r.ticked and may_tick %}<input type="checkbox" name="tick_{{ r.kind }}_{{ r.item_id }}" value="1" data-amt="{{ r.amount }}" data-due="{% if r.due %}1{% else %}0{% endif %}"{% if not r.due and not r.early %} disabled title="Not due yet: it can't be paid before its date"{% endif %} aria-label="Paid: {{ r.payee }} {{ r.ref }}">{% endif %}</td>
     <td class="c-t">{{ r.payee }}</td><td class="c-big num">{{ r.amount|floatformat:2|intcomma }}</td>
     <td>{{ r.day|dmy }}</td>
     <td>{{ r.ref|default:"—" }} <span class="kind">{{ r.track }}</span></td>
@@ -61,7 +61,10 @@
           {% elif may_tick and r.kind == "loan" %}<button class="btn small ghost" type="submit" form="undo-l{{ r.item_id }}">Undo</button>
           {% elif may_tick and r.kind == "cardpay" %}<button class="btn small ghost" type="submit" form="undo-p{{ r.item_id }}">Undo</button>{% endif %}
         {% elif r.note %}<span class="hint">{{ r.note|usdates }}</span>
-        {% elif not r.due %}<span class="hint">{% if r.kind == "card" %}not due yet · can be paid early{% else %}not due yet{% endif %}</span>{% endif %}</td>
+        {% elif not r.due %}<span class="hint">{% if r.early %}not due yet · can be paid early{% else %}not due yet{% endif %}</span>{% endif %}
+        {% if not r.ticked and may_tick and r.kind == "oloan" or not r.ticked and may_tick and r.early and r.kind == "check" %}
+          <select name="how_{{ r.kind }}_{{ r.item_id }}" aria-label="How it was paid: {{ r.payee }}" class="dp-how"><option value="CASH">cash</option><option value="TRANSFER">transfer</option></select>
+          {% if r.kind == "check" %}<div class="hint">paid early: take the check back</div>{% endif %}{% endif %}</td>
   </tr>{% endfor %}
   {% endfor %}
 </table></div>
@@ -73,7 +76,8 @@
   <button class="btn" type="submit" id="dp-go" disabled><span class="ms">task_alt</span><span id="dp-go-t">Mark paid</span></button>
 </div>
 <p class="hint">A check or bank-loan payment ticked here is confirmed by the next bank statement. A card line records a card payment on its statement, dated the day
-  it posts; type a smaller amount to pay part of it: the statement is done here (Partially Paid) and the rest carries to the next statement. A tick can't be dated before the item's own date.</p>
+  it posts; type a smaller amount to pay part of it: the statement is done here (Partially Paid) and the rest carries to the next statement. A check can't be ticked before its own date; a lender check paid early (cash or transfer) is set aside, to take back from the lender.
+  An open loan's interest is ticked paid with how it was paid.</p>
 {% endif %}
 </form>
 {% for d in days %}{% for r in d.items %}{% if r.ticked and may_tick %}

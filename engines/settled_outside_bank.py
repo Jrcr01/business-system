@@ -17,7 +17,7 @@ import pandas as pd
 
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
-REASONS = ["Paid in cash", "Check returned and exchanged", "Other"]
+REASONS = ["Paid in cash", "Paid by transfer", "Check returned and exchanged", "Other"]
 COLUMNS = ["check_number", "check_date", "amount", "payee", "reference", "settled_on", "reason", "note", "bank_also_cleared", "check_id"]
 
 

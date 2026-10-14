@@ -73,7 +73,21 @@
 {% if may_write %}<form class="bar" method="get" action="/lenders/#new"><input type="hidden" name="new" value="1">
   <div class="grow"><label for="new_l">New loan note for</label><select id="new_l" name="lender">{% for p in all_lenders %}<option value="{{ p.creditor_id }}">{{ p.creditor_name }}</option>{% endfor %}</select></div>
   <button class="btn small" type="submit"{% if not all_lenders %} disabled{% endif %}><span class="ms">note_add</span>New loan note</button>
+  <a class="btn small ghost" href="/lenders/?open_new=1#open"><span class="ms">all_inclusive</span>New open loan</a>
 </form>{% endif %}
+{% if new_open and may_write %}{% comment %}Owner, 2026-10-14: an open loan -- no end date; interest every month until the principal is paid.{% endcomment %}
+<div class="grp" id="open">New open loan</div>
+<form method="post" class="bar">{% csrf_token %}<input type="hidden" name="action" value="open_new">
+  <div><label for="ol_l">Lender</label><select id="ol_l" name="lender">{% for p in all_lenders %}<option value="{{ p.creditor_id }}">{{ p.creditor_name }}</option>{% endfor %}</select></div>
+  <div><label for="ol_g">Given on</label><input id="ol_g" type="date" name="given_on" required></div>
+  <div><label for="ol_p">Principal</label><input id="ol_p" type="text" inputmode="decimal" name="principal" style="width:140px;text-align:right" required></div>
+  <div><label for="ol_r">Interest a month (%)</label><input id="ol_r" type="text" inputmode="decimal" name="rate" style="width:80px" required></div>
+  <div><label for="ol_d">Paid on day</label><input id="ol_d" type="number" min="1" max="31" name="day" style="width:70px" required></div>
+  <div><label for="ol_f">Track interest from</label><input id="ol_f" type="month" name="from" required></div>
+  <button class="btn small" type="submit"><span class="ms">save</span>Save open loan</button></form>
+<p class="hint">No end date: the system adds each month's interest (the principal still owed × the rate) on that day, from the month you pick; older months are not
+  tracked. Pay the principal from the loan's page; the last peso closes it. Its guarantee checks can be moved onto it on the Guarantee checks tab (Edit).</p>
+{% endif %}
 {% if new and may_write %}
 <div class="grp" id="new">New loan note</div>
 <form method="post" id="noteform">{% csrf_token %}

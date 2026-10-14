@@ -47,7 +47,7 @@ def test_the_checklist_shows_every_track_and_ticks_many_at_once(web, db):
     assert fetchone(db, "SELECT cleared_at FROM bank_loan_installments WHERE installment_id = ?", (iid,))[0] is None
 
 
-def test_a_payable_not_due_yet_is_refused_and_the_rest_still_go_through(web, db):
+def test_a_bank_loan_not_due_yet_may_be_paid_early_with_the_rest(web, db):
     _admin(web)
     _, cid = _issued(db)
     iid, _ = _loan_and_card(db, TODAY + timedelta(days=6))                   # not due yet
@@ -55,7 +55,7 @@ def test_a_payable_not_due_yet_is_refused_and_the_rest_still_go_through(web, db)
     assert "L-77" in web.get("/checks/?show=week").content.decode()
     web.post("/checks/", {"action": "clear_many", f"tick_check_{cid}": "1", f"tick_loan_{iid}": "1", "on": str(TODAY)})
     assert fetchone(db, "SELECT manual_cleared_at FROM checks_issued WHERE check_id = ?", (cid,))[0] == str(TODAY)
-    assert fetchone(db, "SELECT cleared_at FROM bank_loan_installments WHERE installment_id = ?", (iid,))[0] is None
+    assert fetchone(db, "SELECT cleared_at FROM bank_loan_installments WHERE installment_id = ?", (iid,))[0] == str(TODAY)   # early is fine (owner, 2026-10-14)
 
 
 def test_only_the_admin_sees_the_cutoff(web, db):
@@ -125,7 +125,7 @@ def test_a_card_statement_can_be_paid_before_its_due_date(web, db):
     iid, csid = _loan_and_card(db, TODAY + timedelta(days=6))
     page = web.get("/checks/?show=week").content.decode()
     assert f'name="tick_card_{csid}" value="1" data-amt="3000.0" data-due="0" aria-label' in page            # the card's tick is live
-    assert f'name="tick_loan_{iid}" value="1" data-amt="20000.0" data-due="0" disabled' in page             # the loan's is not
+    assert f'name="tick_loan_{iid}" value="1" data-amt="20000.0" data-due="0" disabled' not in page         # a bank loan may be paid early too (owner, 2026-10-14)
     assert "can be paid early" in page and f'name="tick_card_{csid}" value="1" data-amt="3000.0" data-due="0"' in page     # tick-all leaves it alone
     r = web.post("/checks/", {"action": "clear_many", f"tick_card_{csid}": "1", f"amt_card_{csid}": "", "on": str(TODAY)})
     assert r.status_code == 302

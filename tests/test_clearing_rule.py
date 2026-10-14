@@ -113,7 +113,7 @@ def test_a_bank_loan_payment_stays_owed_past_its_date_until_ticked_or_on_the_ban
     # daily payables, owner 2026-10-09: "until the check is not cleared it will still be considered payable"
     iid = _loan_due(db, TODAY - timedelta(days=4))
     assert _owed_tracks()["Bank Loan"] == 20000.0
-    assert not clearing.mark_loan_cleared(iid, TODAY - timedelta(days=5))[0]           # before its due date
+    assert not clearing.mark_loan_cleared(iid, TODAY + timedelta(days=1))[0]           # not on a future date (paying early is fine: owner, 2026-10-14)
     ok, msg = clearing.mark_loan_cleared(iid, TODAY, "auto-debit seen")
     assert ok, msg
     assert _owed_tracks()["Bank Loan"] == 0.0

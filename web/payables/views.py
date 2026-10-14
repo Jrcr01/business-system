@@ -375,6 +375,18 @@ def _daily(df, show: str, today, by: str = "bank") -> dict:
             "n_overdue": int((due["group"] < today.isoformat()).sum()), "total_due": float(due["amount"].sum())}
 
 
+def today_():
+    from engines.clock import manila_today
+    return manila_today()
+
+
+def _early_lender_check(check_id: int, on) -> bool:
+    from engines.common import get_conn
+    with get_conn() as conn:
+        row = conn.execute("SELECT check_date, loan_note_id FROM checks_issued WHERE check_id = ?", (int(check_id),)).fetchone()
+    return bool(row and row[1] and str(row[0] or "")[:10] > (on or today_()).isoformat())
+
+
 @page_needed("checks")
 def checks(request):
     """Pay suppliers -> Checks (Phase 2, step 1, owner 2026-10-08): the written checks waiting for the bank, the "cleared" tick (confirmed later by the
@@ -393,10 +405,20 @@ def checks(request):
             for kind, item in picked:
                 if not item.isdigit():
                     continue
-                fn = {"check": clearing.mark_cleared, "loan": clearing.mark_loan_cleared, "card": clearing.pay_card}.get(kind)
+                fn = {"check": clearing.mark_cleared, "loan": clearing.mark_loan_cleared, "card": clearing.pay_card, "oloan": "oloan"}.get(kind)
                 if fn is None:
                     continue
-                if kind == "card":                                  # a card can be paid partly: the amount typed on its line (owner, 2026-10-09)
+                how = request.POST.get(f"how_{kind}_{item}", "CASH")
+                if kind == "oloan":                                 # an open loan's interest month, paid in cash or by transfer (owner, 2026-10-14)
+                    from engines.open_loans import mark_paid
+                    one_ok, one_msg = mark_paid(int(item), how, on, note)
+                elif kind == "check" and _early_lender_check(int(item), on):
+                    # a lender check paid before its date: the bank would refuse the check, so the lender was paid in cash or by transfer and the
+                    # check is taken back (owner, 2026-10-14: "allow loans to be paid early")
+                    from engines.settled_outside_bank import settle_outside_bank
+                    one_ok, one_msg = settle_outside_bank(int(item), "Paid by transfer" if how == "TRANSFER" else "Paid in cash", on or today_(),
+                                                          ((note or "").strip() + " · " if (note or "").strip() else "") + "paid early; take the check back from the lender")
+                elif kind == "card":                                  # a card can be paid partly: the amount typed on its line (owner, 2026-10-09)
                     typed = request.POST.get(f"amt_card_{item}", "").replace(",", "").strip()
                     try:
                         one_ok, one_msg = fn(int(item), on, note, float(typed) if typed else None)

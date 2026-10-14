@@ -46,9 +46,12 @@ def lenders(request):
     if request.method == "POST":
         if request.POST.get("action", "").startswith("gc_"):
             return _guarantee_post(request)
+        if request.POST.get("action") == "open_new":
+            return _open_new(request)
         return _create(request)
     if request.GET.get("tab") == "guarantees":
         return _guarantees(request)
+    _ensure_interest()
     today = date.today().isoformat()
     lenders_all = _rows("SELECT creditor_id, creditor_name FROM creditors WHERE creditor_type = 'LENDER' AND is_lessor = 0 AND is_active = 1 ORDER BY creditor_name")
     q, who, status = request.GET.get("q", "").strip(), request.GET.get("s", ""), request.GET.get("status", "open")
@@ -61,19 +64,31 @@ def lenders(request):
         where.append("n.creditor_id = ?"); params.append(int(who))
     if q:
         where.append("n.note_ref LIKE ?"); params.append(f"%{q}%")
-    rows = _rows(f"""SELECT n.loan_note_id, n.note_ref, n.creditor_id, cr.creditor_name, n.issue_date, n.principal_amount, n.monthly_interest_rate, n.total_payable, n.status,
+    rows = _rows(f"""SELECT n.loan_note_id, n.note_ref, n.creditor_id, cr.creditor_name, n.issue_date, n.principal_amount, n.monthly_interest_rate, n.total_payable, n.status, n.is_open,
                             n.total_payable - (SELECT COALESCE(SUM(c.amount), 0) FROM checks_issued c WHERE c.loan_note_id = n.loan_note_id AND c.status = 'Active' AND {PAID}) AS outstanding,
                             (SELECT MIN(i.due_date) FROM loan_installments i WHERE i.loan_note_id = n.loan_note_id AND i.due_date >= ?) AS next_day
                      FROM loan_notes n JOIN creditors cr ON cr.creditor_id = n.creditor_id
                      WHERE {" AND ".join(where)} ORDER BY n.issue_date DESC, n.loan_note_id DESC""", tuple(params))
+    from engines.open_loans import principal_owed
+    for r in rows:
+        if r.get("is_open"):                                         # an open loan owes its principal still owed (owner, 2026-10-14)
+            r["outstanding"] = principal_owed(int(r["loan_note_id"]))
     from engines.guarantee_check_service import exposure
-    ctx = {"page_id": "lenders", "tab": "notes", "g_exposure": exposure(), "rows": rows, "all_lenders": lenders_all, "q": q, "who": who, "status": status,
+    ctx = {"page_id": "lenders", "tab": "notes", "new_open": bool(request.GET.get("open_new")), "g_exposure": exposure(), "rows": rows, "all_lenders": lenders_all, "q": q, "who": who, "status": status,
            "statuses": [("open", "Open (active or being set up)"), ("Active", "Active"), ("Pending Setup", "Pending setup"), ("Settled", "Settled"),
                         ("Defaulted", "Defaulted"), ("Cancelled", "Cancelled"), ("", "All")],
            "outstanding": sum(float(r["outstanding"] or 0) for r in rows if r["status"] == "Active"),
            "new": bool(request.GET.get("new")), "pick": request.GET.get("lender", ""), "may_write": _can(request, "loans.use"), "today": date.today(),
            "n_rows": range(1, MAX_ROWS + 1), "typed": request.session.pop("loan_typed", None)}
     return render(request, "payables/lenders.html", ctx)
+
+
+def _ensure_interest():
+    try:
+        from engines.open_loans import ensure_interest
+        ensure_interest()
+    except Exception:                                                # noqa: BLE001 -- never break the page
+        pass
 
 
 def _guarantees(request):
@@ -123,6 +138,20 @@ def _guarantee_post(request):
     return redirect(back + ("&show=all" if what in ("gc_undo",) else "") + ("&show=" + p.get("show", "") if what == "gc_edit" and p.get("show") else ""))
 
 
+def _open_new(request):
+    """A new open loan (owner, 2026-10-14): no end date, interest every month until the principal is paid."""
+    from engines.open_loans import new_open_loan
+    p = request.POST
+    if not _can(request, "loans.use"):
+        _say(request, False, "Loan work is switched off for you.")
+        return redirect("/lenders/")
+    start = _date((p.get("from") or "") + "-01") if len(p.get("from") or "") == 7 else _date(p.get("from"))
+    ok, msg, lnid = new_open_loan(int(p.get("lender") or 0), _date(p.get("given_on")), _num(p.get("principal")), _num(p.get("rate")),
+                                  int(_num(p.get("day"), 0) or 0), start)
+    _say(request, ok, msg)
+    return redirect(f"/lenders/{lnid}/" if ok and lnid else "/lenders/?open_new=1#open")
+
+
 def _create(request):
     from engines.loan_schedule_service import create_note_with_payments
     p = request.POST
@@ -158,9 +187,11 @@ def loan_note(request, lnid: int):
         raise Http404
     if request.method == "POST":
         return _note_post(request, note)
+    if note.get("is_open"):
+        _ensure_interest()
     from payables.batch_checks import checks_for
     tab = request.GET.get("tab", "schedule")
-    inst = _rows("""SELECT i.installment_id, i.installment_no, i.due_date, i.principal, i.interest, i.outstanding_balance, i.status, i.check_id,
+    inst = _rows("""SELECT i.installment_id, i.installment_no, i.due_date, i.principal, i.interest, i.outstanding_balance, i.status, i.check_id, i.kind, i.paid_at, i.paid_how,
                            c.check_number, c.printed_at, c.released_date, c.bank_cleared_date, c.manual_cleared_at, c.settled_outside_at, c.status AS check_status
                     FROM loan_installments i LEFT JOIN checks_issued c ON c.check_id = i.check_id
                     WHERE i.loan_note_id = ? ORDER BY i.due_date, i.installment_id""", (lnid,))
@@ -190,6 +221,13 @@ def loan_note(request, lnid: int):
         ctx["void_check"] = next((c for c in checks if c["check_id"] == one and c["status"] == "Active" and c["stage"] != "Cleared"), None) if one else None
     ctx["guarantees"] = _rows("""SELECT check_number, face_amount, given_on, status, returned_on, note FROM guarantee_checks WHERE loan_note_id = ?
                                  ORDER BY guarantee_id""", (lnid,))
+    if note.get("is_open"):                                          # owner, 2026-10-14: open loans
+        from engines.open_loans import principal_owed
+        owed = principal_owed(lnid)
+        ctx["from_label"] = date.fromisoformat(str(note["interest_from"])[:10]).strftime("%B %Y") if note.get("interest_from") else ""
+        ctx.update({"owed": owed, "interest_month": round(owed * float(note["monthly_interest_rate"] or 0) / 100, 2), "may_tick": _can(request, "payables.mark_paid")})
+    ctx["to_return"] = [g for g in _rows("SELECT guarantee_id, check_number, face_amount FROM guarantee_checks WHERE loan_note_id = ? AND status = 'Held'", (lnid,))] \
+        if note["status"] == "Settled" else []
     return render(request, "payables/loan_note.html", ctx)
 
 
@@ -200,6 +238,8 @@ def _note_post(request, note: dict):
         from payables import batch_checks
         return batch_checks.post(request, {"creditor_id": note["creditor_id"]}, lambda ok, msg: _say(request, ok, msg), lambda a: _can(request, a), loan_note_id=lnid)
     back = f"/lenders/{lnid}/"
+    if what in ("make_open", "pay_principal", "row_paid", "row_unpaid", "return_all"):
+        return _open_post(request, note, what, back)
     if what == "move":
         if not _can(request, "loans.use"):
             _say(request, False, "Loan work is switched off for you.")
@@ -241,6 +281,31 @@ def _note_post(request, note: dict):
             _say(request, ok, msg)
     else:
         _say(request, False, "Unknown action.")
+    return redirect(back)
+
+
+def _open_post(request, note: dict, what: str, back: str):
+    """Open loans on the loan note page (owner, 2026-10-14)."""
+    from engines import open_loans as ol
+    p, lnid = request.POST, int(note["loan_note_id"])
+    if what == "make_open":
+        start = _date((p.get("from") or "") + "-01") if len(p.get("from") or "") == 7 else _date(p.get("from"))
+        _say(request, *ol.make_open(lnid, _num(p.get("principal")), _num(p.get("rate")), int(_num(p.get("day"), 0) or 0), start))
+    elif what == "pay_principal":
+        ok, msg, held = ol.pay_principal(lnid, _num(p.get("amount")), p.get("how", ""), _date(p.get("on")) or date.today())
+        _say(request, ok, msg)
+    elif what == "row_paid":
+        _say(request, *ol.mark_paid(int(p.get("installment_id") or 0), p.get("how", ""), _date(p.get("on")) or date.today()))
+    elif what == "row_unpaid":
+        _say(request, *ol.unmark_paid(int(p.get("installment_id") or 0)))
+    elif what == "return_all":
+        from engines import guarantee_check_service as gc
+        done = 0
+        for k, v in p.items():
+            if k.startswith("g_") and v == "1" and k[2:].isdigit():
+                ok, _m = gc.return_guarantee_check(int(k[2:]), _date(p.get("on")) or date.today(), "the loan is fully paid")
+                done += ok
+        _say(request, bool(done), f"{done} guarantee check(s) marked returned." if done else "Tick the checks taken back.")
     return redirect(back)
 
 

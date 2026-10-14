@@ -203,6 +203,13 @@ def get_payment_schedule_all_tracks() -> pd.DataFrame:
     df["stage"] = df["track"].map({"Supplier": "check", "Lender": "check", "Bank Loan": "loan", "Credit Card": "card"})
     from engines.payables_waterfall import owed_extra
     extra = owed_extra()
+    try:                                                             # open loans' interest months (owner, 2026-10-14)
+        from engines.open_loans import schedule_rows
+        interest = schedule_rows()
+        if not interest.empty:
+            extra = pd.concat([extra, interest], ignore_index=True) if not extra.empty else interest
+    except Exception:                                                # noqa: BLE001 -- a database from before migration 103
+        pass
     if not extra.empty:
         df = pd.concat([df, extra], ignore_index=True) if not df.empty else extra
     if not df.empty:
@@ -307,8 +314,13 @@ def get_combined_ap_summary() -> pd.DataFrame:
                         WHERE loan_note_id = ln.loan_note_id AND status = 'Active' AND (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)), 0
                    )
                ), 0)
-               FROM loan_notes ln WHERE status IN ('Active', 'Defaulted')"""
+               FROM loan_notes ln WHERE status IN ('Active', 'Defaulted') AND COALESCE(ln.is_open, 0) = 0"""
         ).fetchone()[0]
+        try:                                                         # an open loan owes its principal still owed (owner, 2026-10-14)
+            from engines.open_loans import owed_total
+            lender += owed_total()[0]
+        except Exception:                                            # noqa: BLE001
+            pass
         bank_loan = conn.execute(
             "SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE NOT (cleared_at IS NOT NULL OR installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)) AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)"
         ).fetchone()[0]

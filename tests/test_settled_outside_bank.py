@@ -98,7 +98,7 @@ def test_refusals(db, monkeypatch, tmp_path):
 
 
 def test_the_reasons_offered(db):
-    assert REASONS == ["Paid in cash", "Check returned and exchanged", "Other"]
+    assert REASONS == ["Paid in cash", "Paid by transfer", "Check returned and exchanged", "Other"]
 
 
 def test_the_list_flags_a_settled_check_the_bank_paid_as_well(db, monkeypatch, tmp_path):
