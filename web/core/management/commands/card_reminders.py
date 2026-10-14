@@ -14,3 +14,10 @@ class Command(BaseCommand):
         from engines.card_reminders import run
         with acting_as("system@slicks", "admin"):
             self.stdout.write(run(slot=opts["slot"]))
+            try:                                                 # the 8 AM email rides on the same hourly timer (owner, 2026-10-14)
+                from django.conf import settings
+                from engines import morning_email
+                host = next((h for h in settings.ALLOWED_HOSTS if "." in h and h[0].isalpha()), "")
+                self.stdout.write(morning_email.run(site=f"https://{host}" if host else ""))
+            except Exception as e:                               # noqa: BLE001 -- never take the card reminders down with it
+                self.stdout.write(f"Morning email: {e}")

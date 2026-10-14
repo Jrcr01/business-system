@@ -1,0 +1,60 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: the 8 AM email</title>
+<style>
+body { font-family: "Segoe UI", system-ui, sans-serif; background: #e9edf2; margin: 0; color: #1c2733; font-size: 15px; }
+main { max-width: 1040px; margin: 0 auto; padding: 18px 20px 60px; }
+h1 { color: #0B4F8A; font-size: 1.3rem; margin: 6px 0 4px; } .why { color: #4b5563; margin: 0 0 16px; max-width: 80ch; }
+.cols { display: flex; gap: 26px; flex-wrap: wrap; align-items: flex-start; }
+.cap { font-weight: 700; margin: 0 0 6px; } .cap small { display: block; font-weight: 400; color: #4b5563; }
+.mail { width: 400px; max-width: 100%; background: #fff; border: 1px solid #d5dbe3; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+.hdr { background: #f3f4f6; padding: 9px 14px; font-size: .82rem; color: #4b5563; border-bottom: 1px solid #e5e7eb; } .hdr b { color: #1c2733; }
+.top { background: #0f2a4a; color: #fff; padding: 13px 16px; } .top b { font-size: 1.05rem; display: block; } .top span { color: #f5c518; font-size: .85rem; }
+.sec { padding: 12px 16px; border-bottom: 1px solid #e5e7eb; } .sec h2 { font-size: .9rem; margin: 0 0 7px; color: #0B4F8A; }
+.kp { display: flex; gap: 8px; } .kp div { flex: 1; background: #f3f5f8; border-radius: 8px; padding: 7px 8px; }
+.kp span { display: block; font-size: .72rem; color: #4b5563; } .kp b { font-size: 1rem; } .kp small { display: block; font-size: .72rem; color: #4b5563; }
+.up { color: #0b6e4f !important; } .dn { color: #C62828 !important; }
+table { width: 100%; border-collapse: collapse; font-size: .88rem; } td { padding: 4px 0; border-bottom: 1px solid #f0f2f5; } td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.line { margin: 0; font-size: .88rem; } .muted { color: #4b5563; }
+.also { background: #fff7e0; padding: 10px 16px; font-size: .88rem; border-bottom: 1px solid #e5e7eb; }
+.btn { display: inline-block; background: #0B4F8A; color: #fff; border-radius: 8px; padding: 8px 16px; font-weight: 600; font-size: .9rem; }
+.foot { padding: 10px 16px; font-size: .76rem; color: #4b5563; }
+</style></head><body><main>
+<h1>The 8 AM email, short version <small style="font-weight:400;color:#4b5563;font-size:.9rem">sample figures</small></h1>
+<p class="why">Three sections that fit one phone screen, and one closing line that appears only when something needs you. Sent every morning at 8 to you and the family; a section is left out for a person whose page for it is Hidden.</p>
+<div class="cols">
+
+<div><p class="cap">A normal day<small>with the closing line</small></p>
+<div class="mail">
+  <div class="hdr">From: <b>Slick's ERP</b><br>Subject: <b>Wed Oct 14 · Sales ₱48,600 yesterday</b></div>
+  <div class="top"><b>Good morning, Jeane</b><span>Wednesday, October 14, 2026</span></div>
+  <div class="sec"><h2>Yesterday's sales</h2>
+    <div class="kp"><div><span>Sales</span><b>₱48,600</b><small class="up">▲ 12% vs Mon</small></div><div><span>Margin</span><b>₱10,900</b><small>22.4%</small></div>
+      <div><span>Pieces</span><b>14</b><small>9 invoices</small></div><div><span>Cash taken</span><b>₱31,200</b><small>₱17,400 credit</small></div></div>
+    <p class="line muted" style="margin-top:7px">October so far: ₱612,300 <span class="up">▲ 8% vs September</span></p></div>
+  <div class="sec"><h2>Cash</h2>
+    <p class="line">Bank <b>₱1,420,000</b> <span class="muted">(Oct 13)</span> · lowest ahead <b>₱186,000</b> <span class="muted">on Nov 15</span></p></div>
+  <div class="sec"><h2>Today</h2>
+    <table><tr><td>Checks dated today (6)</td><td class="n">₱355,000</td></tr><tr><td>Card due: World 9953</td><td class="n">₱57,000</td></tr>
+      <tr><td>Card statement to type: Jcb Gold 8012</td><td class="n">since Oct 11</td></tr><tr><td>Deliveries expected</td><td class="n">2 orders</td></tr></table></div>
+  <div class="also"><b>Also:</b> 3 customers over 30 days (₱148,200) · 2 items will run out this week</div>
+  <div class="sec" style="text-align:center;border-bottom:0"><span class="btn">Open Slick's ERP</span></div>
+  <div class="foot">Sent every morning at 8:00. To stop it, ask the System admin.</div>
+</div></div>
+
+<div><p class="cap">A quiet day<small>still sent, so a missing email means something is wrong</small></p>
+<div class="mail">
+  <div class="hdr">From: <b>Slick's ERP</b><br>Subject: <b>Mon Oct 19 · No sales recorded yesterday</b></div>
+  <div class="top"><b>Good morning, Jeane</b><span>Monday, October 19, 2026</span></div>
+  <div class="sec"><h2>Yesterday's sales</h2>
+    <p class="line muted">No sales recorded for Sunday.</p>
+    <p class="line muted" style="margin-top:7px">October so far: ₱798,400 <span class="up">▲ 6% vs September</span></p></div>
+  <div class="sec"><h2>Cash</h2>
+    <p class="line">Bank <b>₱1,268,000</b> <span class="muted">(Oct 16)</span> · lowest ahead <b>₱186,000</b> <span class="muted">on Nov 15</span></p></div>
+  <div class="sec"><h2>Today</h2><p class="line muted">Nothing dated today.</p></div>
+  <div class="sec" style="text-align:center;border-bottom:0"><span class="btn">Open Slick's ERP</span></div>
+  <div class="foot">Sent every morning at 8:00. To stop it, ask the System admin.</div>
+</div></div>
+
+</div>
+<p class="why" style="margin-top:22px"><b>Gone from the long version:</b> the separate Credit cards, To collect, Stock to reorder, Waiting for you and The bank yesterday sections, and the "over the limit" line.
+Cards due and statements to type sit inside Today; overdue customers and items running out shrink into the one "Also" line, shown only when there are any. Everything else stays on Home.</p>
+</main></body></html>

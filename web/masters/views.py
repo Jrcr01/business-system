@@ -280,9 +280,21 @@ def settings_notifications(request):
     cardholder each person is. The switches and the two hours are numbers on the first tab."""
     from engines import card_reminders as cr, settings_registry as sr
     from engines.common import get_conn
+    from engines import mail_out, morning_email
     if request.method == "POST":
         p = request.POST
-        ok, msg = cr.set_pref(p.get("email", ""), p.get("scope", ""), p.get("cardholder_id", ""))
+        what = p.get("action", "")
+        if what == "mail_setup":                                       # owner, 2026-10-14: the morning email; the key is typed here by the System admin
+            ok, msg = mail_out.save_config(p.get("provider", ""), p.get("sender", ""), p.get("key", ""))
+        elif what == "mail_pref":
+            ok, msg = morning_email.set_pref(p.get("email", ""), p.get("receives") == "1")
+        elif what == "mail_test":
+            from engines.clock import manila_today
+            me = request.slicks_user
+            ok, msg = morning_email.send_to(me["email"], me["name"], manila_today(), f"{request.scheme}://{request.get_host()}")
+            msg = f"Today's email was sent to {me['email']}. It should arrive within a minute; look in Spam too the first time." if ok else msg
+        else:
+            ok, msg = cr.set_pref(p.get("email", ""), p.get("scope", ""), p.get("cardholder_id", ""))
         (messages.success if ok else messages.error)(request, msg)
         return redirect("/settings/notifications/")
     with get_conn() as conn:
@@ -290,4 +302,6 @@ def settings_notifications(request):
     kinds = [(sr._meta(k)["label"].split(" (")[0].split(": ", 1)[-1].capitalize(), sr.int_value(k) == 1, k) for k in ("notify_card_statement", "notify_card_due", "notify_card_fee")]
     return render(request, "masters/settings_notifications.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/notifications/",
                                                                    "people": cr.people(), "holders": holders, "missing": cr.missing(), "kinds": kinds,
+                                                                   "mail": mail_out.config(), "mail_on": morning_email.on(), "mail_people": morning_email.people(),
+                                                                   "mail_hour": sr.int_value("email_morning_hour"), "providers": list(mail_out.PROVIDERS.items()),
                                                                    "hour": sr.int_value("notify_hour"), "second": sr.int_value("notify_second_hour")})

@@ -1,0 +1,74 @@
+"""The 8 AM email (owner, 2026-10-14): short, every day, to each person who receives it, following their pages; sent through a mail service whose
+key the System admin types once."""
+from datetime import datetime
+
+from tests.test_web_d0 import _admin, _sign_in_new, fetchone_uid
+from tests.test_web_sell import _ready, _sale
+
+
+def _setup(web, monkeypatch):
+    from engines import mail_out
+    sent = []
+    monkeypatch.setattr(mail_out, "_post", lambda url, headers, body: (sent.append((url, headers, body)) or (200, "{}")))
+    r = web.post("/settings/notifications/", {"action": "mail_setup", "provider": "resend", "sender": "reports@slicks.test", "key": "re_test_key_12345678"})
+    assert r.status_code == 302
+    return sent
+
+
+def _at(hour):
+    from engines.clock import manila_today
+    t = manila_today()
+    return datetime(t.year, t.month, t.day, hour, 5)
+
+
+def test_nothing_is_sent_until_the_service_is_set_up_and_the_key_is_never_shown(web, db, monkeypatch):
+    from engines import morning_email
+    _admin(web)
+    assert morning_email.run(_at(8)) == "Email sending is not set up yet."
+    page = web.get("/settings/notifications/").content.decode()
+    assert "The morning email" in page and "not set up yet" in page
+    _setup(web, monkeypatch)
+    page = web.get("/settings/notifications/").content.decode()
+    assert "sending is set up" in page and "ends in 5678" in page and "re_test_key_12345678" not in page
+    assert web.post("/settings/notifications/", {"action": "mail_setup", "provider": "resend", "sender": "reports@slicks.test", "key": ""}).status_code == 302
+    from engines.mail_out import _read
+    assert _read()["key"] == "re_test_key_12345678"                              # a blank key keeps the saved one
+
+
+def test_it_goes_at_eight_once_a_day_to_each_person_with_only_their_sections(web, db, monkeypatch):
+    from engines import morning_email
+    from engines.auth_service import set_access
+    _admin(web)
+    a, _ = _ready(web)
+    _sale(web, a, si="004501", qty="2", price="5000")
+    _sign_in_new("ana@slicks.test", "owner")
+    _sign_in_new("rack@slicks.test", "scanner")
+    set_access(fetchone_uid("ana@slicks.test"), {"sales", "bank-cash"}, set())
+    sent = _setup(web, monkeypatch)
+    assert morning_email.run(_at(7)) == "Not the email hour." and not sent
+    assert morning_email.run(_at(8), site="https://erp.slicks.test") == "2 morning email(s) sent."
+    assert morning_email.run(_at(8)) == "0 morning email(s) sent."                # never twice in a day
+    to = {s[2]["to"][0]: s[2] for s in sent}
+    assert set(to) == {"admin@slicks.test", "ana@slicks.test"}                    # never the Scanner account
+    mine, hers = to["admin@slicks.test"], to["ana@slicks.test"]
+    assert sent[0][0] == "https://api.resend.com/emails" and sent[0][1]["Authorization"] == "Bearer re_test_key_12345678"
+    assert mine["from"] == "Slick's ERP <reports@slicks.test>" and "Good morning, Admin" in mine["html"]
+    assert "Yesterday's sales" in mine["html"] and "Today" in mine["html"] and "https://erp.slicks.test/" in mine["html"]
+    assert "Yesterday's sales" not in hers["html"] and "Cash</h2>" not in hers["html"] and "Good morning, Ana" in hers["html"]
+    assert "Sales" not in hers["subject"] and mine["text"].startswith("Good morning, Admin")
+
+
+def test_a_person_can_be_left_out_and_a_refusal_is_recorded_not_raised(web, db, monkeypatch):
+    from engines import mail_out, morning_email
+    _admin(web)
+    _sign_in_new("ana@slicks.test", "owner")
+    sent = _setup(web, monkeypatch)
+    assert web.post("/settings/notifications/", {"action": "mail_pref", "email": "ana@slicks.test", "receives": "0"}).status_code == 302
+    monkeypatch.setattr(mail_out, "_post", lambda url, headers, body: (403, "domain not verified"))
+    assert morning_email.run(_at(8)) == "0 morning email(s) sent, 1 not sent."
+    last = {p["email"]: p for p in morning_email.people()}
+    assert "not sent" in last["admin@slicks.test"]["last"] and "domain not verified" in last["admin@slicks.test"]["last"] and not last["ana@slicks.test"]["receives"]
+    monkeypatch.setattr(mail_out, "_post", lambda url, headers, body: (sent.append(body) or (200, "{}")))
+    r = web.post("/settings/notifications/", {"action": "mail_test"}, follow=True)
+    assert "Today&#x27;s email was sent to admin@slicks.test" in r.content.decode() or "Today's email was sent to admin@slicks.test" in r.content.decode()
+    assert sent[-1]["to"] == ["admin@slicks.test"]
