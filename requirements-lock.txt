@@ -51,7 +51,7 @@ pycparser==3.0
 pydeck==0.9.3
 Pygments==2.21.0
 pyparsing==3.3.3
-pypdf==6.16.2
+pypdf==6.19.0
 pypdfium2==5.13.0
 pytesseract==0.3.13
 pytest==9.1.1
@@ -74,7 +74,7 @@ toml==0.10.2
 typing_extensions==4.16.0
 tzdata==2026.3
 uritemplate==4.2.0
-urllib3==2.7.0
+urllib3==2.8.0
 uvicorn==0.52.4
 watchdog==6.0.0
 websockets==16.1.1
