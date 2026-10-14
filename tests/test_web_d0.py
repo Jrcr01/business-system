@@ -216,3 +216,12 @@ def test_forms_need_the_page_token(web_setup, db):
     assert r.status_code == 403
 
 
+
+
+def test_every_page_carries_the_click_to_sort_script(web):
+    # owner, 2026-10-15: "why these can't be sorted?" -> click a heading to sort, on every list (web/core/static/core/sort.js)
+    import os
+    _admin(web)
+    assert "core/sort.js" in web.get("/order-statements/").content.decode()
+    js = open(os.path.join("web", "core", "static", "core", "sort.js"), encoding="utf-8").read()
+    assert "table.list" in js and "aria-sort" in js
