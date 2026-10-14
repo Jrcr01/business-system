@@ -24,6 +24,17 @@
   <input id="dp-search" type="search" placeholder="Search payee or check / reference" aria-label="Search payee or reference">
 </div>
 {% if days %}
+<dialog id="how-dlg" class="card-dlg" aria-labelledby="hd-title">
+  <h3 id="hd-title"><span class="ms">payments</span> How was it paid?</h3>
+  <p class="hd-who"></p>
+  <p class="hint">Amount <b class="hd-amt"></b></p>
+  <div class="cd-choice">
+    <button class="btn hd-cash" type="button"><span class="ms">payments</span>Cash</button>
+    <button class="btn ghost hd-transfer" type="button"><span class="ms">account_balance</span>Transfer</button>
+  </div>
+  <p class="hd-check note" hidden style="margin-top:10px"><span class="ms">warning</span> This check is dated later. Paying it early means the check must be <b>taken back from the lender</b>: the bank would still pay it on its date.</p>
+  <div class="actions" style="margin-top:12px"><button class="btn small ghost hd-cancel" type="button">Cancel</button></div>
+</dialog>
 <dialog id="card-dlg" class="card-dlg" aria-labelledby="cd-title">
   <h3 id="cd-title"><span class="ms">credit_card</span> Card payment</h3>
   <p class="cd-who"></p>
@@ -63,8 +74,8 @@
         {% elif r.note %}<span class="hint">{{ r.note|usdates }}</span>
         {% elif not r.due %}<span class="hint">{% if r.early %}not due yet · can be paid early{% else %}not due yet{% endif %}</span>{% endif %}
         {% if not r.ticked and may_tick and r.kind == "oloan" or not r.ticked and may_tick and r.early and r.kind == "check" %}
-          <select name="how_{{ r.kind }}_{{ r.item_id }}" aria-label="How it was paid: {{ r.payee }}" class="dp-how"><option value="CASH">cash</option><option value="TRANSFER">transfer</option></select>
-          {% if r.kind == "check" %}<div class="hint">paid early: take the check back</div>{% endif %}{% endif %}</td>
+          <input type="hidden" class="dp-how" name="how_{{ r.kind }}_{{ r.item_id }}" value="CASH" data-who="{{ r.payee }}" data-ref="{{ r.ref }}" data-amt="{{ r.amount }}"
+                 data-check="{% if r.kind == "check" %}1{% else %}0{% endif %}">{% endif %}</td>
   </tr>{% endfor %}
   {% endfor %}
 </table></div>
@@ -130,15 +141,35 @@
       dlg.showModal();
     });
   }
+  /* owner, 2026-10-14: a lender check paid before its date, or an open loan's interest, asks in a pop-up how it was paid (cash or transfer) */
+  var hdlg = document.getElementById("how-dlg");
+  function askHow(hid) {
+    return new Promise(function (resolve) {
+      hdlg.querySelector(".hd-who").textContent = hid.dataset.who + " · " + hid.dataset.ref;
+      hdlg.querySelector(".hd-amt").textContent = "₱" + peso(parseFloat(hid.dataset.amt) || 0);
+      hdlg.querySelector(".hd-check").hidden = hid.dataset.check !== "1";
+      function done(v) { hdlg.close(); hdlg.onclose = null; resolve(v); }
+      hdlg.querySelector(".hd-cash").onclick = function () { hid.value = "CASH"; done(true); };
+      hdlg.querySelector(".hd-transfer").onclick = function () { hid.value = "TRANSFER"; done(true); };
+      hdlg.querySelector(".hd-cancel").onclick = function () { done(false); };
+      hdlg.onclose = function () { resolve(false); };
+      hdlg.showModal();
+    });
+  }
   form.addEventListener("submit", function (e) {
     if (asked) { asked = false; return; }
-    var cards = [];
-    boxes.forEach(function (b) { var hid = b.checked && b.closest("tr").querySelector(".card-amt"); if (hid) cards.push(hid); });
-    if (!cards.length) return;
+    var steps = [];
+    boxes.forEach(function (b) {
+      if (!b.checked) return;
+      var tr = b.closest("tr"), card = tr.querySelector(".card-amt"), how = tr.querySelector(".dp-how");
+      if (card) steps.push(function () { return askCard(card); });
+      if (how) steps.push(function () { return askHow(how); });
+    });
+    if (!steps.length) return;
     e.preventDefault();
     (function next(k) {
-      if (k >= cards.length) { asked = true; form.requestSubmit(go); return; }
-      askCard(cards[k]).then(function (ok) { if (ok) next(k + 1); });
+      if (k >= steps.length) { asked = true; form.requestSubmit(go); return; }
+      steps[k]().then(function (ok) { if (ok) next(k + 1); });
     })(0);
   });
   if (all) all.addEventListener("change", function () {

@@ -120,7 +120,7 @@ def test_loans_paid_early_on_daily_payables(web, db):
     with sqlite3.connect(_db()) as conn:
         conn.execute("UPDATE checks_issued SET check_number = '3992000777' WHERE check_id = ?", (chk,))
     page = web.get("/checks/?show=all").content.decode()
-    assert f'name="tick_check_{chk}"' in page and f'name="how_check_{chk}"' in page
+    assert f'name="tick_check_{chk}"' in page and f'name="how_check_{chk}" value="CASH"' in page and "How was it paid?" in page
     r = web.post("/checks/", {"action": "clear_many", "on": today.isoformat(), f"tick_check_{chk}": "1", f"how_check_{chk}": "CASH"})
     assert r.status_code == 302
     settled = _q("SELECT settled_outside_at, settled_outside_reason, settled_outside_note FROM checks_issued WHERE check_id = ?", (chk,))[0]
