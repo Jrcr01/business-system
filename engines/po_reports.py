@@ -119,7 +119,8 @@ def with_and_without(by: str = "month", month: str | None = None) -> dict:
                        "so_far": by == "month" and key == this})
     if by == "supplier":
         groups.sort(key=lambda g: -g["amt_no"])
-    no_po = df[(df["month"] == month) & ~df["with_po"]].to_dict("records")
+    part = df[(df["month"] == month) & ~df["with_po"]]
+    no_po = part.astype(object).where(part.notna(), None).to_dict("records")       # a blank DR or statement shows blank, not "nan" / "73.0"
     return {"by": by, "groups": groups, "month": month, "month_label": pd.to_datetime(month + "-01").strftime("%B %Y"), "no_po": no_po, "months": months}
 
 
