@@ -1,5 +1,5 @@
 """The 8 AM email (owner, 2026-10-14: "is email notification possible every morning?" ... "family too, 8 am" ... "i think it is too much if all?").
-Short on purpose, as on docs/mockups/v_morning_email.html: yesterday's sales, the cash, today's list, and one "Also" line only when something
+Short on purpose, as on docs/mockups/v_morning_email.html: yesterday's sales, today's list, and one "Also" line only when something
 needs them. Sent every day, quiet days too, so a missing email means something is wrong. Each person's email follows their pages: a section whose
 page is Hidden from them is left out. It carries no document, no check number and no link but the one to the sign-in page."""
 from __future__ import annotations
@@ -11,15 +11,7 @@ from engines.common import get_conn, write_tx
 
 OVERDUE_DAYS = 30
 RUN_OUT_DAYS = 7
-STALE_BANK_DAYS = 3           # a bank balance older than this is said to be old (owner, 2026-10-14: "not actual unless bank statement is uploaded")
 OLD_STATEMENT_DAYS = 7        # a card statement missing longer than this is repeated on Mondays only
-
-
-def _reply_to() -> str:
-    """Replies go to the System admin, not to a mailbox nobody reads."""
-    with get_conn() as conn:
-        row = conn.execute("SELECT email FROM app_users WHERE role = 'admin' AND is_active = 1 ORDER BY user_id LIMIT 1").fetchone()
-    return row[0] if row else ""
 
 
 def _cards_to_type(today: date) -> list[str]:
@@ -107,23 +99,7 @@ def content(email: str, name: str, today: date) -> dict:
                 out["sales"]["profit"] = {"label": yesterday.strftime("%B"), "profit": month_report(yesterday.strftime("%Y-%m"))["profit"]}
             except Exception:                                   # noqa: BLE001
                 pass
-    if "bank-cash" not in hidden:
-        # Owner, 2026-10-14: the bank figure is only as fresh as the last statement imported, so it is said with its date and its age; what goes out
-        # is the next 7 days of the schedule of payments (what the Calendar shows), not a forecast that old uncleared checks would distort.
-        try:
-            import pandas as pd
-            from engines.cash_insights_service import cash_position
-            from engines.reports_service import get_payment_schedule_all_tracks
-            pos, df = cash_position(), get_payment_schedule_all_tracks()
-            if not df.empty:
-                # by the ORIGINAL due date: an old check never marked cleared is "payable today" on the schedule, and would swamp the week
-                due = pd.to_datetime(df["due_date"]).dt.date
-                first = today - timedelta(days=2) if today.weekday() == 0 else today          # a weekend's dues are paid on Monday
-                df = df[(due >= first) & (due <= today + timedelta(days=6))]
-            out["cash"] = {"bank": pos["balance"] if pos else None, "as_of": pos["as_of"] if pos else None, "age": (today - pos["as_of"]).days if pos else None,
-                           "out7": float(df["amount"].sum()) if not df.empty else 0.0}
-        except Exception:                               # noqa: BLE001 -- a figure that cannot be made is left out, the email still goes
-            out["cash"] = None
+    # no cash section (owner, 2026-10-14: "i think cash line should be remove": the bank figure is only as fresh as the last statement uploaded)
     rows: list[tuple[str, str]] = []
     with get_conn() as conn:
         if "order-statements" not in hidden or "lenders" not in hidden:
@@ -224,17 +200,6 @@ def render(c: dict, site: str = "") -> tuple[str, str]:
                 text.append(f"{w['label']} profit: {_peso(w['profit'])}")
         html.append("</div>")
         text.append("")
-    if c.get("cash"):
-        k = c["cash"]
-        if k["bank"] is None:
-            bank_h = bank_t = "No bank statement imported yet"
-        else:
-            old = f", {k['age']} days ago: import a newer statement" if k["age"] > STALE_BANK_DAYS else ""
-            bank_h = f'Bank <b>{_peso(k["bank"])}</b> <span {grey}>as of {k["as_of"]:%b} {k["as_of"].day}{old}</span>'
-            bank_t = f"Bank {_peso(k['bank'])} as of {k['as_of']:%b} {k['as_of'].day}{old}"
-        html.append(f'<div {sec}><h2 {h2}>Cash</h2><p style="margin:0;font-size:14px">{bank_h}</p>'
-                    f'<p style="margin:4px 0 0;font-size:14px">Going out in the next 7 days <b>{_peso(k["out7"])}</b></p></div>')
-        text += ["CASH", bank_t, f"Going out in the next 7 days {_peso(k['out7'])}", ""]
     if c.get("show_today"):
         html.append(f'<div {sec}><h2 {h2}>Today</h2>')
         text.append("TODAY")
@@ -263,7 +228,7 @@ def send_to(email: str, name: str, today: date, site: str = "") -> tuple[bool, s
     from engines import mail_out
     c = content(email, name, today)
     html, text = render(c, site)
-    return mail_out.send(email, subject(c), html, text, reply_to=_reply_to())
+    return mail_out.send(email, subject(c), html, text)
 
 
 def run(now=None, force: bool = False, site: str = "") -> str:

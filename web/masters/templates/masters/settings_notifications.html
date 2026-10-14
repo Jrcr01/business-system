@@ -22,8 +22,8 @@
 <p class="hint" style="max-width:820px">"Own cards" needs the cardholder beside it. Each person allows it once on their own phone: in the Slick's ERP app, the person menu → Notifications on this phone → Allow.
   A person with no phone allowed receives nothing, whatever is chosen here.</p>
 <div class="grp" id="email">The morning email</div>
-{% comment %}Owner, 2026-10-14: a short email every morning -- yesterday's sales, the cash, today's list. The mail service's key is typed here once.{% endcomment %}
-<p class="note" style="max-width:820px">A short email at <b>{{ mail_hour }}:00</b> every morning: yesterday's sales, the cash, today's list, and one line when something needs you.
+{% comment %}Owner, 2026-10-14: a short email every morning -- yesterday's sales, today's list. The mail service's key is typed here once.{% endcomment %}
+<p class="note" style="max-width:820px">A short email at <b>{{ mail_hour }}:00</b> every morning: yesterday's sales, today's list, and one line when something needs you.
   {% if not mail_on %}<b>It is switched off</b> on the <a href="/settings/#email_morning">Numbers</a> tab.{% elif mail.ready %}<span class="pill">sending is set up</span>{% else %}<span class="pill warn">not set up yet: nothing is sent</span>{% endif %}</p>
 <form method="post" class="bar" style="max-width:820px" autocomplete="off">{% csrf_token %}<input type="hidden" name="action" value="mail_setup">
   <div><label for="m_prov">Mail service</label><select id="m_prov" name="provider">{% for k, label in providers %}<option value="{{ k }}"{% if k == mail.provider %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>

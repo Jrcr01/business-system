@@ -79,7 +79,7 @@ NUMBERS = [
      "never uses it. A changed or reset password, or Sign out everywhere, removes the person's devices. 0: only the password signs in."),
     ("email_morning", "Notifications", "The morning email (1 = yes, 0 = no)", 1, 0, 1, 0, "",
      "Owner, 2026-10-14: \"is email notification possible every morning?\" ... \"family too, 8 am\". A short email to each person who receives it "
-     "(Settings > Notifications): yesterday's sales, the cash, today's list, and one line when something needs them. Sent every day, quiet days too; a "
+     "(Settings > Notifications): yesterday's sales, today's list, and one line when something needs them. Sent every day, quiet days too; a "
      "section whose page is hidden from a person is left out of their email. Nothing is sent until the mail service is set up on that page."),
     ("email_morning_hour", "Notifications", "The morning email is sent at", 8, 0, 23, 0, "h",
      "Manila time, on the hour."),

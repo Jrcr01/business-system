@@ -52,7 +52,7 @@ def test_it_goes_at_eight_once_a_day_to_each_person_with_only_their_sections(web
     assert set(to) == {"admin@slicks.test", "ana@slicks.test"}                    # never the Scanner account
     mine, hers = to["admin@slicks.test"], to["ana@slicks.test"]
     assert sent[0][0] == "https://api.resend.com/emails" and sent[0][1]["Authorization"] == "Bearer re_test_key_12345678"
-    assert mine["from"] == "Slick's Tire Supply <reports@slicks.test>" and mine["reply_to"] == "admin@slicks.test" and "Good morning, Admin" in mine["html"]
+    assert mine["from"] == "Slick's Tire Supply <reports@slicks.test>" and "reply_to" not in mine and "Cash</h2>" not in mine["html"] and "Good morning, Admin" in mine["html"]
     assert "Yesterday's sales" in mine["html"] and "Today" in mine["html"] and "https://erp.slicks.test/" in mine["html"]
     assert "Yesterday's sales" not in hers["html"] and "Cash</h2>" not in hers["html"] and "Good morning, Ana" in hers["html"]
     assert "Sales" not in hers["subject"] and mine["text"].startswith("Good morning, Admin")
