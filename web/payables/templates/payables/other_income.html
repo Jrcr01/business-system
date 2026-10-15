@@ -1,0 +1,46 @@
+{% extends "core/base.html" %}{% load humanize slicks %}
+{% block title %}Other income{% endblock %}
+{% block content %}
+{% comment %}Owner, 2026-10-13 ("i want to add other income"; go 2026-10-15): money received that is not a sale -- rent received, a supplier's rebate.
+One line each, a kind from the owner's list, from whom and what for. Taken back only with a reason. Adds to the month's Income statement; not to the
+drawer on Deposits. The mirror of Expenses.{% endcomment %}
+<h2><span class="ms" style="font-size:28px">savings</span> Other income</h2>
+<form method="post" class="bar">{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="m" value="{{ m }}">
+  <div><label for="i_date">Date</label><input id="i_date" type="date" name="income_date" value="{{ today }}"></div>
+  <div><label for="i_kind">Kind</label><select id="i_kind" name="kind_id" required><option value="">Pick one</option>
+    {% for k in kinds %}<option value="{{ k.kind_id }}">{{ k.name }}</option>{% endfor %}</select></div>
+  <div><label for="i_in">Received in</label><select id="i_in" name="received_in">{% for s in places %}<option>{{ s }}</option>{% endfor %}</select></div>
+  <div><label for="i_amt">Amount</label><input id="i_amt" type="text" inputmode="decimal" name="amount" style="width:150px;text-align:right" required></div>
+  <div class="grow"><label for="i_det">From whom / what for</label><input id="i_det" type="text" name="detail" placeholder="e.g. Stall 2 rent, October"></div>
+  <button class="btn small" type="submit"><span class="ms">save</span>Save</button>
+</form>
+
+<div class="grp">{{ m }} — ₱{{ total|floatformat:2|intcomma }}{% if by_kind %} <span class="hint">({% for n, v in by_kind %}{{ n }} {{ v|floatformat:0|intcomma }}{% if not forloop.last %} · {% endif %}{% endfor %})</span>{% endif %}</div>
+{% if rows %}
+<div class="scroll-x"><table class="list cards">
+  <tr><th>No.</th><th>Date</th><th>Kind</th><th>From whom / what for</th><th>Received in</th><th class="num">Amount</th><th>By</th><th></th></tr>
+  {% for r in rows %}<tr{% if r.void %} style="opacity:.55"{% endif %}>
+    <td>{{ r.inc_no }}</td><td>{{ r.day|dmy }}</td><td class="c-t">{{ r.kind }}{% if r.detail %} <span class="hint">· {{ r.detail }}</span>{% endif %}</td><td class="c-x">{{ r.detail }}</td><td data-l="in">{{ r.received_in }}</td>
+    <td class="num c-big">{{ r.amount|floatformat:2|intcomma }}</td><td data-l="by">{{ r.by }}</td>
+    <td class="c-r">{% if r.void %}<span class="pill off" title="{{ r.void_reason }}">taken back</span>
+      {% else %}<form method="post" onsubmit="var x = prompt('Why is {{ r.inc_no }} taken back?'); if (!x) return false; this.reason.value = x;">{% csrf_token %}
+        <input type="hidden" name="action" value="void"><input type="hidden" name="income_id" value="{{ r.income_id }}">
+        <input type="hidden" name="m" value="{{ m }}"><input type="hidden" name="reason" value="">
+        <button class="btn small ghost" type="submit">Take back</button></form>{% endif %}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="note"><span class="ms">task_alt</span> Nothing this month yet.</p>{% endif %}
+<p class="hint">Shows in the month's <a href="/income-statement/?m={{ m }}">Income statement</a> under Other income. It is not counted in the drawer on Deposits.</p>
+
+{% if is_admin %}
+<details class="manual"><summary>The kinds (yours to edit; they are the statement's other-income lines)</summary>
+  {% for k in all_kinds %}<form method="post" class="payrow" style="gap:8px;margin:6px 0">{% csrf_token %}
+    <input type="hidden" name="action" value="kind"><input type="hidden" name="kind_id" value="{{ k.kind_id }}">
+    <input class="in" name="name" value="{{ k.name }}" style="width:240px" aria-label="Kind {{ k.name }}">
+    <button class="btn small ghost" type="submit" name="off" value="{% if k.active %}0{% else %}1{% endif %}">Save</button>
+    <button class="btn small ghost" type="submit" name="off" value="{% if k.active %}1{% else %}0{% endif %}">{% if k.active %}Switch off{% else %}Switch on{% endif %}</button>
+    {% if not k.active %}<span class="pill off">off</span>{% endif %}</form>{% endfor %}
+  <form method="post" class="payrow" style="gap:8px;margin:6px 0">{% csrf_token %}<input type="hidden" name="action" value="kind">
+    <input class="in" name="name" placeholder="a new kind" style="width:240px"><button class="btn small ghost" type="submit"><span class="ms">add</span>Add</button></form>
+</details>
+{% endif %}
+{% endblock %}

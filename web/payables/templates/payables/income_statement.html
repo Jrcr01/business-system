@@ -19,6 +19,11 @@ sale counts in the month it was sold; collections live on Collect payments.{% en
     <td class="num">({{ now.cogs|floatformat:2|intcomma }})</td><td class="num">({{ before.cogs|floatformat:2|intcomma }})</td></tr>
   <tr style="font-weight:700;border-top:2px solid var(--bd-1c2733)"><td>Gross margin</td>
     <td class="num">{{ now.gross|floatformat:2|intcomma }}</td><td class="num">{{ before.gross|floatformat:2|intcomma }}</td></tr>
+  <tr><td><a href="/other-income/?m={{ m }}">Other income</a> <span class="hint">(rent received, supplier rebates)</span></td>
+    <td class="num">{{ now.other_income_total|floatformat:2|intcomma }}</td><td class="num">{{ before.other_income_total|floatformat:2|intcomma }}</td></tr>
+  {% for k in kinds %}<tr class="hint"><td style="padding-left:28px">{{ k.name }}</td>
+    <td class="num">{% if k.now %}{{ k.now|floatformat:2|intcomma }}{% endif %}</td>
+    <td class="num">{% if k.before %}{{ k.before|floatformat:2|intcomma }}{% endif %}</td></tr>{% endfor %}
   <tr><td><a href="/expenses/?m={{ m }}">Expenses</a></td>
     <td class="num">({{ now.expenses_total|floatformat:2|intcomma }})</td><td class="num">({{ before.expenses_total|floatformat:2|intcomma }})</td></tr>
   {% for c in cats %}<tr class="hint"><td style="padding-left:28px">{{ c.name }}</td>

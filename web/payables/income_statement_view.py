@@ -48,7 +48,12 @@ def income_statement(request):
         cats.append({"name": name, "now": v, "before": b.pop(name, None)})
     for name, v in b.items():
         cats.append({"name": name, "now": None, "before": v})
+    kinds, ob = [], dict(before.get("other_income", []))
+    for name, v in now.get("other_income", []):
+        kinds.append({"name": name, "now": v, "before": ob.pop(name, None)})
+    for name, v in ob.items():
+        kinds.append({"name": name, "now": None, "before": v})
     return render(request, "payables/income_statement.html", {
-        "page_id": "income-statement", "now": now, "before": before, "cats": cats,
+        "page_id": "income-statement", "now": now, "before": before, "cats": cats, "kinds": kinds,
         "label": _label(month), "before_label": _label(_prev(month)), "m": month, "prev": _prev(month),
         "nxt": _next(month) if month < manila_today().strftime("%Y-%m") else ""})

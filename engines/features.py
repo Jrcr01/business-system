@@ -8,7 +8,7 @@ from pathlib import Path
 
 REVENUE_PAGES = frozenset({"stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets"})
 STAGE_B_PAGES = frozenset({"collect"})               # collect, deposit, cash in by day (owner's go 2026-10-11); released separately from stage A
-BOOKS_PAGES = frozenset({"expenses", "income-statement"})     # expenses and the month's profit (owner's go 2026-10-11 evening); its own release
+BOOKS_PAGES = frozenset({"expenses", "other-income", "income-statement"})     # expenses and the month's profit (owner's go 2026-10-11 evening); its own release
 REVENUE_SETTINGS_GROUPS = frozenset({"Stock", "Sell"})
 REVENUE_NOTES = frozenset({"2026-10-13a"})
 

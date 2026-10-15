@@ -35,6 +35,7 @@ PAGES: dict[str, Page] = {
     "si-booklets": Page("Invoice booklets", "receipt_long", "R-A"),
     "collect": Page("Collect payments", "payments", "R-B"),
     "expenses": Page("Expenses", "wallet", "BK"),
+    "other-income": Page("Other income", "savings", "BK"),
     "income-statement": Page("Income statement", "summarize", "BK"),
     "booklets": Page("Check booklets", "menu_book", "D7"),          # add, change, hand over, gap audit (owner, 2026-10-11)
     "reports": Page("Reports", "summarize", "D8"),
@@ -42,7 +43,7 @@ PAGES: dict[str, Page] = {
     "review": Page("Checks and review", "fact_check", "D8"),     # Roles and controls + Admin and audit + Data health, combined (owner, 2026-10-09)
 }
 
-BUILT = {"stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets", "collect", "expenses", "income-statement", "home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "calendar",
+BUILT = {"stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets", "collect", "expenses", "other-income", "income-statement", "home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "calendar",
          "reports", "checks", "bank-cash", "booklets", "lenders", "analytics", "bank-loans", "credit-cards", "review"}     # drawn by Django (D0-D3; Reports: the schedule of payments first; Checks: waiting for the bank + the cleared tick, 2026-10-08)
 
 STAGE_NAME = {"R-A": "Sell and stock", "R-B": "Collect", "BK": "The books", "D1": "Masters", "D2": "Buying", "D3": "Payables", "D4": "Paying", "D5": "Release", "D6": "Loans", "D7": "Cards and bank", "D8": "Oversight"}
@@ -54,7 +55,7 @@ MENU: dict[str, list] = {
     "Sell": [("Scan out", "barcode_scanner", "sales", "view=scan", "sales.use"), ("Record the day's invoices", "receipt_long", "sales", "", "sales.use"),
              ("Sales today", "today", "sales", "view=day", "sales.use"), "collect", ("Checks to deposit", "price_check", "collect", "view=checks", "collect.use"), "customers", "si-booklets"],
     "Pay suppliers": [("Invoices", "receipt_long", "order-statements", "view=invoices", "invoice.enter"), "order-statements", "calendar", "checks"],     # Payment run, Release checks and Add data removed (owner, 2026-10-09): its work is in the batch and Daily payables
-    "Bank": ["bank-cash", "booklets", "expenses"],     # the Check-date planner dropped with /more/ (owner, 2026-10-09)
+    "Bank": ["bank-cash", "booklets", "expenses", "other-income"],     # the Check-date planner dropped with /more/ (owner, 2026-10-09)
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records": ["reports", "income-statement"],
     "Analytics": [("Sales", "point_of_sale", "analytics", "tab=sales", "reports.use"), ("Cash ahead", "trending_up", "analytics", "tab=cash", "reports.use"), ("Stock", "inventory_2", "analytics", "tab=stock", "reports.use"),

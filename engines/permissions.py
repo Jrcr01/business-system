@@ -96,7 +96,7 @@ PAGE_ACTION = {
     "lenders": "loans.use", "bank-loans": "bankloans.use", "credit-cards": "cards.use", "creditors": "creditors.edit",
     "stock": "inventory.use", "stock-counts": "inventory.use", "affiliates": "inventory.use",                   # revenue cycle, stage A (2026-10-11)
     "sales": "sales.use", "customers": "sales.use", "si-booklets": "sales.use", "collect": "collect.use",
-    "expenses": "expenses.use", "income-statement": "reports.use",
+    "expenses": "expenses.use", "other-income": "expenses.use", "income-statement": "reports.use",
     "reports": "reports.use", "analytics": "reports.use", "review": "review.use", "data-health": "health.view",
     "settings": "settings.edit", "admin": "audit.view",
 }
@@ -295,6 +295,7 @@ ACCESS_ROWS: list[tuple[str, list[tuple[str, str, list[str], list[tuple[str, str
         ("bank-cash", "Bank and cash", ["bank.use"], []),
         ("booklets", "Check booklets", ["booklets.use"], []),
         ("expenses", "Expenses (the drawer's and the bank's money out)", ["expenses.use"], []),
+        ("other-income", "Other income (rent received, supplier rebates)", ["expenses.use"], []),
         ("lenders", "Lenders", ["loans.use"], []),
         ("bank-loans", "Bank loans", ["bankloans.use"], []),
         ("credit-cards", "Credit cards", ["cards.use"], [])]),

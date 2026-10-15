@@ -347,6 +347,13 @@ def _expenses_month():
     return f"{float(v):,.0f}", "spent this month", "none"
 
 
+def _other_income_month():
+    from engines.clock import manila_now
+    from engines.income_rules import month_by_kind
+    v = sum(x for _, x in month_by_kind(manila_now().strftime("%Y-%m")))
+    return f"{float(v):,.0f}", "received this month", "none"
+
+
 def _profit_month():
     from engines.clock import manila_now
     from engines.income_statement import month_report
@@ -522,6 +529,7 @@ for _t in (
     Tile("planner", "pay", "Check-date planner", _planner),
     Tile("booklets", "bank", "Check booklets", _booklets, icon=":material/menu_book:", needs="booklets.use"),
     Tile("expenses", "bank", "Expenses", _expenses_month, icon=":material/wallet:", needs="expenses.use"),
+    Tile("other-income", "bank", "Other income", _other_income_month, icon=":material/savings:", needs="expenses.use"),
     Tile("income-statement", "records", "Income statement", _profit_month, icon=":material/summarize:", needs="reports.use"),
     Tile("stock", "stock", "Items and stock", _stock_items, needs="inventory.use"),
     Tile("stock-counts", "stock", "Stock counts", _stock_counts, needs="inventory.use"),

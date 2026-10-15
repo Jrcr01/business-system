@@ -39,13 +39,16 @@ def month_report(month: str) -> dict:
         expense_rows = conn.execute("""SELECT c.name, COALESCE(SUM(e.amount), 0) FROM expenses e JOIN expense_categories c ON c.category_id = e.category_id
                                        WHERE substr(e.expense_date, 1, 7) = ? AND e.voided_at IS NULL GROUP BY c.name ORDER BY 2 DESC""", (month,)).fetchall()
     expenses = [(a, round(float(b), 2)) for a, b in expense_rows]
+    from engines.income_rules import month_by_kind
+    other = month_by_kind(month)                                   # rent received, supplier rebates (owner, 2026-10-15)
+    other_total = round(sum(v for _, v in other), 2)
     expenses_total = round(sum(v for _, v in expenses), 2)
     net_sales = round(sales_goods - returns, 2)
     net_cogs = round(cogs - returns_cost, 2)
     gross = round(net_sales + services - net_cogs, 2)
-    profit = round(gross - expenses_total - shrinkage - lender_interest - bankloan_interest, 2)
+    profit = round(gross + other_total - expenses_total - shrinkage - lender_interest - bankloan_interest, 2)
     return {"month": month, "sales": net_sales, "sales_gross": sales_goods, "returns": returns, "services": services, "cogs": net_cogs,
-            "gross": gross, "expenses": expenses, "expenses_total": expenses_total, "shrinkage": shrinkage,
+            "gross": gross, "other_income": other, "other_income_total": other_total, "expenses": expenses, "expenses_total": expenses_total, "shrinkage": shrinkage,
             "lender_interest": lender_interest, "bankloan_interest": bankloan_interest, "profit": profit}
 
 
@@ -73,6 +76,9 @@ def xlsx(months: list[dict]) -> bytes:
     row("Service income", "services")
     row("Cost of goods sold", "cogs", sign=-1)
     row("Gross margin", "gross", bold=True)
+    for kind in sorted({name for m in months for name, _ in m.get("other_income", [])}):
+        row(f"  {kind}", values=[dict(m.get("other_income", [])).get(kind, 0.0) for m in months])
+    row("Other income", "other_income_total", bold=True)
     for cat in cats:
         row(f"  {cat}", values=[-dict(m["expenses"]).get(cat, 0.0) for m in months])
     row("Expenses", "expenses_total", sign=-1, bold=True)

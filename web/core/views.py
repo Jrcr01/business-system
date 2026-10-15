@@ -648,7 +648,7 @@ ROW_ORDER = {
     "stock": ["stock", "stock-counts", "affiliates"],
     "sell": ["scan-out", "sales", "sales-today", "collect", "customers", "si-booklets"],
     "pay": ["Record an invoice", "order-statements", "payment-run", "calendar", "over-limit-days", "payables-due", "checks", "release"],
-    "bank": ["Import bank statement", "bank-cash", "booklets", "expenses"],
+    "bank": ["Import bank statement", "bank-cash", "booklets", "expenses", "other-income"],
     "other": ["New loan note", "lenders", "bank-loans", "credit-cards"],
     "analytics": ["an-warnings", "an-purchasing", "an-payables", "an-bank", "an-lenders"],
     "system": ["creditors", "settings", "review"],
