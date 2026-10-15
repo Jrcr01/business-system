@@ -26,6 +26,13 @@ _ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
 GONE = "This code is no longer good. Start again on the computer."
 
 
+def required_for(user: dict | None) -> bool:
+    """Owner, 2026-10-15 ("i want to require we have a push authentication", "right away"): with the switch on, every computer sign-in needs the
+    phone's approval; a person whose phone is not set up cannot sign in on a computer until it is (the phone itself still signs in, to set it up).
+    The Scanner account never approves anything and is not asked."""
+    return bool(user) and push_on() and user.get("role") != "scanner"
+
+
 def push_on() -> bool:
     from engines.settings_registry import int_value
     return int_value("signin_push_approval") == 1
@@ -47,10 +54,13 @@ def push_phone(user_id: int | None) -> dict | None:
         keys = [d for (d,) in conn.execute("SELECT device FROM sign_in_keys WHERE user_id = ?", (int(user_id),)).fetchall()]
         subs = conn.execute("""SELECT sub_id, device, created_at FROM push_subscriptions WHERE user_email = ? ORDER BY created_at DESC, sub_id DESC""",
                             (str(row[0]).strip().lower(),)).fetchall()
-    sub = next((x for x in subs if _is_phone(x[1])), None)        # a laptop that allowed notifications is not the phone (live, 2026-10-15)
-    if not any(_is_phone(d) for d in keys) or not sub:
+    phones = [x for x in subs if _is_phone(x[1])]                 # a laptop that allowed notifications is not the phone (live, 2026-10-15)
+    if not any(_is_phone(d) for d in keys) or not phones:
         return None
-    return {"sub_id": int(sub[0]), "device": _short(sub[1]), "since": str(sub[2] or "")[:10], "email": str(row[0]).strip().lower()}
+    sub = phones[0]
+    backup = phones[1] if row[1] == "admin" and len(phones) > 1 else None     # owner, 2026-10-15: the System admin keeps a second phone as a backup
+    return {"sub_id": int(sub[0]), "device": _short(sub[1]), "since": str(sub[2] or "")[:10], "email": str(row[0]).strip().lower(),
+            "subs": [int(sub[0])] + ([int(backup[0])] if backup else []), "backup": _short(backup[1]) if backup else ""}
 
 
 def _short(device) -> str:
@@ -74,8 +84,8 @@ def send_push(request_id: int) -> bool:
     if phone is None:
         return False
     when = manila_now().strftime("%I:%M %p").lstrip("0")
-    return send(phone["email"], "Sign-in request", f"A computer is asking to sign in as you, {when}. Tap to approve or refuse.",
-                url=f"/approve/{row['token']}/", tag="signin", only_sub=phone["sub_id"]) > 0
+    return sum(send(phone["email"], "Sign-in request", f"A computer is asking to sign in as you, {when}. Tap to approve or refuse.",
+                    url=f"/approve/{row['token']}/", tag="signin", only_sub=s) for s in phone["subs"]) > 0
 
 
 def request_user(token: str) -> int | None:

@@ -1,0 +1,21 @@
+{% extends "core/base.html" %}{% load static %}
+{% block title %}Set up your phone first{% endblock %}
+{% block content %}
+{% comment %}Owner, 2026-10-15 ("i want to require we have a push authentication", "right away"): the password was right, but this person's phone is
+not set up to approve computer sign-ins, so the computer does not sign them in. The phone itself still signs in, and shows the steps on its Home.{% endcomment %}
+<div class="login-bg" aria-hidden="true"></div>
+<div class="login-wrap">
+<div class="login-big"><img src="{% static 'assets/slicks_logo.jpg' %}" alt=""><b>Slick's Tire Supply</b><span>Business system</span></div>
+<div class="login-card">
+  <h2><span class="ms">smartphone</span> Set up your phone first</h2>
+  <p>The password is right, {{ name }}, but signing in on a computer now needs your phone's approval, and your phone is not set up yet.</p>
+  <ol style="padding-left:20px;margin:8px 0 12px;line-height:1.5">
+    <li>On your <b>phone</b>, open <b>erp.slickstiresupply.com</b> in Chrome and sign in.</li>
+    <li>On its Home, follow <b>Set up this phone</b>: Install, Allow notifications, Turn on fingerprint.</li>
+    <li>Come back here and sign in again. Your phone will ask you to approve.</li>
+  </ol>
+  <a class="btn wide" href="/login/">Sign in again</a>
+  <p class="login-help">Lost your phone? Ask the System admin to clear it, then set up the new one.</p>
+</div>
+</div>
+{% endblock %}

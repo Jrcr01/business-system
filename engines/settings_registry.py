@@ -93,8 +93,10 @@ NUMBERS = [
     ("signin_push_approval", "Sign-in", "On a computer, approve the sign-in on your phone after the password (1 = yes, 0 = no)", 0, 0, 1, 0, "",
      "Owner, 2026-10-15 (\"drop scan qr but push notification\", \"comes after it\", \"1 phone only\"). 1: after the right password on a computer, a "
      "notification goes to the person's phone (the last one set up for notifications); they pick the number the computer shows and touch the "
-     "fingerprint sensor, and the computer signs in. A person whose phone is not set up (notifications and fingerprint) signs in with the password "
-     "alone. On a phone itself nothing changes. Settings -> People -> the person -> Clear this phone, for a lost phone. 0: the password alone."),
+     "fingerprint sensor, and the computer signs in. REQUIRED (owner, 2026-10-15: \"i want to require we have a push authentication\", right away): a "
+     "person whose phone is not set up (notifications and fingerprint, on a phone) cannot sign in on a computer until it is; the phone itself still "
+     "signs in with the password, and its Home shows Set up this phone. The System admin's last two phones both get it (a backup). The laptop's own "
+     "fingerprint is not offered on a computer. Never the Scanner. Settings -> People -> Clear this phone, for a lost phone. 0: the password alone."),
     ("phone_pages", "Phone", "The phone pages are on (1 = yes, 0 = no)", 0, 0, 1, 0, "",
      "Owner, 2026-10-12: \"We need pricelist, inventory. Stock in, stock out. Those items need mobility without using a laptop.\" 1: /phone/ opens -- "
      "Price list, Stock, Stock in and Stock out on a phone, added to its home screen -- for everyone allowed those pages, and the Scanner role signs in "

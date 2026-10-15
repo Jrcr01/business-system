@@ -135,36 +135,48 @@ def test_a_wrong_number_another_device_and_it_is_not_me_approve_nothing(web, db,
     assert b"no longer good" in Client().get(f"/approve/{token}/").content
 
 
-def test_nobody_is_held_back_and_the_notification_goes_to_the_last_phone_only(web, db, pushed):
+def test_required_on_a_computer_the_phone_still_signs_in_and_the_admin_keeps_a_backup_phone(web, db, pushed):
+    # owner, 2026-10-15: "i want to require we have a push authentication", right away; the System admin: a second phone as a backup
     _admin(web)
     _switch()
-    computer, r = _computer_signs_in()                                           # no phone set up: the password (and the code, when on) as before
-    assert b"Check your phone" not in r.content and not pushed
+    computer, r = _computer_signs_in()                                           # no phone set up: no computer sign-in
+    assert b"Set up your phone first" in r.content and not pushed and computer.get("/")["Location"].startswith("/login/")
     _fp_on(web, LAPTOP_UA)
     _sub("admin@slicks.test", 9, LAPTOP_UA)
     computer, r = _computer_signs_in()                                           # the laptop's fingerprint and notifications are not a phone (live, 2026-10-15)
-    assert b"Check your phone" not in r.content
+    assert b"Set up your phone first" in r.content
+    assert b"Sign in using fingerprint" not in computer.get("/login/").content   # ... nor may the laptop's own fingerprint go around the phone
     _fp_on(web)
-    computer, r = _computer_signs_in()                                           # fingerprint on the phone but no notifications there: still as before
-    assert b"Check your phone" not in r.content
+    computer, r = _computer_signs_in()                                           # fingerprint on the phone but no notifications there: still not set up
+    assert b"Set up your phone first" in r.content
+    phone = Client(HTTP_USER_AGENT=PHONE_UA)
+    r = phone.post("/login/", {"email": "admin@slicks.test", "password": PW})
+    assert b"Set up your phone first" not in r.content and b"Check your phone" not in r.content and r.status_code == 302     # the phone signs in, to set itself up
     _sub("admin@slicks.test", 1)
-    _sub("admin@slicks.test", 2)
-    r = Client(HTTP_USER_AGENT=PHONE_UA).post("/login/", {"email": "admin@slicks.test", "password": PW})
-    assert b"Check your phone" not in r.content                                  # on a phone itself: nothing changes
     computer, r = _computer_signs_in()
-    assert b"Check your phone" in r.content and len(pushed) == 1                 # one phone only
+    assert b"Check your phone" in r.content and len(pushed) == 1
+    _sub("admin@slicks.test", 2)                                                 # the System admin's second phone: both get it
+    computer, r = _computer_signs_in()
+    assert b"Check your phone" in r.content and len(pushed) == 3
     from engines.phone_approval import push_phone
-    with sqlite3.connect(_db()) as conn:
-        newest_phone = conn.execute("SELECT MAX(sub_id) FROM push_subscriptions WHERE endpoint LIKE '%/2'").fetchone()[0]
-    assert push_phone(fetchone_uid("admin@slicks.test"))["sub_id"] == newest_phone and push_phone(fetchone_uid("admin@slicks.test"))["device"] == "Chrome on Android"
+    me = push_phone(fetchone_uid("admin@slicks.test"))
+    assert len(me["subs"]) == 2 and me["backup"] == "Chrome on Android"
     _switch("0")
-    computer, r = _computer_signs_in()
-    assert b"Check your phone" not in r.content
+    family = _sign_in_new("family@slicks.test", "owner")                        # anyone else: one phone only
     _switch()
-    rack = _sign_in_new("rack@slicks.test", "scanner")                          # the Scanner account is never asked
+    _fp_on(family)
+    _sub("family@slicks.test", 1)
+    _sub("family@slicks.test", 2)
+    assert len(push_phone(fetchone_uid("family@slicks.test"))["subs"]) == 1
+    _switch("0")
+    computer, r = _computer_signs_in()                                           # switched off: the password alone, as before
+    assert b"Check your phone" not in r.content and b"Set up your phone first" not in r.content
+    _sign_in_new("rack@slicks.test", "scanner")                                  # the Scanner account is never asked
+    _switch()
     _sub("rack@slicks.test")
-    from engines.phone_approval import push_phone as pp
-    assert pp(fetchone_uid("rack@slicks.test")) is None
+    assert push_phone(fetchone_uid("rack@slicks.test")) is None
+    r = Client().post("/login/", {"email": "rack@slicks.test", "password": PW})
+    assert b"Set up your phone first" not in r.content
 
 
 def test_the_system_admin_clears_a_lost_phone(web, db, pushed):
@@ -182,7 +194,7 @@ def test_the_system_admin_clears_a_lost_phone(web, db, pushed):
         assert conn.execute("SELECT COUNT(*) FROM push_subscriptions WHERE user_email = 'family@slicks.test'").fetchone()[0] == 0
     _switch()
     r = Client().post("/login/", {"email": "family@slicks.test", "password": PW})
-    assert b"Check your phone" not in r.content                                  # the password again, until a new phone is set up
+    assert b"Set up your phone first" in r.content                               # no computer until the new phone is set up (required, 2026-10-15)
     assert b"Scan with your phone" not in Client().get("/login/").content and b"Sign in with your phone" not in Client().get("/login/").content   # no QR any more
 
 

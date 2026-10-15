@@ -279,6 +279,9 @@ def login(request):
         if ok:
             if _push_needed(request, user):                     # owner, 2026-10-15: on a computer, approve on the phone after the password
                 return _start_push(request, user, nxt)
+            if _push_blocks(request, user):                     # ... and required: no phone set up, no computer sign-in (owner, 2026-10-15)
+                _log(request, int(user["user_id"]), "PHONE_NOT_SET_UP")
+                return render(request, "core/login_setup_phone.html", {"name": user["name"]})
             return _half_signed_in(request, user, nxt)
         uid = _account_id(email)
         if uid:
@@ -310,6 +313,9 @@ def _fp_login_user(request) -> int | None:
     here = _fp_here(request)
     uid = here.get("u")
     if not uid or settings.SANDBOX_NO_SIGNIN or not fp.on() or here.get("k") not in fp.key_ids(int(uid)):
+        return None
+    from engines import phone_approval as pa
+    if pa.push_on() and not _on_a_phone(request):                 # owner, 2026-10-15: on a computer the phone's approval is required
         return None
     cf = getattr(request, "cf_email", None)
     if cf and _account_id(cf) != int(uid):
@@ -364,6 +370,11 @@ def _push_needed(request, user: dict) -> bool:
     return not settings.SANDBOX_NO_SIGNIN and pa.push_on() and not _on_a_phone(request) and pa.push_phone(int(user["user_id"])) is not None
 
 
+def _push_blocks(request, user: dict) -> bool:
+    from engines import phone_approval as pa
+    return not settings.SANDBOX_NO_SIGNIN and not _on_a_phone(request) and pa.required_for(user)
+
+
 def _start_push(request, user: dict, nxt: str):
     from engines import phone_approval as pa
     m, uid = request.META, int(user["user_id"])
@@ -372,8 +383,9 @@ def _start_push(request, user: dict, nxt: str):
     request.session.pop("uid", None)
     request.session["push_wait"] = {"rid": made["request_id"], "uid": uid, "pw": password_stamp(uid)}
     sent = pa.send_push(made["request_id"])
+    phone = pa.push_phone(uid)
     return render(request, "core/login_push.html", {"number": made["number"], "seconds": made["seconds"], "sent": sent,
-                                                    "device": pa.push_phone(uid)["device"], "name": user["name"], "next": nxt})
+                                                    "device": phone["device"] + (f" and {phone['backup']}" if phone["backup"] else ""), "name": user["name"], "next": nxt})
 
 
 @require_POST
