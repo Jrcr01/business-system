@@ -8,7 +8,7 @@ import sqlite3
 import pytest
 from django.test import Client
 
-from tests.test_fingerprint_signin import Device, _turn_on
+from tests.test_fingerprint_signin import Device
 from tests.test_web_d0 import PW, _admin, _sign_in_new, fetchone_uid
 
 PHONE_UA = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36"
@@ -36,11 +36,32 @@ def _switch(value="1"):
         sr.save("signin_push_approval", value)
 
 
+LAPTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+
+
+def _sub(email, n=1, ua=PHONE_UA):
+    """Notifications allowed on a device of that person (a real key pair, so the message can be encrypted for it)."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from engines import web_push
+    raw = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    ok, msg = web_push.subscribe(email, {"endpoint": f"https://push.example/{email}/{n}", "keys": {"p256dh": web_push._b64(raw), "auth": web_push._b64(b"0123456789abcdef")}}, ua)
+    assert ok, msg
+
+
+def _fp_on(web, ua=PHONE_UA):
+    """Fingerprint turned on, on a phone (or the laptop: ua)."""
+    device = Device()
+    o = web.get("/fingerprint/options/", HTTP_USER_AGENT=ua).json()
+    r = web.post("/fingerprint/add/", json.dumps(device.create(o["publicKey"]["challenge"])), content_type="application/json", HTTP_USER_AGENT=ua)
+    assert r.status_code == 200 and r.json()["ok"], r.content
+    return device
+
+
 def _ready(web, email="admin@slicks.test"):
-    """The person's phone: fingerprint turned on and notifications allowed."""
-    from tests.test_card_reminders import _phone
-    device = _turn_on(web)
-    _phone(email)
+    """The person's phone: fingerprint turned on and notifications allowed, on the phone."""
+    device = _fp_on(web)
+    _sub(email)
     return device
 
 
@@ -115,29 +136,33 @@ def test_a_wrong_number_another_device_and_it_is_not_me_approve_nothing(web, db,
 
 
 def test_nobody_is_held_back_and_the_notification_goes_to_the_last_phone_only(web, db, pushed):
-    from tests.test_card_reminders import _phone
-    from tests.test_web_d0 import _code_step
     _admin(web)
     _switch()
     computer, r = _computer_signs_in()                                           # no phone set up: the password (and the code, when on) as before
     assert b"Check your phone" not in r.content and not pushed
-    _turn_on(web)
-    computer, r = _computer_signs_in()                                           # fingerprint but no notifications: still as before
+    _fp_on(web, LAPTOP_UA)
+    _sub("admin@slicks.test", 9, LAPTOP_UA)
+    computer, r = _computer_signs_in()                                           # the laptop's fingerprint and notifications are not a phone (live, 2026-10-15)
     assert b"Check your phone" not in r.content
-    _phone("admin@slicks.test", 1)
-    _phone("admin@slicks.test", 2)
+    _fp_on(web)
+    computer, r = _computer_signs_in()                                           # fingerprint on the phone but no notifications there: still as before
+    assert b"Check your phone" not in r.content
+    _sub("admin@slicks.test", 1)
+    _sub("admin@slicks.test", 2)
     r = Client(HTTP_USER_AGENT=PHONE_UA).post("/login/", {"email": "admin@slicks.test", "password": PW})
     assert b"Check your phone" not in r.content                                  # on a phone itself: nothing changes
     computer, r = _computer_signs_in()
     assert b"Check your phone" in r.content and len(pushed) == 1                 # one phone only
     from engines.phone_approval import push_phone
-    assert push_phone(fetchone_uid("admin@slicks.test"))["sub_id"] == max(r[0] for r in sqlite3.connect(_db()).execute("SELECT sub_id FROM push_subscriptions"))
+    with sqlite3.connect(_db()) as conn:
+        newest_phone = conn.execute("SELECT MAX(sub_id) FROM push_subscriptions WHERE endpoint LIKE '%/2'").fetchone()[0]
+    assert push_phone(fetchone_uid("admin@slicks.test"))["sub_id"] == newest_phone and push_phone(fetchone_uid("admin@slicks.test"))["device"] == "Chrome on Android"
     _switch("0")
     computer, r = _computer_signs_in()
     assert b"Check your phone" not in r.content
     _switch()
     rack = _sign_in_new("rack@slicks.test", "scanner")                          # the Scanner account is never asked
-    _phone("rack@slicks.test")
+    _sub("rack@slicks.test")
     from engines.phone_approval import push_phone as pp
     assert pp(fetchone_uid("rack@slicks.test")) is None
 

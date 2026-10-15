@@ -31,21 +31,36 @@ def push_on() -> bool:
     return int_value("signin_push_approval") == 1
 
 
+def _is_phone(device) -> bool:
+    return any(k in str(device or "") for k in ("Android", "iPhone", "iPad", "Mobile"))
+
+
 def push_phone(user_id: int | None) -> dict | None:
     """The phone a computer sign-in is approved on: the last one this person set up for notifications, when they also have fingerprint sign-in
-    turned on (the approve page asks for it) and are not the Scanner. None = not set up: the password alone signs them in."""
+    turned on ON A PHONE (the approve page asks for it) and are not the Scanner. Only a phone counts, never a computer that allowed notifications. None = not set up: the password alone signs them in."""
     if not user_id:
         return None
     with get_conn() as conn:
         row = conn.execute("SELECT email, role, is_active FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
         if not row or not row[2] or row[1] == "scanner":
             return None
-        keys = conn.execute("SELECT COUNT(*) FROM sign_in_keys WHERE user_id = ?", (int(user_id),)).fetchone()[0]
-        sub = conn.execute("""SELECT sub_id, device, created_at FROM push_subscriptions WHERE user_email = ? ORDER BY created_at DESC, sub_id DESC LIMIT 1""",
-                           (str(row[0]).strip().lower(),)).fetchone()
-    if not keys or not sub:
+        keys = [d for (d,) in conn.execute("SELECT device FROM sign_in_keys WHERE user_id = ?", (int(user_id),)).fetchall()]
+        subs = conn.execute("""SELECT sub_id, device, created_at FROM push_subscriptions WHERE user_email = ? ORDER BY created_at DESC, sub_id DESC""",
+                            (str(row[0]).strip().lower(),)).fetchall()
+    sub = next((x for x in subs if _is_phone(x[1])), None)        # a laptop that allowed notifications is not the phone (live, 2026-10-15)
+    if not any(_is_phone(d) for d in keys) or not sub:
         return None
-    return {"sub_id": int(sub[0]), "device": sub[1] or "Phone", "since": str(sub[2] or "")[:10], "email": str(row[0]).strip().lower()}
+    return {"sub_id": int(sub[0]), "device": _short(sub[1]), "since": str(sub[2] or "")[:10], "email": str(row[0]).strip().lower()}
+
+
+def _short(device) -> str:
+    """"Chrome on Android" from a full browser line (what the screens show)."""
+    ua = str(device or "")
+    if "Mozilla/" not in ua:
+        return ua or "Phone"
+    system = next((n for k, n in (("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android")) if k in ua), "phone")
+    name = next((n for k, n in (("SamsungBrowser", "Samsung Internet"), ("CriOS", "Chrome"), ("Chrome/", "Chrome"), ("Firefox/", "Firefox"), ("Safari/", "Safari")) if k in ua), "")
+    return " on ".join(x for x in (name, system) if x)
 
 
 def send_push(request_id: int) -> bool:
