@@ -184,3 +184,26 @@ def test_the_system_admin_clears_a_lost_phone(web, db, pushed):
     r = Client().post("/login/", {"email": "family@slicks.test", "password": PW})
     assert b"Check your phone" not in r.content                                  # the password again, until a new phone is set up
     assert b"Scan with your phone" not in Client().get("/login/").content and b"Sign in with your phone" not in Client().get("/login/").content   # no QR any more
+
+
+def test_the_set_up_this_phone_card_shows_on_a_phone_until_it_is_set_up(web, db, pushed):
+    # owner, 2026-10-15: "can we push them to allow push notifications", "and even install the shortcut"
+    _admin(web)
+    assert b"Set up this phone" not in web.get("/", HTTP_USER_AGENT=PHONE_UA).content          # the switch is off: no card
+    _switch()
+    home = web.get("/", HTTP_USER_AGENT=PHONE_UA).content.decode()
+    assert "Set up this phone" in home and "Install Slick's ERP" in home and "Allow notifications" in home and "Turn on fingerprint" in home
+    assert 'id="fp_offer"' not in home                                                      # one card, not two
+    from engines import settings_registry as sr
+    from engines.acting_user import acting_as
+    with acting_as("admin@slicks.test", "admin"):
+        sr.save("phone_pages", "1")
+    assert "Set up this phone" in web.get("/phone/", HTTP_USER_AGENT=PHONE_UA).content.decode()
+    assert b"Set up this phone" not in web.get("/", HTTP_USER_AGENT=LAPTOP_UA).content       # never on a computer
+    assert b"Set up this phone" not in web.get("/expenses/", HTTP_USER_AGENT=PHONE_UA).content   # Home only
+    users = web.get("/settings/users/").content.decode()
+    assert "<th>Phone</th>" in users and "Not set up" in users
+    _ready(web)
+    assert ">Ready<" in web.get("/settings/users/").content.decode()
+    rack = _sign_in_new("rack@slicks.test", "scanner")
+    assert b"Set up this phone" not in rack.get("/phone/", HTTP_USER_AGENT=PHONE_UA).content     # the Scanner never approves sign-ins

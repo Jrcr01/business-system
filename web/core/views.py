@@ -29,8 +29,22 @@ def page_frame(request) -> dict:
         "search_q": request.GET.get("q", "") if request.path == "/search/" else "",
         "page_notice": _page_notice() if user else "",
         "over_confirm": _over_confirm(request) if user else None,
-        **_fp_frame(request, user),
+        **_phone_setup_frame(request, user, _fp_frame(request, user)),
     }
+
+
+def _phone_setup_frame(request, user, fp: dict) -> dict:
+    """The "Set up this phone" card (owner, 2026-10-15): on a phone's Home, while approval on the phone is switched on, for anyone who approves
+    sign-ins (not the Scanner). The page itself hides it once this phone is done; while it shows, the separate fingerprint offer does not."""
+    try:
+        from engines import phone_approval as pa
+        if (not user or settings.SANDBOX_NO_SIGNIN and not request.GET.get("ps") or not fp.get("fp_may") or not pa.push_on()
+                or request.path not in ("/", "/home/", "/phone/") or not _on_a_phone(request)):
+            return fp
+        from engines.web_push import public_key
+        return {**fp, "fp_offer": False, "ps_show": True, "ps_key": public_key(), "ps_fp_here": not fp.get("fp_offer") and _fp_here(request).get("u") == int(user["user_id"])}
+    except Exception:                                   # noqa: BLE001 -- never break a page
+        return fp
 
 
 FP_SALT = "slicks.fingerprint"

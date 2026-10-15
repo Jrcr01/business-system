@@ -190,8 +190,10 @@ def settings_users(request):
         else:
             messages.error(request, msg)
     users = au.list_users().to_dict("records")
+    from engines.phone_approval import push_phone
     for u in users:
         u["role_label"] = ROLE_LABEL.get(u["role"], u["role"])
+        u["phone_ready"] = u["role"] != "scanner" and push_phone(int(u["user_id"])) is not None      # owner, 2026-10-15: who still has to set up their phone
     return render(request, "masters/settings_users.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/users/",
                                                            "users": users, "roles": [(r, ROLE_LABEL[r]) for r in ROLES], "shown": shown,
                                                            "me_id": int(request.slicks_user["user_id"]),

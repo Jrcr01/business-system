@@ -4,6 +4,7 @@
 <div class="home">
 <div class="welcome">Welcome, {{ me.name }}</div>
 {% include "core/_fingerprint_offer.html" %}
+{% include "core/_phone_setup.html" %}
 {% if whats_new %}<div class="whats-new"><div class="wn-head"><span class="ms">new_releases</span><b>What's new</b>
   <form method="post" action="/whats-new/seen/">{% csrf_token %}<button class="btn small" type="submit">Got it</button></form></div>
   {% for n in whats_new %}<div class="wn-item"><span class="hint">{{ n.date }} · {{ n.title }}</span><ul>{% for l in n.lines %}<li>{{ l }}</li>{% endfor %}</ul></div>{% endfor %}

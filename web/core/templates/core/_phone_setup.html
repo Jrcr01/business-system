@@ -1,0 +1,82 @@
+{% load static %}{% comment %}Owner, 2026-10-15 ("can we push them to allow push notifications", "and even install the shortcut", "not all of them downloaded yet
+the shortcut and allowing notifications"): on a phone's Home, until this phone is set up, three taps: install Slick's ERP on the Home screen, allow
+notifications, turn on fingerprint. A browser asks each question only after a tap, so each step is its own button. "Later" hides the card until the app
+is opened again. Gone once the phone approves sign-ins (notifications and fingerprint here); install is offered as long as Chrome offers it.{% endcomment %}
+{% if ps_show %}
+<div id="ps_card" hidden style="max-width:520px;background:var(--bg-eef3fa);color:var(--ink);border:1px solid var(--bd-b9c6d8);border-radius:12px;padding:12px 14px;margin:10px 0">
+  <b><span class="ms">smartphone</span> Set up this phone</b>
+  <div class="hint" style="margin:2px 0 10px">So it can approve your sign-ins on a computer and show the card reminders. Three taps, each asked by the phone itself.</div>
+  <form onsubmit="return false">{% csrf_token %}
+  <div class="ps-step" id="ps_s1"><span class="ps-n">1</span><div><b>Install Slick's ERP</b><div class="hint" id="ps_m1">An icon on your Home screen, opens like an app.</div></div>
+    <button class="btn small" type="button" id="ps_b1">Install</button><span class="ps-ok ms" hidden>check_circle</span></div>
+  <div class="ps-step" id="ps_s2"><span class="ps-n">2</span><div><b>Allow notifications</b><div class="hint" id="ps_m2">Tap Allow when the phone asks.</div></div>
+    <button class="btn small" type="button" id="ps_b2">Allow</button><span class="ps-ok ms" hidden>check_circle</span></div>
+  <div class="ps-step" id="ps_s3"><span class="ps-n">3</span><div><b>Turn on fingerprint</b><div class="hint" id="ps_m3">Touch the sensor when the phone asks.</div></div>
+    <button class="btn small" type="button" id="ps_b3">Turn on</button><span class="ps-ok ms" hidden>check_circle</span></div>
+  </form>
+  <div id="ps_done" hidden style="margin-top:8px;color:var(--fg-0b6e4f);font-weight:600"><span class="ms">task_alt</span> This phone is set up.</div>
+  <button class="btn small ghost" type="button" id="ps_later" style="margin-top:8px">Later</button>
+</div>
+<style>
+#ps_card[hidden], #ps_card [hidden] { display: none !important; }
+.ps-step { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.ps-n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--blue); color: #fff; font-size: .8rem; font-weight: 700; }
+.ps-step.done .ps-n { background: var(--ok); } .ps-step.done .btn { display: none; } .ps-ok { color: var(--ok); font-size: 26px; }
+</style>
+<script src="{% static 'core/fingerprint.js' %}?v=1"></script>
+<script>
+(function () {
+  var card = document.getElementById("ps_card"), later = "ps_later_{{ me.user_id }}", prompt = null;
+  var csrf = card.querySelector("input[name=csrfmiddlewaretoken]").value, key = "{{ ps_key }}";
+  var standalone = window.matchMedia && (matchMedia("(display-mode: standalone)").matches || matchMedia("(display-mode: fullscreen)").matches);
+  var done = {1: standalone, 2: false, 3: {{ ps_fp_here|yesno:"true,false" }}};
+  try { if (sessionStorage.getItem(later)) return; } catch (e) {}
+  function mark(n, text) {
+    done[n] = true;
+    var s = document.getElementById("ps_s" + n);
+    s.classList.add("done"); s.querySelector(".ps-ok").hidden = false;
+    if (text) document.getElementById("ps_m" + n).textContent = text;
+    if (done[2] && done[3]) { document.getElementById("ps_done").hidden = false; document.getElementById("ps_later").hidden = true; }
+  }
+  function say(n, text, bad) { var m = document.getElementById("ps_m" + n); m.textContent = text; m.style.color = bad ? "var(--fg-b3261e)" : ""; }
+  function decide() { if (!(done[2] && done[3]) || (!done[1] && prompt)) card.hidden = false; }   /* not set up, or set up but the app can still be installed */
+  window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); prompt = e; decide(); });
+  window.addEventListener("appinstalled", function () { mark(1, "Installed. Open it from your Home screen."); });
+  /* 1. install */
+  if (done[1]) mark(1, "Installed: you opened it from the Home screen.");
+  document.getElementById("ps_b1").addEventListener("click", function () {
+    if (!prompt) { say(1, "Use Chrome's menu (⋮, top right) → Add to Home screen, or Install app. If the icon is already on your Home screen, open the ERP from there."); return; }
+    prompt.prompt();
+    prompt.userChoice.then(function (r) { if (r.outcome === "accepted") mark(1, "Installed."); else say(1, "Not installed. Tap Install again when ready."); prompt = null; });
+  });
+  /* 2. notifications */
+  function post(data) { return fetch("/notifications/", {method: "POST", credentials: "same-origin", headers: {"Content-Type": "application/json", "X-CSRFToken": csrf}, body: JSON.stringify(data)}).then(function (r) { return r.json(); }); }
+  function bytes(b64) { var s = atob((b64 + "===".slice((b64.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/")), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
+  var pushOk = ("serviceWorker" in navigator) && ("PushManager" in window) && ("Notification" in window);
+  var reg = pushOk ? navigator.serviceWorker.register("/sw.js?v=3").then(function () { return navigator.serviceWorker.ready; }) : Promise.reject();
+  var checked = reg.then(function (r) {
+    return r.pushManager.getSubscription().then(function (sub) {
+      if (sub && Notification.permission === "granted") { post({action: "on", subscription: sub.toJSON()}); mark(2, "Allowed."); }
+      else if (Notification.permission === "denied") say(2, "Blocked earlier. Tap the lock or ⓘ by the address → Permissions → Notifications → Allow, then reload.", true);
+    });
+  }).catch(function () { if (!pushOk) say(2, "This browser cannot receive notifications. Open the ERP in Chrome.", true); });
+  document.getElementById("ps_b2").addEventListener("click", function () {
+    if (!pushOk) { say(2, "This browser cannot receive notifications. Open the ERP in Chrome.", true); return; }
+    Notification.requestPermission().then(function (p) {
+      if (p !== "granted") { say(2, p === "denied" ? "Blocked. Tap the lock or ⓘ by the address → Permissions → Notifications → Allow, then reload." : "Not allowed yet. Tap Allow again.", true); return; }
+      reg.then(function (r) { return r.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: bytes(key)}); })
+        .then(function (sub) { return post({action: "on", subscription: sub.toJSON()}); })
+        .then(function (d) { if (d.ok) mark(2, "Allowed."); else say(2, d.msg, true); })
+        .catch(function () { say(2, "The phone could not be registered. Check the signal and try again.", true); });
+    });
+  });
+  /* 3. fingerprint */
+  if (done[3]) mark(3, "On for this phone.");
+  document.getElementById("ps_b3").addEventListener("click", function () {
+    slicksFp.turnOn(csrf, document.getElementById("ps_m3")).then(function (ok) { if (ok) mark(3, "On for this phone."); });
+  });
+  document.getElementById("ps_later").addEventListener("click", function () { try { sessionStorage.setItem(later, "1"); } catch (e) {} card.hidden = true; });
+  checked.then(decide, decide);
+})();
+</script>
+{% endif %}
