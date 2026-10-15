@@ -629,3 +629,9 @@ table.list tr.tentative td { color: var(--fg-6b7280); font-style: italic; }
 table.list th.sortable { cursor: pointer; user-select: none; } table.list th.sortable:hover { color: var(--fg-0b4f8a); }
 table.list th[aria-sort] { color: var(--fg-0b4f8a); } table.list th .sort-arrow { font-size: .75em; }
 @media print { table.list th .sort-arrow { display: none; } }
+
+/* Analytics -> Warnings (owner, 2026-10-15) */
+.warn-row { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.warn-row:last-child { border-bottom: 0; } .warn-row .t { font-weight: 600; } .warn-row .w { font-size: .88rem; color: var(--muted); margin-top: 2px; }
+.warn-row.red > .ms { color: var(--fg-b3261e); } .warn-row.amber > .ms { color: var(--warn); } .warn-row.blue > .ms { color: var(--fg-0b4f8a); }
+@media (max-width: 600px) { .warn-row { grid-template-columns: 24px 1fr; } .warn-row .btn { grid-column: 2; justify-self: start; } }

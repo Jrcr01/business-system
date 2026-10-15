@@ -1,0 +1,10 @@
+{% comment %}Owner, 2026-10-15: "Next warning tab" (engines/warn_list; the BI mock-up, section 4). Most urgent first, each with a why and where to act.{% endcomment %}
+<div class="chart" style="max-width:860px">
+{% for w in warns %}
+  <div class="warn-row {{ w.level }}"><span class="ms">{% if w.level == "red" %}error{% elif w.level == "amber" %}warning{% else %}info{% endif %}</span>
+    <div><div class="t">{{ w.title }}</div><div class="w">{{ w.why }}</div></div>
+    <a class="btn small ghost" href="{{ w.link }}">{{ w.act }}</a></div>
+{% empty %}
+  <p style="margin:6px 0"><span class="ms" style="color:var(--ok)">task_alt</span> Nothing to warn about today.</p>
+{% endfor %}
+</div>

@@ -417,6 +417,14 @@ def _an_payables():
     return peso_short(v), "owed to suppliers", "ok" if v else "none"
 
 
+def _an_warnings():
+    from engines.acting_user import acting_email
+    from engines.warn_list import all_for
+    w = all_for(acting_email())
+    red = sum(1 for x in w if x["level"] == "red")
+    return (str(len(w)) if w else "0"), ("to look at" + (f", {red} urgent" if red else "") if w else "nothing to look at"), ("warn" if red else ("ok" if not w else "none"))
+
+
 def _an_lenders():
     from engines.reports_service import get_combined_ap_summary
     df = get_combined_ap_summary()
@@ -547,6 +555,7 @@ for _t in (
           report_type_picker="Statement of account — supplier, lender, bank loan or card", rpt_soa_view="Supplier history"),
         A("Possible duplicates", "Check everything on file", ":material/content_copy:", rpt_mode="Standard reports", report_type_picker="Possible duplicates — check everything on file"),
         A("Decision reports", "Answers for choices", ":material/lightbulb:", rpt_mode="Standard reports", report_type_picker="Decision reports — answers for choices")]),
+    Tile("analytics", "analytics", "Warnings", _an_warnings, key="an-warnings", icon=":material/warning:", state=(("analytics_tab", "warnings"),), needs="reports.use"),
     Tile("analytics", "analytics", "Sales", _an_sales, key="an-sales", icon=":material/point_of_sale:", state=(("analytics_tab", "sales"),), needs="reports.use"),
     Tile("analytics", "analytics", "Cash ahead", _an_cash, key="an-cash", icon=":material/trending_up:", state=(("analytics_tab", "cash"),), needs="reports.use"),
     Tile("analytics", "analytics", "Payables", _an_payables, key="an-payables", icon=":material/receipt_long:", state=(("analytics_tab", "payables"),), needs="reports.use"),

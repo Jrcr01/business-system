@@ -231,13 +231,14 @@ def hidden_for(email: str | None) -> frozenset:
 
 
 # Hidden means hidden everywhere (owner, 2026-10-11): an Analytics tab goes with the page it reports on.
-ANALYTICS_TAB_PAGE = {"sales": "sales", "cash": "bank-cash", "payables": "order-statements", "lenders": "lenders", "bank": "bank-cash", "purchasing": "purchase-orders", "cards": "credit-cards"}
+ANALYTICS_TAB_PAGE = {"sales": "sales", "cash": "bank-cash", "payables": "order-statements", "lenders": "lenders", "bank": "bank-cash", "purchasing": "purchase-orders", "cards": "credit-cards", "warnings": "analytics"}
 
 
 def analytics_tabs() -> set[str]:
     """The Analytics tabs the signed-in person sees: every tab whose page is not hidden from them (the System admin: all of them)."""
     hidden = hidden_for(acting_email())
-    return {tab for tab, page in ANALYTICS_TAB_PAGE.items() if page not in hidden}
+    tabs = {tab for tab, page in ANALYTICS_TAB_PAGE.items() if page not in hidden}
+    return tabs if tabs - {"warnings"} else set()                   # Warnings (2026-10-15) only beside a dashboard: its warnings point at those pages
 
 
 def may_receive(role: str | None = None) -> tuple[bool, str]:

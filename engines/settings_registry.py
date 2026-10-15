@@ -90,6 +90,14 @@ NUMBERS = [
      "printed and every link already printed stops opening."),
     ("supplier_qr_days", "Payment statements", "The supplier's QR link works until this long after the statement's last check date", 90, 7, 730, 0, "days",
      "After that the link says it has expired. Counted from the day the link was made when the statement has no check yet."),
+    ("warn_check_days", "Warnings", "Warn about checks not cleared this many days after their date", 30, 7, 365, 0, "days",
+     "Analytics -> Warnings (owner, 2026-10-15). Such a check still counts as money going out today, so Cash ahead reads lower than it is."),
+    ("warn_price_rise_pct", "Warnings", "Warn when a supplier's new price is higher than its previous one by more than", 5, 1, 100, 0, "%",
+     "Prices that took effect within the days below."),
+    ("warn_price_days", "Warnings", "Look at supplier prices that took effect within the last", 30, 1, 365, 0, "days", ""),
+    ("warn_slow_days", "Warnings", "A slow mover: no sale in", 90, 14, 730, 0, "days", "Items on hand with no stock out in that long."),
+    ("warn_slow_min", "Warnings", "Warn about slow movers only when they hold at least", 0, 0, 100000000, 0, "pesos", "Their stock value at average cost."),
+    ("warn_margin_pct", "Warnings", "Warn about sales this month with a margin under", 15, 1, 100, 0, "%", "Selling price against the item's average cost when sold."),
     ("signin_push_approval", "Sign-in", "On a computer, approve the sign-in on your phone after the password (1 = yes, 0 = no)", 0, 0, 1, 0, "",
      "Owner, 2026-10-15 (\"drop scan qr but push notification\", \"comes after it\", \"1 phone only\"). 1: after the right password on a computer, a "
      "notification goes to the person's phone (the last one set up for notifications); they pick the number the computer shows and touch the "
