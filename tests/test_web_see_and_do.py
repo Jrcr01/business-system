@@ -111,5 +111,5 @@ def test_a_hidden_page_hides_its_analytics_tab_too(web, db):
     asked = family.get("/analytics/?tab=bank").content.decode()                  # typed in the address bar: the first dashboard they may see
     assert "Bank balance, last statement" not in asked
     assert "?tab=bank&" in web.get("/analytics/").content.decode()               # the System admin still sees it
-    web.post(f"/settings/users/{uid}/", levels_post({"bank-cash": "hidden", "order-statements": "hidden", "lenders": "hidden", "purchase-orders": "hidden", "sales": "hidden", "credit-cards": "hidden"}))
+    web.post(f"/settings/users/{uid}/", levels_post({"bank-cash": "hidden", "order-statements": "hidden", "lenders": "hidden", "purchase-orders": "hidden", "sales": "hidden", "credit-cards": "hidden", "stock": "hidden"}))
     assert family.get("/analytics/").status_code == 403                          # every dashboard's page is hidden: nothing to show
