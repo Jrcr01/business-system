@@ -119,10 +119,11 @@ def _post(endpoint: str, body: bytes, headers: dict) -> int:
         return e.code
 
 
-def send(email: str, title: str, body: str, url: str = "/", tag: str = "") -> int:
-    """To every phone of that person. Returns how many took it."""
+def send(email: str, title: str, body: str, url: str = "/", tag: str = "", only_sub: int | None = None) -> int:
+    """To every phone of that person (or only the one only_sub names: a sign-in approval goes to one phone, owner 2026-10-15). Returns how many took it."""
     with get_conn() as conn:
-        subs = conn.execute("SELECT sub_id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_email = ?", (email.lower(),)).fetchall()
+        subs = conn.execute("SELECT sub_id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_email = ?" + (" AND sub_id = ?" if only_sub else ""),
+                            (email.lower(),) + ((int(only_sub),) if only_sub else ())).fetchall()
     message, sent, gone = json.dumps({"title": title, "body": body, "url": url, "tag": tag}).encode(), 0, []
     for sub_id, endpoint, p256dh, auth in subs:
         try:

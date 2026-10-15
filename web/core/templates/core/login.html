@@ -38,12 +38,9 @@
   <script src="{% static 'core/fingerprint.js' %}?v=1"></script>
   <script>document.getElementById("fp_go").addEventListener("click", function (e) { e.preventDefault();
     slicksFp.signIn(document.querySelector("input[name=csrfmiddlewaretoken]").value, "{{ next|escapejs }}", document.getElementById("fp_msg")); });</script>{% endif %}
-  {% if phone_way %}{% comment %}Owner, 2026-10-14: a computer has no fingerprint reader; the person's own phone approves it (a QR code and a number).{% endcomment %}
-  <p style="text-align:center;margin:14px 0 0"><button class="login-fp" type="submit" form="lp_start" style="background:none;border:0;cursor:pointer;color:var(--fg-0b4f8a);font:inherit;font-weight:600;font-size:1.02rem"><span class="ms">qr_code_2</span>Sign in with your phone</button></p>{% endif %}
   <p class="login-help">Forgot your password? Ask the System admin to reset it.</p>
   <p class="login-foot"><span class="ms">lock</span>For authorized users only. Every action is recorded.</p>
 </form>
-{% if phone_way %}<form id="lp_start" method="post" action="/login/phone/">{% csrf_token %}<input type="hidden" name="next" value="{{ next }}"></form>{% endif %}
 {% endif %}
 </div>
 {% endblock %}

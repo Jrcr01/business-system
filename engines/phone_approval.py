@@ -4,7 +4,13 @@ fingerprint), picks the number the computer shows, and approves; the computer th
 
 What protects it: the code is 32 random characters, works once, for two minutes; only the browser that asked can collect the sign-in; the number
 ties the approval to the person looking at that computer (a wrong pick cancels it); the phone's account must be the one Cloudflare verified on the
-computer; only a person who has fingerprint sign-in turned on somewhere may approve, never the Scanner account. Mock-up: docs/mockups/w_phone_approves.html."""
+computer; only a person who has fingerprint sign-in turned on somewhere may approve, never the Scanner account. Mock-up: docs/mockups/w_phone_approves.html.
+
+PUSH (owner, 2026-10-15: "drop scan qr but push notification", "comes after it", "1 phone only"; mock-up docs/mockups/z_push_approval.html): on a
+computer, after the right password, a notification goes to the person's phone (the last one set up for notifications). Tapping it opens the approve
+page, which Cloudflare lets through (a phone whose Cloudflare session ran out can still approve): the person picks the number the computer shows and
+proves who they are with the fingerprint kept on that phone. Nobody is locked out: a person with no phone set up (notifications AND fingerprint) signs in
+with the password alone. The switch signin_push_approval (Settings -> Sign-in) starts off."""
 from __future__ import annotations
 
 import hashlib
@@ -20,14 +26,68 @@ _ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
 GONE = "This code is no longer good. Start again on the computer."
 
 
-def on() -> bool:
+def push_on() -> bool:
     from engines.settings_registry import int_value
-    return int_value("signin_phone_approval") == 1
+    return int_value("signin_push_approval") == 1
+
+
+def push_phone(user_id: int | None) -> dict | None:
+    """The phone a computer sign-in is approved on: the last one this person set up for notifications, when they also have fingerprint sign-in
+    turned on (the approve page asks for it) and are not the Scanner. None = not set up: the password alone signs them in."""
+    if not user_id:
+        return None
+    with get_conn() as conn:
+        row = conn.execute("SELECT email, role, is_active FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
+        if not row or not row[2] or row[1] == "scanner":
+            return None
+        keys = conn.execute("SELECT COUNT(*) FROM sign_in_keys WHERE user_id = ?", (int(user_id),)).fetchone()[0]
+        sub = conn.execute("""SELECT sub_id, device, created_at FROM push_subscriptions WHERE user_email = ? ORDER BY created_at DESC, sub_id DESC LIMIT 1""",
+                           (str(row[0]).strip().lower(),)).fetchone()
+    if not keys or not sub:
+        return None
+    return {"sub_id": int(sub[0]), "device": sub[1] or "Phone", "since": str(sub[2] or "")[:10], "email": str(row[0]).strip().lower()}
+
+
+def send_push(request_id: int) -> bool:
+    """The notification for a waiting request, to that one phone. True when the phone's push service took it."""
+    from engines.web_push import send
+    with get_conn() as conn:
+        row = _row(conn, "request_id", int(request_id))
+    if not _live(row, manila_now()) or not row["user_id"]:
+        return False
+    phone = push_phone(int(row["user_id"]))
+    if phone is None:
+        return False
+    when = manila_now().strftime("%I:%M %p").lstrip("0")
+    return send(phone["email"], "Sign-in request", f"A computer is asking to sign in as you, {when}. Tap to approve or refuse.",
+                url=f"/approve/{row['token']}/", tag="signin", only_sub=phone["sub_id"]) > 0
+
+
+def request_user(token: str) -> int | None:
+    """Whose sign-in a live request is (the approve page asks for that person's fingerprint)."""
+    with get_conn() as conn:
+        row = _row(conn, "token", str(token or ""))
+    return int(row["user_id"]) if _live(row, manila_now()) and row["user_id"] else None
+
+
+def clear_phone(user_id: int, by: str = "") -> tuple[bool, str]:
+    """The System admin clears a person's phone (lost, or no longer getting notifications): its notifications and every fingerprint sign-in go, so
+    the person signs in with the password and sets up the new phone."""
+    with write_tx() as conn:
+        row = conn.execute("SELECT email FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
+        if row is None:
+            return False, "No such person."
+        subs = conn.execute("DELETE FROM push_subscriptions WHERE user_email = ?", (str(row[0]).strip().lower(),)).rowcount
+        from engines.fingerprint_signin import remove_all
+        keys = remove_all(conn, int(user_id))
+        from engines.fingerprint_signin import _audit
+        _audit(conn, "PHONE_CLEARED", int(user_id), f"notifications on {subs} phone(s) and fingerprint on {keys} device(s) removed", by or None)
+    return True, "Phone cleared. They sign in with the password until a new phone is set up."
 
 
 def may_use(user_id: int | None) -> bool:
     """May this account be signed in to a computer by its phone: the switch is on, it is not the Scanner, and fingerprint sign-in is on somewhere."""
-    if not on() or not user_id:
+    if not push_on() or not user_id:
         return False
     with get_conn() as conn:
         row = conn.execute("SELECT role, is_active FROM app_users WHERE user_id = ?", (int(user_id),)).fetchone()
@@ -72,7 +132,7 @@ def choices(token: str, number: int) -> list[int]:
 
 def for_phone(token: str, approver: dict) -> tuple[dict | None, str]:
     """What the phone shows after the scan: (the request, '') or (None, why not)."""
-    if not on():
+    if not push_on():
         return None, "Signing in with the phone is switched off."
     with get_conn() as conn:
         row = _row(conn, "token", str(token or ""))

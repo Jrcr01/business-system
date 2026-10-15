@@ -1,10 +1,17 @@
-"""Sign in on a computer with your phone (owner, 2026-10-14): the computer shows a QR code and a number; the person's own phone, signed in to the
-system, picks the number and approves; that computer, and only it, is then signed in."""
+"""Approve a computer's sign-in on your phone (owner, 2026-10-15: "drop scan qr but push notification", "comes after it", "1 phone only"): after the
+right password on a computer, a notification goes to the person's phone; its link opens the approve page (no sign-in needed there), where the number
+the computer shows and the phone's fingerprint approve it; that computer, and only it, is then signed in. Nobody without a phone set up is held back."""
+import json
 import re
 import sqlite3
 
-from tests.test_fingerprint_signin import _turn_on
-from tests.test_web_d0 import _admin, _sign_in_new, fetchone_uid
+import pytest
+from django.test import Client
+
+from tests.test_fingerprint_signin import Device, _turn_on
+from tests.test_web_d0 import PW, _admin, _sign_in_new, fetchone_uid
+
+PHONE_UA = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36"
 
 
 def _db():
@@ -12,88 +19,143 @@ def _db():
     return d.DB_PATH
 
 
-def _ask(computer):
-    """The computer presses "Sign in with your phone": (the code in the QR, the number it shows)."""
-    r = computer.post("/login/phone/", {"next": "/expenses/"})
-    assert r.status_code == 200 and b"Scan with your phone" in r.content
-    number = int(re.search(r'class="login-num"[^>]*>(\d+)<', r.content.decode()).group(1))
-    with sqlite3.connect(_db()) as conn:
-        token, stored = conn.execute("SELECT token, number FROM signin_requests ORDER BY request_id DESC LIMIT 1").fetchone()
-    assert stored == number and 10 <= number <= 99
-    return token, number
+@pytest.fixture
+def pushed(monkeypatch):
+    """Every notification the system sends, read as the phone would: [message]."""
+    from engines import web_push
+    out, real = [], web_push.encrypt
+    monkeypatch.setattr(web_push, "encrypt", lambda message, p256dh, auth: out.append(json.loads(message)) or real(message, p256dh, auth))
+    monkeypatch.setattr(web_push, "_post", lambda endpoint, body, headers: 201)
+    return out
+
+
+def _switch(value="1"):
+    from engines import settings_registry as sr
+    from engines.acting_user import acting_as
+    with acting_as("admin@slicks.test", "admin"):
+        sr.save("signin_push_approval", value)
+
+
+def _ready(web, email="admin@slicks.test"):
+    """The person's phone: fingerprint turned on and notifications allowed."""
+    from tests.test_card_reminders import _phone
+    device = _turn_on(web)
+    _phone(email)
+    return device
+
+
+def _computer_signs_in(email="admin@slicks.test", nxt="/expenses/"):
+    computer = Client()
+    r = computer.post("/login/", {"email": email, "password": PW, "next": nxt})
+    return computer, r
 
 
 def _status(computer):
-    return computer.post("/login/phone/status/").json()
+    return computer.post("/login/push/status/").json()
 
 
-def test_the_phone_approves_and_only_that_computer_is_signed_in(web, db):
-    from django.test import Client
-    from engines.auth_service import recent_sign_ins
-    phone = _admin(web)                                                          # the phone: signed in, fingerprint turned on
-    computer = Client()
-    assert b"Sign in with your phone" in computer.get("/login/").content
-    phone_ua = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36"
-    assert b"Sign in with your phone" not in Client().get("/login/", HTTP_USER_AGENT=phone_ua).content      # not on a phone
-    _turn_on(phone)
-    token, number = _ask(computer)
-    assert _status(computer)["state"] == "pending"
+def _approve(token, device, number):
+    phone = Client(HTTP_USER_AGENT=PHONE_UA)                                    # not signed in: the notification's link alone
     page = phone.get(f"/approve/{token}/").content.decode()
-    assert "Sign in on a computer?" in page and f'value="{number}"' in page and page.count('name="number"') == 3
-    r = phone.post(f"/approve/{token}/", {"answer": "yes", "number": str(number)})
-    assert b"Approved. The computer is signed in." in r.content
+    o = phone.get(f"/approve/{token}/options/").json()
+    if not o.get("ok"):
+        return page, o
+    return page, phone.post(f"/approve/{token}/", json.dumps({**device.get(o["publicKey"]["challenge"]), "number": str(number)}),
+                            content_type="application/json").json()
+
+
+def _token():
+    with sqlite3.connect(_db()) as conn:
+        return conn.execute("SELECT token, number FROM signin_requests ORDER BY request_id DESC LIMIT 1").fetchone()
+
+
+def test_after_the_password_the_phone_approves_and_only_that_computer_is_signed_in(web, db, pushed):
+    from engines.auth_service import recent_sign_ins
+    device = _ready(_admin(web))
+    _switch()
+    computer, r = _computer_signs_in()
+    page = r.content.decode()
+    assert r.status_code == 200 and "Check your phone" in page
+    token, number = _token()
+    assert f'class="login-num" aria-label="The number to pick">{number}<' in page
+    assert pushed[-1]["title"] == "Sign-in request" and pushed[-1]["url"] == f"/approve/{token}/"
+    assert computer.get("/")["Location"].startswith("/login/") and _status(computer)["state"] == "pending"     # nothing open on the password alone
+    shown, res = _approve(token, device, number)
+    assert "Approve this sign-in?" in shown and shown.count('name="number"') == 3 and f'value="{number}"' in shown
+    assert res["ok"] and "Approved" in res["msg"]
     thief = Client()                                                             # another browser has no claim on it
-    assert _status(thief)["state"] == "gone" and thief.get("/")["Location"].startswith("/login/")
+    assert _status(thief)["state"] == "gone"
     s = _status(computer)
-    assert s["state"] == "approved" and s["next"] in ("/expenses/", "/2fa/")
-    if s["next"] == "/2fa/":                                                     # the 6-digit code is on in the tests: the phone stood in for the password only
-        from tests.test_web_d0 import code_for
-        r = computer.post("/2fa/", {"code": code_for("admin@slicks.test")})
-        assert r.status_code == 302 and r["Location"] == "/expenses/"
-    assert computer.get("/").status_code == 200
-    assert recent_sign_ins(fetchone_uid("admin@slicks.test"))[0]["result"] in ("PHONE", "CODE")
+    assert s == {"state": "approved", "next": "/expenses/"} and computer.get("/").status_code == 200
+    assert recent_sign_ins(fetchone_uid("admin@slicks.test"))[0]["result"] == "PUSH"
     assert _status(computer)["state"] == "gone"                                  # used once
-    assert b"no longer good" in phone.get(f"/approve/{token}/").content
+    assert b"no longer good" in Client().get(f"/approve/{token}/").content
+    assert computer.post("/login/push/again/").json()["ok"] is False
 
 
-def test_a_wrong_number_and_it_is_not_me_cancel_the_code(web, db):
-    from django.test import Client
-    phone = _admin(web)
-    _turn_on(phone)
-    computer = Client()
-    token, number = _ask(computer)
+def test_a_wrong_number_another_device_and_it_is_not_me_approve_nothing(web, db, pushed):
+    device = _ready(_admin(web))
+    _switch()
+    computer, _ = _computer_signs_in()
+    token, number = _token()
+    _, res = _approve(token, Device(), number)                                   # a phone that is not hers: the fingerprint does not match
+    assert not res["ok"] and _status(computer)["state"] == "pending"
     wrong = 10 + (number - 10 + 37) % 90
-    r = phone.post(f"/approve/{token}/", {"answer": "yes", "number": str(wrong)})
-    assert b"not the number on the computer" in r.content
-    assert _status(computer)["state"] == "denied" and computer.get("/")["Location"].startswith("/login/")
-    assert b"no longer good" in phone.post(f"/approve/{token}/", {"answer": "yes", "number": str(number)}).content      # the right number comes too late
-    token, number = _ask(computer)
-    r = phone.post(f"/approve/{token}/", {"answer": "no"})
+    _, res = _approve(token, device, wrong)
+    assert not res["ok"] and "not the number" in res["msg"] and _status(computer)["state"] == "denied"
+    computer, _ = _computer_signs_in()
+    token, number = _token()
+    assert computer.post("/login/push/again/").json()["ok"] and len(pushed) == 3                     # "Send again"
+    r = Client().post(f"/approve/{token}/", {"answer": "no"})
     assert b"Refused. Nobody was signed in" in r.content and _status(computer)["state"] == "denied"
     with sqlite3.connect(_db()) as conn:
         assert conn.execute("SELECT COUNT(*) FROM review_flags WHERE kind = 'PHONE_SIGN_IN_REFUSED'").fetchone()[0] == 1
-
-
-def test_it_needs_fingerprint_on_the_phone_a_live_code_and_the_switch(web, db):
-    from django.test import Client
-    from engines import settings_registry as sr
-    from engines.acting_user import acting_as
-    phone = _admin(web)
-    computer = Client()
-    token, number = _ask(computer)
-    assert b"Turn on fingerprint sign-in on this phone first" in phone.get(f"/approve/{token}/").content           # no fingerprint yet: no approving
-    assert b"Turn on fingerprint" in phone.post(f"/approve/{token}/", {"answer": "yes", "number": str(number)}).content
-    assert _status(computer)["state"] == "pending"
-    _turn_on(phone)
-    with sqlite3.connect(_db()) as conn:                                                                             # two minutes passed
         conn.execute("UPDATE signin_requests SET expires_at = '2026-01-01 00:00:00'")
-    assert b"no longer good" in phone.get(f"/approve/{token}/").content and _status(computer)["state"] == "gone"
-    rack = _sign_in_new("rack@slicks.test", "scanner")                                                               # the Scanner account never approves
-    token, number = _ask(computer)
-    assert b"Approved" not in rack.post(f"/approve/{token}/", {"answer": "yes", "number": str(number)}, follow=True).content
-    assert _status(computer)["state"] == "pending"
-    with acting_as("admin@slicks.test", "admin"):
-        sr.save("signin_phone_approval", "0")
-    assert b"Sign in with your phone" not in Client().get("/login/").content
-    assert Client().post("/login/phone/", {})["Location"] == "/login/"
-    assert b"switched off" in phone.get(f"/approve/{token}/").content
+    assert b"no longer good" in Client().get(f"/approve/{token}/").content
+
+
+def test_nobody_is_held_back_and_the_notification_goes_to_the_last_phone_only(web, db, pushed):
+    from tests.test_card_reminders import _phone
+    from tests.test_web_d0 import _code_step
+    _admin(web)
+    _switch()
+    computer, r = _computer_signs_in()                                           # no phone set up: the password (and the code, when on) as before
+    assert b"Check your phone" not in r.content and not pushed
+    _turn_on(web)
+    computer, r = _computer_signs_in()                                           # fingerprint but no notifications: still as before
+    assert b"Check your phone" not in r.content
+    _phone("admin@slicks.test", 1)
+    _phone("admin@slicks.test", 2)
+    r = Client(HTTP_USER_AGENT=PHONE_UA).post("/login/", {"email": "admin@slicks.test", "password": PW})
+    assert b"Check your phone" not in r.content                                  # on a phone itself: nothing changes
+    computer, r = _computer_signs_in()
+    assert b"Check your phone" in r.content and len(pushed) == 1                 # one phone only
+    from engines.phone_approval import push_phone
+    assert push_phone(fetchone_uid("admin@slicks.test"))["sub_id"] == max(r[0] for r in sqlite3.connect(_db()).execute("SELECT sub_id FROM push_subscriptions"))
+    _switch("0")
+    computer, r = _computer_signs_in()
+    assert b"Check your phone" not in r.content
+    _switch()
+    rack = _sign_in_new("rack@slicks.test", "scanner")                          # the Scanner account is never asked
+    _phone("rack@slicks.test")
+    from engines.phone_approval import push_phone as pp
+    assert pp(fetchone_uid("rack@slicks.test")) is None
+
+
+def test_the_system_admin_clears_a_lost_phone(web, db, pushed):
+    from engines.phone_approval import push_phone
+    _ready(_admin(web))
+    family = _sign_in_new("family@slicks.test", "owner")
+    _ready(family, "family@slicks.test")
+    uid = fetchone_uid("family@slicks.test")
+    page = web.get(f"/settings/users/{uid}/").content.decode()
+    assert "Phone for sign-in approval" in page and "Clear this phone" in page
+    web.post(f"/settings/users/{uid}/", {"action": "clear_phone"})
+    assert push_phone(uid) is None
+    with sqlite3.connect(_db()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM sign_in_keys WHERE user_id = ?", (uid,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM push_subscriptions WHERE user_email = 'family@slicks.test'").fetchone()[0] == 0
+    _switch()
+    r = Client().post("/login/", {"email": "family@slicks.test", "password": PW})
+    assert b"Check your phone" not in r.content                                  # the password again, until a new phone is set up
+    assert b"Scan with your phone" not in Client().get("/login/").content and b"Sign in with your phone" not in Client().get("/login/").content   # no QR any more

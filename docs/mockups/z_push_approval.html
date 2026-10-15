@@ -1,0 +1,101 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: push approval</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 22px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 84ch; }
+.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; align-items: start; }
+.step { font-weight: 700; color: var(--navy); margin: 0 0 6px; } .step b { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--blue); color: #fff; font-size: .8rem; margin-right: 6px; }
+.pc { background: var(--navy); border-radius: 12px; padding: 22px 16px; }
+.card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.card h2 { margin: 0 0 10px; font-size: 1.15rem; color: var(--navy); }
+.who { font-size: .85rem; color: var(--muted); margin: 0 0 10px; } .who b { color: var(--ink); }
+.btn { display: flex; justify-content: center; align-items: center; gap: 6px; background: var(--blue); color: #fff; border: 0; border-radius: 8px; padding: 9px 12px; font: inherit; font-weight: 600; width: 100%; }
+.btn.ghost { background: #fff; color: var(--blue); border: 1px solid #b9c6d8; }
+.big { font-size: 3rem; font-weight: 800; text-align: center; color: var(--navy); letter-spacing: .1em; margin: 6px 0; }
+.hint { font-size: .82rem; color: var(--muted); } .center { text-align: center; }
+.spin { display: inline-block; width: 14px; height: 14px; border: 2px solid #b9c6d8; border-top-color: var(--blue); border-radius: 50%; vertical-align: -2px; margin-right: 6px; }
+.link { color: var(--blue); font-weight: 600; text-decoration: underline; font-size: .9rem; }
+.phone { width: 230px; margin: 0 auto; border: 10px solid #1f2937; border-radius: 30px; background: #111827; min-height: 420px; padding: 14px 10px; position: relative; }
+.phone.light { background: #f8fafc; }
+.clock { color: #fff; text-align: center; font-size: 2.6rem; font-weight: 300; margin: 18px 0 2px; } .date { color: #cbd5e1; text-align: center; font-size: .8rem; margin-bottom: 18px; }
+.notif { background: rgba(255,255,255,.93); border-radius: 14px; padding: 9px 11px; font-size: .82rem; }
+.notif .app { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .72rem; margin-bottom: 3px; } .notif .app img, .notif .app i { width: 16px; height: 16px; border-radius: 4px; background: #f5c400; display: inline-block; }
+.notif b { display: block; font-size: .88rem; }
+.ptitle { font-weight: 700; color: var(--navy); font-size: 1rem; margin: 4px 0 6px; }
+.nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+.nums span { border: 1px solid #b9c6d8; border-radius: 10px; padding: 12px 0; text-align: center; font-size: 1.4rem; font-weight: 700; color: var(--navy); background: #fff; }
+.nums span.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+.fp { text-align: center; margin: 12px 0 4px; } .fp .ms { font-size: 44px; width: 44px; height: 44px; color: var(--blue); }
+.ok { color: var(--ok); font-weight: 700; } .note { background: #fff8e6; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 12px; font-size: .88rem; }
+.q { background: #fffbea; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 14px; margin-top: 22px; } .q ol { margin: 6px 0 0 18px; padding: 0; } .q li { margin: 4px 0; }
+</style></head><body><main>
+
+<h1>Sign in with your phone: push <small>mock-up</small></h1>
+<p class="why">Agreed 2026-10-15: on a computer, the password first, then a notification to the person's phone (the last one set up). They match the number and confirm with their fingerprint. No QR. Nobody is locked out: a person whose phone is not set up signs in with the password alone until it is. On the phone itself nothing changes (fingerprint sign-in).</p>
+
+<div class="flow">
+  <div><p class="step"><b>1</b>Computer: the password</p>
+    <div class="pc"><div class="card">
+      <h2>Sign in</h2>
+      <p class="who"><span class="ms" style="font-size:16px;color:var(--ok)">verified_user</span> Verified by Cloudflare as <b>rhodora@…</b></p>
+      <label class="hint">Password</label><div style="border:1px solid #b9c6d8;border-radius:8px;height:34px;margin:3px 0 10px"></div>
+      <button class="btn">Sign in</button>
+      <p class="hint center" style="margin:8px 0 0">Right password → the notification goes to the phone at once.</p>
+    </div></div></div>
+
+  <div><p class="step"><b>2</b>Computer: the number, waiting</p>
+    <div class="pc"><div class="card center">
+      <h2>Check your phone</h2>
+      <p class="hint" style="margin:0">A notification went to <b>Rhodora's phone</b>. Tap it and pick this number:</p>
+      <div class="big">47</div>
+      <p class="hint"><span class="spin"></span>Waiting for your phone… (2 minutes)</p>
+      <p style="margin:12px 0 0"><span class="link">Send again</span></p>
+    </div></div></div>
+
+  <div><p class="step"><b>3</b>Phone: the notification</p>
+    <div class="phone"><div class="clock">7:45</div><div class="date">Thursday, October 15</div>
+      <div class="notif"><div class="app"><i></i>Slick's ERP · now</div><b>Sign-in request</b>A computer is asking to sign in as you, 7:45 AM. Tap to approve or refuse.</div>
+    </div></div>
+
+  <div><p class="step"><b>4</b>Phone: match and fingerprint</p>
+    <div class="phone light">
+      <p class="ptitle">Approve this sign-in?</p>
+      <p class="hint" style="margin:0">Rhodora Roxas · a Windows computer · Chrome · 7:45 AM</p>
+      <p class="hint" style="margin:10px 0 0">Pick the number shown on the computer:</p>
+      <div class="nums"><span>12</span><span class="on">47</span><span>83</span></div>
+      <div class="fp"><span class="ms">fingerprint</span><div class="hint">Touch the sensor to approve</div></div>
+      <button class="btn ghost" style="margin-top:12px;color:#b3261e;border-color:#e8a19b">Not me: refuse</button>
+    </div></div>
+</div>
+
+<div class="flow" style="margin-top:18px">
+  <div><p class="step"><b>5</b>Computer: signed in by itself</p>
+    <div class="pc"><div class="card center"><span class="ms ok" style="font-size:36px;width:36px;height:36px">check_circle</span><h2 style="margin-top:6px">Approved on your phone</h2><p class="hint">Opening Home…</p></div></div></div>
+  <div><p class="step"><b>If refused or wrong number</b></p>
+    <div class="pc"><div class="card center"><h2>Not approved</h2><p class="hint">The phone refused, or picked another number. Nothing was opened. The System admin gets a line in the sign-in log.</p><button class="btn ghost">Try again</button></div></div></div>
+  <div><p class="step"><b>If the phone is not set up</b></p>
+    <div class="note"><b>No phone to send to.</b> Notifications or fingerprint are not on for you yet. On your phone: open the ERP, person menu → <b>This phone</b> → turn on <b>Notifications</b> and <b>Fingerprint</b>. Until then, the password alone signs you in.</div></div>
+</div>
+
+<h1>Set-up <small>System admin only</small></h1>
+<div class="flow">
+  <div><p class="step">Settings → Sign-in</p>
+    <div class="card"><b>Approve on the phone after the password</b> <span class="hint">(computers)</span>
+      <div style="display:flex;gap:8px;align-items:center;margin:8px 0"><span style="display:inline-block;width:38px;height:22px;border-radius:11px;background:#cbd5e1;position:relative"><i style="position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff"></i></span><span class="hint">Off until you have tried it</span></div>
+      <p class="hint" style="margin:0">On: anyone whose phone is set up must approve each computer sign-in on it. Off: the password alone, as today.</p></div></div>
+  <div><p class="step">Settings → People → Rhodora Roxas</p>
+    <div class="card"><b>Phone for sign-in approval</b>
+      <p class="hint" style="margin:6px 0">Samsung Galaxy A54 · Chrome · set up 10/15/2026</p>
+      <button class="btn ghost" style="color:#b3261e;border-color:#e8a19b">Clear this phone</button>
+      <p class="hint" style="margin:6px 0 0">For a lost phone, or one that no longer gets notifications. The person signs in with the password and sets up the new phone.</p></div></div>
+  <div><p class="step">Cloudflare (yours, once)</p>
+    <div class="note">One rule lets <b>erp.slickstiresupply.com/approve/*</b> through without Cloudflare's own sign-in, so a phone whose Cloudflare session expired can still approve. That page opens only with the notification's one-time link (2 minutes), the number and the fingerprint.</div></div>
+</div>
+
+</main></body></html>

@@ -47,6 +47,15 @@
 <p class="hint">The device's own fingerprint or face unlock stands in for typing the password there. Remove a lost or sold device here.
   A changed or reset password, or Sign out everywhere, removes them all.</p>
 
+<div class="grp">Phone for sign-in approval</div>
+{% comment %}Owner, 2026-10-15: on a computer, after the password, the sign-in is approved on this phone (Settings -> Sign-in switch).{% endcomment %}
+{% if push_phone %}<p style="margin:4px 0">{{ push_phone.device }} <span class="hint">· notifications on since {{ push_phone.since }}</span></p>
+  <form method="post" onsubmit="return confirm('Clear this phone? Its notifications and every fingerprint sign-in of this person are removed. They sign in with the password until a new phone is set up.');">{% csrf_token %}
+    <input type="hidden" name="action" value="clear_phone"><button class="btn small ghost" type="submit" style="color:var(--fg-b3261e)">Clear this phone</button></form>
+{% else %}<p class="hint">No phone set up (it needs notifications and fingerprint sign-in on the phone). Until then the password alone signs in.</p>{% endif %}
+<p class="hint">{% if push_on %}On: a computer sign-in is approved on this phone after the password.{% else %}Approval on the phone is off (Settings → Sign-in).{% endif %}
+  Clear it for a lost phone, or one that no longer gets the notification.</p>
+
 <div class="grp">Sign-ins</div>
 <form class="bar" method="post" onsubmit="return confirm('Sign {{ u.name|escapejs }} out everywhere? Every device asks for the password and the code again.');">{% csrf_token %}
   <input type="hidden" name="action" value="signout_all"><span>{% if sign_ins %}The last {{ sign_ins|length }} sign-in{{ sign_ins|length|pluralize }}, newest first.{% else %}Ends all of their sign-ins at once.{% endif %}</span>

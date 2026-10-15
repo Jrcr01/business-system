@@ -1,25 +1,58 @@
-{% extends "core/base.html" %}
-{% block title %}Sign in on a computer{% endblock %}
+{% extends "core/base.html" %}{% load static %}
+{% block title %}Approve a sign-in{% endblock %}
 {% block content %}
-{% comment %}Owner, 2026-10-14: the phone's side of "Sign in with your phone". Reached by scanning the computer's QR code, after the phone's own sign-in.{% endcomment %}
-<div style="max-width:420px;margin:0 auto">
+{% comment %}Owner, 2026-10-15: the phone's side of the push ("drop scan qr but push notification"). Opened from the notification; no sign-in needed here:
+the link's code, the number on the computer and this phone's fingerprint prove it. Mock-up docs/mockups/z_push_approval.html.{% endcomment %}
+<div style="max-width:420px;margin:0 auto;padding:0 4px">
 {% if done %}
   <div style="text-align:center;padding:30px 0"><span class="ms" style="font-size:64px;color:var(--fg-0b6e4f)">{% if ok %}task_alt{% else %}block{% endif %}</span>
     <h2 style="margin:10px 0 6px">{{ done }}</h2><p class="hint">You can close this page.</p></div>
 {% elif why %}
-  <h2><span class="ms" style="font-size:28px">qr_code_2</span> Sign in on a computer</h2>
+  <h2><span class="ms" style="font-size:28px">phonelink_lock</span> Approve a sign-in</h2>
   <p class="note">{{ why }}</p>
-  <p><a class="btn ghost" href="/">Home</a></p>
 {% else %}
-  <h2><span class="ms" style="font-size:28px">qr_code_2</span> Sign in on a computer?</h2>
+  <div id="ap_ask">
+  <h2><span class="ms" style="font-size:28px">phonelink_lock</span> Approve this sign-in?</h2>
   <div class="facts"><div><span>Asking now</span><b>{{ info.browser }}</b></div><div><span>For</span><b style="overflow-wrap:anywhere">{{ info.email }}</b></div></div>
+  <p style="margin:14px 0 6px"><b>Pick the number the computer shows:</b></p>
+  <div class="ap-choices">{% for n in info.choices %}<label><input type="radio" name="number" value="{{ n }}"><span>{{ n }}</span></label>{% endfor %}</div>
+  <button class="btn wide" type="button" id="ap_go" style="margin-top:14px"><span class="ms">fingerprint</span>Approve with fingerprint</button>
+  <p id="ap_msg" class="hint" role="status" style="text-align:center;min-height:1.2em;margin:8px 0 0"></p>
   <form method="post">{% csrf_token %}
-    <p style="margin:14px 0 6px"><b>Which number does that computer show?</b></p>
-    <div class="ap-choices">{% for n in info.choices %}<label><input type="radio" name="number" value="{{ n }}" required><span>{{ n }}</span></label>{% endfor %}</div>
-    <button class="btn wide" type="submit" name="answer" value="yes" style="margin-top:14px"><span class="ms">check</span>Approve</button>
-    <button class="btn wide ghost" type="submit" name="answer" value="no" formnovalidate style="margin-top:8px">It is not me</button>
-  </form>
+    <button class="btn wide ghost" type="submit" name="answer" value="no" style="margin-top:8px;color:var(--fg-b3261e)">It is not me: refuse</button></form>
   <p class="hint" style="margin-top:12px">Only approve a computer you are sitting at. If you did not ask for this, tap "It is not me".</p>
+  </div>
+  <div id="ap_done" hidden style="text-align:center;padding:30px 0"><span class="ms" style="font-size:64px;color:var(--fg-0b6e4f)">task_alt</span>
+    <h2 id="ap_done_text" style="margin:10px 0 6px"></h2><p class="hint">You can close this page.</p></div>
+  <script>
+  (function () {
+    function bytes(t) { var s = atob((t + "===".slice((t.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/")), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
+    function b64(buf) { var a = new Uint8Array(buf), s = ""; for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+    var msg = document.getElementById("ap_msg"), csrf = document.querySelector("input[name=csrfmiddlewaretoken]").value, base = "/approve/{{ token|urlencode }}/";
+    function say(t, bad) { msg.textContent = t; msg.style.color = bad ? "var(--fg-b3261e)" : "var(--fg-0b6e4f)"; }
+    document.getElementById("ap_go").addEventListener("click", function () {
+      var picked = document.querySelector("input[name=number]:checked");
+      if (!picked) { say("Pick the number the computer shows first.", true); return; }
+      if (!window.PublicKeyCredential) { say("This browser cannot use the fingerprint. Open the notification in Chrome.", true); return; }
+      say("Touch the sensor when the phone asks.");
+      fetch(base + "options/", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (o) {
+        if (!o.ok) throw new Error(o.msg);
+        var pk = o.publicKey;
+        pk.challenge = bytes(pk.challenge);
+        pk.allowCredentials = (pk.allowCredentials || []).map(function (c) { return {type: c.type, id: bytes(c.id)}; });
+        return navigator.credentials.get({publicKey: pk});
+      }).then(function (c) {
+        var r = c.response;
+        return fetch(base, {method: "POST", credentials: "same-origin", headers: {"Content-Type": "application/json", "X-CSRFToken": csrf},
+          body: JSON.stringify({id: b64(c.rawId), clientDataJSON: b64(r.clientDataJSON), authenticatorData: b64(r.authenticatorData), signature: b64(r.signature), number: picked.value})})
+          .then(function (x) { return x.json(); });
+      }).then(function (res) {
+        if (res.ok) { document.getElementById("ap_ask").hidden = true; document.getElementById("ap_done_text").textContent = res.msg; document.getElementById("ap_done").hidden = false; return; }
+        say(res.msg || "Not approved.", true);
+      }).catch(function (e) { say(e && e.name === "NotAllowedError" ? "Cancelled. Nothing was approved." : ((e && e.message) || "Not approved."), true); });
+    });
+  })();
+  </script>
 {% endif %}
 </div>
 {% endblock %}

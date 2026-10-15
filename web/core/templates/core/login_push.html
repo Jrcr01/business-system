@@ -1,0 +1,50 @@
+{% extends "core/base.html" %}{% load static %}
+{% block title %}Check your phone{% endblock %}
+{% block content %}
+{% comment %}Owner, 2026-10-15 ("drop scan qr but push notification", "comes after it", "1 phone only"): the password was right; the person's phone got a
+notification. They pick this number on it and touch the fingerprint sensor; this page then signs in. Mock-up docs/mockups/z_push_approval.html.{% endcomment %}
+<div class="login-bg" aria-hidden="true"></div>
+<div class="login-wrap">
+<div class="login-big"><img src="{% static 'assets/slicks_logo.jpg' %}" alt=""><b>Slick's Tire Supply</b><span>Business system</span></div>
+<div class="login-card" style="text-align:center">
+  <h2>Check your phone</h2>
+  <div id="lp_wait">
+    {% if sent %}<p class="hint" style="margin:0">A notification went to <b>{{ name }}'s phone</b> ({{ device }}). Tap it, pick this number and touch the fingerprint sensor:</p>
+    {% else %}<p class="hint" style="margin:0">The notification could not be sent to <b>{{ device }}</b> just now. Press <b>Send again</b>; on the phone, pick this number:</p>{% endif %}
+    <div class="login-num" aria-label="The number to pick">{{ number }}</div>
+    <p class="hint" id="lp_left" role="status">Waiting for your phone…</p>
+    <p style="margin:6px 0 0"><button class="btn small ghost" type="button" id="lp_again_send"><span class="ms">send_to_mobile</span>Send again</button></p>
+    <p class="hint" id="lp_sent" role="status" style="min-height:1.2em;margin:4px 0 0"></p>
+  </div>
+  <p id="lp_msg" class="msg error" role="alert" hidden style="text-align:left"></p>
+  <a class="btn wide" id="lp_restart" href="/login/{% if next and next != "/" %}?next={{ next|urlencode }}{% endif %}" hidden>Sign in again</a>
+</div>
+</div>
+<form id="lp_form">{% csrf_token %}</form>
+<script>
+(function () {
+  var left = {{ seconds }}, wait = document.getElementById("lp_wait"), label = document.getElementById("lp_left"), msg = document.getElementById("lp_msg");
+  var restart = document.getElementById("lp_restart"), token = document.querySelector("#lp_form input[name=csrfmiddlewaretoken]").value, done = false;
+  function post(url) { return fetch(url, {method: "POST", credentials: "same-origin", headers: {"X-CSRFToken": token}}).then(function (r) { return r.json(); }); }
+  function stop(text) { done = true; wait.hidden = true; msg.textContent = text; msg.hidden = false; restart.hidden = false; }
+  function clock() { var m = Math.floor(left / 60), s = left % 60; label.textContent = "Waiting for your phone… " + m + ":" + (s < 10 ? "0" : "") + s + " left"; }
+  setInterval(function () { if (!done && left > 0) { left -= 1; clock(); } }, 1000);
+  clock();
+  document.getElementById("lp_again_send").addEventListener("click", function () {
+    var said = document.getElementById("lp_sent");
+    said.textContent = "Sending…";
+    post("/login/push/again/").then(function (r) { said.textContent = r.msg; }).catch(function () { said.textContent = "Could not send. Check the connection."; });
+  });
+  function ask() {
+    if (done) return;
+    post("/login/push/status/").then(function (s) {
+      if (s.state === "approved") { done = true; label.textContent = "Approved on your phone. Opening…"; window.location.href = s.next || "/"; return; }
+      if (s.state === "denied") { stop("Not approved: the phone refused, or picked another number. Nobody was signed in."); return; }
+      if (s.state === "gone") { stop("The time ran out. Sign in again to send a new request."); return; }
+      setTimeout(ask, 2000);
+    }).catch(function () { setTimeout(ask, 4000); });
+  }
+  setTimeout(ask, 2000);
+})();
+</script>
+{% endblock %}

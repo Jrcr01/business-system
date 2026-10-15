@@ -263,6 +263,8 @@ def login(request):
         email = cf or request.POST.get(names.get("e", ""), "") or request.POST.get("email", "")
         ok, user, msg = authenticate(email, request.POST.get(names.get("p", ""), "") or request.POST.get("password", ""), where="web", by_email=True)
         if ok:
+            if _push_needed(request, user):                     # owner, 2026-10-15: on a computer, approve on the phone after the password
+                return _start_push(request, user, nxt)
             return _half_signed_in(request, user, nxt)
         uid = _account_id(email)
         if uid:
@@ -277,7 +279,7 @@ def login(request):
     import secrets
     names = {"e": "e_" + secrets.token_hex(6), "p": "p_" + secrets.token_hex(6)}
     request.session["login_fields"] = names
-    return render(request, "core/login.html", {"email": email, "cf_email": cf, "next": nxt, "fp_here": bool(_fp_login_user(request)), "phone_way": _phone_way(request),
+    return render(request, "core/login.html", {"email": email, "cf_email": cf, "next": nxt, "fp_here": bool(_fp_login_user(request)),
                                               "fe": names["e"], "fp": names["p"]})
 
 
@@ -334,77 +336,115 @@ def fingerprint_login(request):
     return JsonResponse({"ok": True, "next": _half_signed_in(request, user, nxt, fingerprint=True)["Location"]})
 
 
-# --- sign in on a computer with your phone (owner, 2026-10-14; engines/phone_approval.py): the site's own QR code, approved on the person's phone.
-def _phone_way(request) -> bool:
-    """Is "Sign in with your phone" offered on this sign-in page: the switch is on and, where Cloudflare says who it is, that person may use it."""
-    from engines import phone_approval as pa
-    if settings.SANDBOX_NO_SIGNIN or not pa.on():
-        return False
+# --- approve a computer's sign-in on your phone (owner, 2026-10-14 the QR way; 2026-10-15 the push way: "drop scan qr but push notification", "comes
+# after it", "1 phone only"; engines/phone_approval.py, mock-up docs/mockups/z_push_approval.html). After the right password on a computer, a notification
+# goes to the person's phone; its link opens /approve/<code>/ (Cloudflare lets that page through), where the number and the fingerprint approve it.
+def _on_a_phone(request) -> bool:
     ua = request.META.get("HTTP_USER_AGENT", "")
-    if any(k in ua for k in ("Android", "iPhone", "iPad", "Mobile")):      # owner, 2026-10-14: on the phone itself the phone is the key (its fingerprint)
-        return False
-    cf = getattr(request, "cf_email", None)
-    return pa.may_use(_account_id(cf)) if cf else True
+    return any(k in ua for k in ("Android", "iPhone", "iPad", "Mobile"))
 
 
-def _qr_svg(text: str):
-    import qrcode
-    import qrcode.image.svg
-    from django.utils.safestring import mark_safe
-    svg = qrcode.make(text, image_factory=qrcode.image.svg.SvgPathImage, box_size=9, border=2).to_string(encoding="unicode")
-    return mark_safe(svg[svg.find("<svg"):])
-
-
-@require_POST
-def login_phone(request):
-    """The computer asks: a QR code and a number, good for two minutes."""
+def _push_needed(request, user: dict) -> bool:
+    """On a computer, with the switch on, for a person whose phone is set up (notifications and fingerprint). Nobody else is held back."""
     from engines import phone_approval as pa
-    nxt = request.POST.get("next") or "/"
-    if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
-        nxt = "/"
-    if not _phone_way(request):
-        return redirect("/login/")
-    cf = getattr(request, "cf_email", None)
-    m = request.META
-    made = pa.create(_account_id(cf) if cf else None, _browser(m.get("HTTP_USER_AGENT", "")), (m.get("HTTP_CF_CONNECTING_IP") or m.get("REMOTE_ADDR") or ""), nxt)
-    request.session["phone_req"] = made["request_id"]
-    return render(request, "core/login_phone.html", {"qr": _qr_svg(f"{_site(request)[0]}/approve/{made['token']}/"), "number": made["number"], "seconds": made["seconds"], "next": nxt})
+    return not settings.SANDBOX_NO_SIGNIN and pa.push_on() and not _on_a_phone(request) and pa.push_phone(int(user["user_id"])) is not None
+
+
+def _start_push(request, user: dict, nxt: str):
+    from engines import phone_approval as pa
+    m, uid = request.META, int(user["user_id"])
+    made = pa.create(uid, _browser(m.get("HTTP_USER_AGENT", "")), (m.get("HTTP_CF_CONNECTING_IP") or m.get("REMOTE_ADDR") or ""), nxt)
+    request.session.cycle_key()
+    request.session.pop("uid", None)
+    request.session["push_wait"] = {"rid": made["request_id"], "uid": uid, "pw": password_stamp(uid)}
+    sent = pa.send_push(made["request_id"])
+    return render(request, "core/login_push.html", {"number": made["number"], "seconds": made["seconds"], "sent": sent,
+                                                    "device": pa.push_phone(uid)["device"], "name": user["name"], "next": nxt})
 
 
 @require_POST
-def login_phone_status(request):
+def login_push_status(request):
     """The waiting computer asks every two seconds; once the phone approved, this very browser (and only it) is signed in."""
     from engines import phone_approval as pa
-    from engines.auth_service import get_user
-    rid = request.session.get("phone_req")
-    if not rid:
+    from engines.auth_service import get_user, note_password_sign_in
+    w = request.session.get("push_wait") or {}
+    if not w.get("rid"):
         return JsonResponse({"state": "gone"})
-    s = pa.state(int(rid))
+    s = pa.state(int(w["rid"]))
     if s["state"] != "approved":
         if s["state"] != "pending":
-            request.session.pop("phone_req", None)
+            request.session.pop("push_wait", None)
         return JsonResponse({"state": s["state"], "left": s.get("left", 0)})
-    uid, nxt = pa.collect(int(rid))
-    request.session.pop("phone_req", None)
+    uid, nxt = pa.collect(int(w["rid"]))
+    request.session.pop("push_wait", None)
     user = get_user(uid) if uid else None
     cf = getattr(request, "cf_email", None)
-    if not user or not user["is_active"] or (cf and cf != str(user["email"]).strip().lower()):
+    if (not user or uid != int(w.get("uid") or 0) or not user["is_active"] or w.get("pw") != password_stamp(uid)
+            or (cf and cf != str(user["email"]).strip().lower())):
         return JsonResponse({"state": "gone"})
     if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
         nxt = "/"
-    return JsonResponse({"state": "approved", "next": _half_signed_in(request, user, nxt, fingerprint=True, via="PHONE")["Location"]})
+    note_password_sign_in(uid, "password, then approved on their phone")
+    _sign_in(request, user)
+    _log(request, uid, "PUSH")
+    return JsonResponse({"state": "approved", "next": nxt})
+
+
+@require_POST
+def login_push_again(request):
+    """"Send again": the same request (same number) to the phone once more."""
+    from engines import phone_approval as pa
+    w = request.session.get("push_wait") or {}
+    ok = bool(w.get("rid")) and pa.state(int(w["rid"]))["state"] == "pending" and pa.send_push(int(w["rid"]))
+    return JsonResponse({"ok": ok, "msg": "Sent again." if ok else "Could not send. Sign in again."})
 
 
 def approve(request, token: str):
-    """The phone's side, after scanning the computer's code. The phone is signed in already (the sign-in page sent it back here)."""
+    """The phone's side: opened from the notification. No sign-in needed (nor Cloudflare's): the code in the link, the number on the computer and the
+    fingerprint kept on this phone prove it. "It is not me" refuses it."""
+    import json
+    from engines import fingerprint_signin as fp
     from engines import phone_approval as pa
-    me = request.slicks_user
+    from engines.acting_user import acting_as
+    from engines.auth_service import get_user
+    uid = pa.request_user(token)
+    user = get_user(uid) if uid else None
+    if request.method == "POST" and request.content_type == "application/json":
+        asked = request.session.pop("ap_fp", None) or {}
+        try:
+            payload = json.loads(request.body or b"{}")
+        except ValueError:
+            payload = {}
+        if user is None or asked.get("t") != token or not isinstance(payload, dict):
+            return JsonResponse({"ok": False, "msg": pa.GONE}, status=400)
+        origin, rp_id = _site(request)
+        ok, approver, msg = fp.verify(int(uid), payload, asked.get("c", ""), origin, rp_id)
+        if not ok:
+            return JsonResponse({"ok": False, "msg": "The fingerprint could not be verified on this phone. Nothing was approved."}, status=400)
+        with acting_as(approver["email"], approver["role"]):
+            ok, msg = pa.answer(token, approver, payload.get("number"), True)
+        return JsonResponse({"ok": ok, "msg": msg}, status=200 if ok else 400)
     if request.method == "POST":
-        yes = request.POST.get("answer") == "yes"
-        ok, msg = pa.answer(token, me, request.POST.get("number"), yes)
-        return render(request, "core/approve.html", {"done": msg, "ok": yes} if ok else {"why": msg})
-    info, why = pa.for_phone(token, me)
-    return render(request, "core/approve.html", {"info": info, "why": why})
+        if user is None:
+            return render(request, "core/approve.html", {"why": pa.GONE})
+        with acting_as(user["email"], user["role"]):
+            ok, msg = pa.answer(token, user, None, False)
+        return render(request, "core/approve.html", {"done": msg, "ok": False} if ok else {"why": msg})
+    info, why = pa.for_phone(token, user) if user else (None, pa.GONE)
+    return render(request, "core/approve.html", {"info": info, "why": why, "token": token})
+
+
+def approve_options(request, token: str):
+    """The fingerprint question for the approve page: only the keys of the person whose sign-in it is."""
+    from engines import fingerprint_signin as fp
+    from engines import phone_approval as pa
+    uid = pa.request_user(token)
+    if uid is None or not fp.key_ids(uid):
+        return JsonResponse({"ok": False, "msg": pa.GONE}, status=400)
+    challenge = fp.new_challenge()
+    request.session["ap_fp"] = {"t": token, "c": challenge}
+    return JsonResponse({"ok": True, "publicKey": {"challenge": challenge, "rpId": _site(request)[1], "timeout": 60000, "userVerification": "required",
+                                                   "allowCredentials": [{"type": "public-key", "id": k} for k in fp.key_ids(uid)]}})
 
 
 def fingerprint(request):

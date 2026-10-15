@@ -20,7 +20,8 @@ from urllib.parse import quote
 from django.http import HttpResponse
 from django.shortcuts import redirect
 
-OPEN = ("/static/", "/health/", "/s/")           # /s/<code>/ = the supplier's QR link to one statement (engines/statement_links.py): its code is the key
+OPEN = ("/static/", "/health/", "/s/", "/approve/")   # /s/<code>/ = the supplier's QR link to one statement (engines/statement_links.py): its code is the key;
+                                                       # /approve/<code>/ = a computer's sign-in, approved on the phone (owner, 2026-10-15): code + number + fingerprint
 MFA_MARK = 2                                 # what a sign-in carries since 2026-10-11; an older one (1: Cloudflare stood in for the code) is ended
 _SEEN: dict[int, float] = {}                 # user id -> when this worker last wrote last_seen_at (at most once a minute: no extra save on every click)
 
@@ -95,7 +96,7 @@ class SignInMiddleware:
         if user is None:
             if path in ("/sw.js", "/phone/manifest.webmanifest", "/phone/manifest-ops.webmanifest"):   # what Chrome reads to install the phone app, from the sign-in page too (2026-10-12)
                 return self.get_response(request)
-            if path in ("/login/", "/login/fingerprint/", "/login/fingerprint/options/", "/login/phone/", "/login/phone/status/") or (path in ("/2fa/", "/2fa/setup/") and request.session.get("pending")):     # the code step, after a right password
+            if path in ("/login/", "/login/fingerprint/", "/login/fingerprint/options/", "/login/push/status/", "/login/push/again/") or (path in ("/2fa/", "/2fa/setup/") and request.session.get("pending")):     # the code step, after a right password
                 return self.get_response(request)
             return redirect("/login/" + (f"?next={quote(path)}" if path not in ("/", "/logout/") else ""))
         request.slicks_user = user

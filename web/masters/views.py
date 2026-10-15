@@ -238,6 +238,9 @@ def settings_user(request, user_id: int):
             from engines import fingerprint_signin as fp
             ok, msg = fp.remove(int(request.POST.get("key_id") or 0)) if any(
                 d["key_id"] == int(request.POST.get("key_id") or 0) for d in fp.devices(user_id)) else (False, "No such device.")
+        elif what == "clear_phone":                                    # a lost phone, or one that no longer gets the sign-in notification (owner, 2026-10-15)
+            from engines.phone_approval import clear_phone
+            ok, msg = clear_phone(user_id, request.slicks_user["email"])
         elif what == "signout_all":
             ok, msg = au.sign_out_everywhere(user_id)
         else:
@@ -251,6 +254,8 @@ def settings_user(request, user_id: int):
                                                           "is_me": is_me, "shown": shown, "code_since": (au.totp_enabled_at(user_id) or "")[:10],
                                                           "setup_until": au.shown_time(au.totp_setup_until(user_id)), "sign_ins": au.recent_sign_ins(user_id),
                                                           "fp_devices": __import__("engines.fingerprint_signin", fromlist=["devices"]).devices(user_id),
+                                                          "push_phone": __import__("engines.phone_approval", fromlist=["push_phone"]).push_phone(user_id),
+                                                          "push_on": __import__("engines.phone_approval", fromlist=["push_on"]).push_on(),
                                                           **_switch_ctx(request, u, user_id)})
 
 
