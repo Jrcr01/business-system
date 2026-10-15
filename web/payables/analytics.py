@@ -10,7 +10,7 @@ from django.shortcuts import render
 from masters.views import page_needed
 from engines.common import us_date
 
-TABS = [("sales", "Sales"), ("cash", "Cash ahead"), ("purchasing", "Purchasing"), ("payables", "Payables"), ("bank", "Bank and cash"), ("lenders", "Lenders"), ("cards", "Credit cards"), ("warnings", "Warnings")]     # owner, 2026-10-14: sales and liquidity first
+TABS = [("sales", "Sales"), ("cash", "Cash ahead"), ("stock", "Stock"), ("purchasing", "Purchasing"), ("payables", "Payables"), ("bank", "Bank and cash"), ("lenders", "Lenders"), ("cards", "Credit cards"), ("warnings", "Warnings")]     # owner, 2026-10-14: sales and liquidity first
 PERIODS = [("month", "This month"), ("quarter", "This quarter"), ("year", "This year"), ("custom", "From … to …")]
 TRACK_OF = {"payables": "Supplier", "lenders": "Lender"}
 
@@ -146,6 +146,12 @@ def _warnings(today, start, end) -> dict:
     from engines.acting_user import acting_email
     from engines.warn_list import all_for
     return {"warns": all_for(acting_email(), today), "include": "payables/analytics_warnings.html"}
+
+
+def _stock(today, start, end) -> dict:
+    """Owner, 2026-10-15: what is tied up in stock and what moves (engines/bi_service.stock); drawn by analytics_stock.html."""
+    from engines import bi_service
+    return {"bi": bi_service.stock(today), "include": "payables/analytics_stock.html"}
 
 
 def _cards(today, start, end) -> dict:

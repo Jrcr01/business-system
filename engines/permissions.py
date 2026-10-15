@@ -231,7 +231,7 @@ def hidden_for(email: str | None) -> frozenset:
 
 
 # Hidden means hidden everywhere (owner, 2026-10-11): an Analytics tab goes with the page it reports on.
-ANALYTICS_TAB_PAGE = {"sales": "sales", "cash": "bank-cash", "payables": "order-statements", "lenders": "lenders", "bank": "bank-cash", "purchasing": "purchase-orders", "cards": "credit-cards", "warnings": "analytics"}
+ANALYTICS_TAB_PAGE = {"sales": "sales", "cash": "bank-cash", "payables": "order-statements", "lenders": "lenders", "bank": "bank-cash", "purchasing": "purchase-orders", "cards": "credit-cards", "warnings": "analytics", "stock": "stock"}
 
 
 def analytics_tabs() -> set[str]:

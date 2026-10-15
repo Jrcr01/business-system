@@ -160,3 +160,72 @@ def liquidity(today: date, days: int = 60) -> dict:
             "money_out": float(daily["money_out"].sum()), "money_in": float(daily["money_in"].sum()), "by_track": {k: float(v) for k, v in by_track.items()},
             "end_balance": float(daily["balance"].iloc[-1]), "weeks": inflow_weeks(), "heavy": heavy,
             "line": line(series, floor=fc["buffer"] if fc["buffer"] else None)}
+
+
+def _hbars(pairs: list[tuple[str, float]], note: dict | None = None) -> list[dict]:
+    top = max([abs(v) for _, v in pairs] or [0]) or 1
+    return [{"label": k, "amount": v, "pct": round(abs(v) / top * 100, 1), "note": (note or {}).get(k, "")} for k, v in pairs]
+
+
+def stock(today: date) -> dict:
+    """Analytics -> Stock (owner, 2026-10-15: "Go for 3"; the BI mock-up, section 2): what is tied up and what moves. Stock at average cost (the moving
+    average the stock ledger keeps); "moving" = stock out in the last 30 days; a slow mover = on hand with no stock out in the slow-mover days (Settings
+    -> Warnings). Tire age is by each item's oldest DOT on the rack (one per item, typed at receiving): a guide, not lot accounting."""
+    from engines.settings_registry import int_value
+    d30, slow_days = str(today - timedelta(days=30)), int_value("warn_slow_days")
+    d_slow = str(today - timedelta(days=slow_days))
+    with get_conn() as conn:
+        items = conn.execute("""SELECT id, name, brand, category, on_hand, avg_cost, reorder_level, oldest_dot FROM items WHERE is_active = 1""").fetchall()
+        out30 = dict(conn.execute("SELECT item_id, -SUM(qty) FROM stock_ledger WHERE kind = 'OUT' AND moved_on >= ? GROUP BY item_id", (d30,)).fetchall())
+        cogs30 = float(conn.execute("SELECT COALESCE(SUM(-qty * unit_cost), 0) FROM stock_ledger WHERE kind = 'OUT' AND moved_on >= ?", (d30,)).fetchone()[0])
+        moved_recently = {r[0] for r in conn.execute("SELECT DISTINCT item_id FROM stock_ledger WHERE kind = 'OUT' AND moved_on >= ?", (d_slow,))}
+        older = {r[0] for r in conn.execute("SELECT DISTINCT item_id FROM stock_ledger WHERE moved_on < ?", (d_slow,))}
+        stocked = {r[0] for r in conn.execute("SELECT DISTINCT item_id FROM stock_ledger")}
+        hist = conn.execute("SELECT item_id, moved_on, on_hand_after, avg_after FROM stock_ledger ORDER BY moved_on, move_id").fetchall()
+    held = [i for i in items if i[4] > 0]
+    value = sum(i[4] * float(i[5]) for i in held)
+    pieces = sum(i[4] for i in held)
+    below = [i for i in items if i[0] in stocked and i[4] <= i[6]]
+    zero = [i for i in below if i[4] <= 0]
+    slow = sorted(((i[1], i[4], i[4] * float(i[5])) for i in held if i[0] not in moved_recently and i[0] in older and float(i[5]) > 0), key=lambda x: -x[2])
+    by_brand: dict[str, float] = {}
+    for i in held:
+        key = i[2] if i[3] == "tire" or i[3] == "battery" else "Mags and rims"
+        by_brand[key] = by_brand.get(key, 0.0) + i[4] * float(i[5])
+    brands = sorted(by_brand.items(), key=lambda kv: -kv[1])
+    if len(brands) > 8:
+        brands = brands[:7] + [("Others", sum(v for _, v in brands[7:]))]
+    fast = sorted(((i[1], float(out30[i[0]]), i[4]) for i in items if out30.get(i[0], 0) > 0), key=lambda x: -x[1])[:10]
+    fast_note = {n: (f"{q:g} out · {round(h * 30 / q)} d left" if h > 0 else f"{q:g} out · none left") for n, q, h in fast}
+    ages: dict[str, int] = {}
+    for i in held:
+        dot = str(i[7] or "")
+        y = ("20" + dot[-2:]) if len(dot) == 4 and dot.isdigit() else "No DOT typed"
+        ages[y] = ages.get(y, 0) + i[4]
+    old_cut = str(today.year - 2)
+    age_rows = sorted(((y if y == "No DOT typed" or y > old_cut else f"{old_cut} and older", n) for y, n in ages.items()), key=lambda x: x[0], reverse=True)
+    merged: dict[str, int] = {}
+    for y, n in age_rows:
+        merged[y] = merged.get(y, 0) + n
+    age = [(y, float(n)) for y, n in merged.items() if y != "No DOT typed"] + ([("No DOT typed", float(merged["No DOT typed"]))] if "No DOT typed" in merged else [])
+    # stock value at each of the last 12 month ends, from the ledger's running figures
+    ends = []
+    m = date(today.year, today.month, 1)
+    for _ in range(12):
+        ends.append(m - timedelta(days=1))
+        m = shift_months(m, 1)
+    ends = sorted(ends) + [today]
+    last: dict[int, tuple[float, float]] = {}
+    points, k = [], 0
+    for end in ends:
+        while k < len(hist) and str(hist[k][1])[:10] <= str(end):
+            last[hist[k][0]] = (float(hist[k][2]), float(hist[k][3]))
+            k += 1
+        points.append((("Now" if end == today else end.strftime("%b")), sum(q * c for q, c in last.values() if q > 0)))
+    first_with = next((n for n, (_, v) in enumerate(points) if v > 0), len(points))
+    points = points[first_with:] if len(points) - first_with >= 2 else points[-2:]
+    return {"value": value, "pieces": pieces, "items": len(held), "days": round(value / (cogs30 / 30)) if cogs30 > 0 else None, "cogs30": cogs30,
+            "below": len(below), "zero": len(zero), "slow_value": sum(x[2] for x in slow), "slow_n": len(slow), "slow_days": slow_days,
+            "brands": _hbars(brands), "fast": _hbars([(n, q) for n, q, _ in fast], fast_note),
+            "slow": _hbars([(n, v) for n, _, v in slow[:10]], {n: f"{q} pcs" for n, q, _ in slow[:10]}),
+            "age": _hbars(age), "old_label": f"{old_cut} and older", "line": line(points), "line_from": points[0][0] if points else ""}

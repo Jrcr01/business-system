@@ -1,0 +1,23 @@
+{% load humanize %}{% comment %}Owner, 2026-10-15: "Go for 3": Analytics -> Stock (engines/bi_service.stock; the BI mock-up, section 2).{% endcomment %}
+<div class="kpis">
+  <a class="kpi" href="/stock/"><span>Stock value (at average cost)</span><b>₱{{ bi.value|floatformat:0|intcomma }}</b><small>{{ bi.pieces|floatformat:0|intcomma }} pieces · {{ bi.items|intcomma }} items</small></a>
+  <a class="kpi" href="/stock/"><span>Days of stock</span><b>{% if bi.days is not None %}{{ bi.days }} days{% else %}—{% endif %}</b><small>{% if bi.days is not None %}at the last 30 days' cost of sales{% else %}no stock out in 30 days yet{% endif %}</small></a>
+  <a class="kpi{% if bi.zero %} warnk{% endif %}" href="/stock/?show=low"><span>At or below reorder level</span><b>{{ bi.below }} item{{ bi.below|pluralize }}</b><small>{{ bi.zero }} at zero</small></a>
+  <a class="kpi" href="/stock/"><span>Slow movers</span><b>₱{{ bi.slow_value|floatformat:0|intcomma }}</b><small>{{ bi.slow_n }} item{{ bi.slow_n|pluralize }} with no sale in {{ bi.slow_days }} days</small></a>
+</div>
+<div class="charts">
+  <div class="chart"><div class="ct">Value by brand</div>
+    {% for b in bi.brands %}<div class="hbar"><span class="n" title="{{ b.label }}">{{ b.label }}</span><span class="track"><span class="fill" style="width:{{ b.pct }}%"></span></span><span class="v">₱{{ b.amount|floatformat:0|intcomma }}</span></div>
+    {% empty %}<p class="hint">Nothing on hand.</p>{% endfor %}</div>
+  <div class="chart"><div class="ct">Fast movers <small class="hint">pieces out in 30 days · days of stock left</small></div>
+    {% for b in bi.fast %}<div class="hbar"><span class="n" title="{{ b.label }}">{{ b.label }}</span><span class="track"><span class="fill paidf" style="width:{{ b.pct }}%"></span></span><span class="v"><small>{{ b.note }}</small></span></div>
+    {% empty %}<p class="hint">No stock out in 30 days yet.</p>{% endfor %}</div>
+  <div class="chart"><div class="ct">Slow movers <small class="hint">no sale in {{ bi.slow_days }} days · value tied up</small></div>
+    {% for b in bi.slow %}<div class="hbar"><span class="n" title="{{ b.label }}">{{ b.label }}</span><span class="track"><span class="fill finf" style="width:{{ b.pct }}%"></span></span><span class="v">₱{{ b.amount|floatformat:0|intcomma }} <small class="hint">{{ b.note }}</small></span></div>
+    {% empty %}<p class="hint">None: everything on hand moved within {{ bi.slow_days }} days.</p>{% endfor %}</div>
+  <div class="chart"><div class="ct">Tire age <small class="hint">pieces by the oldest DOT year on the rack</small></div>
+    {% for b in bi.age %}<div class="hbar"><span class="n">{{ b.label }}</span><span class="track"><span class="fill{% if b.label == bi.old_label %} finf{% endif %}" style="width:{{ b.pct }}%"></span></span><span class="v">{{ b.amount|floatformat:0|intcomma }}{% if b.label == bi.old_label %} <small class="neg">sell first</small>{% endif %}</span></div>
+    {% empty %}<p class="hint">Nothing on hand.</p>{% endfor %}</div>
+</div>
+<div class="chart" style="margin-top:12px"><div class="ct">Stock value by month <small class="hint">at each month's end, from {{ bi.line_from }}</small></div>
+  {% include "payables/_line.html" with g=bi.line alt="Stock value by month" %}</div>

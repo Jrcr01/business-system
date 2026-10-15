@@ -10,6 +10,7 @@
     <span id="an_custom"{% if period != "custom" %} hidden{% endif %}> <input type="date" name="from" value="{{ start|date:"Y-m-d" }}" aria-label="From"> <input type="date" name="to" value="{{ end|date:"Y-m-d" }}" aria-label="To"> <button class="btn small ghost" type="submit">Show</button></span></form>
 </nav>
 {% if tab == "cash" %}<p class="hint">As of today, {{ today|date:"m/d/Y" }}, from the last bank balance on file.</p>
+{% elif tab == "stock" %}<p class="hint">As of today, {{ today|date:"m/d/Y" }}, at average cost. "Moving" = stock out in the last 30 days.</p>
 {% elif tab == "warnings" %}<p class="hint">As of today, {{ today|date:"m/d/Y" }}. Most urgent first; each with where to act. The limits are in Settings → Warnings.</p>
 {% elif tab == "cards" %}<p class="hint">As of today, {{ today|date:"m/d/Y" }}, from the card statements typed. A statement counts as owed until it is marked paid.</p>
 {% else %}<p class="hint">Period {{ start|date:"m/d/Y" }} → {{ end|date:"m/d/Y" }}{% if tab != "sales" %} (for spend and checks cleared). What is owed and due is as of today. A check counts as paid only once it has cleared{% endif %}.</p>{% endif %}
