@@ -207,6 +207,8 @@ def test_the_set_up_this_phone_card_shows_on_a_phone_until_it_is_set_up(web, db,
     home = web.get("/", HTTP_USER_AGENT=PHONE_UA).content.decode()
     assert "Set up this phone" in home and "Install Slick's ERP" in home and "Allow notifications" in home and "Turn on fingerprint" in home
     assert 'id="fp_offer"' not in home                                                      # one card, not two
+    iphone = web.get("/", HTTP_USER_AGENT="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1").content.decode()
+    assert "Set up this phone" in iphone and "Add to Home Screen" in iphone and "Banner Style" in iphone and "iOS 16.4" in iphone   # the iPhone's own steps (2026-10-17)
     from engines import settings_registry as sr
     from engines.acting_user import acting_as
     with acting_as("admin@slicks.test", "admin"):
