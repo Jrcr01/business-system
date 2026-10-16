@@ -88,3 +88,34 @@ def test_the_admin_alone_hears_of_yesterdays_server_errors(web, db, monkeypatch)
     assert any("2 errors on the server yesterday" in a for a in mine["also"]) and not any("error" in a for a in hers["also"])
     monkeypatch.setattr(server_health, "errors_on", lambda day: None)                       # no log to read: nothing said
     assert not any("error" in a for a in morning_email.content("admin@slicks.test", "Admin", manila_today())["also"])
+
+
+def test_today_also_lists_earlier_checks_not_cleared_or_ticked(web, db):
+    # owner, 2026-10-16: "I think it should include those not cleared yet or ticked"
+    import sqlite3
+    from datetime import timedelta
+    from conftest import make_creditor
+    from engines.acting_user import acting_as
+    from engines.check_rules import issue_check
+    from engines.clock import manila_today
+    from engines.loan_schedule_service import create_note_with_payments
+    from engines.morning_email import content
+    from tests.test_web_d0 import _admin
+    _admin(web)
+    today = manila_today()
+    lender = make_creditor(db, "Luz", creditor_type="LENDER")
+    for days in (0, 3):
+        day = today - timedelta(days=days)
+        with acting_as("admin@slicks.test", "admin"):
+            ok, msg, lnid = create_note_with_payments(lender, day - timedelta(days=10), 10000.0 + days, 0.0, [(day, 10000.0 + days)])
+            assert ok, msg
+            import engines.db_engine as d
+            inst = sqlite3.connect(d.DB_PATH).execute("SELECT installment_id FROM loan_installments WHERE loan_note_id = ?", (lnid,)).fetchone()[0]
+            ok, msg, _ = issue_check(lender, 10000.0 + days, day, loan_note_id=lnid, installment_id=inst)
+            assert ok, msg
+    rows = dict(content("admin@slicks.test", "Admin", today)["rows"])
+    assert rows["Checks dated today (1)"] == "₱10,000" and rows["Earlier checks not yet cleared or ticked (1)"] == "₱10,003"
+    import engines.db_engine as d
+    with sqlite3.connect(d.DB_PATH) as conn:                                     # ticked on Daily payables: no longer listed
+        conn.execute("UPDATE checks_issued SET manual_cleared_at = CURRENT_TIMESTAMP WHERE amount = 10003")
+    assert not any(k.startswith("Earlier checks") for k in dict(content("admin@slicks.test", "Admin", today)["rows"]))

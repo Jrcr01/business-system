@@ -129,6 +129,12 @@ def content(email: str, name: str, today: date) -> dict:
                                        AND bank_cleared_date IS NULL AND manual_cleared_at IS NULL AND settled_outside_at IS NULL""", (str(today),)).fetchone()
             if n:
                 rows.append((f"Checks dated today ({n})", _peso(total)))
+            # owner, 2026-10-16 ("it should include those not cleared yet or ticked"): checks dated before today that the bank has not cleared and nobody
+            # ticked on Daily payables are still money that can go out today
+            n, total = conn.execute("""SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM checks_issued WHERE status = 'Active' AND check_date < ?
+                                       AND bank_cleared_date IS NULL AND manual_cleared_at IS NULL AND settled_outside_at IS NULL""", (str(today),)).fetchone()
+            if n:
+                rows.append((f"Earlier checks not yet cleared or ticked ({n})", _peso(total)))
         if "credit-cards" not in hidden:
             scope, holder = _whose_cards(email)                  # the person's own cards, or all of them (as the phone reminders)
             for card, due, who, hid in conn.execute("""SELECT cc.card_name || ' ' || cc.card_number_last4, cs.total_amount_due, COALESCE(h.name, ''), cc.cardholder_id
