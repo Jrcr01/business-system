@@ -122,15 +122,3 @@ def test_users_are_listed_without_their_password_hashes(db):
     au.create_user("brother@example.com", "The Brother", "purchasing")
     df = au.list_users()
     assert list(df["email"]) == [OWNER, "brother@example.com"] and "password_hash" not in df.columns
-
-
-def test_the_sign_in_can_be_skipped_only_on_a_test_database(monkeypatch):
-    from views import login
-    monkeypatch.setenv("AP_SKIP_LOGIN", "1")
-    monkeypatch.setenv("AP_DB_PATH", "data/ap_disbursement_TEST.db")
-    assert login._sign_in_off() is True
-    monkeypatch.setenv("AP_DB_PATH", "data/ap_disbursement.db")
-    assert login._sign_in_off() is False                              # never on the real database
-    monkeypatch.setenv("AP_DB_PATH", "data/ap_disbursement_TEST.db")
-    monkeypatch.delenv("AP_SKIP_LOGIN")
-    assert login._sign_in_off() is False

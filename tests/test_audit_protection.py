@@ -12,8 +12,7 @@ import sys
 
 import pytest
 
-import backup_live_db
-import mask_audit_text
+from tools import mask_audit_text
 from engines import audit_seal
 from engines.audit_seal import PROTECT_TRIGGERS, seal_and_verify
 from engines.common import get_conn
@@ -152,18 +151,6 @@ def test_data_health_shows_the_audit_log_group(db):
     seal_and_verify(db)
     checks = {f["check"] for f in findings() if f["group"] == "Audit log"}
     assert {"Audit log lock removed", "Audit log was changed outside the system"} <= checks
-
-
-def test_the_daily_backup_checks_and_seals_first_so_the_backup_holds_the_seals(db, tmp_path, monkeypatch, capsys):
-    _log(db)
-    dest = tmp_path / "backups"
-    monkeypatch.setattr(sys, "argv", ["x", "--db", db, "--dest", str(dest), "--keep", "5"])
-    monkeypatch.setattr(backup_live_db, "backup_code", lambda *a, **k: "code history skipped in this test")
-    assert backup_live_db.main() == 0
-    assert "Audit log check: OK (1 new entries sealed" in capsys.readouterr().out
-    copy = sqlite3.connect(glob.glob(str(dest / "ap_disbursement_backup_*.db"))[0])
-    assert copy.execute("SELECT COUNT(*) FROM audit_seals").fetchone()[0] == 1
-    assert audit_seal.verify(copy, audit_seal.load_key(db)) == []
 
 
 # ---- masking (the only allowed change) -----------------------------------------------------------------------------------------

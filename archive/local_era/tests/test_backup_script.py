@@ -63,3 +63,17 @@ def test_backup_also_saves_the_code_history_next_to_the_database(tmp_path, monke
     bundles = glob.glob(str(tmp_path / "code_backups" / "ap_code_*.bundle"))
     assert len(bundles) == 1
     assert subprocess.run(["git", "bundle", "verify", bundles[0]], capture_output=True).returncode == 0
+
+
+# moved from tests/test_audit_protection.py (2026-10-17): it exercised the laptop backup script
+def test_the_daily_backup_checks_and_seals_first_so_the_backup_holds_the_seals(db, tmp_path, monkeypatch, capsys):
+    _log(db)
+    dest = tmp_path / "backups"
+    monkeypatch.setattr(sys, "argv", ["x", "--db", db, "--dest", str(dest), "--keep", "5"])
+    monkeypatch.setattr(backup_live_db, "backup_code", lambda *a, **k: "code history skipped in this test")
+    assert backup_live_db.main() == 0
+    assert "Audit log check: OK (1 new entries sealed" in capsys.readouterr().out
+    copy = sqlite3.connect(glob.glob(str(dest / "ap_disbursement_backup_*.db"))[0])
+    assert copy.execute("SELECT COUNT(*) FROM audit_seals").fetchone()[0] == 1
+    assert audit_seal.verify(copy, audit_seal.load_key(db)) == []
+

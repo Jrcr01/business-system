@@ -15,7 +15,7 @@ import os
 import sqlite3
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # the project root (this tool moved to tools/ on 2026-10-17)
 sys.path.insert(0, HERE)
 from db_location import live_db_path, safe_copy  # noqa: E402
 from engines.audit_seal import PROTECT_TRIGGERS, fingerprint, load_key  # noqa: E402

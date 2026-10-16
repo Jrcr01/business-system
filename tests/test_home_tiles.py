@@ -14,16 +14,18 @@ from engines.home_tiles import GROUPS, TILES, Tile, evaluate, layout, peso_short
 ROOT = Path(__file__).resolve().parent.parent
 
 
+RETIRED = {"add-data", "admin", "controls", "data-health", "payables-due", "payment-run", "planner", "release"}   # Streamlit-era page ids still in the matrix / tiles (never drawn by Django); prune them when the matrix is next revised
+
+
 def _menu_pages() -> set[str]:
-    """The page ids app.py puts in the menu (read from the source, so app.py does not have to run)."""
-    text = (ROOT / "app.py").read_text(encoding="utf-8")
-    block = text[text.index("PAGES.update({"):text.index("})", text.index("PAGES.update({"))]
-    return set(re.findall(r'^\s*"([a-z-]+)": st\.Page', block, re.M))
+    """The page ids of the Django menu (read from the source, so nothing has to run; the Streamlit app.py is archived, 2026-10-17)."""
+    text = (ROOT / "web" / "core" / "menu.py").read_text(encoding="utf-8")
+    return set(re.findall(r'^\s*"([a-z-]+)": Page\(', text, re.M)) | RETIRED
 
 
 def test_every_tile_points_at_a_real_page_and_a_known_group():
     pages, groups = _menu_pages(), {g.key for g in GROUPS}
-    assert {t.page_id for t in TILES} <= pages | {"analytics", "calendar", "review", "booklets", "stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets", "collect", "expenses", "other-income", "income-statement"}      # Django-only pages (2026-10-09; Check booklets 2026-10-11)
+    assert {t.page_id for t in TILES} <= pages
     assert {t.group for t in TILES} <= groups
     assert pages - {"home"} <= {t.page_id for t in TILES}          # every menu page has a tile
 
@@ -81,42 +83,6 @@ def test_money_is_short_on_a_tile(amount, text):
 
 # --- tile actions (Home v2) ---------------------------------------------------------------------------------------------------------------------
 
-def _page_files() -> dict[str, str]:
-    """{page id: views file text}, read from app.py's page list so nothing has to run."""
-    text = (ROOT / "app.py").read_text(encoding="utf-8")
-    block = text[text.index("PAGES.update({"):text.index("})", text.index("PAGES.update({"))]
-    out = {}
-    for pid, mod in re.findall(r'"([a-z-]+)": st\.Page\(views\.(\w+)\.render', block):
-        out[pid] = (ROOT / "views" / f"{mod}.py").read_text(encoding="utf-8")
-    return out
-
-
-def test_every_action_opens_a_real_page_and_sets_a_widget_that_page_really_has():
-    files = _page_files()
-    for t in TILES:
-        for a in t.actions:
-            target = a.page_id or t.page_id
-            assert target in files, (t.page_id, a.label)
-            for key, _ in a.state:
-                assert f'"{key}"' in files[target], f"{t.title} / {a.label}: widget key {key} is not on the {target} page"
-
-
-def test_the_mode_values_the_actions_set_are_the_pages_own_constants_and_labels():
-    from views import shared
-    from views.add_data import KINDS
-    from views.reports import REPORT_OPTIONS
-    for t in TILES:
-        for a in t.actions:
-            st_ = dict(a.state)
-            if "ad_kind" in st_:
-                assert st_["ad_kind"] in KINDS
-            if "report_type_picker" in st_:
-                assert st_["report_type_picker"] in REPORT_OPTIONS
-    assert {"Browse batches", "New batch"} == {shared.OS_BROWSE, shared.OS_NEW}
-    assert {"Browse loan notes", "New loan note"} == {shared.LN_BROWSE, shared.LN_NEW}
-    assert {"Browse bank loans", "New bank loan"} == {shared.BL_BROWSE, shared.BL_NEW}
-
-
 def test_only_tiles_with_two_or_more_actions_get_a_panel_and_the_daily_ones_are_in_priority_order(db):   # db: has_panel reads the settings table
     by = {t.page_id: t for t in TILES}
     assert not by["payment-run"].has_panel and not by["checks"].has_panel and not by["creditors"].has_panel
@@ -133,7 +99,7 @@ def test_a_module_can_bring_its_own_actions(monkeypatch, db):              # db:
     assert t.has_panel and dict(t.actions[0].state) == {"sales_mode": "New"}
 
 
-def test_the_rows_follow_the_cycle_and_receiving_has_a_tile_of_its_own():
+def test_the_rows_follow_the_cycle_and_receiving_has_a_tile_of_its_own(db):                 # db: the Sell tile reads the scan switch (Django menu lists sales, 2026-10-17)
     assert [g.key for g in GROUPS] == ["buy", "stock", "sell", "pay", "bank", "other", "records", "analytics", "system"]     # the goods, then the money (2026-10-11)
     rows = dict(layout(_menu_pages()))
     assert [t.tid for t in rows["buy"]][:2] == ["price-lists", "purchase-orders"] and "receive-goods" in [t.tid for t in rows["buy"]]

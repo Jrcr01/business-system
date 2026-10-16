@@ -254,11 +254,11 @@ def _audit_log(conn, today: date, out: list) -> None:
         return
     for t in _missing_triggers(conn):
         _f(out, g, "Audit log lock removed", f"audit_lock|{t}", f"The database protection {t} is missing, so audit entries could be changed. "
-           "Run update_database.bat to put it back, and ask what happened.")
+           "A release puts it back (the schema sync); ask the System admin what happened.")
     res = last_result(conn)
     if res is None:
         _f(out, g, "Audit log not checked yet", "audit_never", "The daily backup checks and seals the audit log; it hasn't run since this "
-           "protection was added. It runs by itself at 18:00, or run run_backup.bat now.")
+           "protection was added. It runs by itself at 18:00 on the server (the nightly backup).")
         return
     checked = _d(res.get("at"))
     for i, p in enumerate(res.get("problems") or []):

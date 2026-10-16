@@ -1,22 +1,90 @@
 # Slicks ERP — guide for every session
 
-> **THIS WORKSPACE = the Slicks ERP BUILD** (folder `C:\Slicks\Slicks_ERP`, git branch `erp`, sandbox app on port 8504 with its own
-> database `C:\Slicks\Slicks_ERP\data\ap_disbursement_TEST.db`).
-> * **Never** edit `C:\Slicks\AP_System` (the LIVE AP system, branch `main`) or the live database `C:\Slicks\Data\ap_disbursement.db` from here.
->   Never run `update_database.bat` / `restart_live.bat` for ERP work. This folder has no `live_db_path.txt` / `local_settings.bat` on
->   purpose, so its scripts cannot reach live data or the Google Drive backups.
-> * After an AP fix lands on `main`: `git merge main` here (AP notes written on main belong in `docs/modules/ap.md`).
-> * Everything built here goes live **once**, when the owner approves: merge `erp` into `main`, backup, `update_database.bat`,
->   a before / after checklist of known figures.
+> **Read "Current State (2026-10-17)" first.** It describes the Django ERP that is live today. Everything after the Table of Contents is the
+> Streamlit-era build history (Sept 2026) and the detailed business rules; where the two disagree, the current-state section wins.
 
-**Folders (moved 2026-09-28, owner: one parent folder):** everything lives in `C:\Slicks`: `AP_System` (live AP program,
-branch `main`), `Slicks_ERP` (ERP build, branch `erp`), `Data` (live database `ap_disbursement.db`, bank statement copies `bank`,
-Drive sign-in `drive`, code bundles `code_backups`). The backup task "AP System Daily Backup" runs
-`C:\Slicks\AP_System\run_backup.bat quiet`; `live_db_path.txt` points at `C:\Slicks\Data\ap_disbursement.db`.
+## Current State (2026-10-17) — the Django ERP is live
+
+**What runs where**
+* **Live:** https://erp.slickstiresupply.com — Django (`web/`: apps `core`, `masters`, `buying`, `payables`, `selling`, `phone`) on a DigitalOcean droplet
+  (`slicks@165.245.188.246`, 1 CPU): gunicorn (2 workers, 60 s timeout) behind Caddy, Cloudflare Access in front (`/s/*` supplier QR links and
+  `/approve/*` phone approvals bypass it, by his Cloudflare rule). Database `/srv/slicks/data/ap_disbursement.db` (SQLite, WAL, `BEGIN IMMEDIATE`;
+  `engines.common.get_conn` / `write_tx`); secrets in `/etc/slicks-erp/env`; files beside the database (`snip_files/`, `web_uploads/`, `mail_out.json`,
+  `push_keys.json`, `audit_seal.*`). Nightly backup 18:00 Manila (`deploy/nightly.py`, `/srv/slicks/backups/`); hourly cron of user `slicks` = card
+  reminders + open-loan interest + the 8 AM morning email (Resend, `no-reply@slickstiresupply.com`); the laptop task "Slicks ERP backup pull" (7:30 PM,
+  `deploy/pull_backup.ps1`) copies the newest backup + secrets to `C:\Slicks\Backups\server`. Tesseract 5.3.4 is on the server (OCR for the snip).
+* **Sandbox:** this folder, branch `erp`; preview entry `slicks-web-stage-a-8511` in `.claude/launch.json` (port 8511, `--noreload`: **restart it
+  after any template / Python edit**), database `data/ap_disbursement_WEB_TEST.db` (a copy of live), sign-in = pick a person, no password.
+* **Streamlit is gone from the working tree (2026-10-17):** the prototype lives in `archive/streamlit/` (with its screen tests), the laptop-era
+  scripts in `archive/local_era/`, admin tools in `tools/`, old plans in `docs/history/`. The root `app.py` is only a re-export of engine names for the
+  older tests. The laptop's old "AP System Daily Backup" task was removed the same day (the server's nightly + the 7:30 PM pull are the backups).
+* The owner is JRCR (v.jrcroxas@gmail.com, System admin). The family owners (Rhodora, Julian, Justin, vinvinroxas) are "all new to the system":
+  plain words on every screen; the Scanner account is the warehouse phone.
+
+**Commands that work**
+* Tests: `.venv/Scripts/python.exe -m pytest tests -q -p no:cacheprovider` (~1,270 tests, ~25 min; the Streamlit screen tests sit in
+  `archive/streamlit/tests/` and are not collected). Eight Streamlit-era page ids (`add-data`, `payment-run`, `release`, `admin`, `controls`,
+  `data-health`, `payables-due`, `planner`) remain in `engines/permissions.PAGE_ACTION` and `engines/home_tiles.TILES`; the Django menu never shows
+  them (tests list them as RETIRED) -- prune them when the matrix is next revised, with his OK. Run the full suite in the background to a
+  scratchpad file and wait with a ping loop; targeted files first. OCR tests skip on the laptop (no Tesseract here).
+* Migrations: `migrations/NNN_name.sql` (latest 106) **and** the same change in `schema.sql` (the tool diffs schema: it only ADDs tables / columns /
+  indexes / triggers; a new column goes before any `UNIQUE (...)` / `FOREIGN KEY` line); apply on the sandbox with
+  `.venv/Scripts/python.exe apply_pending_migrations.py --db data/ap_disbursement_WEB_TEST.db`. Live gets it in the deploy (backup first, automatic).
+* Deploy (only when he says "deploy"; clean tree): `MSYS_NO_PATHCONV=1 bash deploy/deploy_to_server.sh slicks@165.245.188.246 --anyway` — syncs
+  the schema, runs the seeders (`seed_expense_categories`, also the other-income kinds), restarts, tags `live-<stamp>_<sha>`, checks the log.
+* Server python: `ssh -i ~/.ssh/slicks_erp slicks@165.245.188.246 'cd /srv/slicks/app/current && set -a && . /etc/slicks-erp/env && set +a &&
+  /srv/slicks/venv/bin/python -' < script.py` (read-only unless he instructed a change). `scp` from this shell is unreliable: send files with
+  `ssh '... cat > /path' < file`.
+* Shell gotchas: heredocs with apostrophes break — write scripts with the Write tool; print ₱ with `PYTHONIOENCODING=utf-8`; `\b`, `\d` inside
+  non-raw patch strings get mangled — use raw strings / the Write tool. Commit message footer per the session's attribution reminder.
+
+**How we work (the owner's standing rules)**
+* Sandbox first; **commit and deploy only on his word** ("deploy"). A small fix that completes something he just reported may be released at once
+  and disclosed. Plan approval ≠ go: wait for "go" / "build". Mock-up (`docs/mockups/`) before any new screen. Ask before coding on anything
+  ambiguous; never narrow or delete on a guess. Nudge designs, never redesign. Controls **flag, never block** (4 hard stops only). The bank statement
+  is the truth. Big live changes 12–6 AM Manila unless he says now. Any change to live data: his explicit instruction, a backup, a rehearsal on a copy,
+  stop if anything differs from what was shown; live checks are otherwise read-only. Never enter his passwords / credentials; Cloudflare, Google,
+  DigitalOcean dashboards are his to click while I guide and verify. Say "payment statement", never "order statement" / "batch". Build general
+  solutions, never tuned to the sample he sent ("have a solid system to cater different presentation"). Conserve credit.
+
+**What is live (menu)** — Buy: Price lists (import Excel / Add a price / **Snip from a document**), Purchase orders (request → sent (RQ) → confirmed →
+PO; the DR is the payable; Receive; Match invoice; the daily payment limit ₱350k/₱400k and **Room for new orders** on the order page). Stock: Items and
+stock, Stock counts (also on the phone), Affiliates. Sell: Sales (Record the day's invoices; scan hidden behind `sale_scan_first`), Customers, Invoice
+booklets, Collect payments, Deposits. Pay suppliers: Invoices (floating), Payment statements (PS numbers; old OS kept), Calendar, Daily payables (cards,
+bank loans, open-loan interest, pay early), Checks and review. Bank: Bank and cash (statement import, reconciliation), Check booklets, Expenses,
+**Other income**, Income statement. Other payables: Lenders (loan notes, **open loans**, guarantee checks), Bank loans (schedule import, **Snip the
+bank's table**), Credit cards (statements, reminders). Records: Reports (schedule of payments, PO follow-through, with/without a PO), Vendor SOA matcher
+(CSV/Excel or **Snip from the statement**), Supplier statement check, printouts (A4 / short bond / thermal strip / supplier QR link). Analytics: Sales,
+Cash ahead, Stock, Purchasing, Payables, Bank and cash, Lenders, Credit cards (finance charges), Warnings (**released hidden**: Settings → Warnings →
+`warn_tab_on` = 1 shows it). Phone pages `/phone/` (price list, stock, stock in/out, counts; "Set up this phone" card). Every list sorts by clicking a
+heading (`core/sort.js`). Set-up: Creditors, Settings (switches), People (per-person Hidden / See / See and do; Phone ready column; Clear this phone).
+
+**Security as of 2026-10-16** — Cloudflare Access (email PIN) → ERP password (Chrome cannot save or fill it: masked box, new field names each load) →
+on a computer, **approval on the person's phone is required** (`signin_push_approval`): a notification, pick the 2-digit number, fingerprint; no
+phone set up = "Set up your phone first" (the phone itself still signs in to set up; the System admin's last two phones both get it). Fingerprint
+sign-in on phones; idle sign-out (Settings → Sign-in); Google Authenticator exists but is switched off; audit log sealed; Scanner role never sees prices.
+
+**Built 2026-10-15/16 (all live)** — Room for new orders; Analytics Sales + Cash ahead + Credit cards + Stock + Warnings(hidden); Other income
+(migration 104); click-to-sort; Chrome password block; push approval + Set up this phone; morning email "Earlier checks not yet cleared or ticked";
+the snip in three stages (`engines/snip.py`, `web/core/static/core/snip.js`, `web/buying/snip.py` + helpers used by `payables/bankloans.py` and
+`payables/bulk.py`; migrations 105–106; **no document kept**: deleted once imported / matched or after a day; text PDFs exact, pictures by
+cell-by-cell OCR in a background job with doubtful cells orange; fix any cell by clicking it and drawing a box). `engines/soa_parser.py` is retired.
+
+**Open, in his hands** — every purchase through a PO from 11/01/2026 (he declined a "no PO" flag); the opening stock count before that; the
+family's phones (notifications + fingerprint) and the Warnings switch; data clean-ups (old uncleared checks counted as going out today; invoice 141345
+dated 2027; check 3992575932 on LN 0005 dated 2026); Cloudflare Philippines-only rule, DO firewall and weekly snapshots, second System admin,
+2-step on family inboxes. **Open, not started** — Decisions tab (pay plan / reorder / price change), Ask tab (needs an API key), CRM / quotations
+(mock-up f_stage_c_customers), the full books (parked), "Read with AI" for photographed documents (optional, only if OCR corrections prove too many).
+
+**Memory** — the durable notes are in `C:\Users\Rhodora\.claude\projects\C--Users-Rhodora-Documents\memory\` (MEMORY.md is the index);
+check them for the why behind a rule before changing it.
+
+---
 
 ## Table of Contents
 
-- [Current State (2026-09-27)](#current-state-2026-09-27) — **read this first**: what is live now, where things are, rules added since 2026-09-17
+- [Current State (2026-10-17)](#current-state-2026-10-17--the-django-erp-is-live) — **read this first**
+- [Current State (2026-09-27)](#current-state-2026-09-27--historical-streamlit-era-superseded-by-the-2026-10-17-section-above) — historical: the Streamlit era, rules added since 2026-09-17
 - [Thermal Statement Printing](#thermal-statement-printing) — gated mini-phase (2026-09-27): spec, locked decisions, build order, acceptance criteria
 - [Bank Statement Import and Cash Insights](#bank-statement-import-and-cash-insights) — MBOS statement import, automatic check matching, cash insights (2026-09-27), reconciliation v2 + alerts (2026-09-28)
 - [Phase F — Foundation](#phase-f--foundation-cloud-server-logins-safe-for-a-few-users) — **next** (scoped 2026-09-28, not started): cloud server, logins, safe for a few users; before Sales/AR
@@ -33,7 +101,7 @@ Drive sign-in `drive`, code bundles `code_backups`). The backup task "AP System 
 
 ---
 
-## Current State (2026-09-27)
+## Current State (2026-09-27) — historical (Streamlit era; superseded by the 2026-10-17 section above)
 
 The system is **live** (cut over Sep 2026) for Slick's Tire Supply, used daily by one non-technical owner (JRCR). Everything below this section is the build history and detailed rules; where it conflicts with this section, **this section wins** (older lines are corrected in place where noted).
 

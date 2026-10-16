@@ -31,7 +31,11 @@ def test_room_is_cash_in_less_fixed_less_orders_and_the_order_is_judged_against_
         sr.save("po_cash_in_week", "250000")                                       # the typed weekly figure stands in
     assert weeks()["known"] == "typed" and weeks()["weeks"][0]["cash_in"] == 250000.0
     lender = make_creditor(db, "Luz", creditor_type="LENDER")
+    from engines.po_rules import _blocked_days
     pay = today + timedelta(days=21)
+    pay += timedelta(days=(7 - pay.weekday()) % 7)                                  # a Monday, not a holiday: the check stays in its own week
+    while pay.isoformat() in {str(x)[:10] for x in _blocked_days()}:
+        pay += timedelta(days=7)
     with acting_as("admin@slicks.test", "admin"):
         ok, msg, lnid = create_note_with_payments(lender, today, 300000.0, 0.0, [(pay, 300000.0)])
         assert ok, msg

@@ -88,5 +88,4 @@ def test_the_typed_cash_planner_path_also_skips_cards_paid_outside(db):
 
 def test_the_removed_estimate_code_is_gone():
     import importlib.util
-    assert importlib.util.find_spec("engines.cc_forecast_service") is None
-    assert importlib.util.find_spec("views.card_dues_note") is None
+    assert importlib.util.find_spec("engines.cc_forecast_service") is None          # (the Streamlit note module went with the prototype, 2026-10-17)

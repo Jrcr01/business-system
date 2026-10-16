@@ -19,10 +19,13 @@ ROOT = Path(__file__).resolve().parent.parent
 BROTHER, OTHER = "brother@example.com", "other@example.com"
 
 
+RETIRED = {"add-data", "admin", "controls", "data-health", "payables-due", "payment-run", "planner", "release"}   # Streamlit-era page ids still in the matrix / tiles (never drawn by Django); prune them when the matrix is next revised
+
+
 def _all_pages() -> set[str]:
-    text = (ROOT / "app.py").read_text(encoding="utf-8")
-    block = text[text.index("PAGES.update({"):text.index("})", text.index("PAGES.update({"))]
-    return set(re.findall(r'^\s*"([a-z-]+)": st\.Page', block, re.M))
+    """The page ids of the Django menu (read from the source, so nothing has to run; the Streamlit app.py is archived, 2026-10-17)."""
+    text = (ROOT / "web" / "core" / "menu.py").read_text(encoding="utf-8")
+    return set(re.findall(r'^\s*"([a-z-]+)": Page\(', text, re.M)) | RETIRED
 
 
 def test_every_page_is_the_admins_and_every_page_is_in_the_matrix():
@@ -36,7 +39,7 @@ def test_every_page_is_the_admins_and_every_page_is_in_the_matrix():
 def test_each_roles_pages():
     pages = _all_pages()
     assert allowed_pages("purchasing", pages) == {"home", "price-lists", "purchase-orders"}
-    assert allowed_pages("viewer", pages) == {"home", "price-lists", "purchase-orders", "reports"}
+    assert allowed_pages("viewer", pages) == {"home", "price-lists", "purchase-orders", "reports", "analytics", "income-statement"}   # reports.use opens the two read-only Django pages too
     pay = allowed_pages("payables", pages)
     assert {"payment-run", "add-data", "order-statements", "checks", "bank-cash", "payables-due", "creditors", "lenders", "reports"} <= pay
     assert not pay & {"settings", "admin"}
@@ -157,24 +160,3 @@ def test_only_the_system_admin_manages_users(db):
 
 def test_no_signed_in_person_acts_as_the_system_admin_so_scripts_and_tests_still_work(db):
     assert require("users.manage") == (True, "")
-
-
-def test_the_system_admin_can_view_the_system_as_another_role_without_changing_any_role(monkeypatch):
-    import streamlit as st
-    from views import login
-    owner = {"user_id": 1, "email": "o@x.c", "name": "O", "role": "admin", "is_active": 1, "must_change_password": 0}
-    st.session_state["view_as"] = "purchasing"
-    seen = login._apply_view_as(owner)
-    assert seen["role"] == "purchasing" and seen["real_role"] == "admin" and owner["role"] == "admin" and seen["email"] == "o@x.c"
-    assert filter_menu({"Home": ["home"], "Daily": ["checks"], "Purchasing": ["purchase-orders"]}, seen["role"]) == {"Home": ["home"], "Purchasing": ["purchase-orders"]}
-    st.session_state["view_as"] = "janitor"
-    assert login._apply_view_as(owner) is owner                                  # an unknown role is ignored
-    st.session_state["view_as"] = "admin"
-    assert login._apply_view_as(owner) is owner
-    family = {**owner, "role": "owner"}
-    st.session_state["view_as"] = "viewer"
-    assert login._apply_view_as(family) is family                                # a family owner has no developer view
-    clerk = {**owner, "role": "payables"}
-    st.session_state["view_as"] = "viewer"
-    assert login._apply_view_as(clerk) is clerk                                  # only a real System admin can do this
-    st.session_state.pop("view_as", None)

@@ -4,6 +4,57 @@ The running record of decisions made with the owner — the *why* behind choices
 module: [Foundation], [Sales], [AP], [Inventory] ... Newest ERP entries first; the AP module's history (2026-09-04 to 2026-09-28)
 follows unchanged below.
 
+## 2026-10-01 → 2026-10-17 — [All modules] From Phase F to the live Django ERP (summary of the owner's decisions, newest first)
+
+The detailed why of each line is in the session memory notes (`C:\Users\Rhodora\.claude\projects\C--Users-Rhodora-Documents\memory\`) and in
+`CLAUDE.md` → Current State (2026-10-17). Code history: `git log` on branch `erp`.
+
+* **10-17 Folder organised** (owner: "keep all those necessary and relevant to the current system"): Streamlit prototype + its screen tests →
+  `archive/streamlit/`; laptop-era scripts → `archive/local_era/`; `fk_check` / `mask_audit_text` → `tools/`; old plans → `docs/history/`; the root
+  `app.py` is a 12-line re-export so ~70 older tests keep running; the laptop task "AP System Daily Backup" (old local database) removed.
+* **10-16 The snip** (DataSnipper-like, inside Price lists / Bank loans / Vendor SOA matcher; three stages, all live 10-16 22:44): text PDFs read
+  exactly, pictures by cell-by-cell OCR (Tesseract on the server, background job), columns named from headings or content, a printed size cell split
+  into size / ply / terrain, rows through each destination's own validation, the SOA total checked against the sum, **fix any cell by drawing a box**.
+  Owner: "do not adjust the system based on the samples ... have a solid system"; "no need to store the document" (deleted after use, no source mark);
+  "we need accuracy", and if the OCR can't read it "I am the one who should enter it". No paid AI reader for now (optional step up). Retired the old
+  whole-page SOA reader. This supersedes the 10-03 "no PDF reading in price lists" rule (he points at the table; still no AI guessing).
+* **10-16 Released together** (owner: "we deploy all at the same time"): Analytics → Stock; Bank → Other income (rent, supplier rebates; adds to the
+  Income statement); the morning email's "Earlier checks not yet cleared or ticked"; Analytics → Warnings built but **released hidden**
+  (Settings → Warnings → `warn_tab_on`), owner: "Warnings later".
+* **10-16 Workflow review against the standard cycles** (his ask): the system follows P2P / revenue / inventory / treasury correctly, but only
+  Purchase-to-Pay runs on live data (0 POs, 0 receipts, 0 sales, 0 stock on hand, 0 expenses; 101 invoices typed with no PO). His decisions: every
+  purchase through a PO from **11/01/2026**, suppliers that never need a PO can be marked; he declined a "no PO" review flag ("the current system is
+  fine"). Opening stock count comes first.
+* **10-15 Sign-in hardened** (owner: a hacked Google account passes Cloudflare's PIN and Chrome's saved password): Chrome can no longer save or fill
+  the ERP password (masked box, new field names each load); then **approval on the person's own phone is required on computers** (push notification,
+  2-digit number, fingerprint; `signin_push_approval`; "right away"; the System admin's last two phones both get it; no phone set up = "Set up your phone
+  first", the phone itself still signs in); the QR way dropped; a "Set up this phone" card (install app, allow notifications, fingerprint) and a Phone
+  column + "Clear this phone" in Settings → People. Cloudflare bypass for `/approve/*` and `/s/*` is his rule (verified).
+* **10-15 Liquidity work:** "Room for new orders" on the order page (six-month order window = longest terms + delivery; per week: expected cash in −
+  fixed payables − orders already placed; owner: "no redating of checks ... our terms are 120 days", "the logic of this PO is to monitor orders because
+  this is the variable payable"); Analytics → Credit cards with **finance charges incurred** (his ask) and no limit warning; click-to-sort on every
+  list ("why these can't be sorted?"); Stock counts on the phone already existed since 10-12 (the family just had the pages Hidden).
+* **10-14 Open loans** (Luz ₱2M 2 %, Felix 3 × ₱1M 2 %): interest monthly on the Calendar / Daily payables, principal closes the loan, counted in
+  what we owe; paying loans early allowed; phone approval (kind 2: the site's own QR, no Bluetooth) — later replaced by push; morning email at 8 AM via
+  Resend ("no need for reply", "cash line should be removed"); architecture review items 1–3 (off-site backup pull to the laptop at 7:30 PM, only-admin
+  warning, error line) and security review item 1 (pypdf / urllib3 upgrade).
+* **10-13 Payment statements:** invoices recorded on their own (floating), the statement made when checks are made ("payment statement", PS numbers;
+  old OS kept); thermal printer set up (XP-80C, 72 mm strip, one continuous strip with cut lines); supplier QR link to the A4 statement (`/s/<code>`);
+  printouts amended; Print many summary-only; short bond labels; card reminders only on the phone (daily payables alerts "stressful").
+* **10-11/12 Live:** Stage A sales recording "all on"; PO request → confirmed → PO ("no shortcut"); the DR is the payable; phone pages `/phone/`
+  (price list, stock, in, out, counts) with the Scanner role; Google Authenticator for all, then switched off 10-12 at his word; landing page
+  slickstiresupply.com on Cloudflare Pages (he edits it himself since 10-13).
+* **10-08/09 Change list** (security / roles first; no auto-clearing; all owners + switches; Cloudflare Access): per person Hidden / See / See and do
+  per page, Set-up admin-only; procure-to-pay payables rules (AP waterfall, owed vs cash plan, ₱350k / ₱400k daily cap, card reserve, No-PO period);
+  survival-mode controls as switchable settings on a standard data model; sandbox → one commit + deploy when he says.
+* **10-03 Django only** (owner: simultaneous remote users): the Streamlit screens became the prototype / spec, never edited again; fresh Django
+  project; live ASAP; **flag, don't block** (4 hard stops only); the supplier's SI number is the reference, DR beside it, PO ideal but lenient.
+* **10-01 Disbursement cycle / PO plan approved:** price list → PO → receive → AP → PDC release, stages B0–B9 with sign-off.
+* **09-29/30 Phase F built and the server went live** (DigitalOcean, Singapore; SQLite with WAL on the server; Cloudflare in front): one door,
+  one clock, numbering safe for two users, audit with the user's email and sealed; AP restrictions plan approved 09-30 for a 10-07 build.
+
+---
+
 ## 2026-09-28 — [Foundation] Slicks ERP is born: vision, Django, Sales next, workspace split
 
 * **Slicks ERP** (owner): the one system for the business and the family's affairs; AP is module 1 (built first because AP is the

@@ -1,45 +1,41 @@
-# AP Disbursement System — Slick's Tire Supply
+# Slick's ERP — Slick's Tire Supply
 
-The accounts-payable system: supplier order statements (batches) and invoices, check issuing and numbering, Chrysanth batch printing, private-lender loan notes, bank loans and credit card statements, with dashboards, reports and PDFs. Built with Python + Streamlit on a SQLite database. Single user, runs on one Windows laptop.
+The business system of Slick's Tire Supply: buying (price lists, purchase orders, receiving), paying suppliers (invoices, payment statements, checks,
+the daily payment limit), bank statements and reconciliation, lenders, bank loans and credit cards, stock and stock counts, sales and collections,
+expenses, other income and the month's income statement, analytics and warnings, printouts, phone pages, and the snip (reading a supplier's
+document on the page). Django on a SQLite database, live at **https://erp.slickstiresupply.com** for the family and the shop.
 
-## Everyday use (double-click these in this folder)
-
-| File | What it does |
-|---|---|
-| `start_live.bat` | Starts the app and opens it in the browser at **http://localhost:8501** |
-| `restart_live.bat` | Restarts it (needed after a program update) |
-| `stop_live.bat` | Turns it off — the data is always saved already |
-| `update_database.bat` | After a program update that needs it (the app says so on start): backs up, updates the database, restarts |
-| `run_backup.bat` | Backs up now. Also runs automatically every day at 6 PM (Windows Task Scheduler, "AP System Daily Backup") |
-| `restore_test.bat` | **Once a month:** proves the newest backup can rebuild the system. Must end in **PASSED** |
-| `run_test_streamlit.bat` | A separate test copy of the app on port 8502 with its own test database — for trying things safely |
-
-Only this laptop can open the app (it listens on 127.0.0.1 only). There is no login.
+The guide for working on it is `CLAUDE.md` (read its "Current State" section first). `WHATS_NEW.md` is the owner-facing list of what each release added.
 
 ## Where things are
 
-| What | Where |
+| Folder / file | What it is |
 |---|---|
-| **Live database** | `C:\AP_Data\ap_disbursement.db` (its path is in `live_db_path.txt`) — on the laptop, deliberately **not** on Google Drive |
-| Daily database backups (newest 30) | `H:\My Drive\Claude9OS\AP_Backups` (Google Drive, off the laptop) |
-| Daily copy of the program's history (newest 30) | `C:\AP_Data\code_backups` (a git bundle; restore with `git clone <file>.bundle Project_Checke`) |
-| The program | this folder (on Google Drive) |
-| What changed and when | `WHATS_NEW.md` — the app also shows the newest entry once per session |
+| `web/` | The Django site: `core` (sign-in, Home, menu, settings, phone approval), `masters` (people, settings), `buying` (price lists, orders, receiving, the snip), `payables` (statements, checks, calendar, bank, lenders, loans, cards, analytics, reports), `selling` (stock, sales, customers, collect), `phone` (the phone pages). Templates sit beside each app; shared CSS/JS in `web/core/static/core/`. |
+| `engines/` | The business rules, shared by every page: one module per area (`statement_rules`, `check_rules`, `po_rules`, `day_cap`, `order_room`, `cash_in`, `clearing`, `open_loans`, `card_analysis`, `warn_list`, `snip`, …). No page logic here. |
+| `schema.sql` + `migrations/` | The database shape (schema.sql is the truth) and the log of each change (`NNN_name.sql`). `apply_pending_migrations.py` adds what a database lacks; it never alters or drops. |
+| `tests/` | `pytest` (~1,450 tests). `app.py` at the root only re-exports engine names for the older tests; new tests import the engines directly. |
+| `deploy/` | The server: `deploy_to_server.sh` (release), `release.sh`, `rollback.sh`, `nightly.py` (18:00 backup), `pull_backup.ps1` (the laptop's 7:30 PM off-site copy), systemd units, Caddy template, `env.template`. |
+| `docs/` | `SLICKS_ERP_BLUEPRINT.md` (the plan), `modules/` (module notes), `mockups/` (every screen was drawn here first), `how_it_works.html`, `history/` (the pilot guide and the Django proposal, kept for the record). |
+| `tools/` | Admin tools run by hand: `fk_check.py`, `mask_audit_text.py`, `load_test_web.py`, `time_pages.py`. |
+| `archive/` | Kept for the record, not used: `streamlit/` (the 2026-09 prototype and its screen tests), `local_era/` (the laptop-only scripts), `one_time_scripts/` (migrations that already ran). |
+| `data/` | Local databases (never in git): `ap_disbursement_WEB_TEST.db` is the sandbox copy of live. |
+| `db_location.py`, `excel_invoice_entry/`, `invoice_extractor/` | Still used: the backup-safe copy helper, the invoice entry workbook, the invoice reader. |
 
-## If something goes wrong
+## Everyday commands (from this folder)
 
-- **The app says a database update is needed** → close it, run `update_database.bat`.
-- **The laptop or the database is lost** → install Python 3.12 and the packages (`python -m pip install -r requirements-lock.txt`), copy the newest file from `AP_Backups` to `C:\AP_Data\ap_disbursement.db`, run `update_database.bat`, then `start_live.bat`. `restore_test.bat` rehearses exactly this.
-- **The program folder's history is damaged** → `git clone C:\AP_Data\code_backups\<newest>.bundle` gives it back.
+```bash
+.venv/Scripts/python.exe -m pytest tests -q -p no:cacheprovider
+```
+runs the tests (about 25 minutes). The sandbox is the preview entry `slicks-web-stage-a-8511` (port 8511, restart it after edits). A new
+migration is applied to the sandbox with `.venv/Scripts/python.exe apply_pending_migrations.py --db data/ap_disbursement_WEB_TEST.db`.
+A release, only when the owner says "deploy":
 
-## For developers
+```bash
+MSYS_NO_PATHCONV=1 bash deploy/deploy_to_server.sh slicks@165.245.188.246 --anyway
+```
 
-- `app.py` — the screens (Streamlit). Business rules are in `engines/`: `common.py`, `statement_rules.py`, `check_rules.py`, `creditor_rules.py`, `loan_note_rules.py`, `card_rules.py`, plus the older `*_service.py` modules (reports, PDFs, imports, Chrysanth export, search…). `app.py` imports the rules back, so `app.<name>` works everywhere.
-- `schema.sql` is the full, current database design; `migrations/` is the numbered change log (001–047). `apply_pending_migrations.py` (run by `update_database.bat`) brings any database up to `schema.sql` — it only ever adds tables, columns, views, indexes and triggers.
-- Hard rules the **database itself** enforces: no duplicate check number (a number exists once — one check or one spoiled entry, 7- and 10-digit forms are the same leaf); the order-statement total always equals its invoices.
-- Tests: `python -m pytest` (about 270 tests, ~1 minute). Every test gets its own fresh database built from `schema.sql`; the tests never touch real data (`tests/conftest.py` repoints every module automatically).
-- Package versions are pinned (`requirements.txt`, full list in `requirements-lock.txt`). Before upgrading Streamlit, move the three `components.v1.html` uses (print preview, keyboard shortcuts, leave-page prompt) to the newer API.
-- Machine-specific settings (the Python path) are in `settings.bat`; put overrides for another PC in `local_settings.bat` (not in git).
-- Never commit real data: `.gitignore` excludes every database, export, workbook and printout. The only workbook in git is `excel_invoice_entry/invoice_entry_master.xlsm`, which the app needs.
-- `archive/one_time_scripts/` — migration and clean-up scripts that already ran; kept as a record, not to be re-run.
-- `CLAUDE.md` is the detailed specification and rules; `MEMORY.md` is the log of decisions and why they were made.
+## Rules that never change
+
+The bank statement is the truth. Controls flag, they never block. Nothing is deleted: a wrong entry is taken back with a reason. Every change is
+in the audit log, which is sealed. The family's screens use plain words. Nothing is built on live before it has run on the sandbox.

@@ -2,7 +2,7 @@
 import hashlib
 import sqlite3
 
-from fk_check import check
+from tools.fk_check import check
 
 
 def test_finds_a_broken_link_and_leaves_the_file_untouched(tmp_path):
