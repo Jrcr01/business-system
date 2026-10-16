@@ -90,6 +90,8 @@ NUMBERS = [
      "printed and every link already printed stops opening."),
     ("supplier_qr_days", "Payment statements", "The supplier's QR link works until this long after the statement's last check date", 90, 7, 730, 0, "days",
      "After that the link says it has expired. Counted from the day the link was made when the statement has no check yet."),
+    ("warn_tab_on", "Warnings", "Show the Warnings tab on Analytics and its Home card (1 = yes, 0 = no)", 0, 0, 1, 0, "",
+     "Owner, 2026-10-16: released hidden (\"Warnings later\"). 1 shows the tab, its menu entry and its Home card to everyone who sees Analytics."),
     ("warn_check_days", "Warnings", "Warn about checks not cleared this many days after their date", 30, 7, 365, 0, "days",
      "Analytics -> Warnings (owner, 2026-10-15). Such a check still counts as money going out today, so Cash ahead reads lower than it is."),
     ("warn_price_rise_pct", "Warnings", "Warn when a supplier's new price is higher than its previous one by more than", 5, 1, 100, 0, "%",

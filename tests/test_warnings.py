@@ -50,6 +50,10 @@ def test_each_warning_fires_on_its_case_and_the_tab_lists_them(web, db):
     from engines.warn_list import all_for
     levels = [w["level"] for w in all_for()]
     assert levels == sorted(levels, key=lambda x: {"red": 0, "amber": 1, "blue": 2}[x])        # most urgent first
+    assert "tab=warnings" not in web.get("/").content.decode()                   # released hidden (owner, 2026-10-16): the switch shows it
+    from engines import settings_registry as sr
+    with acting_as("admin@slicks.test", "admin"):
+        sr.save("warn_tab_on", "1")
     page = web.get("/analytics/?tab=warnings").content.decode()
     assert "could not be drawn" not in page and "prices up 10.0%" in page and 'href="/checks/?tab=waiting"' in page
     assert "tab=warnings" in web.get("/").content.decode()                       # its Home card and menu entry

@@ -238,6 +238,9 @@ def analytics_tabs() -> set[str]:
     """The Analytics tabs the signed-in person sees: every tab whose page is not hidden from them (the System admin: all of them)."""
     hidden = hidden_for(acting_email())
     tabs = {tab for tab, page in ANALYTICS_TAB_PAGE.items() if page not in hidden}
+    from engines.settings_registry import int_value
+    if int_value("warn_tab_on") != 1:                               # owner, 2026-10-16: "Warnings later" -- released hidden, switched on in Settings
+        tabs.discard("warnings")
     return tabs if tabs - {"warnings"} else set()                   # Warnings (2026-10-15) only beside a dashboard: its warnings point at those pages
 
 

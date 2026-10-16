@@ -181,6 +181,6 @@ def test_the_home_cards_follow_the_order_of_the_work(web, db):
     assert rows["Pay suppliers"] == ["Record an invoice", "Payment statements", "Calendar", "Days over the limit", "Daily payables"]
     assert rows["Bank"] == ["Import bank statement", "Bank and cash", "Check booklets", "Expenses", "Other income"]
     assert rows["Other payables"] == ["New loan note", "Lenders", "Bank loans", "Credit cards"]
-    assert rows["Analytics"] == ["Warnings", "Purchasing", "Payables", "Bank and cash", "Lenders", "Sales", "Cash ahead"]
+    assert rows["Analytics"] == ["Purchasing", "Payables", "Bank and cash", "Lenders", "Sales", "Cash ahead"]
     assert rows["My home"] == ["New order", "Purchase orders", "Record an invoice", "Payment statements", "Calendar", "Daily payables", "Checks and review"]
     assert 'href="/sales/?view=scan"' not in page and "the next SI no." in page    # the scan thing is hidden until its switch is on
