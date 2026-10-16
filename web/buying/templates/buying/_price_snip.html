@@ -1,0 +1,77 @@
+{% load humanize %}{% comment %}Owner, 2026-10-16: Snip from a document (web/buying/snip.py, engines/snip.py; mock-up docs/mockups/aa_snip.html). The supplier's
+PDF or photo on the left, the box, the rows on the right with their column names guessed from the category's fields; "Check these rows" opens the
+Excel import's own check screen on them (the same validation), and the prices saved carry the source mark.{% endcomment %}
+<p class="note">Open the supplier's price list (a PDF, or a photo) and <b>drag a box over the table</b>. A PDF with real text is read exactly; a photo is read by OCR and doubtful cells show in orange for you to confirm.
+  The rows go through the same check as Import Excel before anything is saved, and each price keeps a link to the page it came from.</p>
+<form class="bar" method="post" enctype="multipart/form-data" action="/price-lists/snip/upload/">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}">
+  <div class="grow"><label for="sn_file">The supplier's document (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required></div>
+  <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button></form>
+{% if files %}<p class="hint" style="margin:6px 0 10px">Documents of {{ supplier }}: {% for f in files %}<a href="/price-lists/?s={{ cid }}&tab=snip&f={{ f.token }}"{% if doc and doc.token == f.token %} style="font-weight:700"{% endif %}>{{ f.filename }}</a> <span class="hint">({{ f.pages }} p{% if f.snips %}, {{ f.snips }} snip{{ f.snips|pluralize }}{% endif %})</span>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+
+{% if doc %}
+<div class="snip-split" id="sn_split">
+  <div class="snip-doc">
+    <div class="snip-head"><span class="ms">{% if doc.has_text %}picture_as_pdf{% else %}photo_camera{% endif %}</span><b>{{ doc.filename }}</b>
+      {% if doc.pages > 1 %}<span>· page <a href="?s={{ cid }}&tab=snip&f={{ doc.token }}&p={{ doc.page|add:'-1' }}"{% if doc.page == 1 %} hidden{% endif %}>‹</a> {{ doc.page }} of {{ doc.pages }} <a href="?s={{ cid }}&tab=snip&f={{ doc.token }}&p={{ doc.page|add:'1' }}"{% if doc.page == doc.pages %} hidden{% endif %}>›</a></span>{% endif %}
+      <span class="pill{% if not doc.has_text %} warn{% endif %}">{% if doc.has_text %}real text: exact{% else %}picture: OCR{% endif %}</span>
+      <button type="button" class="btn small ghost" id="sn_wide" title="The document across the whole width, the rows below it"><span class="ms">open_in_full</span>Bigger</button>
+      <span class="snip-tool"><button type="button" class="on" data-mode="table"><span class="ms">table_chart</span>Table</button><button type="button" data-mode="text"><span class="ms">text_fields</span>Text</button></span></div>
+    <div class="snip-wrap" id="sn_wrap"><img id="sn_img" src="/price-lists/snip/{{ doc.token }}/page/{{ doc.page }}.jpg" alt="page {{ doc.page }}" draggable="false">
+      <div class="snip-box" id="sn_box" hidden><b id="sn_label"></b></div></div>
+    <p class="hint" style="margin:6px 0 0">Drag a box around one table (not two side by side). With <b>Text</b>, a box around one figure gives just that figure.</p>
+  </div>
+  <div class="snip-out">
+    <form method="post" action="/price-lists/snip/{{ doc.token }}/check/" id="sn_form">{% csrf_token %}
+      <input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="page" value="{{ doc.page }}">
+      <input type="hidden" name="rows" id="sn_rows"><input type="hidden" name="colmap" id="sn_colmap"><input type="hidden" name="header" id="sn_header">
+      <input type="hidden" name="x0" id="sn_x0"><input type="hidden" name="y0" id="sn_y0"><input type="hidden" name="x1" id="sn_x1"><input type="hidden" name="y1" id="sn_y1">
+      <div class="formgrid" style="margin:0 0 8px">
+        <div><label for="sn_cat">Category</label><select id="sn_cat" name="category">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select></div>
+        <div><label for="sn_brand">Brand</label><input id="sn_brand" name="brand" class="in" placeholder="e.g. Westlake" required></div>
+        <div><label for="sn_start">Prices start on</label><input id="sn_start" type="date" name="start" value="{{ today|date:'Y-m-d' }}"></div>
+      </div>
+      <div id="sn_msg" class="hint" role="status">Nothing snipped yet.</div>
+      <div id="sn_text" class="snip-text" hidden></div>
+      <div class="scroll-x"><table class="list" id="sn_grid" hidden></table></div>
+      <p id="sn_actions" hidden style="margin:10px 0 0"><button class="btn small" type="submit"><span class="ms">fact_check</span>Check these rows</button>
+        <span class="hint">→ new / changed / same per product, and any problem, before anything is saved</span></p>
+    </form>
+  </div>
+</div>
+<script src="/static/core/snip.js?v=1"></script>
+<script>
+(function () {
+  var keys = {{ col_keys_json|safe }}, grid = document.getElementById("sn_grid"), msg = document.getElementById("sn_msg"), text = document.getElementById("sn_text"), acts = document.getElementById("sn_actions");
+  var cat = document.getElementById("sn_cat"), rows = [], colmap = [], header = false;
+  function options(sel) { var c = cat.value, out = '<option value="">—</option>'; (keys[c] || []).forEach(function (kv) { out += '<option value="' + kv[0] + '"' + (kv[0] === sel ? " selected" : "") + ">" + kv[1] + "</option>"; }); return out; }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function draw() {
+    if (!rows.length) { grid.hidden = true; acts.hidden = true; return; }
+    var w = Math.max.apply(null, rows.map(function (r) { return r.length; }));
+    var h = "<tr>"; for (var i = 0; i < w; i++) h += '<th><select data-col="' + i + '">' + options(colmap[i] || "") + "</select></th>"; h += "</tr>";
+    rows.forEach(function (r, ri) { h += '<tr class="' + (header && ri === 0 ? "snip-head-row" : "") + '">'; for (var i = 0; i < w; i++) { var d = (doubt[ri] || [])[i]; h += '<td' + (d ? ' class="snip-doubt"' : "") + '><input class="in" data-r="' + ri + '" data-c="' + i + '" value="' + esc(r[i] || "") + '"' + (d ? ' title="OCR was not sure: confirm or fix"' : "") + "></td>"; } h += "</tr>"; });
+    grid.innerHTML = h; grid.hidden = false; acts.hidden = false;
+    grid.querySelectorAll("select").forEach(function (s) { s.addEventListener("change", function () { colmap[+s.dataset.col] = s.value; }); });
+    grid.querySelectorAll("input").forEach(function (inp) { inp.addEventListener("input", function () { rows[+inp.dataset.r][+inp.dataset.c] = inp.value; inp.parentNode.classList.remove("snip-doubt"); }); });
+  }
+  var doubt = [];
+  var sn = slicksSnip.start({wrap: document.getElementById("sn_wrap"), img: document.getElementById("sn_img"), box: document.getElementById("sn_box"), label: document.getElementById("sn_label"),
+    w: {{ doc.w }}, h: {{ doc.h }}, page: {{ doc.page }}, csrf: document.querySelector("#sn_form input[name=csrfmiddlewaretoken]").value, readUrl: "/price-lists/snip/{{ doc.token }}/read/",
+    modeButtons: Array.prototype.slice.call(document.querySelectorAll(".snip-tool button")), category: function () { return cat.value; },
+    onBusy: function (b) { if (b) msg.textContent = "Reading the box…"; },
+    onResult: function (d, why) {
+      if (!d) { msg.textContent = why; rows = []; draw(); text.hidden = true; return; }
+      if (d.mode === "text") { text.textContent = d.text; text.hidden = false; msg.textContent = "Text snip" + (d.doubtful ? " (OCR was not sure: check it)" : "") + ":"; rows = []; draw(); return; }
+      text.hidden = true; rows = d.rows; doubt = d.doubt || []; colmap = d.colmap || []; header = !!d.header;
+      var nd = doubt.reduce(function (n, r) { return n + r.filter(Boolean).length; }, 0);
+      msg.textContent = rows.length + " row" + (rows.length === 1 ? "" : "s") + " read (" + (d.how === "ruled" ? "ruled table, exact" : d.how === "positions" ? "by position, exact" : "OCR") + ")" + (header ? ", first row = headings" : "") + (nd ? " · " + nd + " cell" + (nd === 1 ? "" : "s") + " to confirm (orange)" : "") + ". Name the columns, then check.";
+      draw(); }});
+  cat.addEventListener("change", function () { if (rows.length) sn.reread(); });
+  document.getElementById("sn_wide").addEventListener("click", function () { var sp = document.getElementById("sn_split"); sp.classList.toggle("wide"); this.innerHTML = '<span class="ms">' + (sp.classList.contains("wide") ? "close_fullscreen</span>Side by side" : "open_in_full</span>Bigger"); });
+  document.getElementById("sn_form").addEventListener("submit", function (e) {
+    var r = sn.rect(); if (!r || !rows.length) { e.preventDefault(); msg.textContent = "Snip a table first."; return; }
+    document.getElementById("sn_rows").value = JSON.stringify(rows); document.getElementById("sn_colmap").value = JSON.stringify(colmap); document.getElementById("sn_header").value = header ? "1" : "0";
+    document.getElementById("sn_x0").value = r.x0; document.getElementById("sn_y0").value = r.y0; document.getElementById("sn_x1").value = r.x1; document.getElementById("sn_y1").value = r.y1; });
+})();
+</script>
+{% endif %}

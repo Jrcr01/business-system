@@ -1,0 +1,160 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: snip from a document</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+.ms { font-family: "Material Symbols Rounded"; line-height: 1; display: inline-block; vertical-align: middle; font-size: 20px; width: 1em; height: 1em; overflow: hidden; }
+main { max-width: 1120px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 24px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+.why { color: var(--muted); margin: 0 0 12px; max-width: 86ch; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 16px 18px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+h2 { margin: 0 0 10px; font-size: 1.15rem; color: var(--navy); }
+.tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--line); margin-bottom: 12px; } .tabs span { padding: 6px 12px; color: var(--muted); font-weight: 600; font-size: .9rem; }
+.tabs span.on { color: var(--blue); border-bottom: 3px solid var(--blue); margin-bottom: -2px; }
+.split { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; } @media (max-width: 800px) { .split { grid-template-columns: 1fr; } }
+.doc { border: 1px solid #b9c6d8; border-radius: 10px; background: #f8fafc; padding: 10px; }
+.dochead { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: .85rem; color: var(--muted); margin-bottom: 8px; }
+.page { position: relative; background: #fff; border: 1px solid var(--line); margin: 0 auto; width: 100%; max-width: 420px; padding: 18px 16px; font-family: Arial, sans-serif; font-size: 11px; color: #222; }
+.page .ttl { font-weight: 700; font-size: 13px; margin-bottom: 4px; } .page .sub { color: #555; margin-bottom: 10px; }
+.page table { border-collapse: collapse; width: 100%; } .page th, .page td { border: 1px solid #999; padding: 3px 5px; text-align: left; } .page th { background: #eee; }
+.box { position: absolute; border: 2px dashed var(--blue); background: rgba(11,79,138,.08); border-radius: 3px; }
+.box b { position: absolute; top: -18px; left: -2px; background: var(--blue); color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; font-family: "Source Sans 3", sans-serif; }
+.box.t { border-color: var(--ok); background: rgba(11,110,79,.08); } .box.t b { background: var(--ok); }
+.scan { filter: contrast(.9) sepia(.15); transform: rotate(-.6deg); box-shadow: 0 1px 6px rgba(0,0,0,.2); }
+.btn { display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; border: 1px solid var(--blue); border-radius: 8px; padding: 6px 11px; font: inherit; font-weight: 600; font-size: .88rem; }
+.btn.ghost { background: #fff; color: var(--blue); border-color: #b9c6d8; } .btn.small { padding: 3px 8px; font-size: .8rem; }
+.tool { display: inline-flex; gap: 4px; } .tool span { border: 1px solid #b9c6d8; border-radius: 6px; padding: 3px 8px; font-size: .82rem; background: #fff; } .tool span.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+table.list { border-collapse: collapse; width: 100%; font-size: .9rem; font-variant-numeric: tabular-nums; }
+table.list th { text-align: left; color: var(--muted); font-weight: 600; font-size: .78rem; border-bottom: 2px solid var(--line); padding: 5px 8px; }
+table.list td { border-bottom: 1px solid var(--line); padding: 5px 8px; } .num { text-align: right; }
+select, input.in { font: inherit; border: 1px solid #b9c6d8; border-radius: 6px; padding: 3px 6px; background: #fff; font-size: .85rem; }
+.fix { background: #fff4e5; } .fix input { border-color: #f0b46a; }
+.pill { display: inline-block; font-size: .72rem; border-radius: 999px; padding: 1px 8px; font-weight: 600; background: #eef3fa; color: var(--blue); }
+.pill.warn { background: #fff4e5; color: var(--warn); } .pill.ok { background: #e7f6ee; color: var(--ok); }
+.hint { font-size: .82rem; color: var(--muted); } .grp { font-weight: 700; margin: 10px 0 4px; }
+.src { display: inline-flex; align-items: center; gap: 3px; color: var(--blue); font-size: .78rem; cursor: pointer; } .src .ms { font-size: 15px; width: 15px; height: 15px; }
+.pop { border: 1px solid #b9c6d8; border-radius: 10px; padding: 8px; background: #fff; box-shadow: 0 6px 18px rgba(16,24,40,.18); max-width: 360px; margin-top: 8px; }
+.q { background: #fffbea; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 14px; margin-top: 22px; } .q ol { margin: 6px 0 0 18px; padding: 0; } .q li { margin: 4px 0; }
+</style></head><body><main>
+
+<h1>Snip from a document <small>mock-up: price lists, supplier SOAs, bank amortisation tables</small></h1>
+<p class="why">Like DataSnipper, inside the ERP: the supplier's document on the left, the form on the right. Drag a box over a table (or a single figure) and it lands in the form, with the page and box kept so the figure can always be traced back. A PDF with real text (the price lists) gives exact rows; a scan or photo (most SOAs) is read by the server's OCR for just the box you drew, and the rows come up for checking first. Everything runs on your own server.</p>
+
+<h1>1. Price lists → Add prices → Snip from the PDF <small>exact rows, no OCR</small></h1>
+<div class="screen">
+  <div class="tabs"><span>Prices</span><span>Add a price</span><span>Import Excel</span><span class="on">Snip from a document</span><span>Discounts</span><span>Catalog</span></div>
+  <div class="split">
+    <div class="doc">
+      <div class="dochead"><span class="ms">picture_as_pdf</span><b>Westlake - TBR (09-15-2026).pdf</b> · page 1 of 1 · real text
+        <span class="tool" style="margin-left:auto"><span class="on"><span class="ms" style="font-size:14px">table_chart</span> Table</span><span><span class="ms" style="font-size:14px">text_fields</span> Text</span></span></div>
+      <div class="page">
+        <div class="ttl">NEW CENTURY CITY MARKETING CORP.</div><div class="sub">Westlake TBR price list · effective September 15, 2026</div>
+        <table><tr><th>Size</th><th>Pattern</th><th>Price</th></tr>
+          <tr><td>315/80R22.5-20PR Lug</td><td>MD777</td><td>16,800</td></tr><tr><td>315/80R22.5-20PR Mix</td><td>CR926</td><td>15,700</td></tr>
+          <tr><td>295/80R22.5-18PR Lug</td><td>MD777</td><td>14,900</td></tr><tr><td>11R22.5-16PR Lug</td><td>CM998</td><td>13,600</td></tr>
+          <tr><td>11R22.5-16PR Rib</td><td>CR960A</td><td>13,200</td></tr><tr><td>10.00R20-16PR Lug</td><td>CB976</td><td>12,100</td></tr>
+          <tr><td>…</td><td></td><td></td></tr></table>
+        <div class="box" style="left:14px;top:48px;width:392px;height:122px"><b>Table · 67 rows</b></div>
+      </div>
+      <p class="hint" style="margin:8px 0 0">Drag a box around the table. Dragging around one figure with <b>Text</b> picked puts that figure in the field you click next.</p>
+    </div>
+    <div>
+      <h2>67 rows read from the box</h2>
+      <p class="hint" style="margin:0 0 6px">Name each column as the Tires template has it. Blank = not used.</p>
+      <table class="list">
+        <tr><th><select><option>Size</option><option>Pattern</option><option>Price</option><option>—</option></select></th><th><select><option>Pattern</option></select></th><th class="num"><select><option>Price</option></select></th></tr>
+        <tr><td>315/80R22.5-20PR Lug</td><td>MD777</td><td class="num">16,800</td></tr>
+        <tr><td>315/80R22.5-20PR Mix</td><td>CR926</td><td class="num">15,700</td></tr>
+        <tr><td>295/80R22.5-18PR Lug</td><td>MD777</td><td class="num">14,900</td></tr>
+        <tr><td>11R22.5-16PR Lug</td><td>CM998</td><td class="num">13,600</td></tr>
+        <tr><td colspan="3" class="hint">… 63 more</td></tr>
+      </table>
+      <div class="grp">Supplier <span class="hint" style="font-weight:400">New Century City Marketing Corp.</span> · Brand <input class="in" value="Westlake" style="width:110px"> · Category <select><option>Tires</option></select> · Effective <input class="in" value="09/15/2026" style="width:110px"></div>
+      <p style="margin:10px 0 0"><button class="btn"><span class="ms">playlist_add_check</span>Use these 67 rows</button> <span class="hint">→ the same check as Import Excel: new items, changed prices, duplicates</span></p>
+    </div>
+  </div>
+</div>
+
+<h1>2. Vendor SOA matcher → Snip from the scan <small>OCR on the box you drew; check, then match</small></h1>
+<div class="screen">
+  <div class="split">
+    <div class="doc">
+      <div class="dochead"><span class="ms">photo_camera</span><b>Sunny SOA Sept.jpg</b> · photo · <span class="pill warn">read by OCR</span>
+        <span class="tool" style="margin-left:auto"><span class="on"><span class="ms" style="font-size:14px">table_chart</span> Table</span><span><span class="ms" style="font-size:14px">text_fields</span> Text</span></span></div>
+      <div class="page scan">
+        <div class="ttl">SUNNY TIRE SUPPLY · STATEMENT OF ACCOUNT</div><div class="sub">Slick's Tire Supply · as of September 30, 2026</div>
+        <table><tr><th>Date</th><th>SI No.</th><th>Amount</th><th>Balance</th></tr>
+          <tr><td>08/03/26</td><td>244911</td><td>25,079.20</td><td>25,079.20</td></tr><tr><td>08/04/26</td><td>244983</td><td>6,174.00</td><td>31,253.20</td></tr>
+          <tr><td>08/20/26</td><td>245567</td><td>11,187.20</td><td>42,440.40</td></tr><tr><td>09/03/26</td><td>245943</td><td>103,573.59</td><td>146,013.99</td></tr>
+          <tr><td>09/03/26</td><td>245944</td><td>8,075.20</td><td>154,089.19</td></tr></table>
+        <div style="text-align:right;margin-top:8px;font-weight:700">TOTAL DUE   154,089.19</div>
+        <div class="box" style="left:14px;top:50px;width:392px;height:96px"><b>Table · 5 rows</b></div>
+        <div class="box t" style="left:300px;top:152px;width:104px;height:16px"><b>Text → Total</b></div>
+      </div>
+    </div>
+    <div>
+      <h2>5 rows read from the box <span class="pill warn">2 to check</span></h2>
+      <p class="hint" style="margin:0 0 6px">OCR is not perfect: a doubtful figure is shown in orange for you to confirm or fix before matching.</p>
+      <table class="list">
+        <tr><th><select><option>Date</option></select></th><th><select><option>SI no.</option></select></th><th class="num"><select><option>Amount</option></select></th><th><select><option>—</option></select></th></tr>
+        <tr><td>08/03/2026</td><td>244911</td><td class="num">25,079.20</td><td class="hint">25,079.20</td></tr>
+        <tr><td>08/04/2026</td><td>244983</td><td class="num">6,174.00</td><td class="hint">31,253.20</td></tr>
+        <tr class="fix"><td>08/20/2026</td><td><input class="in" value="245567" style="width:80px"> <span class="hint">read "245S67"</span></td><td class="num">11,187.20</td><td class="hint">42,440.40</td></tr>
+        <tr><td>09/03/2026</td><td>245943</td><td class="num">103,573.59</td><td class="hint">146,013.99</td></tr>
+        <tr class="fix"><td>09/03/2026</td><td>245944</td><td class="num"><input class="in" value="8,075.20" style="width:90px;text-align:right"> <span class="hint">read "8,O75.20"</span></td><td class="hint">154,089.19</td></tr>
+      </table>
+      <div class="grp">Total due (text snip) <input class="in" value="154,089.19" style="width:110px;text-align:right"> <span class="pill ok">= sum of the rows</span></div>
+      <p style="margin:10px 0 0"><button class="btn"><span class="ms">compare_arrows</span>Match against our records</button> <span class="hint">→ the matcher as today: matched, missing in AP, amount differs, not on the SOA</span></p>
+    </div>
+  </div>
+</div>
+
+<h1>2b. Bank loans → the bank's amortisation table <small>owner, 2026-10-16: "I can use it as well for bank loans"</small></h1>
+<div class="screen">
+  <div class="split">
+    <div class="doc">
+      <div class="dochead"><span class="ms">picture_as_pdf</span><b>BPI loan 2026-0412 amortization.pdf</b> · page 1 · real text
+        <span class="tool" style="margin-left:auto"><span class="on"><span class="ms" style="font-size:14px">table_chart</span> Table</span><span><span class="ms" style="font-size:14px">text_fields</span> Text</span></span></div>
+      <div class="page">
+        <div class="ttl">BANK OF THE PHILIPPINE ISLANDS · AMORTIZATION SCHEDULE</div><div class="sub">Loan 2026-0412 · ₱3,000,000 · 36 months · 8.5% p.a.</div>
+        <table><tr><th>No.</th><th>Due date</th><th>Principal</th><th>Interest</th><th>Amortization</th><th>Balance</th></tr>
+          <tr><td>1</td><td>11/15/2026</td><td>73,457.12</td><td>21,250.00</td><td>94,707.12</td><td>2,926,542.88</td></tr>
+          <tr><td>2</td><td>12/15/2026</td><td>73,977.44</td><td>20,729.68</td><td>94,707.12</td><td>2,852,565.44</td></tr>
+          <tr><td>3</td><td>01/15/2027</td><td>74,501.45</td><td>20,205.67</td><td>94,707.12</td><td>2,778,063.99</td></tr>
+          <tr><td>…</td><td></td><td></td><td></td><td></td><td></td></tr></table>
+        <div class="box" style="left:14px;top:50px;width:392px;height:80px"><b>Table · 36 rows</b></div>
+      </div>
+    </div>
+    <div>
+      <h2>36 rows read from the box</h2>
+      <p class="hint" style="margin:0 0 6px">Name the columns the schedule needs: due date, amount (the amortization) and the interest part. The rest is ignored.</p>
+      <table class="list">
+        <tr><th><select><option>No.</option></select></th><th><select><option>Due date</option></select></th><th class="num"><select><option>—</option></select></th><th class="num"><select><option>Interest</option></select></th><th class="num"><select><option>Amount</option></select></th><th><select><option>—</option></select></th></tr>
+        <tr><td>1</td><td>11/15/2026</td><td class="num hint">73,457.12</td><td class="num">21,250.00</td><td class="num">94,707.12</td><td class="hint">2,926,542.88</td></tr>
+        <tr><td>2</td><td>12/15/2026</td><td class="num hint">73,977.44</td><td class="num">20,729.68</td><td class="num">94,707.12</td><td class="hint">2,852,565.44</td></tr>
+        <tr><td colspan="6" class="hint">… 34 more · total ₱3,409,456.32 · interest ₱409,456.32</td></tr>
+      </table>
+      <div class="grp">Bank loan <span class="hint" style="font-weight:400">BPI 2026-0412 (new, ₱3,000,000)</span></div>
+      <p style="margin:10px 0 0"><button class="btn"><span class="ms">playlist_add_check</span>Use these 36 rows as the schedule</button> <span class="hint">→ the same path as the schedule file import; the interest part feeds the Income statement</span></p>
+    </div>
+  </div>
+</div>
+
+<h1>3. Traced back <small>the source mark, anywhere a snipped figure is used</small></h1>
+<div class="screen">
+  <table class="list"><tr><th>Item</th><th>Pattern</th><th class="num">Price</th><th>Since</th><th></th></tr>
+    <tr><td>Westlake 315/80R22.5-20PR Lug</td><td>MD777</td><td class="num">16,800.00</td><td>09/15/2026</td><td><span class="src"><span class="ms">attach_file</span>source</span></td></tr></table>
+  <div class="pop"><div class="hint" style="margin-bottom:4px"><b>Westlake - TBR (09-15-2026).pdf</b> · page 1 · snipped 10/16/2026 by Jeane</div>
+    <div class="page" style="max-width:340px;padding:8px;font-size:10px"><table><tr><th>Size</th><th>Pattern</th><th>Price</th></tr><tr style="background:#fff4e5"><td>315/80R22.5-20PR Lug</td><td>MD777</td><td>16,800</td></tr><tr><td>315/80R22.5-20PR Mix</td><td>CR926</td><td>15,700</td></tr></table></div>
+    <p class="hint" style="margin:6px 0 0">The file is kept beside the database (in the nightly backup). <span class="src"><span class="ms">open_in_new</span>Open the whole document</span></p></div>
+</div>
+
+<div class="q"><b>Agreed so far (2026-10-16)</b>: price lists (text PDFs, exact) and vendor SOAs (scans/photos, OCR); files kept for the source link; anyone who may use the page may snip. <b>To decide at the mock-up:</b>
+  <ol>
+    <li>Build order: price lists first (exact rows, 8 files ready to try), then bank loan schedules (also text PDFs, usually), then the SOA matcher with OCR?</li>
+    <li>A snipped SOA row that OCR could not read at all: leave the cell blank for typing (suggested), or drop the row?</li>
+  </ol>
+</div>
+</main></body></html>

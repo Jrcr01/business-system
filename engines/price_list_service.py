@@ -150,10 +150,10 @@ def item_names(creditor_id: int) -> list[str]:
 def current_prices(creditor_id: int, on: date | None = None) -> pd.DataFrame:
     """One row per item: the price in force on `on`, since when, and the price before it (to see what changed)."""
     on = _to_date(on) or manila_today()
-    cols = ["price_id", "item_name", "item_code", "unit", "unit_price", "effective_date", "previous_price"]
+    cols = ["price_id", "item_name", "item_code", "unit", "unit_price", "effective_date", "previous_price", "snip_id"]
     with get_conn() as conn:
         df = pd.read_sql_query(
-            """SELECT price_id, item_name, item_code, unit, unit_price, effective_date FROM supplier_price_list
+            """SELECT price_id, item_name, item_code, unit, unit_price, effective_date, snip_id FROM supplier_price_list
                WHERE creditor_id = ? AND is_active = 1 AND effective_date <= ?
                ORDER BY lower(item_name), effective_date DESC, price_id DESC""", conn, params=(creditor_id, str(on)))
     if df.empty:
@@ -163,6 +163,7 @@ def current_prices(creditor_id: int, on: date | None = None) -> pd.DataFrame:
     out = df.groupby("_k", sort=False).head(1).drop(columns="_k").reset_index(drop=True)
     out["item_code"] = out["item_code"].fillna("")
     out["unit"] = out["unit"].fillna("")
+    out["snip_id"] = pd.Series([int(v) if v == v and v is not None else None for v in out["snip_id"]], index=out.index, dtype=object)   # the source mark (2026-10-16): an id or nothing, never 1.0 / nan
     return out[cols]
 
 

@@ -29,7 +29,7 @@
   {% if rows %}
   <div class="scroll-x"><table class="list">
     <tr><th>Item</th><th>Code</th><th>Unit</th><th>Price</th><th>Since</th><th>Price before</th><th>Change</th><th></th></tr>
-    {% for r in rows %}<tr><td>{{ r.item_name }}</td><td>{{ r.item_code|default:"" }}</td><td>{{ r.unit|default:"" }}</td><td class="num">{{ r.unit_price|floatformat:2|intcomma }}</td>
+    {% for r in rows %}<tr><td>{{ r.item_name }}{% if r.snip_id %} <a class="snip-src" href="/price-lists/snip/source/{{ r.snip_id }}/" title="See the page this price was snipped from"><span class="ms">attach_file</span></a>{% endif %}</td><td>{{ r.item_code|default:"" }}</td><td>{{ r.unit|default:"" }}</td><td class="num">{{ r.unit_price|floatformat:2|intcomma }}</td>
       <td>{{ r.effective_date|dmy }}</td><td class="num">{% if r.change is not None %}{{ r.previous_price|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
       <td class="num {% if r.change > 0 %}chg-up{% elif r.change < 0 %}chg-down{% endif %}">{% if r.change is not None %}{% if r.change > 0 %}+{% endif %}{{ r.change }}%{% endif %}</td>
       <td><a href="/price-lists/?s={{ cid }}&amp;tab=prices&amp;item={{ r.item_name|urlencode }}#history">History</a></td></tr>{% endfor %}
@@ -124,12 +124,15 @@
     {% endfor %}
     {% if n_rows %}
     <form class="bar" method="post" style="margin-top:12px" onsubmit="return confirm('Import these prices to {{ supplier|escapejs }}?');">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="import_file">
-      <input type="hidden" name="file" value="{{ file }}"><input type="hidden" name="start" value="{{ start|date:'Y-m-d' }}">
+      <input type="hidden" name="file" value="{{ file }}"><input type="hidden" name="start" value="{{ start|date:'Y-m-d' }}">{% if snip %}<input type="hidden" name="snip" value="{{ snip }}">{% endif %}
       <div><label for="dup">If a product already has a price on the same date</label><select id="dup" name="dup"><option value="skip">Keep the old price</option><option value="replace">Replace it with the file's price</option></select></div>
       <button class="btn small" type="submit"><span class="ms">upload_file</span>Import {{ n_rows }} row(s) to {{ supplier }}</button>
     </form>
     {% endif %}
   {% endif %}
+
+{% elif tab == "snip" %}
+  {% include "buying/_price_snip.html" %}
 
 {% elif tab == "discounts" %}
   <p class="note">Suppliers give a chain of discounts on their list prices, like less 5%, less 5%. Each discount is taken off what is left by the one before, so 5, 5 on 7,600 gives 6,859.00 (not 10% off).

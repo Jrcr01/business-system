@@ -59,7 +59,7 @@ def price_lists(request):
         cid = ids[0] if ids else 0
     request.session["pl_supplier"] = cid
     writer = _writer(request)
-    tabs = [("prices", "Prices")] + ([("add", "Add a price"), ("import", "Import Excel"), ("discounts", "Discounts")] if writer else []) + [("catalog", "Catalog")]
+    tabs = [("prices", "Prices")] + ([("add", "Add a price"), ("import", "Import Excel"), ("snip", "Snip from a document"), ("discounts", "Discounts")] if writer else []) + [("catalog", "Catalog")]
     tab = request.GET.get("tab") or request.POST.get("tab") or "prices"
     if tab not in dict(tabs):
         tab = "prices"
@@ -71,7 +71,11 @@ def price_lists(request):
     ctx = {"page_id": "price-lists", "suppliers": suppliers, "cid": cid, "supplier": dict(suppliers).get(cid, ""), "tabs": tabs, "tab": tab, "writer": writer,
            "today": manila_today()}
     if cid or tab == "catalog":
-        ctx.update({"prices": _prices_ctx, "add": _add_ctx, "import": _import_ctx, "discounts": _discounts_ctx, "catalog": _catalog_ctx}[tab](request, cid))
+        from buying.snip import snip_ctx
+        ctx.update({"prices": _prices_ctx, "add": _add_ctx, "import": _import_ctx, "snip": snip_ctx, "discounts": _discounts_ctx, "catalog": _catalog_ctx}[tab](request, cid))
+        if tab == "snip":
+            import json
+            ctx["col_keys_json"] = json.dumps(ctx.get("col_keys", {}))
     return render(request, "buying/price_lists.html", ctx)
 
 
@@ -124,7 +128,7 @@ def _import_ctx(request, cid: int) -> dict:
             by_cat.setdefault(r["category"], []).append(r)
     summary = cmp["status"].value_counts().to_dict() if cmp is not None else {}
     sc = pt.supplier_check(cid, parsed)
-    return {"file": token, "start": start, "parsed": parsed, "by_cat": by_cat, "summary": [(STATUS_TEXT[k], summary.get(k, 0)) for k in ("new", "changed", "same", "missing")],
+    return {"file": token, "start": start, "parsed": parsed, "by_cat": by_cat, "snip": request.GET.get("snip", ""), "summary": [(STATUS_TEXT[k], summary.get(k, 0)) for k in ("new", "changed", "same", "missing")],
             "n_rows": len(parsed["rows"]) if sc["level"] != "mismatch" else 0, "sc": sc, "mismatch": pt.mismatch_message(sc) if sc["level"] == "mismatch" else "",
             "brands": sorted(parsed.get("brands", {}).items(), key=lambda kv: -kv[1])}
 
@@ -238,6 +242,9 @@ def _post(request, cid: int, tab: str):
         ok, msg, _ = pt.import_workbook(cid, parsed, "replace" if p.get("dup") == "replace" else "skip")
         if ok:
             path.unlink(missing_ok=True)
+            if (p.get("snip") or "").isdigit():                       # the rows came from a snip (2026-10-16): the prices keep the source mark
+                from engines.snip import link_prices
+                link_prices(int(p["snip"]), cid, [r["name"] for r in parsed["rows"]], parsed["rows"][0]["effective_date"] if parsed["rows"] else None)
         say(ok, msg)
         return redirect(_back(cid, "prices" if ok else "import"))
     if action == "set_discount":
