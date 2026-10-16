@@ -119,16 +119,18 @@ def _post(endpoint: str, body: bytes, headers: dict) -> int:
         return e.code
 
 
-def send(email: str, title: str, body: str, url: str = "/", tag: str = "", only_sub: int | None = None) -> int:
+def send(email: str, title: str, body: str, url: str = "/", tag: str = "", only_sub: int | None = None, urgent: bool = False, ttl: int = 43200,
+         extra: dict | None = None) -> int:
     """To every phone of that person (or only the one only_sub names: a sign-in approval goes to one phone, owner 2026-10-15). Returns how many took it."""
     with get_conn() as conn:
         subs = conn.execute("SELECT sub_id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_email = ?" + (" AND sub_id = ?" if only_sub else ""),
                             (email.lower(),) + ((int(only_sub),) if only_sub else ())).fetchall()
-    message, sent, gone = json.dumps({"title": title, "body": body, "url": url, "tag": tag}).encode(), 0, []
+    message, sent, gone = json.dumps({"title": title, "body": body, "url": url, "tag": tag, **(extra or {})}).encode(), 0, []
     for sub_id, endpoint, p256dh, auth in subs:
         try:
             code = _post(endpoint, encrypt(message, p256dh, auth),
-                         {"Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream", "TTL": "43200", "Urgency": "normal", "Authorization": _vapid(endpoint)})
+                         {"Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream", "TTL": str(int(ttl)),
+                          "Urgency": "high" if urgent else "normal", "Authorization": _vapid(endpoint)})   # urgent: a sleeping phone wakes for it (sign-in, 2026-10-17)
         except Exception:                                        # noqa: BLE001 -- one phone that cannot be reached must not stop the others
             continue
         if code in (200, 201, 202):

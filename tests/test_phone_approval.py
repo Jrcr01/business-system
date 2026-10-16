@@ -99,7 +99,8 @@ def test_after_the_password_the_phone_approves_and_only_that_computer_is_signed_
     assert r.status_code == 200 and "Check your phone" in page
     token, number = _token()
     assert f'class="login-num" aria-label="The number to pick">{number}<' in page
-    assert pushed[-1]["title"] == "Sign-in request" and pushed[-1]["url"] == f"/approve/{token}/"
+    assert pushed[-1]["title"] == "Sign-in on a computer: is it you?" and pushed[-1]["url"] == f"/approve/{token}/"
+    assert pushed[-1]["kind"] == "signin" and pushed[-1]["refuse"] == f"/approve/{token}/refuse/" and "Tap Approve" in pushed[-1]["body"]
     assert computer.get("/")["Location"].startswith("/login/") and _status(computer)["state"] == "pending"     # nothing open on the password alone
     shown, res = _approve(token, device, number)
     assert "Approve this sign-in?" in shown and shown.count('name="number"') == 3 and f'value="{number}"' in shown
@@ -219,3 +220,33 @@ def test_the_set_up_this_phone_card_shows_on_a_phone_until_it_is_set_up(web, db,
     assert ">Ready<" in web.get("/settings/users/").content.decode()
     rack = _sign_in_new("rack@slicks.test", "scanner")
     assert b"Set up this phone" not in rack.get("/phone/", HTTP_USER_AGENT=PHONE_UA).content     # the Scanner never approves sign-ins
+
+
+
+def test_the_banner_is_urgent_refuses_with_one_tap_and_a_test_approves_nothing(web, db, monkeypatch):
+    """Owner, 2026-10-17 (mock-up ad_approval_banner): the sign-in push is urgent and lives 2 minutes; "Not me" on the banner refuses without a page;
+    Approve still needs the number and the fingerprint; "Send a test approval" shows the same banner and approves nothing."""
+    from engines import web_push
+    sent = []
+    real = web_push.encrypt
+    monkeypatch.setattr(web_push, "encrypt", lambda message, p256dh, auth: sent.append(json.loads(message)) or real(message, p256dh, auth))
+    monkeypatch.setattr(web_push, "_post", lambda endpoint, body, headers: sent.append(headers) or 201)
+    _ready(_admin(web))
+    _switch()
+    computer, _ = _computer_signs_in()
+    token, number = _token()
+    headers = sent[-1]
+    assert headers["Urgency"] == "high" and headers["TTL"] == "120"
+    assert Client().get(f"/approve/{token}/refuse/").status_code == 405
+    r = Client(enforce_csrf_checks=True).post(f"/approve/{token}/refuse/")                  # the service worker: no page, no CSRF form, the code is the key
+    assert r.status_code == 200 and r.json()["ok"] and _status(computer)["state"] == "denied"
+    assert Client(enforce_csrf_checks=True).post(f"/approve/{token}/refuse/").json()["ok"] is False   # once
+    assert Client().post("/approve/not-a-code/refuse/").status_code == 400
+    page = Client(HTTP_USER_AGENT=PHONE_UA).get(f"/approve/{_computer_signs_in()[0] and _token()[0]}/").content.decode()
+    assert "Tap the number the computer shows" in page and "Tapping the number asks for your fingerprint" in page
+    before = len(sent)
+    r = web.post("/fingerprint/", {"action": "test_banner"})
+    assert r.status_code == 302 and sent[before]["kind"] == "test" and sent[before + 1]["Urgency"] == "high"
+    with sqlite3.connect(_db()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM signin_requests WHERE status = 'APPROVED'").fetchone()[0] == 0
+    assert "Send a test approval" in web.get("/fingerprint/").content.decode()

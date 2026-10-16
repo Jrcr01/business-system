@@ -1,6 +1,7 @@
 """Stage D0 screens: first-run set-up, sign in, change password, sign out, Home, and the 'coming in stage Dx' page for screens still in Streamlit."""
 from __future__ import annotations
 
+from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 from django.contrib import messages
 from django.http import Http404, HttpResponse, JsonResponse
@@ -460,6 +461,24 @@ def approve(request, token: str):
     return render(request, "core/approve.html", {"info": info, "why": why, "token": token})
 
 
+@csrf_exempt
+def approve_refuse(request, token: str):
+    """"Not me" on the banner (owner, 2026-10-17): the phone's service worker posts here without opening a page. Refusing needs no proof -- the link's
+    code is the key, as for the page's own "It is not me". Approving always goes through the page (number + fingerprint)."""
+    from engines import phone_approval as pa
+    from engines.acting_user import acting_as
+    from engines.auth_service import get_user
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "msg": "POST only."}, status=405)
+    uid = pa.request_user(token)
+    user = get_user(uid) if uid else None
+    if user is None:
+        return JsonResponse({"ok": False, "msg": pa.GONE}, status=400)
+    with acting_as(user["email"], user["role"]):
+        ok, msg = pa.answer(token, user, None, False)
+    return JsonResponse({"ok": ok, "msg": msg}, status=200 if ok else 400)
+
+
 def approve_options(request, token: str):
     """The fingerprint question for the approve page: only the keys of the person whose sign-in it is."""
     from engines import fingerprint_signin as fp
@@ -480,6 +499,12 @@ def fingerprint(request):
     if not fp.allowed(user):
         return redirect("/")
     here = _fp_here(request)
+    if request.method == "POST" and request.POST.get("action") == "test_banner":
+        from engines import phone_approval as pa
+        n = pa.send_test(user["email"])
+        (messages.success if n else messages.error)(request, f"Test sent to {n} phone(s): it should drop down on screen now." if n else
+                                                    "No phone of yours gets notifications yet: allow notifications on your phone first.")
+        return redirect("/fingerprint/")
     if request.method == "POST":
         mine = {d["key_id"]: d for d in fp.devices(int(user["user_id"]))}
         key_id = int(request.POST.get("key_id") or 0)

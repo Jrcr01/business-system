@@ -18,6 +18,12 @@
 </table></div>{% endif %}
 <p class="hint" style="max-width:640px">Do not turn it on for a phone other people unlock with their own finger: whoever can unlock that phone could sign in as you.
   Changing your password removes every device; turn it on again after signing in with the new password.</p>
+<h3 style="margin:22px 0 6px"><span class="ms">notifications_active</span> Approvals pop on screen</h3>
+<p class="hint" style="max-width:640px">So a sign-in approval drops down over whatever is open instead of waiting in the notification bar: long-press the Slick's ERP icon →
+  App info → Notifications → turn on <b>Pop on screen</b> (Samsung: "Show as pop-up"), with sound and vibration. Using Chrome without the icon: Settings → Apps → Chrome →
+  Notifications → erp.slickstiresupply.com → Pop on screen. Then send yourself a test.</p>
+<form method="post" style="margin:6px 0 0">{% csrf_token %}<input type="hidden" name="action" value="test_banner">
+  <button class="btn small" type="submit"><span class="ms">send_to_mobile</span>Send a test approval</button></form>
 <script src="{% static 'core/fingerprint.js' %}?v=1"></script>
 <script>
 document.addEventListener("DOMContentLoaded", function () {

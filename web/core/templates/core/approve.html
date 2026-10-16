@@ -14,9 +14,10 @@ the link's code, the number on the computer and this phone's fingerprint prove i
   <div id="ap_ask">
   <h2><span class="ms" style="font-size:28px">phonelink_lock</span> Approve this sign-in?</h2>
   <div class="facts"><div><span>Asking now</span><b>{{ info.browser }}</b></div><div><span>For</span><b style="overflow-wrap:anywhere">{{ info.email }}</b></div></div>
-  <p style="margin:14px 0 6px"><b>Pick the number the computer shows:</b></p>
+  <p style="margin:14px 0 6px"><b>Tap the number the computer shows</b></p>
   <div class="ap-choices">{% for n in info.choices %}<label><input type="radio" name="number" value="{{ n }}"><span>{{ n }}</span></label>{% endfor %}</div>
-  <button class="btn wide" type="button" id="ap_go" style="margin-top:14px"><span class="ms">fingerprint</span>Approve with fingerprint</button>
+  <p class="hint" style="margin:8px 0 0">Tapping the number asks for your fingerprint.</p>
+  <button class="btn wide" type="button" id="ap_go" hidden style="margin-top:14px"><span class="ms">fingerprint</span>Try the fingerprint again</button>
   <p id="ap_msg" class="hint" role="status" style="text-align:center;min-height:1.2em;margin:8px 0 0"></p>
   <form method="post">{% csrf_token %}
     <button class="btn wide ghost" type="submit" name="answer" value="no" style="margin-top:8px;color:var(--fg-b3261e)">It is not me: refuse</button></form>
@@ -30,7 +31,9 @@ the link's code, the number on the computer and this phone's fingerprint prove i
     function b64(buf) { var a = new Uint8Array(buf), s = ""; for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
     var msg = document.getElementById("ap_msg"), csrf = document.querySelector("input[name=csrfmiddlewaretoken]").value, base = "/approve/{{ token|urlencode }}/";
     function say(t, bad) { msg.textContent = t; msg.style.color = bad ? "var(--fg-b3261e)" : "var(--fg-0b6e4f)"; }
-    document.getElementById("ap_go").addEventListener("click", function () {
+    document.querySelectorAll("input[name=number]").forEach(function (r) { r.addEventListener("change", function () { go(); }); });   /* the number tap is the approve tap (2026-10-17) */
+    document.getElementById("ap_go").addEventListener("click", function () { go(); });
+    function go() {
       var picked = document.querySelector("input[name=number]:checked");
       if (!picked) { say("Pick the number the computer shows first.", true); return; }
       if (!window.PublicKeyCredential) { say("This browser cannot use the fingerprint. Open the notification in Chrome.", true); return; }
@@ -49,8 +52,8 @@ the link's code, the number on the computer and this phone's fingerprint prove i
       }).then(function (res) {
         if (res.ok) { document.getElementById("ap_ask").hidden = true; document.getElementById("ap_done_text").textContent = res.msg; document.getElementById("ap_done").hidden = false; return; }
         say(res.msg || "Not approved.", true);
-      }).catch(function (e) { say(e && e.name === "NotAllowedError" ? "Cancelled. Nothing was approved." : ((e && e.message) || "Not approved."), true); });
-    });
+      }).catch(function (e) { document.getElementById("ap_go").hidden = false; say(e && e.name === "NotAllowedError" ? "Cancelled. Nothing was approved." : ((e && e.message) || "Not approved."), true); });
+    }
   })();
   </script>
 {% endif %}

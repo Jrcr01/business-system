@@ -1,0 +1,126 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: approval banner with buttons</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --ok: #0b6e4f; --warn: #9a3412; --red: #b3261e; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+main { max-width: 1120px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 22px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+h2 { color: var(--navy); font-size: 1.05rem; margin: 28px 0 6px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 88ch; }
+.row { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.step { width: 250px; } .step p { font-size: .86rem; color: var(--muted); margin: 8px 2px 0; line-height: 1.4; } .step p b { color: var(--ink); }
+.num { display: inline-block; background: var(--blue); color: #fff; border-radius: 999px; width: 22px; height: 22px; text-align: center; font-weight: 700; font-size: .8rem; line-height: 22px; margin-right: 6px; }
+.phone { width: 250px; height: 500px; border-radius: 30px; background: #111; padding: 10px; box-shadow: 0 6px 18px rgba(16,24,40,.2); }
+.screen { width: 100%; height: 100%; border-radius: 22px; overflow: hidden; position: relative; background: #f6f7f9; }
+.status { height: 22px; display: flex; justify-content: space-between; padding: 3px 14px; font-size: .7rem; color: #333; font-weight: 600; }
+.app { position: absolute; inset: 22px 0 0 0; background: linear-gradient(#dfe7ef, #c9d4e0); }
+.app .chat { margin: 60px 14px 0; background: #fff; border-radius: 12px; padding: 10px; font-size: .78rem; color: #555; opacity: .7; }
+.lock { position: absolute; inset: 0; background: linear-gradient(160deg, #1f3b5c, #0f2a4a); color: #fff; text-align: center; }
+.lock .time { font-size: 2.6rem; font-weight: 300; margin-top: 46px; } .lock .date { font-size: .8rem; opacity: .8; }
+.banner { position: absolute; left: 8px; right: 8px; top: 30px; background: #fff; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,.28); padding: 10px 12px 8px; color: var(--ink); text-align: left; }
+.banner .src { display: flex; align-items: center; gap: 6px; font-size: .7rem; color: var(--muted); }
+.banner .src i { width: 16px; height: 16px; border-radius: 4px; background: #f2c200; display: inline-block; }
+.banner b { display: block; font-size: .9rem; margin-top: 4px; } .banner span.t { font-size: .8rem; color: #333; display: block; margin-top: 2px; line-height: 1.3; }
+.banner .acts { display: flex; gap: 6px; margin-top: 9px; border-top: 1px solid var(--line); padding-top: 7px; }
+.banner .acts a { flex: 1; text-align: center; font-weight: 700; font-size: .82rem; padding: 6px 0; border-radius: 8px; text-decoration: none; }
+.a-ok { color: var(--blue); background: #eaf1fa; } .a-no { color: var(--red); background: #fdecea; }
+.tap { outline: 3px solid #f59e0b; outline-offset: 2px; }
+.page { position: absolute; inset: 22px 0 0 0; background: #fff; padding: 14px; }
+.page h3 { margin: 4px 0 8px; font-size: 1rem; color: var(--navy); }
+.facts { font-size: .76rem; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; } .facts b { color: var(--ink); display: block; font-size: .84rem; }
+.pick { display: flex; gap: 8px; margin-top: 10px; } .pick span { flex: 1; text-align: center; font-size: 1.5rem; font-weight: 800; border: 2px solid #b9c6d8; border-radius: 12px; padding: 12px 0; color: var(--navy); }
+.pick span.on { border-color: var(--blue); background: #eaf1fa; }
+.small { font-size: .74rem; color: var(--muted); margin-top: 10px; line-height: 1.35; }
+.refuse { margin-top: 14px; text-align: center; color: var(--red); font-weight: 700; font-size: .82rem; border: 1px solid #f3c5c0; border-radius: 10px; padding: 8px; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; border-radius: 18px 18px 0 0; box-shadow: 0 -6px 20px rgba(0,0,0,.2); padding: 16px 14px 26px; text-align: center; }
+.dim { position: absolute; inset: 0; background: rgba(0,0,0,.35); }
+.fp { width: 54px; height: 54px; border-radius: 50%; border: 3px solid var(--blue); margin: 12px auto 6px; display: grid; place-items: center; color: var(--blue); font-size: 1.6rem; }
+.done { text-align: center; padding-top: 70px; } .done .big { font-size: 3rem; } .done h3 { margin: 6px 0; }
+.pc { width: 330px; border: 1px solid #c9d2dd; border-radius: 10px; background: #fff; box-shadow: 0 4px 12px rgba(16,24,40,.12); overflow: hidden; }
+.pc .bar { background: #eef1f5; padding: 6px 10px; font-size: .74rem; color: var(--muted); border-bottom: 1px solid var(--line); }
+.pc .body { padding: 16px; text-align: center; } .pc .body .n { font-size: 2.4rem; font-weight: 800; color: var(--navy); letter-spacing: 2px; }
+.card { max-width: 520px; background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 14px 16px; }
+.card li { margin: 6px 0; } .card .new { background: #fff4e5; color: var(--warn); font-size: .7rem; border-radius: 999px; padding: 0 6px; margin-left: 4px; font-weight: 700; }
+.q { background: #fffbea; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 14px; margin-top: 22px; max-width: 760px; }
+.q ol { margin: 6px 0 0 18px; padding: 0; } .q li { margin: 4px 0; }
+</style></head><body><main>
+
+<h1>Sign-in approval: a banner with buttons <small>mock-up</small></h1>
+<p class="why">Today the approval arrives in the notification bar and has to be found and opened. With this change it <b>drops down over whatever is on the screen</b>
+(and shows on the lock screen) with two buttons. <b>Not me</b> refuses at once. <b>Approve</b> opens the approval page, where tapping the right number brings up the
+fingerprint straight away. Card reminders stay quiet notifications as now.</p>
+
+<h2>Approving: three taps</h2>
+<div class="row">
+  <div class="step">
+    <div class="phone"><div class="screen"><div class="status"><span>6:02</span><span>▮▮▮ 82%</span></div>
+      <div class="app"><div class="chat">Viber · Kuya Jessie: ok na yung delivery…</div><div class="chat" style="margin-top:8px">Sige, salamat</div></div>
+      <div class="banner"><div class="src"><i></i>Slick's ERP · now</div><b>Sign-in on a computer: is it you?</b>
+        <span class="t">Jeane · Chrome on Windows · 6:02 AM. Tap Approve, then pick the number the computer shows.</span>
+        <div class="acts"><a class="a-no">Not me</a><a class="a-ok tap">Approve</a></div></div>
+    </div></div>
+    <p><span class="num">1</span><b>The banner drops down</b> over Viber (or any app), vibrates and stays until it is tapped. On a locked phone it shows on the lock screen.</p>
+  </div>
+  <div class="step">
+    <div class="phone"><div class="screen"><div class="status"><span>6:02</span><span>▮▮▮ 82%</span></div>
+      <div class="page"><h3>Approve this sign-in?</h3>
+        <div class="facts">Asking now<b>Chrome on Windows</b>For<b>v.jrcroxas@gmail.com</b></div>
+        <div style="font-size:.84rem;font-weight:700;margin-top:12px">Tap the number the computer shows</div>
+        <div class="pick"><span>18</span><span class="on tap">47</span><span>63</span></div>
+        <div class="small">Tapping the number asks for your fingerprint. Only approve a computer you are sitting at.</div>
+        <div class="refuse">It is not me: refuse</div></div>
+    </div></div>
+    <p><span class="num">2</span><b>The page opens on the numbers</b> (no separate "Approve with fingerprint" button any more): tapping the number is the approve tap.</p>
+  </div>
+  <div class="step">
+    <div class="phone"><div class="screen"><div class="status"><span>6:02</span><span>▮▮▮ 82%</span></div>
+      <div class="page"><h3>Approve this sign-in?</h3><div class="pick"><span>18</span><span class="on">47</span><span>63</span></div></div>
+      <div class="dim"></div>
+      <div class="sheet"><b style="font-size:.9rem">Verify it's you</b><div class="small" style="margin-top:2px">erp.slickstiresupply.com</div><div class="fp">☝</div><div class="small">Touch the fingerprint sensor</div></div>
+    </div></div>
+    <p><span class="num">3</span><b>Fingerprint</b>: the phone's own sheet. Wrong number = refused, and the computer has to ask again.</p>
+  </div>
+  <div class="step">
+    <div class="pc"><div class="bar">erp.slickstiresupply.com · the computer</div>
+      <div class="body"><div style="font-size:.84rem;color:var(--muted)">Approve on your phone. Tap this number:</div><div class="n">47</div>
+        <div style="margin-top:12px;color:var(--ok);font-weight:700">✓ Approved on your phone. Signing in…</div></div></div>
+    <p style="max-width:330px">The computer side does not change: it shows the number and signs in on its own once the phone approves.</p>
+  </div>
+</div>
+
+<h2>Refusing: one tap, from the banner</h2>
+<div class="row">
+  <div class="step">
+    <div class="phone"><div class="screen">
+      <div class="lock"><div class="time">6:02</div><div class="date">Saturday, October 17</div></div>
+      <div class="banner"><div class="src"><i></i>Slick's ERP · now</div><b>Sign-in on a computer: is it you?</b>
+        <span class="t">Jeane · Chrome on Windows · 6:02 AM.</span>
+        <div class="acts"><a class="a-no tap">Not me</a><a class="a-ok">Approve</a></div></div>
+    </div></div>
+    <p><b>On the lock screen</b>: Not me works without unlocking. Approve asks to unlock first (Android's rule).</p>
+  </div>
+  <div class="step">
+    <div class="phone"><div class="screen">
+      <div class="lock"><div class="time">6:02</div><div class="date">Saturday, October 17</div></div>
+      <div class="banner"><div class="src"><i></i>Slick's ERP · now</div><b>Refused</b><span class="t">That computer was not let in. If it keeps happening, tell the System admin: someone has your password.</span></div>
+    </div></div>
+    <p>The banner turns into <b>Refused</b>. The computer shows "Refused from your phone" and the refusal is in the audit log, as today.</p>
+  </div>
+</div>
+
+<h2>The "Set up this phone" card gets one more step</h2>
+<div class="card"><b>Set up this phone</b>
+  <ol><li>Install the app ✓</li><li>Allow notifications ✓</li><li>Fingerprint ✓</li>
+    <li><b>Let approvals pop on screen</b> <span class="new">new</span><br><span style="font-size:.86rem;color:var(--muted)">Long-press the Slick's ERP icon → App info → Notifications → turn on <b>Pop on screen</b> (Samsung: "Show as pop-up").
+      <a style="color:var(--blue)">Send a test approval</a> to see it drop down.</span></li></ol></div>
+
+<div class="q"><b>Behind it (no screen)</b>
+  <ol><li>The sign-in push is sent <b>urgent</b> and expires after <b>2 minutes</b> (today: normal, 12 hours), so a sleeping phone wakes for it and a late one never arrives.</li>
+    <li>Only the sign-in approval vibrates and stays on screen; card reminders stay as they are.</li>
+    <li>Approve still needs the right number <b>and</b> the fingerprint: a banner button alone never lets a computer in.</li></ol>
+  <b>To confirm</b>
+  <ol><li>The banner wording ("Sign-in on a computer: is it you?") — fine?</li>
+    <li>"Send a test approval" on the set-up card — useful, or leave it out?</li></ol>
+</div>
+</main></body></html>

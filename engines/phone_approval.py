@@ -84,8 +84,28 @@ def send_push(request_id: int) -> bool:
     if phone is None:
         return False
     when = manila_now().strftime("%I:%M %p").lstrip("0")
-    return sum(send(phone["email"], "Sign-in request", f"A computer is asking to sign in as you, {when}. Tap to approve or refuse.",
-                    url=f"/approve/{row['token']}/", tag="signin", only_sub=s) for s in phone["subs"]) > 0
+    who = _first_name(phone["email"])
+    body = f"{who} · {row['browser'] or 'A computer'} · {when}. Tap Approve, then pick the number the computer shows."
+    return sum(send(phone["email"], BANNER_TITLE, body, url=f"/approve/{row['token']}/", tag="signin", only_sub=s, urgent=True, ttl=120,
+                    extra={"kind": "signin", "refuse": f"/approve/{row['token']}/refuse/"}) for s in phone["subs"]) > 0
+
+
+BANNER_TITLE = "Sign-in on a computer: is it you?"          # owner, 2026-10-17: a banner with Not me / Approve (mock-up ad_approval_banner)
+
+
+def _first_name(email: str) -> str:
+    with get_conn() as conn:
+        row = conn.execute("SELECT COALESCE(NULLIF(TRIM(name), ''), email) FROM app_users WHERE LOWER(email) = ?", (email.lower(),)).fetchone()
+    name = str(row[0] if row else email)
+    return name.split("@")[0].split()[0]
+
+
+def send_test(email: str) -> int:
+    """"Send a test approval" (owner, 2026-10-17): the same banner on the person's own phones, so they can see it drop down. It approves nothing."""
+    from engines.web_push import send
+    when = manila_now().strftime("%I:%M %p").lstrip("0")
+    return send(email, BANNER_TITLE, f"A test, {when}. This is how a sign-in approval looks. Tapping a button only closes it.", url="/fingerprint/",
+                tag="signin-test", urgent=True, ttl=120, extra={"kind": "test"})
 
 
 def request_user(token: str) -> int | None:

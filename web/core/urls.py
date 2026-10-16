@@ -15,6 +15,7 @@ urlpatterns = [
     path("login/push/again/", views.login_push_again, name="login_push_again"),
     path("approve/<str:token>/", views.approve, name="approve"),
     path("approve/<str:token>/options/", views.approve_options, name="approve_options"),
+    path("approve/<str:token>/refuse/", views.approve_refuse, name="approve_refuse"),
     path("fingerprint/", views.fingerprint, name="fingerprint"),
     path("fingerprint/options/", views.fingerprint_options, name="fingerprint_options"),
     path("fingerprint/add/", views.fingerprint_add, name="fingerprint_add"),

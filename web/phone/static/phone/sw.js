@@ -8,12 +8,32 @@ self.addEventListener("fetch", function (e) { e.respondWith(fetch(e.request)); }
 self.addEventListener("push", function (e) {
   var d = {};
   try { d = e.data ? e.data.json() : {}; } catch (x) { d = {body: e.data ? e.data.text() : ""}; }
-  e.waitUntil(self.registration.showNotification(d.title || "Slick's ERP", {body: d.body || "", tag: d.tag || undefined, data: {url: d.url || "/"},
-    icon: "/static/phone/icon-erp-192.png", badge: "/static/phone/badge-96.png"}));
+  var o = {body: d.body || "", tag: d.tag || undefined, data: {url: d.url || "/", kind: d.kind || "", refuse: d.refuse || ""},
+           icon: "/static/phone/icon-erp-192.png", badge: "/static/phone/badge-96.png?v=2"};
+  if (d.kind === "signin" || d.kind === "test") {               /* the sign-in approval (owner, 2026-10-17): drops down, vibrates, stays until tapped */
+    o.actions = [{action: "no", title: "Not me"}, {action: "yes", title: "Approve"}];
+    o.requireInteraction = true; o.renotify = true; o.vibrate = [200, 100, 200, 100, 400];
+  }
+  e.waitUntil(self.registration.showNotification(d.title || "Slick's ERP", o));
 });
 self.addEventListener("notificationclick", function (e) {
   e.notification.close();
-  var url = (e.notification.data && e.notification.data.url) || "/";
+  var data = e.notification.data || {};
+  if (data.kind === "test") {                                   /* the test banner: a button only closes it */
+    if (e.action) { e.waitUntil(self.registration.showNotification("It works", {body: "Sign-in approvals will drop down like that.", tag: "signin-test",
+      icon: "/static/phone/icon-erp-192.png", badge: "/static/phone/badge-96.png?v=2"})); return; }
+  }
+  if (data.kind === "signin" && e.action === "no" && data.refuse) {   /* Not me: refused from the banner, no page opened */
+    e.waitUntil(fetch(data.refuse, {method: "POST", credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (res) {
+      return self.registration.showNotification(res.ok ? "Refused" : "Not refused", {tag: "signin", icon: "/static/phone/icon-erp-192.png", badge: "/static/phone/badge-96.png?v=2",
+        body: res.ok ? "That computer was not let in. If it keeps happening, tell the System admin: someone has your password." : (res.msg || "That request is no longer open.")});
+    }).catch(function () {
+      return self.registration.showNotification("Not refused", {tag: "signin", body: "No signal. Open the approval and tap \"It is not me\".", data: {url: data.url},
+        icon: "/static/phone/icon-erp-192.png", badge: "/static/phone/badge-96.png?v=2"});
+    }));
+    return;
+  }
+  var url = data.url || "/";
   e.waitUntil(self.clients.matchAll({type: "window", includeUncontrolled: true}).then(function (all) {
     for (var i = 0; i < all.length; i++) { if ("focus" in all[i]) { all[i].navigate(url); return all[i].focus(); } }
     return self.clients.openWindow(url);
