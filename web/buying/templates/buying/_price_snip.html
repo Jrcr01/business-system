@@ -2,7 +2,7 @@
 PDF or photo on the left, the box, the rows on the right with their column names guessed from the category's fields; "Check these rows" opens the
 Excel import's own check screen on them (the same validation), and the prices saved carry the source mark.{% endcomment %}
 <p class="note">Open the supplier's price list (a PDF, or a photo) and <b>drag a box over the table</b>. A PDF with real text is read exactly; a photo is read by OCR and doubtful cells show in orange for you to confirm.
-  The rows go through the same check as Import Excel before anything is saved, and each price keeps a link to the page it came from.</p>
+  The rows go through the same check as Import Excel before anything is saved. The document is not kept: it is deleted once its rows are imported, or after a day.</p>
 <form class="bar" method="post" enctype="multipart/form-data" action="/price-lists/snip/upload/">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}">
   <div class="grow"><label for="sn_file">The supplier's document (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required></div>
   <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button></form>

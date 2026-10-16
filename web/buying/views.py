@@ -242,9 +242,11 @@ def _post(request, cid: int, tab: str):
         ok, msg, _ = pt.import_workbook(cid, parsed, "replace" if p.get("dup") == "replace" else "skip")
         if ok:
             path.unlink(missing_ok=True)
-            if (p.get("snip") or "").isdigit():                       # the rows came from a snip (2026-10-16): the prices keep the source mark
-                from engines.snip import link_prices
-                link_prices(int(p["snip"]), cid, [r["name"] for r in parsed["rows"]], parsed["rows"][0]["effective_date"] if parsed["rows"] else None)
+            if (p.get("snip") or "").isdigit():                       # the rows came from a snip (2026-10-16): the document is not kept once imported
+                from engines.snip import discard, snip_info
+                info = snip_info(int(p["snip"]))
+                if info:
+                    discard(info["token"])
         say(ok, msg)
         return redirect(_back(cid, "prices" if ok else "import"))
     if action == "set_discount":

@@ -1,6 +1,6 @@
 """Snip from a document (owner, 2026-10-16: like DataSnipper, inside Price lists): a PDF kept beside the database; a box on a page read exactly from the
 text layer (a ruled table, or words by position); the columns named from the category's fields; the rows checked and imported through the Excel
-import's own path; the prices keep the source mark. OCR (a picture) is skipped where the OCR program is not installed."""
+import's own path; the document deleted after use. OCR (a picture) is skipped where the OCR program is not installed."""
 import io
 import json
 import shutil
@@ -9,6 +9,11 @@ import pytest
 
 from tests.test_web_d0 import _admin
 from tests.test_web_d2b import _supplier_with_price
+
+
+def _db():
+    import engines.db_engine as d
+    return d.DB_PATH
 
 
 def _pdf(rows, ruled=True, title="WESTLAKE TBR PRICE LIST"):
@@ -64,6 +69,13 @@ def test_a_box_on_a_text_pdf_gives_the_table_exactly_with_its_columns_named(web,
     assert info["pages"] == 1 and info["has_text"] and info["path"].exists()
     page = web.get(f"/price-lists/?s={cid}&tab=snip&f={token}").content.decode()
     assert "Snip from a document" in page and 'id="sn_wrap"' in page and "real text: exact" in page
+    import sqlite3
+    with sqlite3.connect(_db()) as conn:                                             # a day-old document never imported is swept when the next one is opened
+        conn.execute("UPDATE snip_files SET created_at = '2026-01-01 00:00:00' WHERE token = ?", (token,))
+    token2 = _open(web, cid, ruled)
+    assert snip.file_info(token) is None and snip.file_info(token2) is not None
+    token = token2
+    info = snip.file_info(token)
     assert web.get(f"/price-lists/snip/{token}/page/1.jpg")["Content-Type"] == "image/jpeg"
     box = _box(token, web)
     r = web.post(f"/price-lists/snip/{token}/read/", json.dumps({"page": 1, "mode": "table", "box": box, "category": "Tires"}), content_type="application/json").json()
@@ -76,7 +88,7 @@ def test_a_box_on_a_text_pdf_gives_the_table_exactly_with_its_columns_named(web,
     assert t["ok"] and t["text"] == "14,700 13,200"
 
 
-def test_the_rows_go_through_the_import_check_and_the_prices_keep_the_source_mark(web, db):
+def test_the_rows_go_through_the_import_check_and_the_document_is_deleted_after(web, db):
     from engines import snip
     from engines.common import get_conn
     _admin(web)
@@ -93,13 +105,10 @@ def test_the_rows_go_through_the_import_check_and_the_prices_keep_the_source_mar
     r2 = web.post("/price-lists/", {"s": cid, "tab": "import", "action": "import_file", "file": file_token, "start": "2026-09-15", "snip": str(snip_id)})
     assert r2.status_code == 302
     with get_conn() as conn:
-        linked = conn.execute("SELECT item_name, unit_price FROM supplier_price_list WHERE creditor_id = ? AND snip_id = ? ORDER BY item_name", (cid, snip_id)).fetchall()
-    assert len(linked) == 3 and {float(v) for _, v in linked} == {16800.0, 14700.0, 13200.0} and all("Westlake" in n for n, _ in linked)
-    prices = web.get(f"/price-lists/?s={cid}&tab=prices&on=2026-09-15").content.decode()
-    assert f"/price-lists/snip/source/{snip_id}/" in prices                        # the source mark beside each snipped price
-    src = web.get(f"/price-lists/snip/source/{snip_id}/").content.decode()
-    assert "Westlake - TBR.pdf" in src and 'class="snip-box"' in src
-    assert snip.snip_info(snip_id)["used_for"] == "price_import"
+        saved = conn.execute("SELECT item_name, unit_price FROM supplier_price_list WHERE creditor_id = ? AND effective_date = '2026-09-15' ORDER BY item_name", (cid,)).fetchall()
+    assert len(saved) == 3 and {float(v) for _, v in saved} == {16800.0, 14700.0, 13200.0} and all("Westlake" in n for n, _ in saved)
+    assert snip.file_info(token) is None and not list(snip.folder().glob(f"{token}*"))          # the document is gone once its rows are imported (owner: "no need to store")
+    assert snip.snip_info(snip_id) is None
 
 
 def test_a_printed_size_cell_is_split_into_size_ply_terrain_and_the_rest():

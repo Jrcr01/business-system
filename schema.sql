@@ -246,7 +246,6 @@ CREATE TABLE IF NOT EXISTS bank_loan_installments (
     cleared_at DATE,                 -- migration 080 (2026-10-09): ticked paid (or the go-live cut-off); a matched bank line also clears it
     cleared_by TEXT,
     cleared_note TEXT,
-    snip_id INTEGER REFERENCES snips(snip_id),                       -- migration 106: the snipped amortisation table this row came from
     FOREIGN KEY (bank_loan_id) REFERENCES bank_loans(bank_loan_id)
 );
 
@@ -954,7 +953,6 @@ CREATE TABLE IF NOT EXISTS supplier_price_list (
     item_id INTEGER REFERENCES items(id),                           -- the item this price is for (none for a free-text item)
     is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    snip_id INTEGER REFERENCES snips(snip_id),                       -- migration 105: the snip this price came from (the source mark)
     UNIQUE (creditor_id, item_name, effective_date),
     FOREIGN KEY (creditor_id) REFERENCES creditors(creditor_id)
 );
@@ -1595,7 +1593,8 @@ CREATE TABLE IF NOT EXISTS other_income (
 CREATE INDEX IF NOT EXISTS idx_other_income_date ON other_income (income_date);
 
 -- SNIP FROM A DOCUMENT (owner, 2026-10-16; like DataSnipper, inside Price lists, Bank loans and the Vendor SOA matcher; engines/snip.py). A document
--- (PDF or photo) kept beside the database; each snip = one box on one page, with what was read, so a figure can be traced back ("source" mark).
+-- (PDF or photo) kept beside the database only while it is being snipped; each snip = one box on one page with what was read, while its rows travel to
+-- the import. Both are deleted once the rows are imported, or after a day (owner: "no need to store the document").
 CREATE TABLE IF NOT EXISTS snip_files (
     file_id INTEGER PRIMARY KEY AUTOINCREMENT,
     token TEXT NOT NULL UNIQUE,                      -- the file's name on disk (<token>.<ext> in data/snip_files/)

@@ -1,8 +1,8 @@
 {% load humanize %}{% comment %}Snip, stage 2 (owner, 2026-10-16): the bank's amortisation table (PDF or photo) snipped into this loan's schedule. Due date, Amount
 and Interest part are named from the headings; the rows wait on the Import tab's staging list ("before anything is saved") and are added by the same
-step as a schedule file; each installment then keeps the source mark.{% endcomment %}
+step as a schedule file; the document is then deleted.{% endcomment %}
 <p class="note">Open the bank's amortisation schedule (a PDF, or a photo) and <b>drag a box over the table</b>. The columns the schedule needs are Due date, Amount (the amortization) and the Interest part; the rest is ignored.
-  The rows are shown before anything is saved, and each installment keeps a link to the page it came from.</p>
+  The rows are shown before anything is saved. The document is not kept: it is deleted once the rows are added, or after a day.</p>
 <form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="snip_upload">
   <div class="grow"><label for="sn_file">The bank's document (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required></div>
   <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button></form>

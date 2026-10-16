@@ -31,7 +31,6 @@ urlpatterns = [
     path("bank-loans/template.csv", bankloans.schedule_template, name="bank_loan_template"),
     path("bank-loans/<int:blid>/", bankloans.bank_loan, name="bank_loan"),
     path("bank-loans/<int:blid>/loan.pdf", bankloans.bank_loan_pdf, name="bank_loan_pdf"),
-    path("bank-loans/snip/source/<int:snip_id>/", bankloans.snip_source, name="bank_loan_snip_source"),
     path("bank-loans/<int:blid>/snip/<str:token>/page/<int:page>.jpg", bankloans.snip_page, name="bank_loan_snip_page"),
     path("bank-loans/<int:blid>/snip/<str:token>/read/", bankloans.snip_read, name="bank_loan_snip_read"),
     path("credit-cards/", cards.credit_cards, name="credit_cards"),

@@ -6,7 +6,6 @@ urlpatterns = [
     path("price-lists/", views.price_lists, name="price_lists"),
     path("price-lists/template/", views.template, name="price_template"),
     path("price-lists/snip/upload/", snip.upload, name="price_snip_upload"),
-    path("price-lists/snip/source/<int:snip_id>/", snip.source, name="price_snip_source"),
     path("price-lists/snip/<str:token>/page/<int:page>.jpg", snip.page_image, name="price_snip_page"),
     path("price-lists/snip/<str:token>/read/", snip.read, name="price_snip_read"),
     path("price-lists/snip/<str:token>/check/", snip.check, name="price_snip_check"),

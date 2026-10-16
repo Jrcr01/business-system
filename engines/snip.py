@@ -7,7 +7,8 @@ How a box is read, in this order (the accuracy comes from here, not from the OCR
      b. no lines: words that line up at the same x make a column, words at the same y make a row (the position method, as the demo);
   2. a scan or a photo (or a PDF page with no text): the box is cut out, enlarged, OCR'd (Tesseract) into words with positions, then 1b. A cell the OCR
      cannot read, or is unsure of, is left for the person to type (owner: "I am the one should enter it").
-Every snip is saved with the file, page and box, so a figure can always be traced back (the "source" mark). Nothing leaves the server."""
+The document is kept only while it is being snipped (a list of many pages needs it between pages): it is deleted the moment its rows are imported,
+or after a day if never used (owner, 2026-10-16: "no need to store the document"). Nothing leaves the server."""
 from __future__ import annotations
 
 import io
@@ -30,7 +31,7 @@ STAMP = "%Y-%m-%d %H:%M:%S"
 
 
 def folder() -> Path:
-    """The documents, beside the database (in the nightly backup), never in git."""
+    """The documents while they are being snipped, beside the database, never in git; deleted after use (owner, 2026-10-16)."""
     import engines.db_engine as d
     p = Path(d.DB_PATH).resolve().parent / "snip_files"
     p.mkdir(parents=True, exist_ok=True)
@@ -50,6 +51,7 @@ def keep(kind: str, owner_id: int | None, filename: str, data: bytes) -> tuple[b
         return False, "The file is empty.", None
     if len(data) > MAX_BYTES:
         return False, "The file is larger than 25 MB. Is it the right file?", None
+    sweep()
     token = secrets.token_hex(12)
     path = folder() / f"{token}.{ext}"
     path.write_bytes(data)
@@ -78,6 +80,31 @@ def _inspect(path: Path, ext: str) -> tuple[int, bool]:
         return 1, False
     except Exception:                                   # noqa: BLE001
         return 0, False
+
+
+def discard(token: str) -> None:
+    """The document, its page pictures and its snips are deleted: after the rows were imported, or when it was never used."""
+    info = file_info(token)
+    if not info:
+        return
+    for p in folder().glob(f"{token}*"):
+        try:
+            p.unlink()
+        except OSError:
+            pass
+    with write_tx() as conn:
+        conn.execute("DELETE FROM snips WHERE file_id = ?", (info["file_id"],))
+        conn.execute("DELETE FROM snip_files WHERE file_id = ?", (info["file_id"],))
+
+
+def sweep(hours: int = 24) -> int:
+    """Documents uploaded more than `hours` ago and never imported are deleted (run when a new one is opened)."""
+    cutoff = (manila_now() - __import__("datetime").timedelta(hours=hours)).strftime(STAMP)
+    with get_conn() as conn:
+        old = [r[0] for r in conn.execute("SELECT token FROM snip_files WHERE created_at < ?", (cutoff,)).fetchall()]
+    for token in old:
+        discard(token)
+    return len(old)
 
 
 def file_info(token: str) -> dict | None:
@@ -433,7 +460,7 @@ def read_box(token: str, page: int, box, mode: str = "table") -> dict:
     return {"mode": mode, "rows": grid, "doubt": [[c < OCR_DOUBT for c in r] for r in confs], "text": "", "how": how}
 
 
-# --- remembering a snip (the source mark) -------------------------------------------------------------------------------------------------------------
+# --- remembering a snip while its rows travel to the import (deleted with the document) ------------------------------------------------------------------
 
 def save_snip(token: str, page: int, box, mode: str, rows: list, used_for: str, ref_id: int | None = None) -> int | None:
     info = file_info(token)
@@ -594,16 +621,6 @@ def split_size_cell(text: str) -> dict:
     return out
 
 
-def link_prices(snip_id: int, creditor_id: int, names: list[str], effective_date) -> int:
-    """After the import: the prices that came from this snip get its number (the source mark)."""
-    if not names:
-        return 0
-    with write_tx() as conn:
-        n = 0
-        for name in names:
-            n += conn.execute("UPDATE supplier_price_list SET snip_id = ? WHERE creditor_id = ? AND item_name = ? AND effective_date = ? AND snip_id IS NULL",
-                              (int(snip_id), int(creditor_id), name, str(effective_date))).rowcount
-    return n
 
 
 # --- the bank loan use (stage 2; owner, 2026-10-16: "I can use it as well for bank loans when they give amortization table") ----------------------------
@@ -695,13 +712,6 @@ def loan_rows(rows: list[list[str]], colmap: list[str], header_row: bool) -> tup
             continue
         out.append({"due": due.isoformat(), "amount": round(amount, 2), "interest": round(max(interest, 0.0), 2)})
     return out, problems
-
-
-def link_installments(snip_id: int, bank_loan_id: int, after_id: int) -> int:
-    """After "Add these installments": the rows just added (ids above after_id) keep the snip (the source mark)."""
-    with write_tx() as conn:
-        return conn.execute("UPDATE bank_loan_installments SET snip_id = ? WHERE bank_loan_id = ? AND installment_id > ? AND snip_id IS NULL",
-                            (int(snip_id), int(bank_loan_id), int(after_id))).rowcount
 
 
 # --- slow reads in the background (2026-10-16: a photographed page takes a minute or two of OCR on the server's one CPU; a web request may not wait

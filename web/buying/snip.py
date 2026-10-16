@@ -104,14 +104,6 @@ def read_json(request, token: str, kind: str, guess):
     return JsonResponse(r)
 
 
-def source_ctx(snip_id: int, kind: str, open_url: str) -> dict:
-    from engines import snip
-    info = snip.snip_info(snip_id)
-    if not info or info["kind"] != kind:
-        raise Http404
-    W, H = snip.page_size(info["token"], info["page"])
-    return {"s": info, "w": W, "h": H, "open_url": open_url.format(**info), "img_url": None,
-            "box": {"l": info["x0"] / W * 100, "t": info["y0"] / H * 100, "w": (info["x1"] - info["x0"]) / W * 100, "h": (info["y1"] - info["y0"]) / H * 100}}
 
 
 @page_needed("price-lists")
@@ -131,7 +123,7 @@ def read(request, token: str):
 @require_POST
 def check(request, token: str):
     """"Check these rows": the grid (as corrected on the screen) becomes the category's template sheet, kept like an uploaded file, and the Excel
-    import's own check screen opens on it. The snip is saved so the prices can be traced back after the import."""
+    import's own check screen opens on it. The snip is remembered until the import, which then deletes the document."""
     from buying.views import _keep_upload, _date
     from engines import snip
     cid = int(request.POST.get("s") or 0)
@@ -154,11 +146,3 @@ def check(request, token: str):
     data = snip.price_workbook(cid, category, brand, rows, colmap, start.isoformat() if start else "", header_row=header)
     snip_id = snip.save_snip(token, page, box, "table", rows, "price_import", cid)
     return redirect(f"/price-lists/?s={cid}&tab=import&file={_keep_upload(data)}&start={start.isoformat() if start else ''}&snip={snip_id}")
-
-
-@page_needed("price-lists")
-def source(request, snip_id: int):
-    """The source mark: the page with the box drawn on it, read only."""
-    ctx = source_ctx(snip_id, "price", "/price-lists/?tab=snip&f={token}&p={page}")
-    ctx["img_url"] = f"/price-lists/snip/{ctx['s']['token']}/page/{ctx['s']['page']}.jpg"
-    return render(request, "buying/snip_source.html", {"page_id": "price-lists", **ctx})

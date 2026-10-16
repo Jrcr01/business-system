@@ -1,5 +1,5 @@
 """Snip, stage 2 (owner, 2026-10-16: "I can use it as well for bank loans when they give amortization table"): the bank's table snipped into the loan's
-schedule through the same staging step as a schedule file; Due date / Amount / Interest named from the headings; each installment keeps the source mark."""
+schedule through the same staging step as a schedule file; Due date / Amount / Interest named from the headings; the document is deleted once the rows are added."""
 import io
 import json
 
@@ -45,7 +45,7 @@ def _loan(web, db):
     return sqlite3.connect(_db()).execute("SELECT bank_loan_id FROM bank_loans ORDER BY bank_loan_id DESC LIMIT 1").fetchone()[0]
 
 
-def test_the_amortisation_table_lands_in_the_schedule_with_the_source_mark(web, db):
+def test_the_amortisation_table_lands_in_the_schedule_and_the_document_goes(web, db):
     import sqlite3
 
     from django.core.files.uploadedfile import SimpleUploadedFile
@@ -71,14 +71,9 @@ def test_the_amortisation_table_lands_in_the_schedule_with_the_source_mark(web, 
     assert "before anything is saved" in staged and "94,707.12" in staged and "21,250.00" in staged and "(snipped)" in staged
     r = web.post(f"/bank-loans/{blid}/", {"action": "import"})
     assert r.status_code == 302
-    rows = sqlite3.connect(_db()).execute("SELECT due_date, amount, interest_portion, snip_id FROM bank_loan_installments WHERE bank_loan_id = ? ORDER BY due_date", (blid,)).fetchall()
-    assert [(a, b, c) for a, b, c, _ in rows] == [("2026-11-15", 94707.12, 21250.0), ("2026-12-15", 94707.12, 20729.68), ("2027-01-15", 94707.12, 20205.67)]
-    assert len({s for *_, s in rows}) == 1 and rows[0][3]                                           # every row keeps the snip
-    sched = web.get(f"/bank-loans/{blid}/?tab=schedule").content.decode()
-    assert f"/bank-loans/snip/source/{rows[0][3]}/" in sched
-    src = web.get(f"/bank-loans/snip/source/{rows[0][3]}/").content.decode()
-    assert "BPI amortization.pdf" in src and 'class="snip-box"' in src and f"/bank-loans/{blid}/?tab=snip" in src
-    assert web.get(f"/price-lists/snip/source/{rows[0][3]}/").status_code == 404                     # a loan's snip is not a price's
+    rows = sqlite3.connect(_db()).execute("SELECT due_date, amount, interest_portion FROM bank_loan_installments WHERE bank_loan_id = ? ORDER BY due_date", (blid,)).fetchall()
+    assert rows == [("2026-11-15", 94707.12, 21250.0), ("2026-12-15", 94707.12, 20729.68), ("2027-01-15", 94707.12, 20205.67)]
+    assert snip.file_info(token) is None and not list(snip.folder().glob(f"{token}*"))          # the bank's document is gone once the rows are added
 
 
 def test_rows_the_snip_cannot_read_are_said_not_dropped_silently():

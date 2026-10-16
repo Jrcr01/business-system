@@ -1,5 +1,6 @@
 -- SNIP FROM A DOCUMENT (owner, 2026-10-16; like DataSnipper, inside Price lists, Bank loans and the Vendor SOA matcher; engines/snip.py). A document
--- (PDF or photo) kept beside the database; each snip = one box on one page, with what was read, so a figure can be traced back ("source" mark).
+-- (PDF or photo) kept beside the database only while it is being snipped; each snip = one box on one page with what was read, while its rows travel to
+-- the import. Both are deleted once the rows are imported, or after a day (owner: "no need to store the document").
 CREATE TABLE IF NOT EXISTS snip_files (
     file_id INTEGER PRIMARY KEY AUTOINCREMENT,
     token TEXT NOT NULL UNIQUE,                      -- the file's name on disk (<token>.<ext> in data/snip_files/)
@@ -24,4 +25,3 @@ CREATE TABLE IF NOT EXISTS snips (
     created_by TEXT,
     created_at DATETIME NOT NULL
 );
-ALTER TABLE supplier_price_list ADD COLUMN snip_id INTEGER REFERENCES snips(snip_id);

@@ -76,7 +76,7 @@
       <input class="inline-input" inputmode="decimal" name="interest" value="{{ r.interest_portion|floatformat:2 }}" aria-label="Interest part">
       <button class="btn small" type="submit">Save</button> <a class="btn small ghost" href="?tab=schedule">Cancel</a></form></td></tr>
   {% else %}
-  <tr><td>{{ r.installment_no }}{% if r.snip_id %} <a class="snip-src" href="/bank-loans/snip/source/{{ r.snip_id }}/" title="See the bank's table this row was snipped from"><span class="ms">attach_file</span></a>{% endif %}</td><td>{{ r.due_date|dmy }}{% if not r.paid and r.due_date|slice:":10" < today|date:"Y-m-d" and not l.is_cancelled %} <span class="pill warn">overdue</span>{% endif %}</td>
+  <tr><td>{{ r.installment_no }}</td><td>{{ r.due_date|dmy }}{% if not r.paid and r.due_date|slice:":10" < today|date:"Y-m-d" and not l.is_cancelled %} <span class="pill warn">overdue</span>{% endif %}</td>
     <td class="num">{{ r.amount|floatformat:2|intcomma }}</td><td class="num">{{ r.interest_portion|floatformat:2|intcomma }}</td>
     <td>{% if r.paid %}<span class="pill">{{ r.paid }}</span>{% else %}<span class="hint">not yet</span>{% endif %}</td>
     <td>{% if may_write and not r.paid %}<a class="btn small ghost" href="?tab=schedule&edit={{ r.installment_id }}">Edit</a>

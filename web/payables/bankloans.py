@@ -126,7 +126,7 @@ def bank_loan(request, blid: int):
     if request.method == "POST":
         return _loan_post(request, loan)
     tab = request.GET.get("tab", "schedule")
-    inst = _rows("""SELECT i.installment_id, i.installment_no, i.due_date, i.amount, i.interest_portion, i.cleared_at, i.cleared_note, i.snip_id,
+    inst = _rows("""SELECT i.installment_id, i.installment_no, i.due_date, i.amount, i.interest_portion, i.cleared_at, i.cleared_note,
                            (SELECT MIN(COALESCE(t.posting_date, t.txn_date)) FROM bank_transactions t WHERE t.matched_installment_id = i.installment_id) AS bank_date
                     FROM bank_loan_installments i WHERE i.bank_loan_id = ? ORDER BY i.due_date, i.installment_id""", (blid,))
     for r in inst:
@@ -175,12 +175,6 @@ def snip_read(request, blid: int, token: str):
     return read_json(request, token, "loan", lambda rows, _cat: snip.guess_loan_colmap(rows))
 
 
-@page_needed("bank-loans")
-def snip_source(request, snip_id: int):
-    from buying.snip import source_ctx
-    ctx = source_ctx(snip_id, "loan", "/bank-loans/{ref_id}/?tab=snip&f={token}&p={page}")
-    ctx["img_url"] = f"/bank-loans/{ctx['s']['ref_id']}/snip/{ctx['s']['token']}/page/{ctx['s']['page']}.jpg"
-    return render(request, "buying/snip_source.html", {"page_id": "bank-loans", **ctx})
 
 
 def _loan_post(request, loan: dict):
@@ -231,13 +225,14 @@ def _loan_post(request, loan: dict):
     elif what == "import":
         staged = request.session.pop(f"bl_import_{blid}", None) or {"rows": []}
         done = 0
-        before = (_rows("SELECT COALESCE(MAX(installment_id), 0) AS m FROM bank_loan_installments")[0]["m"])
         for r in staged["rows"]:
             ok, _ = bls.add_bank_loan_installment(blid, date.fromisoformat(r["due"]), float(r["amount"] or 0), float(r.get("interest") or 0))
             done += ok
-        if done and staged.get("snip_id"):                            # the rows came from a snipped amortisation table (2026-10-16): the source mark
-            from engines.snip import link_installments
-            link_installments(int(staged["snip_id"]), blid, int(before))
+        if staged.get("snip_id"):                                     # the rows came from a snipped table (2026-10-16): the document is not kept
+            from engines.snip import discard, snip_info
+            info = snip_info(int(staged["snip_id"]))
+            if info:
+                discard(info["token"])
         _say(request, bool(done), f"{done} installment(s) added to the schedule.")
     elif what == "snip_upload":                                      # stage 2 (2026-10-16): the bank's amortisation table, snipped
         from engines import snip

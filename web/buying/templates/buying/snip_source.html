@@ -1,9 +1,0 @@
-{% extends "core/base.html" %}
-{% block title %}Source of a snip{% endblock %}
-{% block content %}
-{% comment %}Owner, 2026-10-16: the "source" mark. The page the figure was snipped from, with the box drawn on it; read only.{% endcomment %}
-<h2><span class="ms" style="font-size:28px">attach_file</span> Source: {{ s.filename }}</h2>
-<p class="hint">Page {{ s.page }} · snipped {{ s.at|slice:":10" }} by {{ s.by }} · <a href="{{ open_url }}">Open the document</a></p>
-<div class="snip-wrap" style="max-width:760px;cursor:default"><img src="{{ img_url }}" alt="page {{ s.page }}" style="width:100%;display:block;border:1px solid var(--line)">
-  <div class="snip-box" style="left:{{ box.l|floatformat:2 }}%;top:{{ box.t|floatformat:2 }}%;width:{{ box.w|floatformat:2 }}%;height:{{ box.h|floatformat:2 }}%"><b>{{ s.mode|capfirst }}</b></div></div>
-{% endblock %}
