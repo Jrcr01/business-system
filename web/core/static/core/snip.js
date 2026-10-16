@@ -33,12 +33,13 @@ var slicksSnip = (function () {
     var up = function (e) { if (!from) return; rect = show(from, pos(e)); from = null; if (rect.x1 - rect.x0 > 3 && rect.y1 - rect.y0 > 3) read(); };
     wrap.addEventListener("mousedown", down); window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
     wrap.addEventListener("touchstart", down, {passive: false}); wrap.addEventListener("touchmove", move, {passive: false}); wrap.addEventListener("touchend", up);
-    return {rect: function () { return rect; }, data: function () { return data; }, mode: function () { return mode; }, reread: read};
+    return {rect: function () { return rect; }, data: function () { return data; }, mode: function () { return mode; }, reread: read, setMode: setMode};
   }
 
   /* The grid: g = {grid, msg, text, actions, form, keys: function () -> [[key, label], ...], hidden: {rows, colmap, header, x0, y0, x1, y1}, wide: button|null, split: element|null, category: select|null} */
   function grid(g) {
-    var rows = [], colmap = [], header = false, doubt = [], sn = null;
+    var rows = [], colmap = [], header = false, doubt = [], sn = null, target = null;
+    function pick(inp) { if (target) target.classList.remove("snip-target"); target = inp; if (inp) { inp.classList.add("snip-target"); if (sn) sn.setMode("text"); } }
     function options(sel) { var out = '<option value="">—</option>'; (g.keys() || []).forEach(function (kv) { out += '<option value="' + kv[0] + '"' + (kv[0] === sel ? " selected" : "") + ">" + kv[1] + "</option>"; }); return out; }
     function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
     function draw() {
@@ -47,12 +48,20 @@ var slicksSnip = (function () {
       var h = "<tr>"; for (var i = 0; i < w; i++) h += '<th><select data-col="' + i + '">' + options(colmap[i] || "") + "</select></th>"; h += "</tr>";
       rows.forEach(function (r, ri) { h += '<tr class="' + (header && ri === 0 ? "snip-head-row" : "") + '">'; for (var i = 0; i < w; i++) { var d = (doubt[ri] || [])[i]; h += '<td' + (d ? ' class="snip-doubt"' : "") + '><input class="in" data-r="' + ri + '" data-c="' + i + '" value="' + esc(r[i] || "") + '"' + (d ? ' title="OCR was not sure: confirm or fix"' : "") + "></td>"; } h += "</tr>"; });
       g.grid.innerHTML = h; g.grid.hidden = false; g.actions.hidden = false;
-      g.grid.querySelectorAll("select").forEach(function (s) { s.addEventListener("change", function () { colmap[+s.dataset.col] = s.value; }); });
-      g.grid.querySelectorAll("input").forEach(function (inp) { inp.addEventListener("input", function () { rows[+inp.dataset.r][+inp.dataset.c] = inp.value; inp.parentNode.classList.remove("snip-doubt"); }); });
+      g.grid.querySelectorAll("select").forEach(function (s) { s.addEventListener("change", function () { colmap[+s.dataset.col] = s.value; g.onChange && g.onChange(); }); });
+      g.grid.querySelectorAll("input").forEach(function (inp) { inp.addEventListener("input", function () { rows[+inp.dataset.r][+inp.dataset.c] = inp.value; inp.parentNode.classList.remove("snip-doubt"); g.onChange && g.onChange(); });
+        ["focus", "click"].forEach(function (evn) { inp.addEventListener(evn, function () { pick(inp); }); }); });
+      if (!g._targetsBound) { g._targetsBound = true; (g.targets || []).forEach(function (el) { ["focus", "click"].forEach(function (evn) { el.addEventListener(evn, function () { pick(el); }); }); }); }
+      g.onChange && g.onChange();
     }
     function onResult(d, why) {
       if (!d) { g.msg.textContent = why; rows = []; draw(); g.text.hidden = true; return; }
-      if (d.mode === "text") { g.text.textContent = d.text; g.text.hidden = false; g.msg.textContent = "Text snip" + (d.doubtful ? " (OCR was not sure: check it)" : "") + ":"; rows = []; draw(); return; }
+      if (d.mode === "text") {
+        if (target && target.dataset.r !== undefined) {           /* a cell was picked: the snip fills it (owner, 2026-10-16: correct a snip by drawing a box) */
+          var r = +target.dataset.r, c = +target.dataset.c; rows[r][c] = d.text; target.value = d.text; target.parentNode.classList.remove("snip-doubt");
+          g.msg.textContent = "Cell filled from the box" + (d.doubtful ? " (OCR was not sure: check it)" : "") + ". Click another cell to fix it, or the Table button to snip a table."; g.onChange && g.onChange(); return; }
+        if (target) { if (g.onText) { g.onText(d.text); } else { target.value = d.text; target.dispatchEvent(new Event("input", {bubbles: true})); } g.msg.textContent = "Filled from the box."; return; }
+        g.text.textContent = d.text; g.text.hidden = false; g.msg.textContent = "Text snip" + (d.doubtful ? " (OCR was not sure: check it)" : "") + ":"; g.onText && g.onText(d.text); return; }
       g.text.hidden = true; rows = d.rows; doubt = d.doubt || []; colmap = d.colmap || []; header = !!d.header;
       var nd = doubt.reduce(function (n, r) { return n + r.filter(Boolean).length; }, 0);
       g.msg.textContent = rows.length + " row" + (rows.length === 1 ? "" : "s") + " read (" + (d.how === "ruled" ? "ruled table, exact" : d.how === "positions" ? "by position, exact" : "OCR") + ")" + (header ? ", first row = headings" : "") + (nd ? " · " + nd + " cell" + (nd === 1 ? "" : "s") + " to confirm (orange)" : "") + ". Name the columns, then go on.";
@@ -64,7 +73,8 @@ var slicksSnip = (function () {
       var r = sn && sn.rect(); if (!r || !rows.length) { e.preventDefault(); g.msg.textContent = "Snip a table first."; return; }
       g.hidden.rows.value = JSON.stringify(rows); g.hidden.colmap.value = JSON.stringify(colmap); g.hidden.header.value = header ? "1" : "0";
       g.hidden.x0.value = r.x0; g.hidden.y0.value = r.y0; g.hidden.x1.value = r.x1; g.hidden.y1.value = r.y1; });
-    return {onResult: onResult, onBusy: function (b, text) { if (b) g.msg.textContent = text || "Reading the box…"; }, bind: function (s) { sn = s; }};
+    return {onResult: onResult, onBusy: function (b, text) { if (b) g.msg.textContent = text || "Reading the box…"; }, bind: function (s) { sn = s; },
+            rows: function () { return rows; }, colmap: function () { return colmap; }, header: function () { return header; }};
   }
   return {start: start, grid: grid};
 })();

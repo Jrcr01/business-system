@@ -18,7 +18,7 @@ Excel import's own check screen on them (the same validation), and the prices sa
       <span class="snip-tool"><button type="button" class="on" data-mode="table"><span class="ms">table_chart</span>Table</button><button type="button" data-mode="text"><span class="ms">text_fields</span>Text</button></span></div>
     <div class="snip-wrap" id="sn_wrap"><img id="sn_img" src="/price-lists/snip/{{ doc.token }}/page/{{ doc.page }}.jpg" alt="page {{ doc.page }}" draggable="false">
       <div class="snip-box" id="sn_box" hidden><b id="sn_label"></b></div></div>
-    <p class="hint" style="margin:6px 0 0">Drag a box around one table (not two side by side). With <b>Text</b>, a box around one figure gives just that figure.</p>
+    <p class="hint" style="margin:6px 0 0">Drag a box around one table (not two side by side). With <b>Text</b>, a box around one figure gives just that figure. <b>To fix a cell</b>, click it in the grid, then draw a box over the right figure on the page.</p>
   </div>
   <div class="snip-out">
     <form method="post" action="/price-lists/snip/{{ doc.token }}/check/" id="sn_form">{% csrf_token %}
@@ -38,7 +38,7 @@ Excel import's own check screen on them (the same validation), and the prices sa
     </form>
   </div>
 </div>
-<script src="/static/core/snip.js?v=3"></script>
+<script src="/static/core/snip.js?v=7"></script>
 <script>
 (function () {
   var keys = {{ col_keys_json|safe }}, cat = document.getElementById("sn_cat"), $ = function (id) { return document.getElementById(id); };

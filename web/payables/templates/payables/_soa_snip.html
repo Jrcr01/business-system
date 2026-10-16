@@ -1,0 +1,65 @@
+{% load humanize %}{% comment %}Snip, stage 3 (owner, 2026-10-16): the supplier's statement of account (usually a scan or a photo) snipped on the page: the table of
+invoices, the SI / document no. and the amount named from the headings or their content, doubtful OCR cells in orange for the person to confirm or type,
+the statement's total snipped as text and checked against the sum of the rows, then the same match as a file. The document is deleted after.{% endcomment %}
+<div class="grp" style="margin-top:18px">Snip from the statement <span class="hint">· a PDF or a photo of the supplier's SOA</span></div>
+<p class="note">Open the statement and <b>drag a box over the table</b> of invoices. Then pick <b>Text</b> and drag over the statement's <b>total</b>: it is checked against the sum of the rows.
+  A photo is read by OCR, which takes a minute or two; doubtful cells show in orange for you to confirm or type. The document is deleted once matched, or after a day.</p>
+<form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="snip_upload"><input type="hidden" name="s" value="{{ cid }}">
+  <div class="grow"><label for="sn_file">The statement (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required></div>
+  <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button></form>
+{% if files %}<p class="hint" style="margin:6px 0 10px">Open statements of this supplier: {% for f in files %}<a href="?s={{ cid }}&f={{ f.token }}"{% if doc and doc.token == f.token %} style="font-weight:700"{% endif %}>{{ f.filename }}</a> <span class="hint">({{ f.pages }} p)</span>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+
+{% if doc %}
+<div class="snip-split" id="sn_split">
+  <div class="snip-doc">
+    <div class="snip-head"><span class="ms">{% if doc.has_text %}picture_as_pdf{% else %}photo_camera{% endif %}</span><b>{{ doc.filename }}</b>
+      {% if doc.pages > 1 %}<span>· page <a href="?s={{ cid }}&f={{ doc.token }}&p={{ doc.page|add:'-1' }}"{% if doc.page == 1 %} hidden{% endif %}>‹</a> {{ doc.page }} of {{ doc.pages }} <a href="?s={{ cid }}&f={{ doc.token }}&p={{ doc.page|add:'1' }}"{% if doc.page == doc.pages %} hidden{% endif %}>›</a></span>{% endif %}
+      <span class="pill{% if not doc.has_text %} warn{% endif %}">{% if doc.has_text %}real text: exact{% else %}picture: OCR{% endif %}</span>
+      <button type="button" class="btn small ghost" id="sn_wide"><span class="ms">open_in_full</span>Bigger</button>
+      <span class="snip-tool"><button type="button" class="on" data-mode="table"><span class="ms">table_chart</span>Table</button><button type="button" data-mode="text"><span class="ms">text_fields</span>Text</button></span></div>
+    <div class="snip-wrap" id="sn_wrap"><img id="sn_img" src="/order-statements/soa/snip/{{ doc.token }}/page/{{ doc.page }}.jpg" alt="page {{ doc.page }}" draggable="false">
+      <div class="snip-box" id="sn_box" hidden><b id="sn_label"></b></div></div>
+    <p class="hint" style="margin:6px 0 0">Table: a box around the invoice lines, headings included. Text: a box around the total. <b>To fix a cell</b>, click it in the grid, then draw a box over the right figure on the page.</p>
+  </div>
+  <div class="snip-out">
+    <form method="post" id="sn_form">{% csrf_token %}<input type="hidden" name="action" value="snip_match"><input type="hidden" name="s" value="{{ cid }}">
+      <input type="hidden" name="token" value="{{ doc.token }}"><input type="hidden" name="page" value="{{ doc.page }}">
+      <input type="hidden" name="rows" id="sn_rows"><input type="hidden" name="colmap" id="sn_colmap"><input type="hidden" name="header" id="sn_header">
+      <input type="hidden" name="x0" id="sn_x0"><input type="hidden" name="y0" id="sn_y0"><input type="hidden" name="x1" id="sn_x1"><input type="hidden" name="y1" id="sn_y1">
+      <div id="sn_msg" class="hint" role="status">Nothing snipped yet.</div>
+      <div id="sn_text" class="snip-text" hidden></div>
+      <div class="scroll-x"><table class="list" id="sn_grid" hidden></table></div>
+      <div id="sn_total_box" class="formgrid" style="margin:10px 0 0" hidden>
+        <div><label for="sn_total">Total on the statement</label><input id="sn_total" name="total" class="in" inputmode="decimal" placeholder="snip it with Text, or type it"></div>
+        <div style="align-self:end"><span id="sn_sum" class="hint"></span></div>
+      </div>
+      <p id="sn_actions" hidden style="margin:10px 0 0"><button class="btn small" type="submit"><span class="ms">compare_arrows</span>Match against our records</button>
+        <span class="hint">→ matched · missing in AP · amount differs · not on the SOA</span></p>
+    </form>
+  </div>
+</div>
+<script src="/static/core/snip.js?v=7"></script>
+<script>
+(function () {
+  var keys = {{ soa_keys_json|safe }}, $ = function (id) { return document.getElementById(id); };
+  function money(s) { s = String(s || "").replace(/[₱,\s]/g, "").replace(/^P/, ""); var neg = /^\(.*\)$/.test(s); s = s.replace(/[()]/g, ""); var v = parseFloat(s); return isNaN(v) ? null : (neg ? -v : v); }
+  function check() {
+    var rows = g.rows(), cm = g.colmap(), k = cm.indexOf("amount");
+    $("sn_total_box").hidden = !rows.length;
+    if (!rows.length || k < 0) { $("sn_sum").textContent = k < 0 && rows.length ? "Name the Amount column to check the total." : ""; return; }
+    var body = g.header() ? rows.slice(1) : rows, sum = 0, n = 0;
+    body.forEach(function (r) { var v = money(r[k]); if (v !== null) { sum += v; n++; } });
+    var tot = money($("sn_total").value), txt = n + " amount" + (n === 1 ? "" : "s") + " add up to ₱" + sum.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (tot !== null) { var d = Math.round((sum - tot) * 100) / 100; txt += d === 0 ? " · equals the statement's total ✓" : " · differs from the total by ₱" + Math.abs(d).toLocaleString("en-PH", {minimumFractionDigits: 2}) + " ✗ (a misread figure, or a line missing)"; }
+    $("sn_sum").textContent = txt; $("sn_sum").style.color = tot === null ? "" : (Math.abs(sum - tot) < 0.005 ? "var(--ok)" : "var(--fg-b3261e)");
+  }
+  var g = slicksSnip.grid({grid: $("sn_grid"), msg: $("sn_msg"), text: $("sn_text"), actions: $("sn_actions"), form: $("sn_form"), keys: function () { return keys; },
+    hidden: {rows: $("sn_rows"), colmap: $("sn_colmap"), header: $("sn_header"), x0: $("sn_x0"), y0: $("sn_y0"), x1: $("sn_x1"), y1: $("sn_y1")}, wide: $("sn_wide"), split: $("sn_split"), category: null,
+    targets: [$("sn_total")], onChange: check, onText: function (t) { var m = String(t || "").match(/\(?[₱P]?\s*\d[\d,]*(\.\d{1,2})?\)?/g); var v = m ? money(m[m.length - 1]) : null; if (v !== null) { $("sn_total").value = v.toFixed(2); check(); } }});
+  g.bind(slicksSnip.start({wrap: $("sn_wrap"), img: $("sn_img"), box: $("sn_box"), label: $("sn_label"), w: {{ doc.w }}, h: {{ doc.h }}, page: {{ doc.page }},
+    csrf: document.querySelector("#sn_form input[name=csrfmiddlewaretoken]").value, readUrl: "/order-statements/soa/snip/{{ doc.token }}/read/",
+    modeButtons: Array.prototype.slice.call(document.querySelectorAll(".snip-tool button")), onBusy: g.onBusy, onResult: g.onResult}));
+  $("sn_total").addEventListener("input", check);
+})();
+</script>
+{% endif %}

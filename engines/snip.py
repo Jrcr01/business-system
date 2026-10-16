@@ -142,6 +142,7 @@ def page_image(token: str, page: int) -> Path | None:
             import pypdfium2 as pdfium
             pdf = pdfium.PdfDocument(str(info["path"]))
             img = pdf[page - 1].render(scale=RENDER_SCALE).to_pil()
+            pdf.close()                                          # else Windows keeps the file locked and it cannot be deleted after use
         else:
             from PIL import Image, ImageOps
             img = ImageOps.exif_transpose(Image.open(info["path"])).convert("RGB")
@@ -182,6 +183,7 @@ def _ocr_words(info: dict, page: int, box: tuple[float, float, float, float]) ->
         pdf = pdfium.PdfDocument(str(info["path"]))
         scale = OCR_SCALE * 1.5
         img = pdf[page - 1].render(scale=scale).to_pil()
+        pdf.close()
         factor = scale
     else:
         img = ImageOps.exif_transpose(Image.open(info["path"])).convert("RGB")
@@ -192,7 +194,8 @@ def _ocr_words(info: dict, page: int, box: tuple[float, float, float, float]) ->
     if up != 1.0:
         crop = crop.resize((int(crop.width * up), int(crop.height * up)), Image.LANCZOS)
     crop = ImageOps.autocontrast(ImageOps.grayscale(crop))
-    data = pytesseract.image_to_data(crop, config="--psm 6", output_type=pytesseract.Output.DICT)
+    one_line = crop.height < crop.width * 0.3 and crop.height < 140 * OCR_SCALE          # a box around one figure: read as a single line (more accurate)
+    data = pytesseract.image_to_data(crop, config="--psm 7" if one_line else "--psm 6", output_type=pytesseract.Output.DICT)
     out = []
     for i, t in enumerate(data["text"]):
         t = (t or "").strip()
@@ -225,7 +228,9 @@ def _page_gray(info: dict, page: int, scale_pdf: float = 3.0):
     if info["ext"] == "pdf":
         import pypdfium2 as pdfium
         pdf = pdfium.PdfDocument(str(info["path"]))
-        return pdf[page - 1].render(scale=scale_pdf).to_pil().convert("L"), scale_pdf
+        img = pdf[page - 1].render(scale=scale_pdf).to_pil().convert("L")
+        pdf.close()
+        return img, scale_pdf
     return ImageOps.exif_transpose(Image.open(info["path"])).convert("L"), 1.0
 
 
@@ -770,3 +775,75 @@ def job_result(job: str) -> dict | None:
     if r.get("state") == "running" and time.time() - float(r.get("started") or 0) > JOB_MINUTES * 60:
         return {"state": "lost", "msg": f"The read took more than {JOB_MINUTES} minutes and was given up. Draw a smaller box, or try a clearer picture."}
     return r
+
+
+# --- the vendor SOA use (stage 3; owner, 2026-10-16) ------------------------------------------------------------------------------------------------------
+
+SOA_KEYS = [("ref", "SI / document no."), ("amount", "Amount"), ("date", "Date (not used)"), ("balance", "Balance (not used)"), ("other", "Other (not used)")]
+
+
+def _soa_header(word: str) -> str:
+    w = word.lower()
+    if "balance" in w or "outstanding" in w:
+        return "balance"
+    if any(k in w for k in ("amount", "debit", "charge", "total", "value")):
+        return "amount"
+    if any(k in w for k in ("si", "invoice", "inv", "ref", "doc", "no.", "number", "dr")):
+        return "ref"
+    if "date" in w:
+        return "date"
+    return ""
+
+
+def guess_soa_colmap(rows: list[list[str]]) -> list[str]:
+    """The statement's columns: the SI / document no. and the amount; a date and a running balance are shown but not used. Headings first; without
+    them, dates are dates, numbers of 4+ digits are the reference, the first money column is the amount and the next the balance."""
+    if not rows:
+        return []
+    width = max(len(r) for r in rows)
+    head = has_header(rows) or any(_soa_header(c) for c in rows[0])
+    body = rows[1:] if head else rows
+    out, used = [], set()
+    for i in range(width):
+        col = [r[i].strip() for r in body if i < len(r) and r[i].strip()]
+        guess = _soa_header(rows[0][i]) if head and i < len(rows[0]) else ""
+        if not guess and col:
+            share = lambda f: sum(1 for c in col if f(c)) / len(col)          # noqa: E731
+            if share(lambda c: bool(_DATE.match(c))) >= 0.7:
+                guess = "date"
+            elif share(lambda c: bool(_PRICE.match(c)) and ("," in c or "." in c)) >= 0.7:     # money is written with a comma or centavos
+                guess = "amount" if "amount" not in used else "balance"
+            elif share(lambda c: bool(re.fullmatch(r"[A-Za-z]{0,4}[-/ ]?\d{4,}[A-Za-z0-9/-]*", c))) >= 0.6:
+                guess = "ref"                                                               # 244911, SI-0077: a document number
+            elif share(lambda c: bool(_PRICE.match(c))) >= 0.7:
+                guess = "amount" if "amount" not in used else "balance"
+        if guess in used and guess:
+            guess = ""
+        out.append(guess)
+        if guess:
+            used.add(guess)
+    return out
+
+
+def soa_rows(rows: list[list[str]], colmap: list[str], header_row: bool) -> tuple[list[dict], list[str]]:
+    """The snipped table as statement lines: ([{'ref', 'amount'}], problems). A line whose amount cannot be read is kept with amount 0 and said, so it
+    shows as a difference rather than vanishing."""
+    want = {k: i for i, k in enumerate(colmap) if k}
+    if "ref" not in want or "amount" not in want:
+        return [], ["Name the SI / document no. and the Amount columns."]
+    body = rows[1:] if header_row and len(rows) > 1 else rows
+    out, problems = [], []
+    for n, r in enumerate(body, start=2 if header_row else 1):
+        cell = lambda k: r[want[k]].strip() if want[k] < len(r) else ""         # noqa: E731
+        ref = " ".join(cell("ref").split())
+        if not ref:
+            if any(x.strip() for x in r):
+                problems.append(f"Row {n}: no document number (a total line?): left out.")
+            continue
+        amount = _money(cell("amount"))
+        if amount is None:
+            problems.append(f"Row {n} ({ref}): the amount '{cell('amount')}' could not be read: counted as 0.")
+            amount = 0.0
+        out.append({"ref": ref, "amount": round(amount, 2)})
+    return out, problems
+

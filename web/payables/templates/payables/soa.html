@@ -3,15 +3,23 @@
 {% block content %}
 <p class="note"><a href="/order-statements/">← Payment statements</a></p>
 <h2><span class="ms" style="font-size:28px">fact_check</span> Vendor SOA matcher</h2>
-<p class="note">Upload a supplier's statement of account (CSV, Excel, PDF or a photo) and see what matches our records.</p>
-<form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}
-  <div class="grow"><label for="s">Supplier</label><select id="s" name="s">{% for id, name in suppliers %}<option value="{{ id }}"{% if id == cid %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
-  <div class="grow"><label for="file">Statement of account</label><input id="file" type="file" name="file" accept=".csv,.xlsx,.xls,.pdf,.png,.jpg,.jpeg,.tiff,.bmp" required></div>
+<p class="note">A supplier's statement of account against our records: matched, missing in AP, amount differs, not on the SOA. A CSV or Excel file goes in here;
+  a PDF or a photo is snipped below.</p>
+<form class="bar" method="get" action="/order-statements/soa/">
+  <div class="grow"><label for="s">Supplier</label><select id="s" name="s" onchange="this.form.submit()"><option value="0">Pick one</option>{% for id, name in suppliers %}<option value="{{ id }}"{% if id == cid %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+</form>
+{% if cid %}
+<form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}">
+  <div class="grow"><label for="file">Statement of account as a file (CSV, Excel)</label><input id="file" type="file" name="file" accept=".csv,.xlsx,.xls" required></div>
   <button class="btn small" type="submit"><span class="ms">fact_check</span>Reconcile</button>
 </form>
+{% include "payables/_soa_snip.html" %}
+{% endif %}
 {% if result %}
   {% if not result.success %}<div class="msg error">{{ result.error }}</div>
   {% else %}
+  {% if result.notes %}<div class="msg warning">{% for n in result.notes %}{{ n }} {% endfor %}</div>{% endif %}
+  {% if result.total_check %}<div class="msg {% if result.total_check.ok %}success{% else %}warning{% endif %}">The statement's total ₱{{ result.total_check.total|floatformat:2 }} {% if result.total_check.ok %}equals{% else %}differs from{% endif %} the sum of the snipped lines, ₱{{ result.total_check.sum|floatformat:2 }}.{% if not result.total_check.ok %} A figure was misread, or a line is missing: check the orange cells.{% endif %}</div>{% endif %}
   <div class="facts"><div><span>Matched</span><b>{{ result.summary.matched }}</b></div><div><span>Missing in AP</span><b>{{ result.summary.missing_in_ap }}</b></div>
     <div><span>Amount mismatches</span><b>{{ result.summary.mismatches }}</b></div><div><span>Omitted from the SOA</span><b>{{ result.summary.omitted_from_soa }}</b></div></div>
   {% for title, t in result.items %}{% if title == "matched" or title == "missing_in_ap" or title == "amount_mismatches" or title == "omitted_from_soa" %}

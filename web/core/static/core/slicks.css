@@ -646,6 +646,7 @@ table.list th[aria-sort] { color: var(--fg-0b4f8a); } table.list th .sort-arrow 
 .snip-box { position: absolute; border: 2px dashed var(--blue); background: rgba(11,79,138,.10); pointer-events: none; border-radius: 3px; }
 .snip-box b { position: absolute; top: -20px; left: -2px; background: var(--blue); color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
 .snip-out .list input.in { width: 100%; min-width: 70px; font-size: .86rem; padding: 2px 5px; } .snip-out .list th select { font-size: .82rem; }
-.snip-doubt { background: var(--bg-fff4e5); } .snip-doubt input.in { border-color: var(--bd-f0b46a); } .snip-head-row input.in { font-weight: 700; color: var(--muted); }
+.snip-doubt { background: var(--bg-fff4e5); } .snip-doubt input.in { border-color: var(--bd-f0b46a); }
+.snip-out input.snip-target { outline: 2px solid var(--blue); outline-offset: 1px; } .snip-head-row input.in { font-weight: 700; color: var(--muted); }
 .snip-text { font-size: 1.05rem; font-weight: 700; color: var(--ok); margin: 6px 0; overflow-wrap: anywhere; }
 .snip-src { color: var(--fg-0b4f8a); text-decoration: none; } .snip-src .ms { font-size: 15px; width: 15px; height: 15px; vertical-align: -2px; }

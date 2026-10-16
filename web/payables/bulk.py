@@ -337,23 +337,80 @@ def _merged_pdf(request, ids: list[int], scope: str, last: str | None):
 
 @page_needed("order-statements")
 def soa(request):
-    from engines.soa_matcher import reconcile_vendor_soa
+    """A CSV / Excel statement through the file form, or (stage 3 of the snip, 2026-10-16) the supplier's PDF or photo snipped on the page."""
+    from engines import snip
+    from engines.soa_matcher import reconcile_rows, reconcile_vendor_soa
     suppliers = _suppliers()
     result, cid = None, int(request.POST.get("s") or request.GET.get("s") or 0)
     if request.method == "POST":
-        f = request.FILES.get("file")
-        if not f or cid not in dict(suppliers):
-            _say(request, False, "Pick the supplier and choose its statement of account.")
+        what = request.POST.get("action", "")
+        if cid not in dict(suppliers):
+            _say(request, False, "Pick the supplier first.")
             return redirect("/order-statements/soa/")
-        try:
-            result = reconcile_vendor_soa(cid, f.read(), f.name)
-        except Exception as e:                               # noqa: BLE001 -- a file it cannot read is reported, never a crash page
-            result = {"success": False, "error": f"Could not process this file: {e}"}
+        if what == "snip_upload":
+            f = request.FILES.get("file")
+            ok, msg, token = snip.keep("soa", cid, f.name if f else "", f.read() if f else b"")
+            _say(request, ok, msg)
+            return redirect(f"/order-statements/soa/?s={cid}" + (f"&f={token}" if ok else ""))
+        if what == "snip_match":
+            p = request.POST
+            try:
+                rows, colmap = json.loads(p.get("rows") or "[]"), json.loads(p.get("colmap") or "[]")
+            except ValueError:
+                rows, colmap = [], []
+            token = p.get("token", "")
+            info = snip.file_info(token)
+            lines, problems = snip.soa_rows(rows, colmap, p.get("header") == "1") if rows else ([], ["Snip the table first."])
+            if not info or info["kind"] != "soa" or int(info["owner_id"] or 0) != cid:
+                _say(request, False, "No such document.")
+                return redirect(f"/order-statements/soa/?s={cid}")
+            if not lines:
+                _say(request, False, " ".join(problems))
+                return redirect(f"/order-statements/soa/?s={cid}&f={token}&p={p.get('page') or 1}")
+            result = reconcile_rows(cid, lines)
+            result["notes"] = problems
+            total = snip._money(p.get("total", ""))
+            if total is not None:
+                shown = round(sum(r["amount"] for r in lines), 2)
+                result["total_check"] = {"total": total, "sum": shown, "ok": abs(shown - total) < 0.005}
+            snip.discard(token)                                  # the statement is not kept (owner: "no need to store the document")
+        else:
+            f = request.FILES.get("file")
+            if not f:
+                _say(request, False, "Choose the statement of account.")
+                return redirect(f"/order-statements/soa/?s={cid}")
+            try:
+                result = reconcile_vendor_soa(cid, f.read(), f.name)
+            except Exception as e:                           # noqa: BLE001 -- a file it cannot read is reported, never a crash page
+                result = {"success": False, "error": f"Could not process this file: {e}"}
         if result.get("success"):
             for key in ("matched", "missing_in_ap", "amount_mismatches", "omitted_from_soa"):
                 df = result[key]
                 result[key] = {"cols": [str(c) for c in df.columns], "rows": df.astype(str).values.tolist()}
-    return render(request, "payables/soa.html", {"page_id": "order-statements", "suppliers": suppliers, "cid": cid, "result": result})
+    ctx = {"page_id": "order-statements", "suppliers": suppliers, "cid": cid, "result": result, "soa_keys_json": json.dumps(snip.SOA_KEYS),
+           "files": snip.files_for("soa", cid) if cid else [], "doc": None}
+    token = request.GET.get("f", "")
+    info = snip.file_info(token) if token and request.method == "GET" else None
+    if info and info["kind"] == "soa" and int(info["owner_id"] or 0) == cid:
+        page = max(1, min(int(request.GET.get("p") or 1), info["pages"]))
+        W, H = snip.page_size(token, page)
+        ctx["doc"] = {"token": token, "filename": info["filename"], "pages": info["pages"], "page": page, "has_text": bool(info["has_text"]), "w": W, "h": H}
+    return render(request, "payables/soa.html", ctx)
+
+
+@page_needed("order-statements")
+def soa_snip_page(request, token: str, page: int):
+    from buying.snip import page_image_response
+    return page_image_response(token, page, "soa")
+
+
+@page_needed("order-statements")
+def soa_snip_read(request, token: str):
+    from buying.snip import read_json
+    from engines import snip
+    if request.method != "POST":
+        raise Http404
+    return read_json(request, token, "soa", lambda rows, _cat: snip.guess_soa_colmap(rows))
 
 
 # --- supplier statement check: tick their paper against our records (owner, 2026-10-13) --------------------------------------------------------------------

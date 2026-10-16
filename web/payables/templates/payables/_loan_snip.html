@@ -18,7 +18,7 @@ step as a schedule file; the document is then deleted.{% endcomment %}
       <span class="snip-tool"><button type="button" class="on" data-mode="table"><span class="ms">table_chart</span>Table</button><button type="button" data-mode="text"><span class="ms">text_fields</span>Text</button></span></div>
     <div class="snip-wrap" id="sn_wrap"><img id="sn_img" src="/bank-loans/{{ l.bank_loan_id }}/snip/{{ doc.token }}/page/{{ doc.page }}.jpg" alt="page {{ doc.page }}" draggable="false">
       <div class="snip-box" id="sn_box" hidden><b id="sn_label"></b></div></div>
-    <p class="hint" style="margin:6px 0 0">Drag a box around the whole table, headings included.</p>
+    <p class="hint" style="margin:6px 0 0">Drag a box around the whole table, headings included. <b>To fix a cell</b>, click it in the grid, then draw a box over the right figure on the page.</p>
   </div>
   <div class="snip-out">
     <form method="post" id="sn_form">{% csrf_token %}<input type="hidden" name="action" value="snip_use">
@@ -33,7 +33,7 @@ step as a schedule file; the document is then deleted.{% endcomment %}
     </form>
   </div>
 </div>
-<script src="/static/core/snip.js?v=3"></script>
+<script src="/static/core/snip.js?v=7"></script>
 <script>
 (function () {
   var keys = {{ loan_keys_json|safe }}, $ = function (id) { return document.getElementById(id); };
