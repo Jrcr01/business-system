@@ -14,6 +14,7 @@ import io
 import json
 import re
 import secrets
+import time
 from pathlib import Path
 
 from engines.clock import manila_now
@@ -180,6 +181,122 @@ def _ocr_words(info: dict, page: int, box: tuple[float, float, float, float]) ->
     return out
 
 
+_NOISE = re.compile(r"^[\W_]+$")
+
+
+def _clean_cell(t: str) -> str:
+    """OCR noise off a cell: a table border read as '|' or '[', stray dots and dashes; a cell that is only such marks is empty."""
+    t = (t or "").strip()
+    t = re.sub(r"^[|\[\]{}()!:;.,_~\-–—'`\"*]+", "", t)
+    t = re.sub(r"[|\[\]{}()!:;_~–—'`\"*,.]+$", "", t)
+    return "" if _NOISE.match(t or "x") else t.strip()
+
+
+def _page_gray(info: dict, page: int, scale_pdf: float = 3.0):
+    """The page as a greyscale picture plus the factor from the box's coordinates (PDF points, or picture pixels) to its pixels."""
+    from PIL import Image, ImageOps
+    if info["ext"] == "pdf":
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(str(info["path"]))
+        return pdf[page - 1].render(scale=scale_pdf).to_pil().convert("L"), scale_pdf
+    return ImageOps.exif_transpose(Image.open(info["path"])).convert("L"), 1.0
+
+
+def _lines(profile, thresh: float, min_gap: int) -> list[float]:
+    out, start = [], None
+    for i, v in enumerate(profile):
+        if v > thresh and start is None:
+            start = i
+        elif v <= thresh and start is not None:
+            out.append((start + i - 1) / 2)
+            start = None
+    if start is not None:
+        out.append((start + len(profile) - 1) / 2)
+    merged: list[float] = []
+    for q in out:
+        if merged and q - merged[-1] < min_gap:
+            merged[-1] = (merged[-1] + q) / 2
+        else:
+            merged.append(q)
+    return merged
+
+
+def table_lines(gray, box) -> tuple[list[float], list[float]]:
+    """A ruled table in a picture: the horizontal and vertical lines inside the box, from runs of dark pixels (the box's own pixel coordinates)."""
+    import numpy as np
+    x0, y0, x1, y1 = [int(v) for v in box]
+    a = np.asarray(gray.crop((x0, y0, x1, y1)))
+    if a.size == 0:
+        return [], []
+    dark = a < 150
+    h, w = dark.shape
+    hl = _lines(dark.sum(axis=1) / max(1, w), 0.45, 8)
+    if len(hl) >= 2:
+        top, bot = int(hl[0]), int(hl[-1])
+        vl = _lines(dark[top:bot + 1].sum(axis=0) / max(1, bot - top + 1), 0.5, 8)
+    else:
+        vl = _lines(dark.sum(axis=0) / max(1, h), 0.5, 8)
+    return [y0 + v for v in hl], [x0 + v for v in vl]
+
+
+def _ocr_one(gray, cell_box) -> tuple[str, float]:
+    import pytesseract
+    from PIL import Image, ImageOps
+    x0, y0, x1, y1 = cell_box
+    cell = gray.crop((x0, y0, x1, y1))
+    cell = cell.resize((cell.width * OCR_SCALE, cell.height * OCR_SCALE), Image.LANCZOS)
+    cell = ImageOps.autocontrast(cell).point(lambda v: 255 if v > 140 else 0)
+    pad = Image.new("L", (cell.width + 20, cell.height + 20), 255)
+    pad.paste(cell, (10, 10))
+    d = pytesseract.image_to_data(pad, config="--psm 7", output_type=pytesseract.Output.DICT)
+    parts, confs = [], []
+    for t, cf in zip(d["text"], d["conf"]):
+        t = _clean_cell(t or "")
+        if t:
+            parts.append(t)
+            try:
+                confs.append(float(cf))
+            except (TypeError, ValueError):
+                confs.append(0.0)
+    return " ".join(parts), (min(confs) if confs else 100.0)
+
+
+def _ocr_cells(info: dict, page: int, box) -> tuple[list[list[str]], list[list[float]]] | None:
+    """A ruled table in a scan or photo: the table's own lines are found, each cell is cut out and read on its own (far more accurate than the block:
+    JRCR's Yokohama photos, 2026-10-16), several cells at a time. None when the box holds no ruled table."""
+    from concurrent.futures import ThreadPoolExecutor
+    gray, f = _page_gray(info, page)
+    pbox = [v * f for v in box]
+    hl, vl = table_lines(gray, pbox)
+    if len(hl) < 3 or len(vl) < 3:
+        return None
+    cells = []
+    for r in range(len(hl) - 1):
+        y0, y1 = int(hl[r]) + 2, int(hl[r + 1]) - 1
+        if y1 - y0 < 6:
+            continue
+        row = []
+        for c in range(len(vl) - 1):
+            x0, x1 = int(vl[c]) + 2, int(vl[c + 1]) - 1
+            row.append((x0, y0, x1, y1) if x1 - x0 >= 6 else None)
+        cells.append(row)
+    flat = [cb for row in cells for cb in row]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        got = list(pool.map(lambda cb: _ocr_one(gray, cb) if cb else ("", 100.0), flat))
+    grid, confs, k = [], [], 0
+    for row in cells:
+        texts, cf = [], []
+        for _ in row:
+            t, c = got[k]
+            k += 1
+            texts.append(t)
+            cf.append(c)
+        if any(texts):
+            grid.append(texts)
+            confs.append(cf)
+    return (grid, confs) if grid else None
+
+
 def words(token: str, page: int) -> list[dict]:
     """The page's words with positions (a text PDF); [] for a picture (its words come only from an OCR of a box)."""
     info = file_info(token)
@@ -298,7 +415,14 @@ def read_box(token: str, page: int, box, mode: str = "table") -> dict:
                 if _real_cols(ruled) >= _real_cols(by_pos):               # a box that cuts a border loses a ruled column: then the positions win
                     return {"mode": mode, "rows": ruled, "doubt": [[False] * len(r) for r in ruled], "text": "", "how": "ruled"}
     else:
-        ws = _ocr_words(info, page, box)
+        if mode == "table":
+            cells = _ocr_cells(info, page, box)
+            if cells:
+                grid, confs = cells
+                return {"mode": mode, "rows": grid, "doubt": [[c < OCR_DOUBT for c in r] for r in confs], "text": "", "how": "ocr"}
+        ws = [w for w in _ocr_words(info, page, box) if _clean_cell(w["t"])]
+        for w in ws:
+            w["t"] = _clean_cell(w["t"])
         how = "ocr"
     if not ws:
         return {"mode": mode, "rows": [], "doubt": [], "text": "", "how": "none"}
@@ -335,6 +459,7 @@ def snip_info(snip_id: int) -> dict | None:
 # --- the price list use (stage 1) -----------------------------------------------------------------------------------------------------------------------
 
 _PRICE = re.compile(r"^[₱P]?\s*\d{1,3}(,\d{3})+(\.\d{1,2})?$|^[₱P]?\s*\d+(\.\d{1,2})?$")
+_DATE = re.compile(r"^\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}$|^\d{1,2}[ -][A-Za-z]{3,9}[ -]\d{2,4}$|^[A-Za-z]{3,9}\.? \d{1,2},? \d{4}$|^\d{4}-\d{2}-\d{2}$")
 _PLY = re.compile(r"^\d{1,2}\s*PR$|^\d{2,3}[A-Z]$", re.I)
 
 
@@ -342,9 +467,13 @@ def has_header(rows: list[list[str]]) -> bool:
     """The first row is a heading when none of its cells looks like a price and some cell is a known column word."""
     if not rows:
         return False
-    first = [c.strip() for c in rows[0]]
-    words = {"size", "sizes", "pattern", "price", "model", "brand", "list price", "srp", "description", "item", "ply", "terrain", "type"}
-    return not any(_PRICE.match(c) for c in first if c) and any(c.lower() in words for c in first)
+    first = [c.strip() for c in rows[0] if c.strip()]
+    if not first or any(_PRICE.match(c) or _DATE.match(c) for c in first):
+        return False
+    words = {"size", "sizes", "pattern", "price", "model", "brand", "list price", "srp", "description", "item", "ply", "terrain", "type", "due date", "amount",
+             "interest", "principal", "balance", "date", "no.", "amortization", "remarks", "origin", "rim", "tire size"}
+    lettered = sum(1 for c in first if any(ch.isalpha() for ch in c))
+    return any(c.lower() in words for c in first) or lettered >= max(2, len(first) * 0.7)
 
 
 def guess_colmap(category: str, rows: list[list[str]]) -> list[str]:
@@ -475,3 +604,159 @@ def link_prices(snip_id: int, creditor_id: int, names: list[str], effective_date
             n += conn.execute("UPDATE supplier_price_list SET snip_id = ? WHERE creditor_id = ? AND item_name = ? AND effective_date = ? AND snip_id IS NULL",
                               (int(snip_id), int(creditor_id), name, str(effective_date))).rowcount
     return n
+
+
+# --- the bank loan use (stage 2; owner, 2026-10-16: "I can use it as well for bank loans when they give amortization table") ----------------------------
+
+LOAN_KEYS = [("due_date", "Due date"), ("amount", "Amount (the amortization)"), ("interest", "Interest part"), ("principal", "Principal (not used)"), ("balance", "Balance (not used)"), ("no", "No. (not used)")]
+
+
+def _loan_header(word: str) -> str:
+    w = word.lower()
+    if "interest" in w:
+        return "interest"
+    if "principal" in w:
+        return "principal"
+    if "balance" in w or "outstanding" in w:
+        return "balance"
+    if "due" in w or "date" in w:
+        return "due_date"
+    if any(k in w for k in ("amort", "total", "payment", "installment", "instalment", "amount")):
+        return "amount"
+    if w in ("no", "no.", "#", "n", "mo", "month", "period", "seq"):
+        return "no"
+    return ""
+
+
+def guess_loan_colmap(rows: list[list[str]]) -> list[str]:
+    """The amortisation table's columns: Due date, Amount, Interest part; Principal, Balance and No. are shown but not used. Headings first; without
+    them, the dates are the due date and the first money column is the amount."""
+    if not rows:
+        return []
+    width = max(len(r) for r in rows)
+    head = has_header(rows) or any(_loan_header(c) for c in rows[0])
+    body = rows[1:] if head else rows
+    out, used = [], set()
+    for i in range(width):
+        col = [r[i].strip() for r in body if i < len(r) and r[i].strip()]
+        guess = _loan_header(rows[0][i]) if head and i < len(rows[0]) else ""
+        if not guess and col:
+            share = lambda f: sum(1 for c in col if f(c)) / len(col)          # noqa: E731
+            if share(lambda c: bool(_DATE.match(c))) >= 0.7:
+                guess = "due_date"
+            elif share(lambda c: bool(_PRICE.match(c))) >= 0.7:
+                guess = "amount" if "amount" not in used else ("interest" if "interest" not in used else "balance")
+            elif share(lambda c: c.isdigit()) >= 0.7:
+                guess = "no"
+        if guess in used and guess != "":
+            guess = ""
+        out.append(guess)
+        if guess:
+            used.add(guess)
+    return out
+
+
+def _money(text: str) -> float | None:
+    t = (text or "").replace("₱", "").replace("PHP", "").replace(",", "").replace(" ", "").strip()
+    neg = t.startswith("(") and t.endswith(")")
+    t = t.strip("()")
+    try:
+        v = float(t)
+    except ValueError:
+        return None
+    return -v if neg else v
+
+
+def loan_rows(rows: list[list[str]], colmap: list[str], header_row: bool) -> tuple[list[dict], list[str]]:
+    """The snipped table as schedule rows: ([{'due': 'YYYY-MM-DD', 'amount', 'interest'}], problems). A row that cannot be read is a problem, not a
+    silent drop (the person types it)."""
+    import pandas as pd
+    want = {k: i for i, k in enumerate(colmap) if k}
+    out, problems = [], []
+    if "due_date" not in want or "amount" not in want:
+        return [], ["Name the Due date and the Amount columns."]
+    body = rows[1:] if header_row and len(rows) > 1 else rows
+    for n, r in enumerate(body, start=2 if header_row else 1):
+        cell = lambda k: r[want[k]].strip() if k in want and want[k] < len(r) else ""       # noqa: E731
+        if not any(x.strip() for x in r):
+            continue
+        try:
+            due = pd.to_datetime(cell("due_date"), dayfirst=False).date()
+        except (ValueError, TypeError):
+            problems.append(f"Row {n}: the due date '{cell('due_date')}' could not be read.")
+            continue
+        amount = _money(cell("amount"))
+        if amount is None or amount <= 0:
+            problems.append(f"Row {n}: the amount '{cell('amount')}' is not a number above zero.")
+            continue
+        interest = _money(cell("interest")) if "interest" in want else 0.0
+        if interest is None:
+            problems.append(f"Row {n}: the interest '{cell('interest')}' is not a number.")
+            continue
+        out.append({"due": due.isoformat(), "amount": round(amount, 2), "interest": round(max(interest, 0.0), 2)})
+    return out, problems
+
+
+def link_installments(snip_id: int, bank_loan_id: int, after_id: int) -> int:
+    """After "Add these installments": the rows just added (ids above after_id) keep the snip (the source mark)."""
+    with write_tx() as conn:
+        return conn.execute("UPDATE bank_loan_installments SET snip_id = ? WHERE bank_loan_id = ? AND installment_id > ? AND snip_id IS NULL",
+                            (int(snip_id), int(bank_loan_id), int(after_id))).rowcount
+
+
+# --- slow reads in the background (2026-10-16: a photographed page takes a minute or two of OCR on the server's one CPU; a web request may not wait
+# that long, so the read runs in a thread and writes its result to a file the page polls; files, so every gunicorn worker sees the same job) ------------
+
+JOB_MINUTES = 6
+
+
+def needs_job(token: str) -> bool:
+    """A picture, or a PDF page without real text: read by OCR, so slowly."""
+    info = file_info(token)
+    return bool(info) and not (info["ext"] == "pdf" and info["has_text"])
+
+
+def _jobs() -> Path:
+    p = folder() / "jobs"
+    p.mkdir(parents=True, exist_ok=True)
+    for old in p.glob("*.json"):                                 # a day-old result is of no use to anyone
+        try:
+            if time.time() - old.stat().st_mtime > 86400:
+                old.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return p
+
+
+def start_job(token: str, page: int, box, mode: str) -> str:
+    """Starts the read in the background; returns the job's id. The result lands in jobs/<id>.json."""
+    import threading
+    job = secrets.token_hex(8)
+    path = _jobs() / f"{job}.json"
+    path.write_text(json.dumps({"state": "running", "started": time.time()}), encoding="utf-8")
+
+    def run():
+        try:
+            r = read_box(token, page, box, mode)
+            r["state"] = "done"
+        except Exception as e:                                   # noqa: BLE001 -- the OCR program missing, a broken file: the page says so
+            r = {"state": "failed", "msg": f"Could not read the box: {e}"}
+        path.write_text(json.dumps(r), encoding="utf-8")
+    threading.Thread(target=run, daemon=True).start()
+    return job
+
+
+def job_result(job: str) -> dict | None:
+    """{'state': 'running' | 'done' | 'failed' | 'lost', ...}; None for an unknown id."""
+    if not job or not re.fullmatch(r"[0-9a-f]{16}", job):
+        return None
+    path = _jobs() / f"{job}.json"
+    if not path.exists():
+        return None
+    try:
+        r = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return {"state": "running"}
+    if r.get("state") == "running" and time.time() - float(r.get("started") or 0) > JOB_MINUTES * 60:
+        return {"state": "lost", "msg": f"The read took more than {JOB_MINUTES} minutes and was given up. Draw a smaller box, or try a clearer picture."}
+    return r

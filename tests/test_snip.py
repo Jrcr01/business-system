@@ -137,3 +137,43 @@ def test_a_picture_is_read_by_ocr_where_the_program_exists_and_a_bad_file_is_ref
     W, H = snip.page_size(tok2, 1)
     r = snip.read_box(tok2, 1, (40, 60, W - 40, H / 2))
     assert r["how"] == "ocr" and len(r["rows"]) >= 3 and any("MD777" in c for row in r["rows"] for c in row)
+
+
+def test_the_lines_of_a_ruled_table_in_a_picture_are_found():
+    from PIL import Image, ImageDraw
+    from engines.snip import _clean_cell, table_lines
+    img = Image.new("L", (600, 400), 255)
+    d = ImageDraw.Draw(img)
+    for y in (50, 90, 130, 170, 210):
+        d.line((40, y, 560, y), fill=0, width=2)
+    for x in (40, 200, 380, 560):
+        d.line((x, 50, x, 210), fill=0, width=2)
+    hl, vl = table_lines(img, (20, 20, 580, 240))
+    assert [round(v) for v in hl] == [50, 90, 130, 170, 210] and [round(v) for v in vl] == [40, 200, 380, 560]
+    assert table_lines(img, (300, 300, 500, 380)) == ([], [])
+    assert _clean_cell("| 5,720,") == "5,720" and _clean_cell("|BluEarth ES32 |") == "BluEarth ES32" and _clean_cell("—_ —-") == "" and _clean_cell(". 5,220") == "5,220"
+
+
+def test_a_slow_read_runs_in_the_background_and_the_page_checks_back(web, db, monkeypatch):
+    # 2026-10-16: OCR of a photographed page takes a minute or two on the server's one CPU; the request answers at once and the page asks again
+    import time
+
+    from engines import snip
+    _admin(web)
+    cid = _supplier_with_price(web, db, "New Century City Marketing Corp.")
+    token = _open(web, cid)
+    box = _box(token, web)
+    monkeypatch.setattr(snip, "needs_job", lambda t: True)                       # treat the text PDF as if it needed OCR
+    r = web.post(f"/price-lists/snip/{token}/read/", json.dumps({"page": 1, "mode": "table", "box": box, "category": "Tires"}), content_type="application/json").json()
+    assert r["ok"] and r["pending"] and r["job"]
+    for _ in range(50):
+        d = web.post(f"/price-lists/snip/{token}/read/", json.dumps({"job": r["job"], "category": "Tires"}), content_type="application/json").json()
+        if not d.get("pending"):
+            break
+        time.sleep(0.2)
+    assert d["ok"] and d["rows"] == ROWS and d["colmap"] == ["size", "pattern", "list_price"]
+    assert web.post(f"/price-lists/snip/{token}/read/", json.dumps({"job": "0" * 16}), content_type="application/json").status_code == 404
+    lost = snip._jobs() / "abcdef0123456789.json"
+    lost.write_text(json.dumps({"state": "running", "started": time.time() - 3600}), encoding="utf-8")
+    d = web.post(f"/price-lists/snip/{token}/read/", json.dumps({"job": "abcdef0123456789"}), content_type="application/json").json()
+    assert not d["ok"] and "given up" in d["msg"]

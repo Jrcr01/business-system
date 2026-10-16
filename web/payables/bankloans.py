@@ -126,18 +126,61 @@ def bank_loan(request, blid: int):
     if request.method == "POST":
         return _loan_post(request, loan)
     tab = request.GET.get("tab", "schedule")
-    inst = _rows("""SELECT i.installment_id, i.installment_no, i.due_date, i.amount, i.interest_portion, i.cleared_at, i.cleared_note,
+    inst = _rows("""SELECT i.installment_id, i.installment_no, i.due_date, i.amount, i.interest_portion, i.cleared_at, i.cleared_note, i.snip_id,
                            (SELECT MIN(COALESCE(t.posting_date, t.txn_date)) FROM bank_transactions t WHERE t.matched_installment_id = i.installment_id) AS bank_date
                     FROM bank_loan_installments i WHERE i.bank_loan_id = ? ORDER BY i.due_date, i.installment_id""", (blid,))
     for r in inst:
         r["paid"] = ("bank " + str(r["bank_date"])[:10]) if r["bank_date"] else (("ticked " + str(r["cleared_at"])[:10]) if r["cleared_at"] else "")
-    ctx = {"page_id": "bank-loans", "l": loan, "tab": tab, "inst": inst, "edit": int(request.GET.get("edit") or 0),
+    ctx = {"page_id": "bank-loans", "l": loan, "tab": tab, "inst": inst, "edit": int(request.GET.get("edit") or 0), **_snip_ctx(request, blid, tab),
            "total": sum(float(r["amount"]) for r in inst), "still": sum(float(r["amount"]) for r in inst if not r["paid"]) if not loan["is_cancelled"] else 0.0,
            "interest": sum(float(r["interest_portion"] or 0) for r in inst),
            "banks": _rows("SELECT creditor_id, creditor_name FROM creditors WHERE creditor_type = 'BANK_LOAN' ORDER BY creditor_name"),
            "beneficiaries": _rows("SELECT beneficiary_id, name, beneficiary_type FROM loan_beneficiaries ORDER BY name"),
            "may_write": _can(request, "bankloans.use") and not loan["is_cancelled"], "staged": request.session.get(f"bl_import_{blid}"), "today": date.today()}
     return render(request, "payables/bank_loan.html", ctx)
+
+
+def _snip_ctx(request, blid: int, tab: str) -> dict:
+    """The Snip tab (stage 2, 2026-10-16): this loan's documents and the open one (?f=<token>&p=<page>)."""
+    if tab != "snip":
+        return {}
+    import json
+
+    from engines import snip
+    token = request.GET.get("f", "")
+    info = snip.file_info(token) if token else None
+    if info and (info["kind"] != "loan" or int(info["owner_id"] or 0) != int(blid)):
+        info = None
+    page = max(1, min(int(request.GET.get("p") or 1), info["pages"] if info else 1))
+    out = {"files": snip.files_for("loan", blid), "doc": None, "loan_keys_json": json.dumps(snip.LOAN_KEYS)}
+    if info:
+        W, H = snip.page_size(token, page)
+        out["doc"] = {"token": token, "filename": info["filename"], "pages": info["pages"], "page": page, "has_text": bool(info["has_text"]), "w": W, "h": H}
+    return out
+
+
+@page_needed("bank-loans")
+def snip_page(request, blid: int, token: str, page: int):
+    from buying.snip import page_image_response
+    return page_image_response(token, page, "loan")
+
+
+@page_needed("bank-loans")
+def snip_read(request, blid: int, token: str):
+    from django.views.decorators.http import require_POST  # noqa: F401 -- POST only, checked below
+    from buying.snip import read_json
+    from engines import snip
+    if request.method != "POST":
+        raise Http404
+    return read_json(request, token, "loan", lambda rows, _cat: snip.guess_loan_colmap(rows))
+
+
+@page_needed("bank-loans")
+def snip_source(request, snip_id: int):
+    from buying.snip import source_ctx
+    ctx = source_ctx(snip_id, "loan", "/bank-loans/{ref_id}/?tab=snip&f={token}&p={page}")
+    ctx["img_url"] = f"/bank-loans/{ctx['s']['ref_id']}/snip/{ctx['s']['token']}/page/{ctx['s']['page']}.jpg"
+    return render(request, "buying/snip_source.html", {"page_id": "bank-loans", **ctx})
 
 
 def _loan_post(request, loan: dict):
@@ -188,10 +231,43 @@ def _loan_post(request, loan: dict):
     elif what == "import":
         staged = request.session.pop(f"bl_import_{blid}", None) or {"rows": []}
         done = 0
+        before = (_rows("SELECT COALESCE(MAX(installment_id), 0) AS m FROM bank_loan_installments")[0]["m"])
         for r in staged["rows"]:
-            ok, _ = bls.add_bank_loan_installment(blid, date.fromisoformat(r["due"]), float(r["amount"] or 0))
+            ok, _ = bls.add_bank_loan_installment(blid, date.fromisoformat(r["due"]), float(r["amount"] or 0), float(r.get("interest") or 0))
             done += ok
+        if done and staged.get("snip_id"):                            # the rows came from a snipped amortisation table (2026-10-16): the source mark
+            from engines.snip import link_installments
+            link_installments(int(staged["snip_id"]), blid, int(before))
         _say(request, bool(done), f"{done} installment(s) added to the schedule.")
+    elif what == "snip_upload":                                      # stage 2 (2026-10-16): the bank's amortisation table, snipped
+        from engines import snip
+        f = request.FILES.get("file")
+        ok, msg, token = snip.keep("loan", blid, f.name if f else "", f.read() if f else b"")
+        _say(request, ok, msg)
+        back += "?tab=snip" + (f"&f={token}" if ok else "")
+    elif what == "snip_use":
+        import json
+
+        from engines import snip
+        try:
+            rows, colmap = json.loads(p.get("rows") or "[]"), json.loads(p.get("colmap") or "[]")
+            box = [float(p.get(k) or 0) for k in ("x0", "y0", "x1", "y1")]
+        except ValueError:
+            rows, colmap, box = [], [], [0, 0, 0, 0]
+        token, page = p.get("token", ""), int(p.get("page") or 1)
+        info = snip.file_info(token)
+        sched, problems = snip.loan_rows(rows, colmap, p.get("header") == "1") if rows else ([], ["Snip the table first."])
+        if not info or info["kind"] != "loan" or int(info["owner_id"] or 0) != blid:
+            _say(request, False, "No such document.")
+            back += "?tab=snip"
+        elif not sched:
+            _say(request, False, " ".join(problems) or "Nothing to use.")
+            back += f"?tab=snip&f={token}&p={page}"
+        else:
+            snip_id = snip.save_snip(token, page, box, "table", rows, "loan_schedule", blid)
+            request.session[f"bl_import_{blid}"] = {"rows": sched, "notes": problems, "file": info["filename"] + " (snipped)", "snip_id": snip_id}
+            _say(request, True, f"{len(sched)} row(s) read from the snip." + (" " + " ".join(problems) if problems else ""))
+            back += "?tab=import"
     elif what == "discard":
         request.session.pop(f"bl_import_{blid}", None)
         back += "?tab=import"

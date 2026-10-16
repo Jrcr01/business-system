@@ -21,7 +21,7 @@
 <nav class="tabs" style="margin-top:14px">
   <a href="?tab=schedule"{% if tab == "schedule" %} class="on"{% endif %}>Schedule ({{ inst|length }})</a>
   <a href="?tab=details"{% if tab == "details" %} class="on"{% endif %}>Details</a>
-  {% if may_write %}<a href="?tab=import"{% if tab == "import" %} class="on"{% endif %}>Import a schedule file</a>{% endif %}
+  {% if may_write %}<a href="?tab=import"{% if tab == "import" %} class="on"{% endif %}>Import a schedule file</a><a href="?tab=snip"{% if tab == "snip" %} class="on"{% endif %}>Snip the bank's table</a>{% endif %}
 </nav>
 
 {% if tab == "details" %}
@@ -47,6 +47,9 @@
 </form>
 {% else %}<p class="note">Account {{ l.account_number|default:"—" }} · mode {{ l.mode_of_payment|default:"—" }} · repricing {{ l.repricing_date|dmy|default:"—" }}</p>{% endif %}
 
+{% elif tab == "snip" and may_write %}
+{% include "payables/_loan_snip.html" %}
+
 {% elif tab == "import" and may_write %}
 <form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="parse">
   <div class="grow"><label for="file">The bank's repayment schedule (Excel or CSV: due date and amount)</label><input id="file" type="file" name="file" accept=".xlsx,.xls,.csv" required></div>
@@ -55,8 +58,9 @@
 <p class="hint"><a href="/bank-loans/template.csv">Download a blank template (CSV)</a></p>
 {% if staged and staged.rows %}
 <div class="grp">{{ staged.file }}: {{ staged.rows|length }} row(s), before anything is saved</div>
-<div class="scroll-x"><table class="list" style="max-width:420px"><tr><th>Due</th><th style="text-align:right">Amount</th></tr>
-  {% for r in staged.rows %}<tr><td>{{ r.due|dmy }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>
+{% if staged.notes %}<div class="msg warning">{% for n in staged.notes %}{{ n }} {% endfor %}</div>{% endif %}
+<div class="scroll-x"><table class="list" style="max-width:560px"><tr><th>Due</th><th style="text-align:right">Amount</th><th style="text-align:right">Interest part</th></tr>
+  {% for r in staged.rows %}<tr><td>{{ r.due|dmy }}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td><td class="num">{% if r.interest %}{{ r.interest|floatformat:2|intcomma }}{% else %}—{% endif %}</td></tr>{% endfor %}</table></div>
 <div class="actions"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="import"><button class="btn small" type="submit"><span class="ms">playlist_add</span>Add these installments</button></form>
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="discard"><button class="btn small ghost" type="submit">Discard</button></form></div>
 {% endif %}
@@ -72,7 +76,7 @@
       <input class="inline-input" inputmode="decimal" name="interest" value="{{ r.interest_portion|floatformat:2 }}" aria-label="Interest part">
       <button class="btn small" type="submit">Save</button> <a class="btn small ghost" href="?tab=schedule">Cancel</a></form></td></tr>
   {% else %}
-  <tr><td>{{ r.installment_no }}</td><td>{{ r.due_date|dmy }}{% if not r.paid and r.due_date|slice:":10" < today|date:"Y-m-d" and not l.is_cancelled %} <span class="pill warn">overdue</span>{% endif %}</td>
+  <tr><td>{{ r.installment_no }}{% if r.snip_id %} <a class="snip-src" href="/bank-loans/snip/source/{{ r.snip_id }}/" title="See the bank's table this row was snipped from"><span class="ms">attach_file</span></a>{% endif %}</td><td>{{ r.due_date|dmy }}{% if not r.paid and r.due_date|slice:":10" < today|date:"Y-m-d" and not l.is_cancelled %} <span class="pill warn">overdue</span>{% endif %}</td>
     <td class="num">{{ r.amount|floatformat:2|intcomma }}</td><td class="num">{{ r.interest_portion|floatformat:2|intcomma }}</td>
     <td>{% if r.paid %}<span class="pill">{{ r.paid }}</span>{% else %}<span class="hint">not yet</span>{% endif %}</td>
     <td>{% if may_write and not r.paid %}<a class="btn small ghost" href="?tab=schedule&edit={{ r.installment_id }}">Edit</a>

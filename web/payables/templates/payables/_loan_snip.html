@@ -1,0 +1,47 @@
+{% load humanize %}{% comment %}Snip, stage 2 (owner, 2026-10-16): the bank's amortisation table (PDF or photo) snipped into this loan's schedule. Due date, Amount
+and Interest part are named from the headings; the rows wait on the Import tab's staging list ("before anything is saved") and are added by the same
+step as a schedule file; each installment then keeps the source mark.{% endcomment %}
+<p class="note">Open the bank's amortisation schedule (a PDF, or a photo) and <b>drag a box over the table</b>. The columns the schedule needs are Due date, Amount (the amortization) and the Interest part; the rest is ignored.
+  The rows are shown before anything is saved, and each installment keeps a link to the page it came from.</p>
+<form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="snip_upload">
+  <div class="grow"><label for="sn_file">The bank's document (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required></div>
+  <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button></form>
+{% if files %}<p class="hint" style="margin:6px 0 10px">Documents of this loan: {% for f in files %}<a href="?tab=snip&f={{ f.token }}"{% if doc and doc.token == f.token %} style="font-weight:700"{% endif %}>{{ f.filename }}</a> <span class="hint">({{ f.pages }} p{% if f.snips %}, {{ f.snips }} snip{{ f.snips|pluralize }}{% endif %})</span>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+
+{% if doc %}
+<div class="snip-split" id="sn_split">
+  <div class="snip-doc">
+    <div class="snip-head"><span class="ms">{% if doc.has_text %}picture_as_pdf{% else %}photo_camera{% endif %}</span><b>{{ doc.filename }}</b>
+      {% if doc.pages > 1 %}<span>· page <a href="?tab=snip&f={{ doc.token }}&p={{ doc.page|add:'-1' }}"{% if doc.page == 1 %} hidden{% endif %}>‹</a> {{ doc.page }} of {{ doc.pages }} <a href="?tab=snip&f={{ doc.token }}&p={{ doc.page|add:'1' }}"{% if doc.page == doc.pages %} hidden{% endif %}>›</a></span>{% endif %}
+      <span class="pill{% if not doc.has_text %} warn{% endif %}">{% if doc.has_text %}real text: exact{% else %}picture: OCR{% endif %}</span>
+      <button type="button" class="btn small ghost" id="sn_wide"><span class="ms">open_in_full</span>Bigger</button>
+      <span class="snip-tool"><button type="button" class="on" data-mode="table"><span class="ms">table_chart</span>Table</button><button type="button" data-mode="text"><span class="ms">text_fields</span>Text</button></span></div>
+    <div class="snip-wrap" id="sn_wrap"><img id="sn_img" src="/bank-loans/{{ l.bank_loan_id }}/snip/{{ doc.token }}/page/{{ doc.page }}.jpg" alt="page {{ doc.page }}" draggable="false">
+      <div class="snip-box" id="sn_box" hidden><b id="sn_label"></b></div></div>
+    <p class="hint" style="margin:6px 0 0">Drag a box around the whole table, headings included.</p>
+  </div>
+  <div class="snip-out">
+    <form method="post" id="sn_form">{% csrf_token %}<input type="hidden" name="action" value="snip_use">
+      <input type="hidden" name="token" value="{{ doc.token }}"><input type="hidden" name="page" value="{{ doc.page }}">
+      <input type="hidden" name="rows" id="sn_rows"><input type="hidden" name="colmap" id="sn_colmap"><input type="hidden" name="header" id="sn_header">
+      <input type="hidden" name="x0" id="sn_x0"><input type="hidden" name="y0" id="sn_y0"><input type="hidden" name="x1" id="sn_x1"><input type="hidden" name="y1" id="sn_y1">
+      <div id="sn_msg" class="hint" role="status">Nothing snipped yet.</div>
+      <div id="sn_text" class="snip-text" hidden></div>
+      <div class="scroll-x"><table class="list" id="sn_grid" hidden></table></div>
+      <p id="sn_actions" hidden style="margin:10px 0 0"><button class="btn small" type="submit"><span class="ms">playlist_add_check</span>Use these rows as the schedule</button>
+        <span class="hint">→ shown on the Import tab first; nothing is saved until you add them</span></p>
+    </form>
+  </div>
+</div>
+<script src="/static/core/snip.js?v=3"></script>
+<script>
+(function () {
+  var keys = {{ loan_keys_json|safe }}, $ = function (id) { return document.getElementById(id); };
+  var g = slicksSnip.grid({grid: $("sn_grid"), msg: $("sn_msg"), text: $("sn_text"), actions: $("sn_actions"), form: $("sn_form"), keys: function () { return keys; },
+    hidden: {rows: $("sn_rows"), colmap: $("sn_colmap"), header: $("sn_header"), x0: $("sn_x0"), y0: $("sn_y0"), x1: $("sn_x1"), y1: $("sn_y1")}, wide: $("sn_wide"), split: $("sn_split"), category: null});
+  g.bind(slicksSnip.start({wrap: $("sn_wrap"), img: $("sn_img"), box: $("sn_box"), label: $("sn_label"), w: {{ doc.w }}, h: {{ doc.h }}, page: {{ doc.page }},
+    csrf: document.querySelector("#sn_form input[name=csrfmiddlewaretoken]").value, readUrl: "/bank-loans/{{ l.bank_loan_id }}/snip/{{ doc.token }}/read/",
+    modeButtons: Array.prototype.slice.call(document.querySelectorAll(".snip-tool button")), onBusy: g.onBusy, onResult: g.onResult}));
+})();
+</script>
+{% endif %}

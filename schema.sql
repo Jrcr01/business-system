@@ -246,6 +246,7 @@ CREATE TABLE IF NOT EXISTS bank_loan_installments (
     cleared_at DATE,                 -- migration 080 (2026-10-09): ticked paid (or the go-live cut-off); a matched bank line also clears it
     cleared_by TEXT,
     cleared_note TEXT,
+    snip_id INTEGER REFERENCES snips(snip_id),                       -- migration 106: the snipped amortisation table this row came from
     FOREIGN KEY (bank_loan_id) REFERENCES bank_loans(bank_loan_id)
 );
 

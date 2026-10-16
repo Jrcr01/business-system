@@ -38,40 +38,15 @@ Excel import's own check screen on them (the same validation), and the prices sa
     </form>
   </div>
 </div>
-<script src="/static/core/snip.js?v=1"></script>
+<script src="/static/core/snip.js?v=3"></script>
 <script>
 (function () {
-  var keys = {{ col_keys_json|safe }}, grid = document.getElementById("sn_grid"), msg = document.getElementById("sn_msg"), text = document.getElementById("sn_text"), acts = document.getElementById("sn_actions");
-  var cat = document.getElementById("sn_cat"), rows = [], colmap = [], header = false;
-  function options(sel) { var c = cat.value, out = '<option value="">—</option>'; (keys[c] || []).forEach(function (kv) { out += '<option value="' + kv[0] + '"' + (kv[0] === sel ? " selected" : "") + ">" + kv[1] + "</option>"; }); return out; }
-  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
-  function draw() {
-    if (!rows.length) { grid.hidden = true; acts.hidden = true; return; }
-    var w = Math.max.apply(null, rows.map(function (r) { return r.length; }));
-    var h = "<tr>"; for (var i = 0; i < w; i++) h += '<th><select data-col="' + i + '">' + options(colmap[i] || "") + "</select></th>"; h += "</tr>";
-    rows.forEach(function (r, ri) { h += '<tr class="' + (header && ri === 0 ? "snip-head-row" : "") + '">'; for (var i = 0; i < w; i++) { var d = (doubt[ri] || [])[i]; h += '<td' + (d ? ' class="snip-doubt"' : "") + '><input class="in" data-r="' + ri + '" data-c="' + i + '" value="' + esc(r[i] || "") + '"' + (d ? ' title="OCR was not sure: confirm or fix"' : "") + "></td>"; } h += "</tr>"; });
-    grid.innerHTML = h; grid.hidden = false; acts.hidden = false;
-    grid.querySelectorAll("select").forEach(function (s) { s.addEventListener("change", function () { colmap[+s.dataset.col] = s.value; }); });
-    grid.querySelectorAll("input").forEach(function (inp) { inp.addEventListener("input", function () { rows[+inp.dataset.r][+inp.dataset.c] = inp.value; inp.parentNode.classList.remove("snip-doubt"); }); });
-  }
-  var doubt = [];
-  var sn = slicksSnip.start({wrap: document.getElementById("sn_wrap"), img: document.getElementById("sn_img"), box: document.getElementById("sn_box"), label: document.getElementById("sn_label"),
-    w: {{ doc.w }}, h: {{ doc.h }}, page: {{ doc.page }}, csrf: document.querySelector("#sn_form input[name=csrfmiddlewaretoken]").value, readUrl: "/price-lists/snip/{{ doc.token }}/read/",
-    modeButtons: Array.prototype.slice.call(document.querySelectorAll(".snip-tool button")), category: function () { return cat.value; },
-    onBusy: function (b) { if (b) msg.textContent = "Reading the box…"; },
-    onResult: function (d, why) {
-      if (!d) { msg.textContent = why; rows = []; draw(); text.hidden = true; return; }
-      if (d.mode === "text") { text.textContent = d.text; text.hidden = false; msg.textContent = "Text snip" + (d.doubtful ? " (OCR was not sure: check it)" : "") + ":"; rows = []; draw(); return; }
-      text.hidden = true; rows = d.rows; doubt = d.doubt || []; colmap = d.colmap || []; header = !!d.header;
-      var nd = doubt.reduce(function (n, r) { return n + r.filter(Boolean).length; }, 0);
-      msg.textContent = rows.length + " row" + (rows.length === 1 ? "" : "s") + " read (" + (d.how === "ruled" ? "ruled table, exact" : d.how === "positions" ? "by position, exact" : "OCR") + ")" + (header ? ", first row = headings" : "") + (nd ? " · " + nd + " cell" + (nd === 1 ? "" : "s") + " to confirm (orange)" : "") + ". Name the columns, then check.";
-      draw(); }});
-  cat.addEventListener("change", function () { if (rows.length) sn.reread(); });
-  document.getElementById("sn_wide").addEventListener("click", function () { var sp = document.getElementById("sn_split"); sp.classList.toggle("wide"); this.innerHTML = '<span class="ms">' + (sp.classList.contains("wide") ? "close_fullscreen</span>Side by side" : "open_in_full</span>Bigger"); });
-  document.getElementById("sn_form").addEventListener("submit", function (e) {
-    var r = sn.rect(); if (!r || !rows.length) { e.preventDefault(); msg.textContent = "Snip a table first."; return; }
-    document.getElementById("sn_rows").value = JSON.stringify(rows); document.getElementById("sn_colmap").value = JSON.stringify(colmap); document.getElementById("sn_header").value = header ? "1" : "0";
-    document.getElementById("sn_x0").value = r.x0; document.getElementById("sn_y0").value = r.y0; document.getElementById("sn_x1").value = r.x1; document.getElementById("sn_y1").value = r.y1; });
+  var keys = {{ col_keys_json|safe }}, cat = document.getElementById("sn_cat"), $ = function (id) { return document.getElementById(id); };
+  var g = slicksSnip.grid({grid: $("sn_grid"), msg: $("sn_msg"), text: $("sn_text"), actions: $("sn_actions"), form: $("sn_form"), keys: function () { return keys[cat.value] || []; },
+    hidden: {rows: $("sn_rows"), colmap: $("sn_colmap"), header: $("sn_header"), x0: $("sn_x0"), y0: $("sn_y0"), x1: $("sn_x1"), y1: $("sn_y1")}, wide: $("sn_wide"), split: $("sn_split"), category: cat});
+  g.bind(slicksSnip.start({wrap: $("sn_wrap"), img: $("sn_img"), box: $("sn_box"), label: $("sn_label"), w: {{ doc.w }}, h: {{ doc.h }}, page: {{ doc.page }},
+    csrf: document.querySelector("#sn_form input[name=csrfmiddlewaretoken]").value, readUrl: "/price-lists/snip/{{ doc.token }}/read/",
+    modeButtons: Array.prototype.slice.call(document.querySelectorAll(".snip-tool button")), category: function () { return cat.value; }, onBusy: g.onBusy, onResult: g.onResult}));
 })();
 </script>
 {% endif %}

@@ -52,10 +52,11 @@ def upload(request):
     return redirect(f"/price-lists/?s={cid}&tab=snip" + (f"&f={token}" if ok else ""))
 
 
-@page_needed("price-lists")
-def page_image(request, token: str, page: int):
+def page_image_response(token: str, page: int, kind: str):
+    """The page picture (shared by every page that snips: the file must be of that page's kind)."""
     from engines import snip
-    path = snip.page_image(token, page)
+    info = snip.file_info(token)
+    path = snip.page_image(token, page) if info and info["kind"] == kind else None
     if not path:
         raise Http404
     resp = FileResponse(open(path, "rb"), content_type="image/jpeg")
@@ -63,30 +64,67 @@ def page_image(request, token: str, page: int):
     return resp
 
 
-@page_needed("price-lists")
-@require_POST
-def read(request, token: str):
-    """The box → what is inside it, plus the guessed column names for the category (JSON)."""
+def read_json(request, token: str, kind: str, guess):
+    """The box → what is inside it (JSON), plus the column names guessed by `guess(rows, category)` for the destination's own fields."""
     from engines import snip
+    info = snip.file_info(token)
+    if not info or info["kind"] != kind:
+        return JsonResponse({"ok": False, "msg": "No such document."}, status=404)
     try:
         d = json.loads(request.body or b"{}")
-        box = [float(d["box"][k]) for k in ("x0", "y0", "x1", "y1")]
-        page = int(d.get("page") or 1)
-    except (ValueError, KeyError, TypeError):
-        return JsonResponse({"ok": False, "msg": "No box."}, status=400)
-    mode = "text" if d.get("mode") == "text" else "table"
-    try:
-        r = snip.read_box(token, page, box, mode)
-    except Exception as e:                                   # noqa: BLE001 -- the OCR program missing, a broken file: say so, never a blank page
-        return JsonResponse({"ok": False, "msg": f"Could not read the box: {e}"}, status=500)
-    from engines import product_catalog as pc
-    category = d.get("category") if d.get("category") in pc.CATEGORIES else "Tires"
+    except ValueError:
+        d = {}
+    if d.get("job"):                                         # the page asks whether a slow read (OCR in the background) is done
+        r = snip.job_result(str(d["job"]))
+        if r is None:
+            return JsonResponse({"ok": False, "msg": "That read is no longer there. Draw the box again."}, status=404)
+        if r["state"] == "running":
+            return JsonResponse({"ok": True, "pending": True, "job": d["job"]})
+        if r["state"] in ("failed", "lost"):
+            return JsonResponse({"ok": False, "msg": r.get("msg", "Could not read the box.")})
+        mode = r.get("mode", "table")
+    else:
+        try:
+            box = [float(d["box"][k]) for k in ("x0", "y0", "x1", "y1")]
+            page = int(d.get("page") or 1)
+        except (ValueError, KeyError, TypeError):
+            return JsonResponse({"ok": False, "msg": "No box."}, status=400)
+        mode = "text" if d.get("mode") == "text" else "table"
+        if snip.needs_job(token):                            # OCR: a minute or two on the server; the page checks back
+            return JsonResponse({"ok": True, "pending": True, "job": snip.start_job(token, page, box, mode)})
+        try:
+            r = snip.read_box(token, page, box, mode)
+        except Exception as e:                               # noqa: BLE001 -- a broken file: say so, never a blank page
+            return JsonResponse({"ok": False, "msg": f"Could not read the box: {e}"}, status=500)
     r["ok"] = r["how"] != "none"
     r["msg"] = "" if r["ok"] else "Nothing readable inside the box. Draw it over the table or the figure."
     if r["ok"] and mode == "table":
         r["header"] = snip.has_header(r["rows"])
-        r["colmap"] = snip.guess_colmap(category, r["rows"])
+        r["colmap"] = guess(r["rows"], d.get("category") or "")
     return JsonResponse(r)
+
+
+def source_ctx(snip_id: int, kind: str, open_url: str) -> dict:
+    from engines import snip
+    info = snip.snip_info(snip_id)
+    if not info or info["kind"] != kind:
+        raise Http404
+    W, H = snip.page_size(info["token"], info["page"])
+    return {"s": info, "w": W, "h": H, "open_url": open_url.format(**info), "img_url": None,
+            "box": {"l": info["x0"] / W * 100, "t": info["y0"] / H * 100, "w": (info["x1"] - info["x0"]) / W * 100, "h": (info["y1"] - info["y0"]) / H * 100}}
+
+
+@page_needed("price-lists")
+def page_image(request, token: str, page: int):
+    return page_image_response(token, page, "price")
+
+
+@page_needed("price-lists")
+@require_POST
+def read(request, token: str):
+    from engines import product_catalog as pc
+    from engines import snip
+    return read_json(request, token, "price", lambda rows, cat: snip.guess_colmap(cat if cat in pc.CATEGORIES else "Tires", rows))
 
 
 @page_needed("price-lists")
@@ -121,10 +159,6 @@ def check(request, token: str):
 @page_needed("price-lists")
 def source(request, snip_id: int):
     """The source mark: the page with the box drawn on it, read only."""
-    from engines import snip
-    info = snip.snip_info(snip_id)
-    if not info:
-        raise Http404
-    W, H = snip.page_size(info["token"], info["page"])
-    return render(request, "buying/snip_source.html", {"page_id": "price-lists", "s": info, "w": W, "h": H,
-                                                       "box": {"l": info["x0"] / W * 100, "t": info["y0"] / H * 100, "w": (info["x1"] - info["x0"]) / W * 100, "h": (info["y1"] - info["y0"]) / H * 100}})
+    ctx = source_ctx(snip_id, "price", "/price-lists/?tab=snip&f={token}&p={page}")
+    ctx["img_url"] = f"/price-lists/snip/{ctx['s']['token']}/page/{ctx['s']['page']}.jpg"
+    return render(request, "buying/snip_source.html", {"page_id": "price-lists", **ctx})
