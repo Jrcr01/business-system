@@ -1,7 +1,7 @@
 import sqlite3
 
 from engines.memo import until_saved
-from engines.cc_rules import cc_owed_case, superseded_sql
+from engines.cc_rules import cc_debt_case, cc_owed_case, superseded_sql
 from datetime import date, timedelta
 
 import pandas as pd
@@ -324,9 +324,9 @@ def get_combined_ap_summary() -> pd.DataFrame:
         bank_loan = conn.execute(
             "SELECT COALESCE(SUM(amount), 0) FROM bank_loan_installments WHERE NOT (cleared_at IS NOT NULL OR installment_id IN (SELECT matched_installment_id FROM bank_transactions WHERE matched_installment_id IS NOT NULL)) AND bank_loan_id NOT IN (SELECT bank_loan_id FROM bank_loans WHERE is_cancelled = 1)"
         ).fetchone()[0]
-        credit_card = conn.execute(
-            f"""SELECT COALESCE(SUM({cc_owed_case('cs')}), 0)
-               FROM cc_statements cs WHERE cs.status NOT IN ('Paid', 'Cancelled')"""
+        credit_card = conn.execute(                                  # statements owed + installments still to be billed (owner, 2026-10-17)
+            f"""SELECT COALESCE(SUM({cc_debt_case('cs')}), 0)
+               FROM cc_statements cs WHERE cs.status != 'Cancelled'"""
         ).fetchone()[0]
 
     df = pd.DataFrame([

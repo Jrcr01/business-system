@@ -3,9 +3,12 @@ PDF or photo on the left, the box, the rows on the right with their column names
 Excel import's own check screen on them (the same validation), and the prices saved carry the source mark.{% endcomment %}
 <p class="note">Open the supplier's price list (a PDF, or a photo) and <b>drag a box over the table</b>. A PDF with real text is read exactly; a photo is read by OCR and doubtful cells show in orange for you to confirm.
   The rows go through the same check as Import Excel before anything is saved. The document is not kept: it is deleted once its rows are imported, or after a day.</p>
-<form class="bar" method="post" enctype="multipart/form-data" action="/price-lists/snip/upload/">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}">
-  <div class="grow"><label for="sn_file">The supplier's document (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required></div>
-  <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button></form>
+<form class="bar" id="sn_upload" method="post" enctype="multipart/form-data" action="/price-lists/snip/upload/">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}">
+  <div class="grow"><label for="sn_file">The supplier's document (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png"></div>
+  <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button>
+  <button class="btn small ghost" type="button" id="sn_paste" title="A screenshot or a copied picture"><span class="ms">content_paste</span>Paste</button><span class="hint" id="sn_paste_hint"></span></form>
+<script src="/static/core/snip.js?v=8"></script>
+<script>slicksSnip.paste({form: document.getElementById("sn_upload"), button: document.getElementById("sn_paste"), hint: document.getElementById("sn_paste_hint"), field: "file"});</script>
 {% if files %}<p class="hint" style="margin:6px 0 10px">Documents of {{ supplier }}: {% for f in files %}<a href="/price-lists/?s={{ cid }}&tab=snip&f={{ f.token }}"{% if doc and doc.token == f.token %} style="font-weight:700"{% endif %}>{{ f.filename }}</a> <span class="hint">({{ f.pages }} p{% if f.snips %}, {{ f.snips }} snip{{ f.snips|pluralize }}{% endif %})</span>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
 
 {% if doc %}
@@ -38,7 +41,6 @@ Excel import's own check screen on them (the same validation), and the prices sa
     </form>
   </div>
 </div>
-<script src="/static/core/snip.js?v=7"></script>
 <script>
 (function () {
   var keys = {{ col_keys_json|safe }}, cat = document.getElementById("sn_cat"), $ = function (id) { return document.getElementById(id); };

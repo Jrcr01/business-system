@@ -4,9 +4,12 @@ the statement's total snipped as text and checked against the sum of the rows, t
 <div class="grp" style="margin-top:18px">Snip from the statement <span class="hint">· a PDF or a photo of the supplier's SOA</span></div>
 <p class="note">Open the statement and <b>drag a box over the table</b> of invoices. Then pick <b>Text</b> and drag over the statement's <b>total</b>: it is checked against the sum of the rows.
   A photo is read by OCR, which takes a minute or two; doubtful cells show in orange for you to confirm or type. The document is deleted once matched, or after a day.</p>
-<form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="snip_upload"><input type="hidden" name="s" value="{{ cid }}">
-  <div class="grow"><label for="sn_file">The statement (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required></div>
-  <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button></form>
+<form class="bar" id="sn_upload" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="snip_upload"><input type="hidden" name="s" value="{{ cid }}">
+  <div class="grow"><label for="sn_file">The statement (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png"></div>
+  <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button>
+  <button class="btn small ghost" type="button" id="sn_paste" title="A screenshot or a copied picture"><span class="ms">content_paste</span>Paste</button><span class="hint" id="sn_paste_hint"></span></form>
+<script src="/static/core/snip.js?v=8"></script>
+<script>slicksSnip.paste({form: document.getElementById("sn_upload"), button: document.getElementById("sn_paste"), hint: document.getElementById("sn_paste_hint"), field: "file"});</script>
 {% if files %}<p class="hint" style="margin:6px 0 10px">Open statements of this supplier: {% for f in files %}<a href="?s={{ cid }}&f={{ f.token }}"{% if doc and doc.token == f.token %} style="font-weight:700"{% endif %}>{{ f.filename }}</a> <span class="hint">({{ f.pages }} p)</span>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
 
 {% if doc %}
@@ -38,7 +41,6 @@ the statement's total snipped as text and checked against the sum of the rows, t
     </form>
   </div>
 </div>
-<script src="/static/core/snip.js?v=7"></script>
 <script>
 (function () {
   var keys = {{ soa_keys_json|safe }}, $ = function (id) { return document.getElementById(id); };

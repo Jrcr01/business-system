@@ -18,3 +18,12 @@ def cc_owed_case(alias: str = "cs") -> str:
     a = alias
     return (f"CASE WHEN {a}.unpaid_balance_next > 0 THEN (CASE WHEN {superseded_sql(a)} THEN 0 ELSE {a}.unpaid_balance_next END) "
             f"ELSE {a}.total_amount_due END")          # owed until it is paid, after its due date too (daily payables, owner 2026-10-09)
+
+
+def cc_debt_case(alias: str = "cs") -> str:
+    """SQL CASE for one statement row: what it still owes (0 once Paid or Cancelled) PLUS, on the card's latest statement only, the installments still to
+    be billed (owner, 2026-10-17: "owed on cards = statements + unbilled installments everywhere"). Use with WHERE status != 'Cancelled' -- a Paid latest
+    statement still carries the card's unbilled figure."""
+    a = alias
+    return (f"(CASE WHEN {a}.status IN ('Paid', 'Cancelled') THEN 0 ELSE {cc_owed_case(a)} END "
+            f"+ CASE WHEN {a}.status = 'Cancelled' OR {superseded_sql(a)} THEN 0 ELSE COALESCE({a}.unbilled_installments, 0) END)")

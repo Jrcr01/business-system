@@ -29,8 +29,16 @@ var slicksSnip = (function () {
       post({page: o.page, mode: mode, box: rect, category: o.category ? o.category() : ""}).then(got).catch(fail);
     }
     var down = function (e) { if (e.target.closest("a, button")) return; from = pos(e); rect = show(from, from); e.preventDefault(); };
-    var move = function (e) { if (!from) return; rect = show(from, pos(e)); e.preventDefault(); };
-    var up = function (e) { if (!from) return; rect = show(from, pos(e)); from = null; if (rect.x1 - rect.x0 > 3 && rect.y1 - rect.y0 > 3) read(); };
+    var last = null, scrolling = null;
+    function autoscroll() {                                      /* the box runs past the screen: the page follows the pointer (owner, 2026-10-17) */
+      if (!from || !last) { scrolling = null; return; }
+      var edge = 48, dy = last.clientY > window.innerHeight - edge ? 14 : last.clientY < edge ? -14 : 0;
+      if (dy) { window.scrollBy(0, dy); rect = show(from, pos(last)); }
+      scrolling = requestAnimationFrame(autoscroll);
+    }
+    var move = function (e) { if (!from) return; if (e.touches && e.touches.length > 1) { from = null; box.hidden = true; return; }
+      last = e.touches ? e.touches[0] : e; rect = show(from, pos(e)); if (!scrolling) scrolling = requestAnimationFrame(autoscroll); e.preventDefault(); };
+    var up = function (e) { if (!from) return; rect = show(from, pos(e)); from = null; last = null; if (rect.x1 - rect.x0 > 3 && rect.y1 - rect.y0 > 3) read(); };
     wrap.addEventListener("mousedown", down); window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
     wrap.addEventListener("touchstart", down, {passive: false}); wrap.addEventListener("touchmove", move, {passive: false}); wrap.addEventListener("touchend", up);
     return {rect: function () { return rect; }, data: function () { return data; }, mode: function () { return mode; }, reread: read, setMode: setMode};
@@ -76,5 +84,35 @@ var slicksSnip = (function () {
     return {onResult: onResult, onBusy: function (b, text) { if (b) g.msg.textContent = text || "Reading the box…"; }, bind: function (s) { sn = s; },
             rows: function () { return rows; }, colmap: function () { return colmap; }, header: function () { return header; }};
   }
-  return {start: start, grid: grid};
+  /* Paste a picture from the clipboard as the document (owner, 2026-10-17): Ctrl+V anywhere on the page, or the Paste button (asks the browser for the
+     clipboard). The picture is sent through the page's own upload form, so it lands exactly as a chosen file would. o = {form, button, hint, field} */
+  function paste(o) {
+    if (!o.form || !o.button) return;
+    function send(blob, type) {
+      var fd = new FormData(o.form), ext = (type.split("/")[1] || "png").replace("jpeg", "jpg").split("+")[0];
+      fd.delete(o.field); fd.append(o.field, blob, "pasted-" + new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "") + "." + ext);
+      o.button.disabled = true; if (o.hint) o.hint.textContent = "Opening the picture…";
+      fetch(o.form.getAttribute("action") || location.href, {method: "POST", body: fd, credentials: "same-origin", redirect: "follow"})
+        .then(function (r) { location.href = r.url || location.href; })
+        .catch(function () { o.button.disabled = false; if (o.hint) o.hint.textContent = "Could not send the picture. Check the connection and try again."; });
+    }
+    function fromItems(items) {
+      for (var i = 0; i < items.length; i++) { var it = items[i]; if (it.kind === "file" && it.type.indexOf("image/") === 0) { var b = it.getAsFile(); if (b) { send(b, it.type); return true; } } }
+      return false;
+    }
+    document.addEventListener("paste", function (e) {
+      if (e.target && e.target.closest && e.target.closest("input, textarea, select, [contenteditable]")) return;
+      if (e.clipboardData && fromItems(e.clipboardData.items || [])) e.preventDefault();
+    });
+    o.button.addEventListener("click", function () {
+      if (!navigator.clipboard || !navigator.clipboard.read) { if (o.hint) o.hint.textContent = "Press Ctrl+V on this page to paste the picture."; return; }
+      navigator.clipboard.read().then(function (items) {
+        var found = false;
+        items.forEach(function (ci) { if (found) return; var t = (ci.types || []).filter(function (x) { return x.indexOf("image/") === 0; })[0]; if (t) { found = true; ci.getType(t).then(function (b) { send(b, t); }); } });
+        if (!found && o.hint) o.hint.textContent = "No picture on the clipboard. Copy a picture or take a screenshot (Win+Shift+S) first.";
+      }).catch(function () { if (o.hint) o.hint.textContent = "The browser did not allow reading the clipboard: press Ctrl+V on this page instead."; });
+    });
+  }
+
+  return {start: start, grid: grid, paste: paste};
 })();

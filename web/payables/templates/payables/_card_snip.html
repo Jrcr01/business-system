@@ -1,0 +1,47 @@
+{% comment %}Snip from the card's statement (owner, 2026-10-17; mock-up docs/mockups/ac_card_installments.html). Text boxes only: click a box in the form above,
+then draw over the figure on the statement -- one figure fills the box, a column of figures (the unbilled installments, the credit lines) is added up.
+The document is deleted when the statement is added, or after a day.{% endcomment %}
+<div class="grp" style="margin-top:14px">Snip from the statement <span class="hint">· the card's SOA as a PDF, a picture, or pasted from the clipboard</span></div>
+<form class="bar" method="post" enctype="multipart/form-data" id="sn_upload">{% csrf_token %}<input type="hidden" name="action" value="snip_upload">
+  <div class="grow"><label for="sn_file">The statement (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png"></div>
+  <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button>
+  <button class="btn small ghost" type="button" id="sn_paste" title="A screenshot or a copied picture"><span class="ms">content_paste</span>Paste</button><span class="hint" id="sn_paste_hint"></span></form>
+{% if files %}<p class="hint" style="margin:6px 0 10px">Open statements: {% for f in files %}<a href="?f={{ f.token }}"{% if doc and doc.token == f.token %} style="font-weight:700"{% endif %}>{{ f.filename }}</a> <span class="hint">({{ f.pages }} p)</span>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+<script src="/static/core/snip.js?v=8"></script>
+<script>slicksSnip.paste({form: document.getElementById("sn_upload"), button: document.getElementById("sn_paste"), hint: document.getElementById("sn_paste_hint"), field: "file"});</script>
+{% if doc %}
+<div class="snip-split wide" id="sn_split">
+  <div class="snip-doc">
+    <div class="snip-head"><span class="ms">{% if doc.has_text %}picture_as_pdf{% else %}photo_camera{% endif %}</span><b>{{ doc.filename }}</b>
+      {% if doc.pages > 1 %}<span>· page <a href="?f={{ doc.token }}&p={{ doc.page|add:'-1' }}"{% if doc.page == 1 %} hidden{% endif %}>‹</a> {{ doc.page }} of {{ doc.pages }} <a href="?f={{ doc.token }}&p={{ doc.page|add:'1' }}"{% if doc.page == doc.pages %} hidden{% endif %}>›</a></span>{% endif %}
+      <span class="pill{% if not doc.has_text %} warn{% endif %}">{% if doc.has_text %}real text: exact{% else %}picture: OCR{% endif %}</span>
+      <span class="snip-tool"><button type="button" class="on" data-mode="text" hidden>Text</button></span></div>
+    <div class="snip-wrap" id="sn_wrap"><img id="sn_img" src="/credit-cards/snip/{{ doc.token }}/page/{{ doc.page }}.jpg" alt="page {{ doc.page }}" draggable="false">
+      <div class="snip-box" id="sn_box" hidden><b id="sn_label"></b></div></div>
+    <p class="hint" style="margin:6px 0 0" id="sn_msg" role="status"><b>Click a box in the form</b> (Total amount due, Payments, Credits, Finance charge, Unbilled installments), then <b>drag a box over the figure</b> on the statement.
+      One figure fills the box; a column of figures is added up. A picture is read by OCR: check the figure.</p>
+    <div id="sn_text" class="snip-text" hidden></div>
+    <table id="sn_grid" hidden></table><span id="sn_actions" hidden></span>
+  </div>
+</div>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); }, f = $("soa-form"), boxes = ["total", "payments", "credits", "interest", "unbilled"].map(function (k) { return f[k]; });
+  function money(s) { s = String(s || "").replace(/[₱,\s]/g, "").replace(/^P/, ""); var neg = /^\(.*\)$/.test(s) || /C$/.test(s); s = s.replace(/[()C]/g, ""); var v = parseFloat(s); return isNaN(v) ? null : v; }
+  var g = slicksSnip.grid({grid: $("sn_grid"), msg: $("sn_msg"), text: $("sn_text"), actions: $("sn_actions"), form: f, keys: function () { return []; },
+    hidden: {}, wide: null, split: null, category: null, targets: boxes,
+    onText: function (t) {
+      var m = String(t || "").match(/\(?[₱P]?\s*\d[\d,]*\.\d{2}\)?C?/g) || String(t || "").match(/\d[\d,]*/g), vals = (m || []).map(money).filter(function (v) { return v !== null; });
+      var tgt = document.querySelector("#soa-form input.snip-target") || boxes[0];
+      if (!vals.length) { $("sn_msg").textContent = "No figure in the box. Draw it over the number(s)."; return; }
+      var sum = Math.round(vals.reduce(function (a, b) { return a + b; }, 0) * 100) / 100;
+      tgt.value = sum.toFixed(2); tgt.dispatchEvent(new Event("input", {bubbles: true}));
+      $("sn_msg").textContent = (vals.length === 1 ? "Filled " : vals.length + " figures added up into ") + (tgt.labels && tgt.labels[0] ? tgt.labels[0].textContent : tgt.name) + ": ₱" + sum.toLocaleString("en-PH", {minimumFractionDigits: 2}) + ". Click another box in the form to fill it.";
+    }});
+  var sn = slicksSnip.start({wrap: $("sn_wrap"), img: $("sn_img"), box: $("sn_box"), label: $("sn_label"), w: {{ doc.w }}, h: {{ doc.h }}, page: {{ doc.page }},
+    csrf: document.querySelector("#soa-form input[name=csrfmiddlewaretoken]").value, readUrl: "/credit-cards/snip/{{ doc.token }}/read/",
+    modeButtons: Array.prototype.slice.call(document.querySelectorAll(".snip-tool button")), onBusy: g.onBusy, onResult: g.onResult});
+  g.bind(sn); sn.setMode("text");
+})();
+</script>
+{% endif %}

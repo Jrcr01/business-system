@@ -1,12 +1,12 @@
 {% load humanize %}{% comment %}Owner, 2026-10-15: "Add credit card analysis", "include finance charges incurred" (engines/card_analysis; mock-up y_card_analysis).
 No limit warning (owner: "not need"): credit used is information only.{% endcomment %}
 <div class="kpis">
-  <a class="kpi" href="/calendar/"><span>Owed on cards</span><b>₱{{ cc.owed|floatformat:0|intcomma }}</b><small>{{ cc.owed_cards }} card{{ cc.owed_cards|pluralize }} with a balance</small></a>
+  <a class="kpi" href="/calendar/"><span>Owed on cards</span><b>₱{{ cc.owed|floatformat:0|intcomma }}</b><small>{% if cc.owed_unbilled %}₱{{ cc.owed_statements|floatformat:0|intcomma }} on statements + ₱{{ cc.owed_unbilled|floatformat:0|intcomma }} unbilled installments{% else %}{{ cc.owed_cards }} card{{ cc.owed_cards|pluralize }} with a balance{% endif %}</small></a>
   <a class="kpi" href="/checks/"><span>Due next 30 days</span><b>₱{{ cc.due30|floatformat:0|intcomma }}</b><small>{{ cc.due30_n }} statement{{ cc.due30_n|pluralize }}</small></a>
   <a class="kpi{% if cc.finance_year %} warnk{% endif %}" href="/credit-cards/"><span>Finance charges incurred, {{ cc.year }}</span><b>₱{{ cc.finance_year|floatformat:0|intcomma }}</b>
     <small>{% if cc.finance_year %}₱{{ cc.finance_this_month|floatformat:0|intcomma }} this month · on {{ cc.finance_cards }} card{{ cc.finance_cards|pluralize }}{% else %}none this year{% endif %}</small></a>
   <a class="kpi" href="/credit-cards/"><span>Credit used</span><b>{% if cc.used_pct is not None %}{{ cc.used_pct }}%{% else %}—{% endif %}</b>
-    <small>{% if cc.limit_sum %}₱{{ cc.used_sum|floatformat:0|intcomma }} of ₱{{ cc.limit_sum|floatformat:0|intcomma }} limits (latest statements){% else %}no limits on file{% endif %}</small></a>
+    <small>{% if cc.limit_sum %}₱{{ cc.used_sum|floatformat:0|intcomma }} of ₱{{ cc.limit_sum|floatformat:0|intcomma }} limits (latest statements{% if cc.owed_unbilled %} + installments{% endif %}){% else %}no limits on file{% endif %}</small></a>
   <a class="kpi{% if cc.missing %} warnk{% endif %}" href="/credit-cards/"><span>Statements not yet typed</span><b>{{ cc.missing }}</b><small>this month, past their statement day</small></a>
 </div>
 <div class="charts">
@@ -31,14 +31,15 @@ No limit warning (owner: "not need"): credit used is information only.{% endcomm
 </div>
 <div class="chart" style="margin-top:12px"><div class="ct">Each card, latest statement <small class="hint">cards to watch first</small></div>
 <div class="scroll-x"><table class="list"><tr><th>Card</th><th>Holder</th><th>Statement</th><th class="num">Limit</th><th>Used</th><th class="num">New charges</th><th class="num">Paid</th>
-  <th class="num">Carried over</th><th class="num">Finance charge</th><th class="num">Owed</th><th>Watch</th></tr>
+  <th class="num">Carried over</th><th class="num">Finance charge</th>{% if cc.owed_unbilled %}<th class="num">Unbilled installments</th>{% endif %}<th class="num">Owed</th><th>Watch</th></tr>
   {% for c in cc.cards %}<tr><td><a href="/credit-cards/?card={{ c.card_id }}">{{ c.name }}</a></td><td>{{ c.holder }}</td><td>{{ c.month }}</td>
     <td class="num">{% if c.limit %}₱{{ c.limit|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
     <td>{% if c.used is not None %}<span class="usebar"><i style="width:{% if c.used > 100 %}100{% else %}{{ c.used }}{% endif %}%"></i></span>{{ c.used }}%{% else %}<span class="hint">no limit</span>{% endif %}</td>
     <td class="num">₱{{ c.charged|floatformat:0|intcomma }}</td><td class="num">{% if c.paid %}₱{{ c.paid|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
     <td class="num">{% if c.carried %}₱{{ c.carried|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
     <td class="num">{% if c.finance %}<b class="neg">₱{{ c.finance|floatformat:2|intcomma }}</b>{% else %}—{% endif %}</td>
+    {% if cc.owed_unbilled %}<td class="num">{% if c.unbilled %}₱{{ c.unbilled|floatformat:0|intcomma }}{% else %}—{% endif %}</td>{% endif %}
     <td class="num">{% if c.owed %}₱{{ c.owed|floatformat:0|intcomma }}{% else %}—{% endif %}</td>
     <td>{% for k, w in c.watch %}<span class="pill {{ k }}">{{ w }}</span> {% endfor %}</td></tr>
-  {% empty %}<tr><td colspan="11" class="hint">No card statements typed yet.</td></tr>{% endfor %}
+  {% empty %}<tr><td colspan="12" class="hint">No card statements typed yet.</td></tr>{% endfor %}
 </table></div></div>

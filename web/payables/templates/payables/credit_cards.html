@@ -99,9 +99,13 @@
     <div><label for="due">Due date</label><input id="due" type="date" name="due" value="{{ typed.due|default:'' }}" required></div>
     <div><label for="total">Total amount due</label><input id="total" class="inline-input" inputmode="decimal" name="total" value="{{ typed.total|default:'' }}" required></div>
     <div><label for="payments">Payments since the earlier statement</label><input id="payments" class="inline-input" inputmode="decimal" name="payments" value="{{ typed.payments|default:'' }}" placeholder="leave empty if unknown"></div>
+    <div><label for="credits">Credits (conversions, reversals)</label><input id="credits" class="inline-input" inputmode="decimal" name="credits" value="{{ typed.credits|default:'' }}" style="width:8em" placeholder="0"></div>
     <div><label for="interest">Finance charge</label><input id="interest" class="inline-input" inputmode="decimal" name="interest" value="{{ typed.interest|default:'' }}" style="width:7em"></div>
+    <div><label for="unbilled">Unbilled installments</label><input id="unbilled" class="inline-input" inputmode="decimal" name="unbilled" value="{{ typed.unbilled|default:'' }}" style="width:8em" placeholder="0"></div>
   </div>
-  <p class="hint" id="soa-math">The total already includes any balance carried over. Add up the payment lines on the statement (the ones ending in C).</p>
+  {% if doc %}<input type="hidden" name="token" value="{{ doc.token }}">{% endif %}
+  <p class="hint" id="soa-math">The total already includes any balance carried over. Payments = the lines ending in C that you paid; Credits = the other C lines (a balance converted to
+    installments, a reversal). Unbilled installments = the sum of the "unbilled installment amount" column, if the card has installments.</p>
   <button class="btn" type="submit"><span class="ms">receipt_long</span>Add statement</button>
 </form>
 <script>
@@ -111,12 +115,15 @@
   var n = function (v) { var x = parseFloat(String(v || "").replace(/,/g, "")); return isNaN(x) ? null : x; };
   var peso = function (v) { return "₱" + v.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
   function calc() {
-    var o = f.card.options[f.card.selectedIndex], earlier = o ? n(o.dataset.earlier) : null, total = n(f.total.value), pay = n(f.payments.value), fin = n(f.interest.value) || 0;
-    if (earlier === null || pay === null || total === null) { out.textContent = base; return; }
-    var carried = Math.max(earlier - pay, 0), fresh = Math.round((total - carried - fin) * 100) / 100, daily = n(o.dataset.daily) || 0;
-    var line = "Earlier " + peso(earlier) + " (due " + o.dataset.due + ") − payments " + peso(pay) + " = " + peso(carried) + " carried over · + new charges " + peso(Math.max(fresh, 0)) +
+    var o = f.card.options[f.card.selectedIndex], earlier = o ? n(o.dataset.earlier) : null, total = n(f.total.value), pay = n(f.payments.value), fin = n(f.interest.value) || 0,
+        cred = n(f.credits.value) || 0, unb = n(f.unbilled.value) || 0;
+    if (cred > 0 && pay === null) pay = 0;
+    if (earlier === null || pay === null || total === null) { out.textContent = base + (unb > 0 && total !== null ? "  Owed on this card after this statement: " + peso(total) + " due + " + peso(unb) + " still to be billed = " + peso(total + unb) + "." : ""); return; }
+    var carried = Math.max(earlier - pay - cred, 0), fresh = Math.round((total - carried - fin) * 100) / 100, daily = n(o.dataset.daily) || 0;
+    var line = "Earlier " + peso(earlier) + " (due " + o.dataset.due + ") − payments " + peso(pay) + (cred ? " − credits " + peso(cred) : "") + " = " + peso(carried) + " carried over · + new charges " + peso(Math.max(fresh, 0)) +
                " + finance charge " + peso(fin) + " = " + peso(total) + ".";
-    if (fresh < -1) line = "These don't add up: earlier " + peso(earlier) + " − payments " + peso(pay) + " + finance charge is already more than the total due.";
+    if (fresh < -1) line = "These don't add up: earlier " + peso(earlier) + " − payments " + peso(pay) + (cred ? " − credits " + peso(cred) : "") + " + finance charge is already more than the total due.";
+    if (unb > 0) line += "  Owed on this card after this statement: " + peso(total) + " due + " + peso(unb) + " still to be billed = " + peso(total + unb) + ".";
     if (o.dataset.confirmed === "0" && daily > 0) line += Math.abs(daily - pay) < 0.01 ? "  ✓ Daily payables recorded " + peso(daily) + ": it matches."
                                                          : "  ⚠ Daily payables recorded " + peso(daily) + ": it differs, so it will go on the Review list (the SOA figure is kept).";
     out.textContent = line;
@@ -124,6 +131,7 @@
   f.addEventListener("input", calc); f.addEventListener("change", calc); calc();
 })();
 </script>
+{% include "payables/_card_snip.html" %}
 {% endif %}
 
 <form class="bar" method="get" action="/credit-cards/" style="margin-top:14px">
@@ -140,7 +148,9 @@
   <div><label for="es_month">Statement month</label><input id="es_month" type="month" name="month" value="{{ edit_stmt.statement_month|default:'' }}"></div>
   <div><label for="es_due">Due date</label><input id="es_due" type="date" name="due" value="{{ edit_stmt.due_date|slice:':10' }}" required></div>
   {% if edit_stmt.is_latest %}<div><label for="es_total">Total amount due</label><input id="es_total" type="text" inputmode="decimal" name="total" value="{{ edit_stmt.total_amount_due|floatformat:2|intcomma }}" style="width:150px;text-align:right"></div>
-  <div><label for="es_fee">Finance charge</label><input id="es_fee" type="text" inputmode="decimal" name="interest" value="{{ edit_stmt.interest_charged|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>{% endif %}
+  <div><label for="es_fee">Finance charge</label><input id="es_fee" type="text" inputmode="decimal" name="interest" value="{{ edit_stmt.interest_charged|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>
+  <div><label for="es_credits">Credits</label><input id="es_credits" type="text" inputmode="decimal" name="credits" value="{{ edit_stmt.credits|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>
+  <div><label for="es_unbilled">Unbilled installments</label><input id="es_unbilled" type="text" inputmode="decimal" name="unbilled" value="{{ edit_stmt.unbilled_installments|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>{% endif %}
   <button class="btn small" type="submit"><span class="ms">save</span>Save the correction</button> <a class="btn small ghost" href="/credit-cards/{% if card %}?card={{ card }}&show={{ show }}{% endif %}">Cancel</a>
 </form>
 <p class="hint">{% if edit_stmt.is_latest %}This is the card's newest statement, so its amounts can be corrected too. To change the "payments since the earlier statement" figure, delete it and add it again.
@@ -148,9 +158,10 @@
 {% endif %}
 {% if stmts %}
 <div class="scroll-x"><table class="list cards">
-  <tr><th>Card</th><th>Month</th><th>Due</th><th style="text-align:right">Total due</th><th style="text-align:right">Paid</th><th>Payments (posting date)</th><th>Status</th><th>SOA</th><th></th></tr>
+  <tr><th>Card</th><th>Month</th><th>Due</th><th style="text-align:right">Total due</th><th style="text-align:right">Paid</th>{% if any_unbilled %}<th style="text-align:right">Unbilled installments</th>{% endif %}<th>Payments (posting date)</th><th>Status</th><th>SOA</th><th></th></tr>
   {% for s in stmts %}<tr><td class="c-t">{{ s.card }}{% if s.holder %} <span class="hint">· {{ s.holder }}</span>{% endif %}</td><td data-l="month">{{ s.statement_month|default:"—" }}</td><td data-l="due">{{ s.due_date|dmy }}</td>
     <td class="num c-big">{{ s.total_amount_due|floatformat:2|intcomma }}</td><td class="num" data-l="paid">{{ s.amount_paid|floatformat:2|intcomma }}</td>
+    {% if any_unbilled %}<td class="num" data-l="unbilled">{% if s.unbilled_installments %}{{ s.unbilled_installments|floatformat:2|intcomma }}{% else %}<span class="hint">—</span>{% endif %}</td>{% endif %}
     <td data-l="payments">{% for p in s.payments %}{{ p.payment_date|dmy }} · {{ p.amount|floatformat:2|intcomma }}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="hint">—</span>{% endfor %}</td>
     <td><span class="pill{% if s.status != 'Paid' %} warn{% endif %}">{{ s.status }}</span>{% if s.status == "Partially Paid" %}<div class="hint">{{ s.carried|floatformat:2|intcomma }} carried to the next statement</div>{% endif %}</td>
     <td data-l="SOA">{% if s.paid_confirmed %}confirmed{% else %}<span class="hint">not yet confirmed</span>{% endif %}</td>

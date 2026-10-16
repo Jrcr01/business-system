@@ -4,6 +4,8 @@ itself. The old whole-page OCR reader for PDFs and pictures (soa_parser) is reti
 confirming doubtful cells."""
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 
 from engines.common import get_conn
@@ -16,27 +18,51 @@ def _clean_ref(v) -> str:
     return " ".join(str(v or "").split()).upper()
 
 
+_PREFIX = re.compile(r"^(?:DR|SI|SO|OM|OS|INV|INVOICE|NO|NUMBER|REF|#|\.|:|-|\s)+", re.I)
+
+
+def _loose(v) -> str:
+    """The number inside a reference, as a supplier might write it: 'DR 55433', 'DR-055433', 'OM# 55433' and '55433' are all '55433' (owner,
+    2026-10-17: the statement listed 55433 while our record says DR 55433, and the match called it missing)."""
+    t = _PREFIX.sub("", _clean_ref(v))
+    t = re.sub(r"[^A-Z0-9]", "", t)
+    return t.lstrip("0") or ("0" if t else "")
+
+
 def reconcile_rows(creditor_id: int, rows: list[dict]) -> dict:
-    """rows: [{'ref', 'amount'}] as the supplier's statement lists them. Returns the four tables and the counts."""
-    soa_df = pd.DataFrame([{"clean_ref": _clean_ref(r.get("ref")), "soa_amount": float(r.get("amount") or 0)} for r in rows if _clean_ref(r.get("ref"))],
-                          columns=["clean_ref", "soa_amount"])
+    """rows: [{'ref', 'amount'}] as the supplier's statement lists them. Returns the four tables and the counts. A statement line finds our invoice by
+    the exact reference first (SI number or 'DR n'), then by the bare number against the SI number or the DR number."""
     with get_conn(DB_PATH) as conn:
-        internal_df = pd.read_sql_query("SELECT doc_ref, amount AS internal_amount, status FROM invoices WHERE creditor_id = ? AND is_opening_balance = 0", conn, params=(creditor_id,))
-    internal_df["clean_ref"] = internal_df["doc_ref"].map(_clean_ref)
-    merged = pd.merge(soa_df, internal_df, on="clean_ref", how="outer")
-    matched_list, missing_in_ap_list, mismatch_list, omitted_list = [], [], [], []
-    for _, row in merged.iterrows():
-        ref, soa_amt, int_amt = row["clean_ref"], row.get("soa_amount"), row.get("internal_amount")
-        if pd.isna(int_amt):
+        cols = ("invoice_id", "doc_ref", "dr_no", "internal_amount", "status")
+        ours = [dict(zip(cols, r)) for r in conn.execute("SELECT invoice_id, doc_ref, dr_no, amount, status FROM invoices WHERE creditor_id = ? AND is_opening_balance = 0",
+                                                         (creditor_id,)).fetchall()]
+    exact, loose = {}, {}
+    for inv in ours:
+        for k in {_clean_ref(inv["doc_ref"]), _clean_ref(inv["dr_no"])} - {""}:
+            exact.setdefault(k, inv["invoice_id"])
+        for k in {_loose(inv["doc_ref"]), _loose(inv["dr_no"])} - {""}:
+            loose.setdefault(k, inv["invoice_id"])
+    by_id = {inv["invoice_id"]: inv for inv in ours}
+    matched_list, missing_in_ap_list, mismatch_list, omitted_list, seen = [], [], [], [], set()
+    for r in rows:
+        ref = _clean_ref(r.get("ref"))
+        if not ref:
+            continue
+        soa_amt = float(r.get("amount") or 0)
+        iid = exact.get(ref) or loose.get(_loose(ref))
+        if iid is None or iid in seen:
             missing_in_ap_list.append({"doc_ref": ref, "soa_amount": soa_amt, "issue": "Missing in AP"})
-        elif pd.isna(soa_amt):
-            omitted_list.append({"doc_ref": ref, "internal_amount": int_amt, "status": row["status"], "issue": "Omitted from SOA"})
+            continue
+        seen.add(iid)
+        inv = by_id[iid]
+        variance = round(soa_amt - float(inv["internal_amount"]), 2)
+        if abs(variance) < 0.01:
+            matched_list.append({"doc_ref": inv["doc_ref"], "amount": inv["internal_amount"], "status": inv["status"]})
         else:
-            variance = round(float(soa_amt) - float(int_amt), 2)
-            if abs(variance) < 0.01:
-                matched_list.append({"doc_ref": ref, "amount": int_amt, "status": row["status"]})
-            else:
-                mismatch_list.append({"doc_ref": ref, "soa_amount": soa_amt, "internal_amount": int_amt, "variance": variance})
+            mismatch_list.append({"doc_ref": inv["doc_ref"], "soa_amount": soa_amt, "internal_amount": inv["internal_amount"], "variance": variance})
+    for inv in ours:
+        if inv["invoice_id"] not in seen:
+            omitted_list.append({"doc_ref": inv["doc_ref"], "internal_amount": inv["internal_amount"], "status": inv["status"], "issue": "Omitted from SOA"})
     return {
         "success": True,
         "matched": pd.DataFrame(matched_list),

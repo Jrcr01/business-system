@@ -76,7 +76,7 @@ def credit_cards(request):
         if show == "open":
             where.append("(cs.status IN ('Unpaid', 'Partially Paid') OR cs.paid_confirmed = 0)")
         stmts = _rows(f"""SELECT cs.cc_statement_id, cs.card_id, {CARD_NAME} AS card, ch.name AS holder, cs.statement_month, cs.due_date, cs.total_amount_due, cc.statement_day,
-                                 COALESCE(cs.amount_paid, 0) AS amount_paid, cs.status, cs.paid_confirmed,
+                                 COALESCE(cs.amount_paid, 0) AS amount_paid, cs.status, cs.paid_confirmed, cs.credits, cs.unbilled_installments,
                                  (SELECT MAX(x.due_date) FROM cc_statements x WHERE x.card_id = cs.card_id AND x.status != 'Cancelled') = cs.due_date AS is_latest
                           FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id LEFT JOIN cardholders ch ON ch.cardholder_id = cc.cardholder_id
                           WHERE {" AND ".join(where)} ORDER BY cs.due_date DESC, cs.cc_statement_id DESC LIMIT 300""", tuple(params))
@@ -93,6 +93,7 @@ def credit_cards(request):
             for p in _rows(f"SELECT cc_statement_id, payment_date, amount FROM cc_payments WHERE cc_statement_id IN ({','.join('?' * len(ids))}) ORDER BY payment_date",
                            tuple(ids)):
                 pays.setdefault(p["cc_statement_id"], []).append(p)
+        ctx["any_unbilled"] = any(float(s["unbilled_installments"] or 0) > 0 for s in stmts)
         for s in stmts:
             s["payments"] = pays.get(s["cc_statement_id"], [])
             s["carried"] = max(float(s["total_amount_due"] or 0) - float(s["amount_paid"] or 0), 0.0)      # what a partial payment leaves: in the next statement's total
@@ -107,13 +108,48 @@ def credit_cards(request):
         one = int(request.GET.get("edit") or 0) if (request.GET.get("edit") or "").isdigit() else 0
         if one and may:
             hit = _rows(f"""SELECT cs.cc_statement_id, cs.card_id, {CARD_NAME} AS card, cs.statement_month, cs.due_date, cs.total_amount_due, cs.interest_charged,
+                                   cs.credits, cs.unbilled_installments,
                                    (SELECT x.cc_statement_id FROM cc_statements x WHERE x.card_id = cs.card_id ORDER BY x.due_date DESC, x.cc_statement_id DESC LIMIT 1)
                                        = cs.cc_statement_id AS is_latest
                             FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id WHERE cs.cc_statement_id = ? AND cs.status != 'Cancelled'""", (one,))
             ctx["edit_stmt"] = hit[0] if hit else None
         ctx.update({"stmts": stmts, "card": card, "show": show, "typed": request.session.pop("cc_typed", None),
                     "month_default": date.today().strftime("%Y-%m")})
+        if may:
+            ctx.update(_snip_ctx(request))
     return render(request, "payables/credit_cards.html", ctx)
+
+
+def _snip_ctx(request) -> dict:
+    """Snip from the card's statement (owner, 2026-10-17; mock-up docs/mockups/ac_card_installments.html): the open statement documents (any card) and the
+    one being read (?f=<token>&p=<page>). Text boxes only: a figure fills the picked box, a column of figures is added up (unbilled installments, credits)."""
+    from engines import snip
+    token = request.GET.get("f", "")
+    info = snip.file_info(token) if token else None
+    if info and info["kind"] != "card":
+        info = None
+    page = max(1, min(int(request.GET.get("p") or 1), info["pages"] if info else 1))
+    out = {"files": snip.files_for("card", None), "doc": None}
+    if info:
+        W, H = snip.page_size(token, page)
+        out["doc"] = {"token": token, "filename": info["filename"], "pages": info["pages"], "page": page, "has_text": bool(info["has_text"]), "w": W, "h": H}
+    return out
+
+
+@page_needed("credit-cards")
+def snip_page(request, token: str, page: int):
+    from buying.snip import page_image_response
+    return page_image_response(token, page, "card")
+
+
+@page_needed("credit-cards")
+def snip_read(request, token: str):
+    from django.views.decorators.http import require_POST  # noqa: F401  (POST only, checked below)
+    from buying.snip import read_json
+    if request.method != "POST":
+        from django.http import HttpResponseNotAllowed
+        return HttpResponseNotAllowed(["POST"])
+    return read_json(request, token, "card", lambda rows, cat: [""] * (max(len(r) for r in rows) if rows else 0))
 
 
 def _post(request):
@@ -122,6 +158,12 @@ def _post(request):
     if not _can(request, "cards.use"):
         _say(request, False, "Card work is switched off for you.")
         return redirect("/credit-cards/")
+    if what == "snip_upload":                                 # the card's statement as a PDF or picture, to snip the figures off (2026-10-17)
+        from engines import snip
+        f = request.FILES.get("file")
+        ok, msg, token = snip.keep("card", None, f.name if f else "", f.read() if f else b"")
+        _say(request, ok, msg)
+        return redirect("/credit-cards/" + (f"?f={token}" if ok else ""))
     if what == "statement":
         card, due, total = int(p.get("card") or 0), _date(p.get("due")), _num(p.get("total"))
         payments = p.get("payments", "").strip()
@@ -129,15 +171,23 @@ def _post(request):
         if not card or not due or total is None:
             ok, msg = False, "Pick the card and give the due date and the total amount due."
         else:
-            ok, msg, _ = cr.add_statement_from_soa(card, month, due, total, _num(payments) if payments else None, _num(p.get("interest"), 0.0) or 0.0)
+            ok, msg, _ = cr.add_statement_from_soa(card, month, due, total, _num(payments) if payments else None, _num(p.get("interest"), 0.0) or 0.0,
+                                                   _num(p.get("credits"), 0.0) or 0.0, _num(p.get("unbilled"), 0.0) or 0.0)
         _say(request, ok, msg)
         if not ok:
             request.session["cc_typed"] = {k: v for k, v in p.items() if k != "csrfmiddlewaretoken"}
-        return redirect("/credit-cards/" + (f"?card={card}" if card else ""))
+        elif p.get("token"):
+            from engines import snip
+            snip.discard(p.get("token"))                         # the statement document is not kept (owner: "no need to store the document")
+        back = f"?card={card}" if card else ""
+        if not ok and p.get("token"):
+            back += ("&" if back else "?") + f"f={p.get('token')}"
+        return redirect("/credit-cards/" + back)
     if what == "correct_statement":
         sid = int(p.get("statement_id") or 0)
         total, fee = (_num(p.get("total")) if "total" in p else None), (_num(p.get("interest"), 0.0) if "interest" in p else None)
-        ok, msg = cr.correct_cc_statement(sid, p.get("month", ""), _date(p.get("due")), total, fee)
+        credits, unbilled = (_num(p.get("credits"), 0.0) if "credits" in p else None), (_num(p.get("unbilled"), 0.0) if "unbilled" in p else None)
+        ok, msg = cr.correct_cc_statement(sid, p.get("month", ""), _date(p.get("due")), total, fee, credits, unbilled)
         _say(request, ok, msg)
         back = f"?card={p.get('card')}&show=all" if (p.get("card") or "").isdigit() else "?show=all"
         return redirect("/credit-cards/" + back + ("" if ok else f"&edit={sid}#edit"))

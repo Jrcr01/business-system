@@ -3,9 +3,12 @@ and Interest part are named from the headings; the rows wait on the Import tab's
 step as a schedule file; the document is then deleted.{% endcomment %}
 <p class="note">Open the bank's amortisation schedule (a PDF, or a photo) and <b>drag a box over the table</b>. The columns the schedule needs are Due date, Amount (the amortization) and the Interest part; the rest is ignored.
   The rows are shown before anything is saved. The document is not kept: it is deleted once the rows are added, or after a day.</p>
-<form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="snip_upload">
-  <div class="grow"><label for="sn_file">The bank's document (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required></div>
-  <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button></form>
+<form class="bar" id="sn_upload" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="snip_upload">
+  <div class="grow"><label for="sn_file">The bank's document (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png"></div>
+  <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button>
+  <button class="btn small ghost" type="button" id="sn_paste" title="A screenshot or a copied picture"><span class="ms">content_paste</span>Paste</button><span class="hint" id="sn_paste_hint"></span></form>
+<script src="/static/core/snip.js?v=8"></script>
+<script>slicksSnip.paste({form: document.getElementById("sn_upload"), button: document.getElementById("sn_paste"), hint: document.getElementById("sn_paste_hint"), field: "file"});</script>
 {% if files %}<p class="hint" style="margin:6px 0 10px">Documents of this loan: {% for f in files %}<a href="?tab=snip&f={{ f.token }}"{% if doc and doc.token == f.token %} style="font-weight:700"{% endif %}>{{ f.filename }}</a> <span class="hint">({{ f.pages }} p{% if f.snips %}, {{ f.snips }} snip{{ f.snips|pluralize }}{% endif %})</span>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
 
 {% if doc %}
@@ -33,7 +36,6 @@ step as a schedule file; the document is then deleted.{% endcomment %}
     </form>
   </div>
 </div>
-<script src="/static/core/snip.js?v=7"></script>
 <script>
 (function () {
   var keys = {{ loan_keys_json|safe }}, $ = function (id) { return document.getElementById(id); };

@@ -1,0 +1,114 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: card credits and unbilled installments</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --soft: #f3f4f6; --ok: #0b6e4f; --warn: #9a3412; --red: #C62828; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+main { max-width: 1080px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 22px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+h2 { color: var(--navy); font-size: 1.05rem; margin: 26px 0 6px; }
+.why { color: var(--muted); margin: 0 0 12px; max-width: 86ch; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 16px 18px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+.grp { font-weight: 700; color: var(--navy); margin-bottom: 8px; }
+.bar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.bar > div { display: flex; flex-direction: column; gap: 3px; } .bar .grow { flex: 1 1 220px; }
+label { font-size: .78rem; color: var(--muted); font-weight: 600; }
+input, select { font: inherit; font-size: .95rem; padding: 6px 8px; border: 1px solid #b9c6d8; border-radius: 7px; background: #fff; color: var(--ink); }
+input.num { text-align: right; width: 10em; font-variant-numeric: tabular-nums; }
+.new { position: relative; } .new input { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(11,79,138,.12); }
+.new label::after { content: "new"; font-size: .65rem; background: #fff4e5; color: var(--warn); border-radius: 999px; padding: 0 6px; margin-left: 5px; vertical-align: 1px; }
+.hint { font-size: .86rem; color: var(--muted); margin: 10px 0 0; line-height: 1.45; } .hint b { color: var(--ink); }
+.btn { display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; margin-top: 12px; }
+.btn.ghost { background: #fff; color: var(--blue); border: 1px solid #b9c6d8; padding: 4px 9px; font-size: .84rem; margin: 0; }
+.snip { margin-top: 12px; border: 1px dashed #b9c6d8; border-radius: 10px; padding: 10px 12px; background: #f8fafc; display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.snip .doc { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: .74rem; font-family: Consolas, monospace; white-space: pre; line-height: 1.35; position: relative; }
+.snip .box { position: absolute; border: 2px dashed var(--blue); background: rgba(11,79,138,.10); border-radius: 3px; }
+.snip .box b { position: absolute; top: -18px; left: -2px; background: var(--blue); color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; white-space: nowrap; font-family: "Source Sans 3", sans-serif; }
+.snip p { margin: 0; font-size: .86rem; color: var(--muted); max-width: 40ch; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; font-variant-numeric: tabular-nums; margin-top: 10px; }
+th { text-align: left; color: var(--muted); font-weight: 600; font-size: .78rem; border-bottom: 2px solid var(--line); padding: 6px 8px; white-space: nowrap; }
+td { border-bottom: 1px solid var(--line); padding: 7px 8px; vertical-align: middle; } .r { text-align: right; }
+th.new, td.new { background: #f3f7fc; }
+.pill { display: inline-block; font-size: .72rem; border-radius: 999px; padding: 1px 8px; font-weight: 600; white-space: nowrap; }
+.pill.warn { background: #fff4e5; color: var(--warn); } .pill.ok { background: #e7f6ee; color: var(--ok); } .pill.off { background: var(--soft); color: var(--muted); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpi { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; } .kpi span { font-size: .8rem; color: var(--muted); display: block; } .kpi b { font-size: 1.35rem; }
+.kpi em { font-style: normal; font-size: .78rem; display: block; margin-top: 2px; color: var(--muted); } .kpi.hl { border-color: var(--blue); }
+.q { background: #fffbea; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 14px; margin-top: 18px; }
+.q ol { margin: 6px 0 0 18px; padding: 0; } .q li { margin: 4px 0; }
+.note { font-size: .82rem; color: var(--muted); }
+.scroll { overflow-x: auto; }
+</style></head><body><main>
+
+<h1>Credit cards: credits and unbilled installments <small>mock-up, the Metrobank statement of 10/10/2026</small></h1>
+<p class="why">Two boxes added to the statement form you already use. Nothing else on the page moves. Both are optional and start at 0, so a card without
+installments or credits looks exactly as today.</p>
+
+<h2>1 · Add a statement (SOA) — Credit cards page</h2>
+<div class="screen">
+  <div class="grp">Add a statement (SOA)</div>
+  <div class="bar">
+    <div class="grow"><label>Card</label><select><option>Metrobank · 1875 · Jeane Ravin Roxas</option></select></div>
+    <div><label>Statement month</label><input value="2026-10" style="width:9em"></div>
+    <div><label>Due date</label><input value="10/30/2026" style="width:9em"></div>
+    <div><label>Total amount due</label><input class="num" value="66,511.48"></div>
+    <div><label>Payments since the earlier statement</label><input class="num" value="40,000.00"></div>
+    <div class="new"><label>Credits (conversions, reversals)</label><input class="num" value="600,183.43"></div>
+    <div><label>Finance charge</label><input class="num" value="13,085.63" style="width:8em"></div>
+    <div class="new"><label>Unbilled installments</label><input class="num" value="418,537.11"></div>
+  </div>
+  <p class="hint">Earlier <b>₱506,370.33</b> (due 09/30/2026) − payments ₱40,000.00 − credits ₱600,183.43 = <b>₱0.00 carried over</b> · + new charges ₱187,238.95
+    (the INSTL lines and the fee) + finance charge ₱13,085.63 = <b>₱66,511.48</b>. ✓ Daily payables recorded ₱40,000.00: it matches.<br>
+    <span class="note">Without the Credits box this month would read "These don't add up", and the only way out was to call the ₱600,183.43 a payment.</span></p>
+  <p class="hint">Owed on this card after this statement: <b>₱66,511.48 due 10/30</b> + <b>₱418,537.11 still to be billed</b> in installments = <b>₱485,048.59</b>.</p>
+
+  <div class="snip">
+    <div class="doc">SUMMARY OF OUTSTANDING INSTALLMENT
+Months   Installment   Unbilled Installment   Establishment
+Remaining  Start Date        Amount
+ 003      05/08/25        41,300.18           QUICK CASH 1% AT 18M
+ 005      08/10/25        77,118.93           C2G 0.98% ALL TENORS
+ 006      10/03/25        66,418.72           CASH2GO 0.98
+ 010      01/06/26        48,122.44           MB TAGAYTAY
+ 023      10/07/26       185,576.84           BALCON 0.58% AT 24M<span class="box" style="left:165px; top:44px; width:118px; height:92px"><b>Unbilled installments · sum</b></span></div>
+    <p><b>Snip</b> — upload the SOA as on the other pages and draw a box over the "Unbilled Installment Amount" column: the system adds the column up and fills the box
+      (₱418,537.11). Draw one over the lines ending in <b>C</b> for the Credits box. Or just type the two figures.</p>
+  </div>
+  <button class="btn">Add statement</button>
+</div>
+
+<h2>2 · The statements list, same page</h2>
+<div class="screen scroll">
+  <table>
+    <tr><th>Card</th><th>Month</th><th>Due</th><th class="r">Total due</th><th class="r">Paid</th><th class="r">Finance charge</th><th class="r new">Unbilled installments</th><th>Status</th><th></th></tr>
+    <tr><td>Metrobank · 1875 <span class="note">· Jeane Ravin Roxas</span></td><td>2026-10</td><td>10/30/2026</td><td class="r"><b>66,511.48</b></td><td class="r">—</td><td class="r">13,085.63</td><td class="r new">418,537.11</td><td><span class="pill warn">Unpaid</span></td><td><a class="btn ghost">Edit</a></td></tr>
+    <tr><td>Metrobank · 1875 <span class="note">· Jeane Ravin Roxas</span></td><td>2026-09</td><td>09/30/2026</td><td class="r"><b>506,370.33</b></td><td class="r">40,000.00</td><td class="r">12,940.10</td><td class="r new">—</td><td><span class="pill off">Carried to 2026-10</span></td><td></td></tr>
+    <tr><td>RCBC · 8000 <span class="note">· Felix Roxas</span></td><td>2026-10</td><td>10/25/2026</td><td class="r"><b>38,200.00</b></td><td class="r">—</td><td class="r">—</td><td class="r new">—</td><td><span class="pill warn">Unpaid</span></td><td><a class="btn ghost">Edit</a></td></tr>
+  </table>
+  <p class="hint">The column shows only when a card has a figure; the rest of the list is as today. Edit lets you correct both new boxes on the latest statement.</p>
+</div>
+
+<h2>3 · Analytics → Credit cards</h2>
+<div class="screen">
+  <div class="kpis">
+    <div class="kpi hl"><span>Owed on cards</span><b>₱1,703,137</b><em>₱1,284,600 on statements + <b>₱418,537 unbilled installments</b></em></div>
+    <div class="kpi"><span>Due next 30 days</span><b>₱612,300</b><em>14 statements</em></div>
+    <div class="kpi"><span>Finance charges incurred, this year</span><b>₱53,733</b><em>₱34,266 in October · on 6 cards</em></div>
+    <div class="kpi"><span>Credit used</span><b>50%</b><em>₱1.70M of ₱3.40M limits · installments count</em></div>
+  </div>
+  <div class="scroll"><table>
+    <tr><th>Card</th><th>Holder</th><th class="r">Latest statement</th><th class="r">Carried over</th><th class="r">Finance charge</th><th class="r new">Unbilled installments</th><th class="r">Owed</th><th>Watch</th></tr>
+    <tr><td>Metrobank · 1875</td><td>Jeane Ravin Roxas</td><td class="r">66,511</td><td class="r">0</td><td class="r">13,086</td><td class="r new">418,537</td><td class="r"><b>485,049</b></td><td><span class="pill warn">Balance converted to installments this month</span></td></tr>
+    <tr><td>RCBC · 8000</td><td>Felix Roxas</td><td class="r">38,200</td><td class="r">0</td><td class="r">—</td><td class="r new">—</td><td class="r"><b>38,200</b></td><td><span class="pill ok">Paid in full every month</span></td></tr>
+  </table></div>
+  <p class="hint">Home → Lenders/cards tile and the cash plan's card reserve use the same "Owed" figure, so the converted debt no longer disappears.</p>
+</div>
+
+<div class="q"><b>To confirm</b>
+  <ol>
+    <li>"Owed on cards" = statements + unbilled installments everywhere (Home tile, Analytics, Calendar's what-we-owe) — or Analytics only?</li>
+    <li>Should the monthly installment amount (₱28,488.73 for the BALCON plan, etc.) be shown too? It would need the "Installment Amount" column summed as a third figure; otherwise it stays inside next month's new charges.</li>
+    <li>The Watch pill "Balance converted to installments this month" appears when Credits is more than the payments — fine, or drop it?</li>
+  </ol>
+</div>
+</main></body></html>

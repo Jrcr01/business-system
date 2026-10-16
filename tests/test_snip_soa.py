@@ -95,3 +95,17 @@ def test_soa_rows_and_the_column_guesses():
     assert [l["ref"] for l in lines] == ["244911", "244983", "245943", "245999"] and lines[0]["amount"] == 25079.2 and lines[-1]["amount"] == 0.0
     assert len(problems) == 2 and "total line" in problems[0] and "counted as 0" in problems[1]
     assert soa_rows(SOA, ["date", "", "amount", ""], True) == ([], ["Name the SI / document no. and the Amount columns."])
+
+
+def test_a_bare_number_on_the_statement_finds_our_dr_or_si(db):
+    """Owner, 2026-10-17: the supplier's statement listed 55433 while our record says DR 55433, and the match called it missing."""
+    from engines.soa_matcher import reconcile_rows
+    from engines.statement_rules import add_invoice, doc_reference
+    from datetime import date
+    cid = make_creditor(db, "Tire Asia Group Inc", terms="150")
+    add_invoice(cid, doc_reference("", "55433"), date(2026, 9, 4), date(2027, 2, 4), 28500, [], None, dr_no="55433")       # recorded as DR 55433
+    add_invoice(cid, "010571", date(2026, 9, 17), date(2027, 1, 17), 13740, [], None, dr_no="7788")                       # an SI with a DR beside it
+    add_invoice(cid, "SI 900", date(2026, 9, 20), date(2027, 2, 20), 1000, [], None)
+    r = reconcile_rows(cid, [{"ref": "55433", "amount": 28500}, {"ref": "DR-7788", "amount": 13740}, {"ref": "10571", "amount": 5}, {"ref": "OM# 900", "amount": 1000}])
+    assert list(r["matched"]["doc_ref"]) == ["DR 55433", "010571", "SI 900"] and r["summary"]["missing_in_ap"] == 1   # 10571 already matched through its DR
+    assert r["summary"]["omitted_from_soa"] == 0 and r["summary"]["mismatches"] == 0

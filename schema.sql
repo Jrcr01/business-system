@@ -450,6 +450,8 @@ CREATE TABLE IF NOT EXISTS cc_statements (
     -- NEXT statement's carried-over balance. Existing rows are 1 (their figures stand as entered).
     paid_confirmed INTEGER NOT NULL DEFAULT 1 CHECK(paid_confirmed IN (0, 1)),
     soa_confirmed_at DATETIME,      -- migration 081: when the next SOA confirmed the amount paid; from then on the SOA figure is final
+    credits REAL NOT NULL DEFAULT 0,                -- migration 107 (2026-10-17): conversions to installments, reversals, refunds -- not payments
+    unbilled_installments REAL NOT NULL DEFAULT 0,  -- migration 107: installments still to be billed on the card after this statement (owed, not yet due)
     status TEXT NOT NULL DEFAULT 'Unpaid' CHECK(status IN ('Unpaid', 'Partially Paid', 'Paid', 'Cancelled')),
     payment_method TEXT DEFAULT 'Cash / Online' CHECK(payment_method IN ('Cash / Online', 'Direct Debit', 'Check')),
     payment_date DATE,
@@ -1598,8 +1600,8 @@ CREATE INDEX IF NOT EXISTS idx_other_income_date ON other_income (income_date);
 CREATE TABLE IF NOT EXISTS snip_files (
     file_id INTEGER PRIMARY KEY AUTOINCREMENT,
     token TEXT NOT NULL UNIQUE,                      -- the file's name on disk (<token>.<ext> in data/snip_files/)
-    kind TEXT NOT NULL CHECK(kind IN ('price', 'loan', 'soa')),
-    owner_id INTEGER,                                -- the supplier (price, soa) or the bank loan it was uploaded for
+    kind TEXT NOT NULL,                              -- engines/snip.KINDS: price, loan, soa, card (the CHECK left with migration 107, 2026-10-17)
+    owner_id INTEGER,                                -- the supplier (price, soa) or the bank loan it was uploaded for; NULL for a card statement
     filename TEXT,
     ext TEXT NOT NULL,
     pages INTEGER NOT NULL DEFAULT 1,

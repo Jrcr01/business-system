@@ -15,7 +15,7 @@ shown as a fabricated 0%, and will populate on its own as real terms get entered
 """
 import sqlite3
 
-from engines.cc_rules import cc_owed_case
+from engines.cc_rules import cc_debt_case
 from datetime import date
 
 import pandas as pd
@@ -180,17 +180,17 @@ def get_credit_card_pareto(limit: int = 10) -> pd.DataFrame:
     with get_conn(DB_PATH) as conn:
         df = pd.read_sql_query(
             f"""SELECT (cc.card_name || ' - ' || cc.card_number_last4) AS name,
-                      COALESCE(SUM({cc_owed_case('cs')}), 0) AS value
+                      COALESCE(SUM({cc_debt_case('cs')}), 0) AS value
                FROM cc_statements cs JOIN credit_cards cc ON cs.card_id = cc.card_id
-               WHERE cs.status NOT IN ('Paid', 'Cancelled')
+               WHERE cs.status != 'Cancelled'
                GROUP BY cc.card_id
                HAVING value > 0
                ORDER BY value DESC LIMIT ?""",
             conn, params=(limit,),
         )
         total_row = pd.read_sql_query(
-            f"""SELECT COALESCE(SUM({cc_owed_case('cs')}), 0) AS total
-               FROM cc_statements cs WHERE cs.status NOT IN ('Paid', 'Cancelled')""",
+            f"""SELECT COALESCE(SUM({cc_debt_case('cs')}), 0) AS total
+               FROM cc_statements cs WHERE cs.status != 'Cancelled'""",
             conn,
         )
     if df.empty:
@@ -238,9 +238,9 @@ def get_all_tracks_pareto(limit: int = 15) -> pd.DataFrame:
         # rather than re-deriving a simpler one here.
         cc_df = pd.read_sql_query(
             f"""SELECT (cc.card_name || ' - ' || cc.card_number_last4) AS name, 'Credit Card' AS track,
-                      COALESCE(SUM({cc_owed_case('cs')}), 0) AS value
+                      COALESCE(SUM({cc_debt_case('cs')}), 0) AS value
                FROM cc_statements cs JOIN credit_cards cc ON cs.card_id = cc.card_id
-               WHERE cs.status NOT IN ('Paid', 'Cancelled')
+               WHERE cs.status != 'Cancelled'
                GROUP BY cc.card_id""",
             conn,
         )

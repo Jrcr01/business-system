@@ -123,13 +123,13 @@ def get_unconfirmed_cc_statement(card_id: int) -> dict | None:
     return None if row.empty else {"id": int(row["cc_statement_id"][0]), "due_date": row["due_date"][0], "total": float(row["total_amount_due"][0])}
 
 
-def confirm_cc_payment_from_next_statement(cc_statement_id: int, carried_over: float) -> tuple[float, str]:
+def confirm_cc_payment_from_next_statement(cc_statement_id: int, carried_over: float, credits: float = 0.0, payments: float | None = None) -> tuple[float, str]:
     """The next statement shows what was carried over from this one, so what was paid is its total
-    minus that balance (never below 0 or above the total). Marks the statement confirmed and sets its
-    status. Returns (amount_paid, new_status)."""
+    minus that balance (never below 0 or above the total) -- and minus the next statement's credits (owner, 2026-10-17: a balance
+    converted to installments is not a payment). Marks the statement confirmed and sets its status. Returns (amount_paid, new_status)."""
     with get_conn() as conn:
         (total,) = conn.execute("SELECT total_amount_due FROM cc_statements WHERE cc_statement_id = ?", (cc_statement_id,)).fetchone()
-        paid = round(min(max(total - carried_over, 0.0), total), 2)
+        paid = round(min(max(total - carried_over - float(credits or 0), 0.0) if payments is None else max(float(payments), 0.0), total), 2)   # the payments typed, when known
         unpaid_next = round(carried_over, 2)
         status = "Paid" if unpaid_next <= 0.005 else ("Partially Paid" if paid > 0.005 else "Unpaid")
         conn.execute(
@@ -138,7 +138,7 @@ def confirm_cc_payment_from_next_statement(cc_statement_id: int, carried_over: f
         )
         conn.execute(
             "INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'CC_PAYMENT_CONFIRMED', 'cc_statements', ?, ?)",
-            (cc_statement_id, f"paid {php(paid)}, carried over {php(unpaid_next)} (from the next statement)"),
+            (cc_statement_id, f"paid {php(paid)}, carried over {php(unpaid_next)}" + (f", credits {php(credits)}" if credits else "") + " (from the next statement)"),
         )
         # Two ways a card payment is known (owner, 2026-10-09): the owner's -- from the next SOA (this function) -- and the co-owners' daily one -- each payment
         # recorded on Daily payables (cc_payments). The SOA is the final word, like the bank statement for checks; a difference goes on the Review list.
@@ -173,6 +173,7 @@ def get_default_statement_month(card_id: int) -> tuple[int, int]:
 def add_cc_statement(
     card_id: int, due_date: date, previous_balance: float, new_charges: float,
     interest_charged: float, amount_paid: float, statement_month: str | None = None, paid_confirmed: int = 1,
+    credits: float = 0.0, unbilled: float = 0.0,
 ) -> int:
     """Records a CC statement with a real rolling balance (migration 027, 2026-09-15):
     total_amount_due is computed, not typed in, as previous_balance + new_charges +
@@ -192,10 +193,10 @@ def add_cc_statement(
         cur = conn.execute(
             """INSERT INTO cc_statements
                (card_id, statement_month, due_date, total_amount_due, previous_balance, new_charges, interest_charged,
-                amount_paid, unpaid_balance_next, status, paid_confirmed)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                amount_paid, unpaid_balance_next, status, paid_confirmed, credits, unbilled_installments)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (card_id, statement_month, str(due_date), total_amount_due, previous_balance, new_charges, interest_charged,
-             amount_paid, unpaid_balance_next, status, int(paid_confirmed)),
+             amount_paid, unpaid_balance_next, status, int(paid_confirmed), round(float(credits or 0), 2), round(float(unbilled or 0), 2)),
         )
         conn.commit()
         return cur.lastrowid
@@ -251,18 +252,18 @@ def edit_cc_statement(
     return True, "Statement updated."
 
 
-def correct_cc_statement(cc_statement_id: int, statement_month: str | None, due_date, total_due=None, interest=None) -> tuple[bool, str]:
+def correct_cc_statement(cc_statement_id: int, statement_month: str | None, due_date, total_due=None, interest=None, credits=None, unbilled=None) -> tuple[bool, str]:
     """A typing error on a recorded statement put right (owner, 2026-10-13: "why i cant edit this ... for example error").
     Any statement: its month and its due date, as long as the due date stays between the statements before and after it. The LATEST statement
     of a card only: also its total and its finance charge -- what it carried over from the earlier statement stays, the new charges are worked
     out again, and payments already recorded against it stay. Older amounts stay locked: a later statement was built on them."""
     with get_conn() as conn:
         cur = conn.cursor()
-        row = cur.execute("""SELECT card_id, statement_month, due_date, total_amount_due, previous_balance, interest_charged, amount_paid
+        row = cur.execute("""SELECT card_id, statement_month, due_date, total_amount_due, previous_balance, interest_charged, amount_paid, credits, unbilled_installments
                              FROM cc_statements WHERE cc_statement_id = ? AND status != 'Cancelled'""", (int(cc_statement_id),)).fetchone()
         if not row:
             return False, "Statement not found."
-        card_id, old_month, old_due, old_total, previous, old_interest, paid = row
+        card_id, old_month, old_due, old_total, previous, old_interest, paid, old_credits, old_unbilled = row
         if not due_date:
             return False, "Give the due date."
         due = str(due_date)[:10]
@@ -291,10 +292,20 @@ def correct_cc_statement(cc_statement_id: int, statement_month: str | None, due_
         new_charges = max(round(total - float(previous or 0) - fee, 2), 0.0)
         left = round(total - float(paid or 0), 2)
         status = "Paid" if left <= 0.005 else ("Partially Paid" if float(paid or 0) > 0.005 else "Unpaid")
+        cr, ub = float(old_credits or 0), float(old_unbilled or 0)                   # owner, 2026-10-17: the two installment figures, latest statement only
+        if (credits is not None and abs(float(credits or 0) - cr) > 0.004) or (unbilled is not None and abs(float(unbilled or 0) - ub) > 0.004):
+            if not latest:
+                return False, "Only the newest statement of a card can have its amounts changed: a later statement was built on this one. Its month and due date can be corrected."
+            if (credits is not None and float(credits) < 0) or (unbilled is not None and float(unbilled) < 0):
+                return False, "Credits and unbilled installments cannot be negative."
+            cr = round(float(credits), 2) if credits is not None else cr
+            ub = round(float(unbilled), 2) if unbilled is not None else ub
         cur.execute("""UPDATE cc_statements SET statement_month = ?, due_date = ?, total_amount_due = ?, new_charges = ?, interest_charged = ?,
-                              unpaid_balance_next = ?, status = ? WHERE cc_statement_id = ?""", (month, due, total, new_charges, fee, max(left, 0.0), status, int(cc_statement_id)))
-        was = f"month {old_month or 'none'}, due {str(old_due)[:10]}, total {php(old_total)}, finance charge {php(old_interest or 0)}"
-        now = f"month {month or 'none'}, due {due}, total {php(total)}, finance charge {php(fee)}"
+                              unpaid_balance_next = ?, status = ?, credits = ?, unbilled_installments = ? WHERE cc_statement_id = ?""",
+                    (month, due, total, new_charges, fee, max(left, 0.0), status, cr, ub, int(cc_statement_id)))
+        was = (f"month {old_month or 'none'}, due {str(old_due)[:10]}, total {php(old_total)}, finance charge {php(old_interest or 0)}, "
+               f"credits {php(old_credits or 0)}, unbilled installments {php(old_unbilled or 0)}")
+        now = f"month {month or 'none'}, due {due}, total {php(total)}, finance charge {php(fee)}, credits {php(cr)}, unbilled installments {php(ub)}"
         if was == now:
             return False, "Nothing was changed."
         cur.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, old_values, new_values) VALUES (acting_user(), 'CC_STATEMENT_CORRECTED', 'cc_statements', ?, ?, ?)",
@@ -330,7 +341,7 @@ def delete_cc_statement(cc_statement_id: int) -> tuple[bool, str]:
 
 
 def add_statement_from_soa(card_id: int, statement_month: str, due_date: date, total_due: float, payments_since: float | None,
-                           interest: float = 0.0) -> tuple[bool, str, int | None]:
+                           interest: float = 0.0, credits: float = 0.0, unbilled: float = 0.0) -> tuple[bool, str, int | None]:
     """The owner's way of recording a card (2026-10-09, the Credit cards screen's arithmetic moved here for the web page): a new SOA's total, the payments it
     shows since the earlier statement, and its finance charge. What the earlier statement carried over = earlier total - payments; the new charges are what
     is left of the total. The earlier statement, if not confirmed yet, is confirmed from this SOA (confirm_cc_payment_from_next_statement -- which flags a
@@ -342,21 +353,26 @@ def add_statement_from_soa(card_id: int, statement_month: str, due_date: date, t
                                   WHERE card_id = ? AND status != 'Cancelled' ORDER BY due_date DESC, cc_statement_id DESC LIMIT 1""", (card_id,)).fetchone()
     if earlier and str(earlier[3])[:10] >= str(due_date):
         earlier = None                                   # a statement dated before the latest one on file: no chaining
-    interest = float(interest or 0)
+    interest, credits, unbilled = float(interest or 0), float(credits or 0), float(unbilled or 0)
+    if credits < 0 or unbilled < 0:
+        return False, "Credits and unbilled installments cannot be negative.", None
+    if earlier and credits > 0 and payments_since is None:
+        payments_since = 0.0                              # a credit with no payment line: the chain still runs (owner, 2026-10-17)
     if earlier and payments_since is not None:
-        carried = max(float(earlier[1]) - float(payments_since), 0.0)
+        carried = max(float(earlier[1]) - float(payments_since) - credits, 0.0)     # a balance converted to installments is not a payment (2026-10-17)
         new_charges = round(total_due - carried - interest, 2)
         if new_charges < -1.0:
-            return False, (f"These don't add up: earlier statement {php(earlier[1])} - payments {php(payments_since)} + interest {php(interest)} is already "
+            return False, (f"These don't add up: earlier statement {php(earlier[1])} - payments {php(payments_since)}"
+                           + (f" - credits {php(credits)}" if credits else "") + f" + interest {php(interest)} is already "
                            f"{php(carried + interest)}, more than the total due {php(total_due)}. Check the payments, or the earlier statement's amount."), None
         if new_charges < 0:                              # a few centavos of rounding on the bank's side
             carried, new_charges = max(total_due - interest, 0.0), 0.0
         previous = round(carried, 2)
     else:
         previous, new_charges = 0.0, max(round(total_due - interest, 2), 0.0)
-    new_id = add_cc_statement(card_id, due_date, previous, new_charges, interest, 0.0, statement_month=statement_month, paid_confirmed=0)
-    msg = f"Statement recorded: {php(total_due)} due {due_date:%m/%d/%Y}."
+    new_id = add_cc_statement(card_id, due_date, previous, new_charges, interest, 0.0, statement_month=statement_month, paid_confirmed=0, credits=credits, unbilled=unbilled)
+    msg = f"Statement recorded: {php(total_due)} due {due_date:%m/%d/%Y}." + (f" Still to be billed in installments: {php(unbilled)}." if unbilled else "")
     if earlier and payments_since is not None and int(earlier[2]) == 0:
-        paid, status = confirm_cc_payment_from_next_statement(int(earlier[0]), previous)
+        paid, status = confirm_cc_payment_from_next_statement(int(earlier[0]), previous, credits, float(payments_since))
         msg += f" The earlier statement is confirmed: {php(paid)} paid ({status})."
     return True, msg, new_id

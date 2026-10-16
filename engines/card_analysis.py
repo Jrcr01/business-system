@@ -16,16 +16,16 @@ MONTHS = 6
 def _statements() -> list[dict]:
     with get_conn() as conn:
         cols = ("sid", "card_id", "due_date", "total", "prev", "new", "finance", "paid", "carried", "status", "card_name", "last4", "limit", "holder",
-                "statement_day", "fee_month")
+                "statement_day", "fee_month", "credits", "unbilled")
         rows = conn.execute("""SELECT s.cc_statement_id, s.card_id, s.due_date, s.total_amount_due, s.previous_balance, s.new_charges, s.interest_charged,
                                       s.amount_paid, s.unpaid_balance_next, s.status, cc.card_name, cc.card_number_last4, cc.credit_limit,
-                                      COALESCE(ch.name, '(no holder)'), cc.statement_day, cc.annual_fee_due_month
+                                      COALESCE(ch.name, '(no holder)'), cc.statement_day, cc.annual_fee_due_month, s.credits, s.unbilled_installments
                                FROM cc_statements s JOIN credit_cards cc ON cc.card_id = s.card_id LEFT JOIN cardholders ch ON ch.cardholder_id = cc.cardholder_id
                                WHERE s.status != 'Cancelled' AND cc.is_active = 1 ORDER BY s.card_id, s.due_date, s.cc_statement_id""").fetchall()
     out = []
     for r in rows:
         s = dict(zip(cols, r))
-        for k in ("total", "prev", "new", "finance", "paid", "carried"):
+        for k in ("total", "prev", "new", "finance", "paid", "carried", "credits", "unbilled"):
             s[k] = float(s[k] or 0)
         s["month"] = statement_month_for(s["due_date"], s["statement_day"])
         s["charged"] = s["new"] if s["new"] > 0 else max(s["total"] - s["prev"] - s["finance"], 0.0)       # a statement typed as one lump: all of it is new
@@ -93,7 +93,7 @@ def analysis(today: date | None = None) -> dict:
     cards, holders, used_sum, limit_sum = [], {}, 0.0, 0.0
     for cid, mine in by_card.items():
         last = mine[-1]
-        owed = round(sum(x["open"] for x in mine), 2)
+        owed = round(sum(x["open"] for x in mine) + last["unbilled"], 2)           # + installments still to be billed (owner, 2026-10-17)
         if owed > 0:
             holders[last["holder"]] = holders.get(last["holder"], 0.0) + owed
         months_carried = 0
@@ -103,11 +103,15 @@ def analysis(today: date | None = None) -> dict:
             else:
                 break
         limit = float(last["limit"]) if last["limit"] else None
-        used = round(last["total"] / limit * 100) if limit else None
+        used = round((last["total"] + last["unbilled"]) / limit * 100) if limit else None      # installments count against the limit too (2026-10-17)
         if limit:
-            used_sum += last["total"]
+            used_sum += last["total"] + last["unbilled"]                            # the installments count against the limit too
             limit_sum += limit
         watch = []
+        if last["credits"] > 0 and last["unbilled"] > 0:
+            watch.append(("warn", "Balance converted to installments this month"))
+        elif last["credits"] > 0:
+            watch.append(("off", "Credit on the statement"))
         if cid in missing:
             watch.append(("warn", "This month's statement not typed"))
         if months_carried >= 2:
@@ -122,12 +126,14 @@ def analysis(today: date | None = None) -> dict:
             watch.append(("off", "Annual fee " + date(2000, int(fee_soon[cid]), 1).strftime("%b")))
         cards.append({"card_id": cid, "name": f"{last['card_name']} ·{last['last4']}", "holder": last["holder"], "limit": limit, "used": used,
                       "month": _label(last["month"]), "charged": last["charged"], "paid": last["paid_amt"], "carried": last["carried"],
-                      "finance": last["finance"], "owed": owed, "watch": watch, "rank": (-sum(1 for k, _ in watch if k == "warn"), -owed)})
+                      "finance": last["finance"], "owed": owed, "unbilled": last["unbilled"], "watch": watch, "rank": (-sum(1 for k, _ in watch if k == "warn"), -owed)})
     cards.sort(key=lambda c: c["rank"])
     from engines.reports_service import get_payment_schedule_all_tracks
     df = get_payment_schedule_all_tracks()
     soon = df[(df["track"] == "Credit Card") & (df["actual_payment_date"] >= today) & (df["actual_payment_date"] <= today + timedelta(days=30))] if not df.empty else df
+    unbilled = round(sum(c["unbilled"] for c in cards), 2)
     return {"owed": round(sum(c["owed"] for c in cards), 2), "owed_cards": sum(1 for c in cards if c["owed"] > 0),
+            "owed_unbilled": unbilled, "owed_statements": round(sum(c["owed"] for c in cards) - unbilled, 2),
             "due30": float(soon["amount"].sum()) if not soon.empty else 0.0, "due30_n": len(soon),
             "finance_year": round(sum(fin_month.values()), 2), "finance_this_month": fin_month.get(keys[-1], 0.0),
             "finance_cards": len(fin_card), "used_pct": round(used_sum / limit_sum * 100) if limit_sum else None, "used_sum": used_sum, "limit_sum": limit_sum,

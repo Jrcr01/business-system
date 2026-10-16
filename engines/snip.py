@@ -21,7 +21,7 @@ from pathlib import Path
 from engines.clock import manila_now
 from engines.common import get_conn, write_tx
 
-KINDS = ("price", "loan", "soa")
+KINDS = ("price", "loan", "soa", "card")                # card: a credit card statement (2026-10-17), owner_id None
 EXTS = {".pdf": "pdf", ".jpg": "jpg", ".jpeg": "jpg", ".png": "png", ".webp": "png"}
 MAX_BYTES = 25 * 1024 * 1024
 RENDER_SCALE = 2.0                 # the page picture: 2x the PDF's points (sharp on a laptop, readable on a phone)
