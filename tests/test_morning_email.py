@@ -12,7 +12,15 @@ def _setup(web, monkeypatch):
     monkeypatch.setattr(mail_out, "_post", lambda url, headers, body: (sent.append((url, headers, body)) or (200, "{}")))
     r = web.post("/settings/notifications/", {"action": "mail_setup", "provider": "resend", "sender": "reports@slicks.test", "key": "re_test_key_12345678"})
     assert r.status_code == 302
+    _weekends("1")                                               # these tests run on whatever day it is; the weekend rule has its own test
     return sent
+
+
+def _weekends(value):
+    from engines import settings_registry as sr
+    from engines.acting_user import acting_as
+    with acting_as("admin@slicks.test", "admin"):
+        sr.save("email_morning_weekends", value)
 
 
 def _at(hour):
@@ -24,7 +32,7 @@ def _at(hour):
 def test_nothing_is_sent_until_the_service_is_set_up_and_the_key_is_never_shown(web, db, monkeypatch):
     from engines import morning_email
     _admin(web)
-    assert morning_email.run(_at(8)) == "Email sending is not set up yet."
+    assert morning_email.run(datetime(2026, 10, 19, 8, 5)) == "Email sending is not set up yet."   # a Monday
     page = web.get("/settings/notifications/").content.decode()
     assert "The morning email" in page and "not set up yet" in page
     _setup(web, monkeypatch)
@@ -119,3 +127,18 @@ def test_today_also_lists_earlier_checks_not_cleared_or_ticked(web, db):
     with sqlite3.connect(d.DB_PATH) as conn:                                     # ticked on Daily payables: no longer listed
         conn.execute("UPDATE checks_issued SET manual_cleared_at = CURRENT_TIMESTAMP WHERE amount = 10003")
     assert not any(k.startswith("Earlier checks") for k in dict(content("admin@slicks.test", "Admin", today)["rows"]))
+
+
+
+def test_no_morning_email_on_saturday_or_sunday_unless_switched_on(web, db, monkeypatch):
+    """Owner, 2026-10-17: "no email on weekends"."""
+    from engines import morning_email
+    _admin(web)
+    _ready(web)
+    sent = _setup(web, monkeypatch)
+    _weekends("0")
+    sat, sun, mon = datetime(2026, 10, 17, 8, 5), datetime(2026, 10, 18, 8, 5), datetime(2026, 10, 19, 8, 5)
+    assert morning_email.run(sat) == "Weekend: no morning email." and morning_email.run(sun) == "Weekend: no morning email." and not sent
+    assert morning_email.run(mon).startswith("1 morning email")
+    _weekends("1")
+    assert morning_email.run(datetime(2026, 10, 24, 8, 5)).startswith("1 morning email")       # switched on: Saturdays too

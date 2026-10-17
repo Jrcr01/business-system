@@ -292,6 +292,8 @@ def run(now=None, force: bool = False, site: str = "") -> str:
         return "The morning email is switched off."
     if not force and now.hour != int_value("email_morning_hour"):
         return "Not the email hour."
+    if not force and now.weekday() >= 5 and not int_value("email_morning_weekends"):
+        return "Weekend: no morning email."                      # owner, 2026-10-17: "no email on weekends"
     if not mail_out.ready():
         return "Email sending is not set up yet."
     sent = failed = 0

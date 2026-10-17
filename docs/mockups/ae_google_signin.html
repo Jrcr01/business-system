@@ -1,0 +1,109 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: sign in with Google</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --ok: #0b6e4f; --warn: #9a3412; --red: #b3261e; --gblue: #1a73e8; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+main { max-width: 1160px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 22px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+h2 { color: var(--navy); font-size: 1.05rem; margin: 28px 0 8px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 90ch; }
+.flow { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+.arrow { align-self: center; font-size: 1.6rem; color: #94a3b8; }
+.win { width: 250px; border: 1px solid #c9d2dd; border-radius: 10px; background: #fff; box-shadow: 0 4px 12px rgba(16,24,40,.10); overflow: hidden; }
+.win .url { background: #eef1f5; padding: 5px 9px; font-size: .68rem; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.win .body { padding: 14px 14px 16px; min-height: 230px; font-size: .82rem; }
+.cap { font-size: .8rem; color: var(--muted); margin-top: 6px; max-width: 250px; line-height: 1.35; } .cap b { color: var(--ink); }
+.cf { text-align: center; } .cf .lg { font-weight: 800; font-size: .95rem; margin: 6px 0 10px; } .cf input { width: 100%; padding: 7px; border: 1px solid #ccd; border-radius: 6px; font: inherit; font-size: .8rem; }
+.cf .b { background: #1d6ff2; color: #fff; border-radius: 6px; padding: 7px; font-weight: 700; margin-top: 8px; }
+.mail { font-size: .78rem; } .mail .code { font-size: 1.4rem; font-weight: 800; letter-spacing: 3px; text-align: center; margin: 12px 0; }
+.g { text-align: center; } .g .logo { font-size: 1.3rem; font-weight: 700; letter-spacing: -.5px; margin: 4px 0 6px; }
+.g .logo span:nth-child(1) { color: #4285f4; } .g .logo span:nth-child(2) { color: #ea4335; } .g .logo span:nth-child(3) { color: #fbbc05; } .g .logo span:nth-child(4) { color: #4285f4; } .g .logo span:nth-child(5) { color: #34a853; } .g .logo span:nth-child(6) { color: #ea4335; }
+.g h4 { margin: 2px 0 2px; font-weight: 400; font-size: 1.05rem; } .g .sub { font-size: .74rem; color: var(--muted); }
+.acct { display: flex; align-items: center; gap: 8px; text-align: left; border-bottom: 1px solid var(--line); padding: 8px 2px; }
+.acct i { width: 26px; height: 26px; border-radius: 50%; background: #7b5ea7; color: #fff; display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: .75rem; }
+.acct.tap { outline: 3px solid #f59e0b; outline-offset: 1px; border-radius: 6px; }
+.acct small { display: block; color: var(--muted); font-size: .7rem; }
+.erp { background: #0f2a4a; color: #fff; } .erp .body { background: #f6f8fb; color: var(--ink); }
+.erp .head { display: flex; align-items: center; gap: 6px; font-weight: 800; color: #f2c200; padding: 8px 10px; background: #0f2a4a; font-size: .85rem; }
+.fld { border: 1px solid #b9c6d8; border-radius: 6px; padding: 6px 8px; margin: 6px 0; color: #9aa4b2; font-size: .78rem; background: #fff; }
+.btn { background: var(--blue); color: #fff; border-radius: 7px; padding: 7px; text-align: center; font-weight: 700; margin-top: 8px; }
+.num { font-size: 2rem; font-weight: 800; text-align: center; color: var(--navy); letter-spacing: 2px; margin: 8px 0; }
+.count { display: inline-block; background: #fff4e5; color: var(--warn); border-radius: 999px; padding: 1px 9px; font-weight: 700; font-size: .78rem; margin-left: 6px; }
+.count.ok { background: #e7f6ee; color: var(--ok); }
+table { border-collapse: collapse; width: 100%; max-width: 900px; font-size: .9rem; background: #fff; border-radius: 10px; overflow: hidden; }
+th { text-align: left; color: var(--muted); font-weight: 600; font-size: .8rem; border-bottom: 2px solid var(--line); padding: 8px 10px; background: #f8fafc; }
+td { border-bottom: 1px solid var(--line); padding: 8px 10px; vertical-align: top; }
+.good { color: var(--ok); font-weight: 600; } .bad { color: var(--red); font-weight: 600; }
+.steps { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 12px 16px; max-width: 900px; } .steps li { margin: 6px 0; }
+.q { background: #fffbea; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 14px; margin-top: 22px; max-width: 900px; } .q li { margin: 4px 0; }
+</style></head><body><main>
+
+<h1>B · Sign in with Google instead of the emailed code <small>mock-up</small></h1>
+<p class="why">Cloudflare stays in front (Zero Trust unchanged: only the emails on the allow list get through), but instead of typing the email and waiting for a code,
+the person picks their Google account. With "Instant Auth" on, Cloudflare's page never shows: the ERP address goes straight to Google. The ERP password and the
+phone approval behind it do not change.</p>
+
+<h2>Today <span class="count">7 steps · an email to wait for</span></h2>
+<div class="flow">
+  <div><div class="win"><div class="url">slickstiresupply.cloudflareaccess.com/…</div><div class="body cf"><div class="lg">Cloudflare Access</div><div style="font-size:.72rem;color:#666">calm-dawn-d7c0.cloudflareaccess.com</div>
+    <div style="font-weight:700;margin:10px 0 6px;text-align:left">Log in to slickserp</div><input placeholder="jeane@gmail.com"><div class="b">Send login code</div></div></div>
+    <div class="cap"><b>1–2</b> Type the email, Send login code.</div></div>
+  <div class="arrow">→</div>
+  <div><div class="win"><div class="url">Gmail · inbox</div><div class="body mail"><b>Cloudflare Access</b><br>Your login code for slickserp<div class="code">482 913</div><div style="color:#666">Expires in 10 minutes.</div></div></div>
+    <div class="cap"><b>3–4</b> Open Gmail, find the email, copy the code.</div></div>
+  <div class="arrow">→</div>
+  <div><div class="win"><div class="url">slickstiresupply.cloudflareaccess.com/…</div><div class="body cf"><div class="lg">Cloudflare Access</div><div style="text-align:left;font-weight:700;margin:10px 0 6px">Enter the code</div><input placeholder="482913"><div class="b">Sign in</div></div></div>
+    <div class="cap"><b>5</b> Paste the code.</div></div>
+  <div class="arrow">→</div>
+  <div><div class="win erp"><div class="head">SLICK'S · ERP</div><div class="body"><b>Sign in</b><div class="fld">jeane@gmail.com</div><div class="fld">••••••••</div><div class="btn">Sign in</div>
+    <div style="margin-top:12px;text-align:center;font-size:.76rem;color:var(--muted)">Approve on your phone. Tap this number:</div><div class="num">47</div></div></div>
+    <div class="cap"><b>6–7</b> ERP password, then approve on the phone.</div></div>
+</div>
+
+<h2>With Google <span class="count ok">5 steps · nothing to wait for</span></h2>
+<div class="flow">
+  <div><div class="win"><div class="url">accounts.google.com/… (straight from erp.slickstiresupply.com)</div><div class="body g">
+    <div class="logo"><span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span>e</span></div><h4>Choose an account</h4><div class="sub">to continue to <b>Slick's Tire Supply ERP</b></div>
+    <div class="acct tap"><i>J</i><div>Jeane Ravin Roxas<small>jeane@gmail.com</small></div></div>
+    <div class="acct"><i style="background:#9aa4b2">+</i><div>Use another account</div></div></div></div>
+    <div class="cap"><b>1</b> Open the ERP: Google's own page, with <b>our name and logo</b> on it. Tap your account.</div></div>
+  <div class="arrow">→</div>
+  <div><div class="win"><div class="url">accounts.google.com/…</div><div class="body g"><div class="logo"><span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span>e</span></div>
+    <h4>2-Step Verification</h4><div class="sub" style="margin:10px 0">Check your phone. Google sent a notification: tap <b>Yes</b>.</div><div style="font-size:2.4rem">📱</div>
+    <div class="sub">(only when Google asks: a new computer, or after a while)</div></div></div>
+    <div class="cap"><b>(2)</b> Only now and then: Google's own phone prompt, if 2-step is on for that Gmail.</div></div>
+  <div class="arrow">→</div>
+  <div><div class="win erp"><div class="head">SLICK'S · ERP</div><div class="body"><b>Sign in</b><div class="fld">jeane@gmail.com</div><div class="fld">••••••••</div><div class="btn">Sign in</div>
+    <div style="margin-top:12px;text-align:center;font-size:.76rem;color:var(--muted)">Approve on your phone. Tap this number:</div><div class="num">47</div></div></div>
+    <div class="cap"><b>2–5</b> Unchanged: the ERP password, then the phone approval (banner → number → fingerprint).</div></div>
+</div>
+
+<h2>What changes, honestly</h2>
+<table>
+  <tr><th></th><th>Today (email code)</th><th>B (Google)</th></tr>
+  <tr><td>Who gets past Cloudflare</td><td>the emails on the allow list</td><td>the same allow list (the Google account's email must be on it)</td></tr>
+  <tr><td>Speed</td><td>wait for an email, copy a code</td><td class="good">one tap on a known account</td></tr>
+  <tr><td>Someone with the Gmail password</td><td class="bad">reads the code in Gmail: through</td><td class="bad">picks the account: through</td></tr>
+  <tr><td>…and then</td><td colspan="2">still stopped by the <b>ERP password</b> (not saved in Chrome since 10-15) <b>and the phone approval</b> (number + fingerprint on the person's own phone)</td></tr>
+  <tr><td>Google 2-step on the family's Gmail</td><td>helps (protects the inbox)</td><td class="good">helps more: Google itself asks the phone before Cloudflare lets anyone in</td></tr>
+  <tr><td>A person without a Google account</td><td>works with any email</td><td>keep the email code as a second choice (then Instant Auth is off and Cloudflare shows two buttons)</td></tr>
+  <tr><td>The Home Screen app on a phone</td><td>email code once</td><td>Google once (the phone usually already knows the account)</td></tr>
+</table>
+
+<h2>What setting it up takes (about 20 minutes, your dashboards, I guide)</h2>
+<div class="steps"><ol>
+  <li><b>Google Cloud Console</b> (the project you already have): an OAuth consent screen named "Slick's Tire Supply ERP" with the logo; an OAuth client of type Web, its redirect address
+    <code>https://&lt;team&gt;.cloudflareaccess.com/cdn-cgi/access/callback</code>. Copy the Client ID and secret.</li>
+  <li><b>Cloudflare Zero Trust → Settings → Authentication → Add new → Google</b>: paste the two values, Test.</li>
+  <li><b>Zero Trust → Access → Applications → the ERP app → Login methods</b>: tick Google, untick One-time PIN (or keep both), turn on <b>Instant Auth</b>.</li>
+  <li>Nothing changes in the ERP code. The policy (the allow list) stays as it is; the "ERP open pages" bypass for /approve/ and /s/ stays.</li>
+  <li>Test in an incognito window with your Gmail, then tell the family: "next time, just pick your Google account".</li>
+</ol></div>
+
+<div class="q"><b>To decide</b>
+  <ol><li><b>Google only</b> (Instant Auth: Cloudflare's page never shows) — or <b>Google + the email code</b> (Cloudflare's page shows two buttons; needed if anyone signs in with a non-Google email)?</li>
+    <li>Turn on Google 2-step for every family Gmail first? (Recommended: it is the lock B leans on.)</li>
+    <li>A first: brand the Cloudflare page anyway (it still shows whenever both methods are on)?</li></ol>
+</div>
+</main></body></html>

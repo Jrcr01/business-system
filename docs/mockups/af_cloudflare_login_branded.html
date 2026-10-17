@@ -1,0 +1,69 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: branded Cloudflare sign-in</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --ok: #0b6e4f; --warn: #9a3412; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+main { max-width: 1160px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 22px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+h2 { color: var(--navy); font-size: 1.05rem; margin: 26px 0 8px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 90ch; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 18px; }
+.browser { border: 1px solid #c9d2dd; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 14px rgba(16,24,40,.12); background: #fff; }
+.browser .url { background: #eef1f5; padding: 6px 10px; font-size: .72rem; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page { min-height: 420px; display: flex; flex-direction: column; align-items: center; padding: 26px 16px 16px; }
+.cfhead { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.25rem; margin-bottom: 14px; color: #111; }
+.box { width: 100%; max-width: 330px; background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; padding: 18px 18px 20px; }
+.box .team { font-size: .78rem; color: #555; } .box h3 { font-size: 1.15rem; margin: 8px 0 12px; font-weight: 600; }
+.box label { font-size: .8rem; font-weight: 600; } .box .in { border: 1px solid #ccd; border-radius: 6px; padding: 8px; font-size: .82rem; color: #999; margin: 4px 0 10px; }
+.box .go { background: #1d6ff2; color: #fff; text-align: center; border-radius: 6px; padding: 9px; font-weight: 700; font-size: .88rem; }
+.footer { font-size: .72rem; color: #667; margin-top: 14px; text-align: center; max-width: 330px; }
+.new .page { background: #0f2a4a; }
+.new .logo { width: 210px; max-width: 70%; margin: 2px 0 14px; display: block; }
+.new .hdr { color: #f2c200; font-weight: 700; font-size: .95rem; margin-bottom: 12px; letter-spacing: .3px; text-align: center; }
+.new .go { background: #0B4F8A; }
+.new .footer { color: #cdd6e2; }
+.cap { font-size: .84rem; color: var(--muted); margin: 8px 2px 0; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; background: #fff; border-radius: 10px; overflow: hidden; }
+th { text-align: left; color: var(--muted); font-weight: 600; font-size: .8rem; border-bottom: 2px solid var(--line); padding: 8px 10px; background: #f8fafc; }
+td { border-bottom: 1px solid var(--line); padding: 8px 10px; vertical-align: top; } td code { background: #f3f4f6; padding: 1px 5px; border-radius: 4px; font-size: .84rem; word-break: break-all; }
+.q { background: #fffbea; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 14px; margin-top: 22px; } .q li { margin: 4px 0; }
+.note { font-size: .82rem; color: var(--muted); }
+</style></head><body><main>
+
+<h1>A · Cloudflare's sign-in page, dressed as Slick's <small>mock-up</small></h1>
+<p class="why">Same page, same protection (the email code from Cloudflare), only its look changes: our logo and name, the ERP's navy and yellow, a plain line telling
+the family what to do. Typed once in Cloudflare (Zero Trust → Settings → Custom Pages → Login page). Free; nothing in the ERP changes.</p>
+
+<div class="pair">
+  <div><div class="browser"><div class="url">slickstiresupply.cloudflareaccess.com/cdn-cgi/access/login/erp.slickstiresupply.com…</div>
+    <div class="page" style="background:#f7f7f8"><div class="cfhead">⟶ Cloudflare Access</div>
+      <div class="box"><div class="team">calm-dawn-d7c0.cloudflareaccess.com</div><h3>Log in to slickserp</h3><label>Email</label><div class="in">example@email.com</div><div class="go">Send login code</div></div></div></div>
+    <p class="cap"><b>Today.</b> Cloudflare's look, a made-up team name, "slickserp".</p></div>
+
+  <div class="new"><div class="browser"><div class="url">slickstiresupply.cloudflareaccess.com/cdn-cgi/access/login/erp.slickstiresupply.com…</div>
+    <div class="page"><img class="logo" src="https://slickstiresupply.com/assets/logo-560.webp" alt="Slick's Tire Supply">
+      <div class="hdr">PORTAL</div>
+      <div class="box"><div class="team">slickstiresupply.cloudflareaccess.com</div><h3>Log in to Slick's Tire Supply</h3><label>Email</label><div class="in">your email</div><div class="go">Send login code</div></div>
+    </div></div>
+    <p class="cap"><b>After A.</b> Our logo on navy, "PORTAL" in yellow, our name in the box. No footer.</p></div>
+</div>
+
+<h2>What to type in Cloudflare</h2>
+<table>
+  <tr><th>Field (Login page)</th><th>Value</th><th>Shows as</th></tr>
+  <tr><td>Organization name</td><td><code>Slick's Tire Supply</code></td><td>"Log in to Slick's Tire Supply" (was "slickserp")</td></tr>
+  <tr><td>Logo URL</td><td><code>https://slickstiresupply.com/assets/logo-560.webp</code></td><td>the logo above the box (it comes from the public website, which Cloudflare can always reach; the ERP's own files are behind the lock)</td></tr>
+  <tr><td>Background color</td><td><code>#0f2a4a</code></td><td>the ERP's navy</td></tr>
+  <tr><td>Header text</td><td><code>PORTAL</code></td><td>the yellow line under the logo (Cloudflare picks the text colour; if it shows white, fine)</td></tr>
+  <tr><td>Footer text</td><td>leave empty</td><td>no footer (owner, 2026-10-17)</td></tr>
+  <tr><td>Button colours (if your screen offers them)</td><td><code>#0B4F8A</code> button, <code>#ffffff</code> text</td><td>the ERP's blue button</td></tr>
+</table>
+<p class="note">The team name line ("calm-dawn-d7c0") is a separate setting: Zero Trust → Settings → Custom Pages → <b>Team domain</b> → Edit → <code>slickstiresupply</code>.
+  Change it at a quiet hour: anyone halfway through signing in starts again; the ERP and its open pages (/approve/, /s/) are not affected.</p>
+
+<div class="q"><b>To confirm</b>
+  <ol><li>The header and footer wording — fine, or your own?</li>
+    <li>Rename the team domain to <code>slickstiresupply</code> too?</li></ol>
+</div>
+</main></body></html>
