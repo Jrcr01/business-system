@@ -54,7 +54,7 @@ class AccessMiddleware:
             return self.get_response(request)
         if request.path == EXEMPT_HEALTH and _from_the_server_itself(request):
             return self.get_response(request)
-        if request.path.startswith(("/s/", "/approve/")):           # the supplier's QR link (owner, 2026-10-14): a supplier has no Cloudflare pass; the code is the key.
+        if request.path.startswith(("/s/", "/approve/", "/apple-touch-icon", "/static/phone/icon-")):           # the supplier's QR link (owner, 2026-10-14): a supplier has no Cloudflare pass; the code is the key.
                                                                      # /approve/: a phone approving a computer's sign-in (owner, 2026-10-15), even when its own Cloudflare pass ran out
             return self.get_response(request)
         email = verify(request.META.get(HEADER, ""), team, aud)

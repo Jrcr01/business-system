@@ -252,3 +252,24 @@ def test_the_banner_is_urgent_refuses_with_one_tap_and_a_test_approves_nothing(w
     with sqlite3.connect(_db()) as conn:
         assert conn.execute("SELECT COUNT(*) FROM signin_requests WHERE status = 'APPROVED'").fetchone()[0] == 0
     assert "Send a test approval" in web.get("/fingerprint/").content.decode()
+
+
+IPAD_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+
+
+def test_an_ipad_counts_as_a_phone_and_the_apple_icon_needs_no_sign_in(web, db, pushed):
+    """Owner, 2026-10-17: "iPad as a phone, and make the icon". iPadOS Safari says it is a Mac; the page marks a touch-screen "Mac" with the slk_ipad
+    cookie: then it gets the set-up card, signs itself in, and can be the approving phone. A real Mac (no cookie) stays a computer."""
+    from django.test import Client
+    _admin(web)
+    _switch()
+    assert "Set up this phone" not in web.get("/", HTTP_USER_AGENT=IPAD_UA).content.decode()                    # a Mac: a computer
+    web.cookies["slk_ipad"] = "1"
+    assert "Set up this phone" in web.get("/", HTTP_USER_AGENT=IPAD_UA).content.decode()                        # the iPad: a phone
+    _sub("admin@slicks.test", ua="Safari on iPad")
+    from engines.phone_approval import _is_phone
+    assert _is_phone("Safari on iPad") and not _is_phone("Safari on Mac")
+    r = Client().get("/apple-touch-icon.png")
+    assert r.status_code == 200 and r["Content-Type"] == "image/png" and b"PNG" in b"".join(r.streaming_content)[:8]
+    page = web.get("/").content.decode()
+    assert 'sizes="180x180"' in page and "slk_ipad=1" in page and 'apple-mobile-web-app-title" content="Slick\'s ERP"' in page

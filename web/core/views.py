@@ -165,7 +165,7 @@ def _log(request, user_id: int, result: str) -> bool:
     """One line in the sign-in record; True when the person signed in on a device they had not used before."""
     from engines.auth_service import log_sign_in
     m = request.META
-    return log_sign_in(int(user_id), result, device_id=_device_id(request), browser=_browser(m.get("HTTP_USER_AGENT", "")),
+    return log_sign_in(int(user_id), result, device_id=_device_id(request), browser=_browser(_ua(request)),
                        ip=(m.get("HTTP_CF_CONNECTING_IP") or m.get("REMOTE_ADDR") or "")[:45], country=m.get("HTTP_CF_IPCOUNTRY", "")[:2],
                        city=m.get("HTTP_CF_IPCITY", "")[:60])
 
@@ -360,8 +360,27 @@ def fingerprint_login(request):
 # --- approve a computer's sign-in on your phone (owner, 2026-10-14 the QR way; 2026-10-15 the push way: "drop scan qr but push notification", "comes
 # after it", "1 phone only"; engines/phone_approval.py, mock-up docs/mockups/z_push_approval.html). After the right password on a computer, a notification
 # goes to the person's phone; its link opens /approve/<code>/ (Cloudflare lets that page through), where the number and the fingerprint approve it.
-def _on_a_phone(request) -> bool:
+def _ua(request) -> str:
+    """The browser's line, with an iPad told apart from a Mac (owner, 2026-10-17: "iPad as a phone"): iPadOS Safari says it is a Mac; the page's own
+    script sets the slk_ipad cookie when that "Mac" has a touch screen."""
     ua = request.META.get("HTTP_USER_AGENT", "")
+    if "Macintosh" in ua and "iPad" not in ua and request.COOKIES.get("slk_ipad") == "1":
+        ua = ua.replace("Macintosh", "iPad; Macintosh", 1)
+    return ua
+
+
+def apple_icon(request):
+    """/apple-touch-icon.png: the Home Screen icon an iPhone or iPad fetches by itself (no sign-in, a picture only)."""
+    from django.contrib.staticfiles import finders
+    from django.http import FileResponse
+    path = finders.find("phone/icon-erp-180.png")
+    resp = FileResponse(open(path, "rb"), content_type="image/png")
+    resp["Cache-Control"] = "public, max-age=604800"
+    return resp
+
+
+def _on_a_phone(request) -> bool:
+    ua = _ua(request)
     return any(k in ua for k in ("Android", "iPhone", "iPad", "Mobile"))
 
 
@@ -379,7 +398,7 @@ def _push_blocks(request, user: dict) -> bool:
 def _start_push(request, user: dict, nxt: str):
     from engines import phone_approval as pa
     m, uid = request.META, int(user["user_id"])
-    made = pa.create(uid, _browser(m.get("HTTP_USER_AGENT", "")), (m.get("HTTP_CF_CONNECTING_IP") or m.get("REMOTE_ADDR") or ""), nxt)
+    made = pa.create(uid, _browser(_ua(request)), (m.get("HTTP_CF_CONNECTING_IP") or m.get("REMOTE_ADDR") or ""), nxt)
     request.session.cycle_key()
     request.session.pop("uid", None)
     request.session["push_wait"] = {"rid": made["request_id"], "uid": uid, "pw": password_stamp(uid)}
@@ -547,7 +566,7 @@ def fingerprint_add(request):
         payload = {}
     origin, rp_id = _site(request)
     ok, msg, key = fp.register(user, payload if isinstance(payload, dict) else {}, request.session.pop("fp_new", ""), origin, rp_id,
-                               device=_browser(request.META.get("HTTP_USER_AGENT", "")))
+                               device=_browser(_ua(request)))
     resp = JsonResponse({"ok": ok, "msg": msg}, status=200 if ok else 400)
     if ok:
         resp.set_cookie(_fp_cookie(), signing.dumps({"u": int(user["user_id"]), "k": key}, salt=FP_SALT), max_age=400 * 86400, httponly=True,
@@ -837,7 +856,7 @@ def notifications(request):
             data = {}
         what = data.get("action")
         if what == "on":
-            ok, msg = web_push.subscribe(me["email"], data.get("subscription") or {}, request.META.get("HTTP_USER_AGENT", ""))
+            ok, msg = web_push.subscribe(me["email"], data.get("subscription") or {}, _ua(request))
         elif what == "off":
             web_push.unsubscribe(me["email"], str(data.get("endpoint") or ""))
             ok, msg = True, "Notifications are off for this device."
