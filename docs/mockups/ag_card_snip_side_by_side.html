@@ -1,0 +1,129 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: card snip side by side</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --ok: #0b6e4f; --warn: #9a3412; --red: #b3261e; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+main { max-width: 1240px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 22px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+h2 { color: var(--navy); font-size: 1.05rem; margin: 28px 0 8px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 92ch; }
+.screen { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 14px 16px; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+.top { background: var(--navy); color: #fff; border-radius: 10px; padding: 8px 12px; font-weight: 700; font-size: .85rem; margin-bottom: 12px; }
+.split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr); gap: 16px; align-items: start; }
+.doc { border: 1px solid #b9c6d8; border-radius: 10px; background: #f8fafc; padding: 8px; }
+.dhead { display: flex; gap: 8px; align-items: center; font-size: .84rem; color: var(--muted); margin-bottom: 6px; flex-wrap: wrap; }
+.dhead b { color: var(--ink); } .pill { font-size: .72rem; border-radius: 999px; padding: 1px 8px; font-weight: 600; background: #e7f6ee; color: var(--ok); }
+.zoom { margin-left: auto; display: inline-flex; gap: 4px; } .zoom span { border: 1px solid #b9c6d8; border-radius: 6px; padding: 1px 8px; background: #fff; font-weight: 700; color: var(--ink); }
+.view { height: 430px; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 6px; position: relative; }
+.page { font-family: Consolas, monospace; font-size: .72rem; padding: 14px 16px; line-height: 1.6; white-space: pre; color: #222; position: relative; }
+.box { position: absolute; border: 2px dashed var(--blue); background: rgba(11,79,138,.12); border-radius: 3px; }
+.box b { position: absolute; top: -18px; left: -2px; background: var(--blue); color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; white-space: nowrap; font-family: "Source Sans 3", sans-serif; }
+.next { background: #eaf1fa; border: 1px solid #b9c6d8; border-radius: 8px; padding: 6px 10px; font-size: .84rem; margin-bottom: 8px; } .next b { color: var(--blue); }
+.panel { position: sticky; top: 10px; border: 1px solid #d5dbe3; border-radius: 10px; padding: 12px; background: #fff; }
+.panel h3 { margin: 0 0 8px; font-size: .98rem; color: var(--navy); }
+.tabs { display: flex; gap: 4px; margin-bottom: 10px; } .tabs span { padding: 4px 10px; border-radius: 999px; font-size: .8rem; font-weight: 700; border: 1px solid #b9c6d8; color: var(--muted); }
+.tabs span.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+.f { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.f label { font-size: .74rem; color: var(--muted); font-weight: 600; display: block; margin-bottom: 2px; }
+.f .in { border: 1px solid #b9c6d8; border-radius: 6px; padding: 6px 8px; font-size: .88rem; text-align: right; background: #fff; font-variant-numeric: tabular-nums; }
+.f .in.l { text-align: left; } .f .wide { grid-column: 1 / -1; }
+.f .in.target { outline: 2px solid var(--blue); outline-offset: 1px; background: #f3f7fc; }
+.f .in.filled { border-color: var(--ok); }
+.read { margin-top: 10px; background: #f0faf4; border: 1px solid #bfe3cf; border-radius: 8px; padding: 8px 10px; font-size: .82rem; }
+.read .sum { font-variant-numeric: tabular-nums; } .read b { color: var(--ok); }
+.math { font-size: .8rem; color: var(--muted); margin-top: 10px; line-height: 1.4; } .math b { color: var(--ink); }
+.btn { display: inline-block; background: var(--blue); color: #fff; border-radius: 8px; padding: 7px 12px; font-weight: 700; font-size: .86rem; margin-top: 10px; }
+.btn.ghost { background: #fff; color: var(--blue); border: 1px solid #b9c6d8; }
+.list { margin-top: 14px; font-size: .84rem; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; }
+.tag { display: inline-block; background: #fff4e5; color: var(--warn); border-radius: 999px; padding: 0 8px; font-size: .7rem; font-weight: 700; margin-left: 4px; }
+.q { background: #fffbea; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 14px; margin-top: 22px; } .q li { margin: 4px 0; }
+.small { font-size: .8rem; color: var(--muted); margin-top: 6px; }
+@media (max-width: 860px) { .split { grid-template-columns: 1fr; } .panel { position: static; } }
+</style></head><body><main>
+
+<h1>Credit cards: the statement beside the form <small>mock-up · revision after the check of 10-17</small></h1>
+<p class="why">What the check found works: a box picked first, a figure or a whole column filled, the picture kept through Edit, Cancel and the filter. What it found
+awkward: on a wide screen the statement picture spans the whole width, so one page is taller than the screen; the form you are filling is above it (Add) or far below it
+(Correct), and you scroll back and forth for every figure. This revision puts them <b>side by side</b>.</p>
+
+<h2>1 · Side by side, on a computer</h2>
+<div class="screen">
+  <div class="top">Other payables → Credit cards · Add a statement</div>
+  <div class="split">
+    <div class="doc">
+      <div class="dhead"><span>📄</span><b>Pasted 17 Oct 10:30 AM.png</b><span class="pill">picture: OCR</span><span>· ✕</span>
+        <span class="zoom"><span>−</span><span>Fit</span><span>+</span></span></div>
+      <div class="next">Next snip goes to: <b>Unbilled installments</b> · draw a box over the figure or the column</div>
+      <div class="view"><div class="page">Previous Balance                                     506,370.33
+10/10  FINANCE CHARGES                                13,085.63
+10/05  INSTL 15/18 MB PULILAN-RIS                     13,766.70
+10/08  INSTL 13/18 CASH2GO 0.98                       15,423.79
+10/05  CASH PAYMENT - THANK YOU - MB                  40,000.00C
+10/07  CONVERT BALANCE TO INSTALMENT                 600,183.43C
+10/07  BALCON PROC FEE                                   500.00
+                         TOTAL AMOUNT DUE             66,511.48
+
+SUMMARY OF OUTSTANDING INSTALLMENT
+Months  Start      Unbilled Amount   Establishment
+ 003    05/08/25         41,300.18   QUICK CASH 1%
+ 005    08/10/25         77,118.93   C2G 0.98%
+ 023    10/07/26        300,118.00   BALCON 0.58%
+<span class="box" style="left:150px; top:268px; width:118px; height:66px"><b>Unbilled installments</b></span></div></div>
+      <div class="small">The picture scrolls inside its own frame (the page does not), and − / Fit / + make small print bigger. The frame is as tall as the screen.</div>
+    </div>
+
+    <div class="panel">
+      <div class="tabs"><span class="on">Add a statement</span><span>Correct · Diamond Platinum 6007 due 11/03</span></div>
+      <div class="f">
+        <div class="wide"><label>Card</label><div class="in l">Mastercard World · 1240 · Rhodora Roxas</div></div>
+        <div><label>Statement month</label><div class="in l">October 2026</div></div>
+        <div><label>Due date</label><div class="in l">11/03/2026</div></div>
+        <div><label>Total amount due</label><div class="in filled">66,511.48</div></div>
+        <div><label>Payments</label><div class="in filled">40,000.00</div></div>
+        <div><label>Credits</label><div class="in filled">600,183.43</div></div>
+        <div><label>Finance charge</label><div class="in filled">13,085.63</div></div>
+        <div class="wide"><label>Unbilled installments</label><div class="in target">418,537.11</div></div>
+      </div>
+      <div class="read"><b>3 figures added up into Unbilled installments</b><br><span class="sum">41,300.18 + 77,118.93 + 300,118.00 = <b>₱418,537.11</b></span>
+        <div style="margin-top:4px;color:var(--muted)">From a picture: compare these with the statement before saving.</div></div>
+      <div class="math">Earlier ₱506,370.33 − payments ₱40,000.00 − credits ₱600,183.43 = ₱0.00 carried · + new charges ₱53,425.85 + finance ₱13,085.63 = <b>₱66,511.48</b> ✓<br>
+        Owed on this card: ₱66,511.48 due + ₱418,537.11 still to be billed = <b>₱485,048.59</b></div>
+      <span class="btn">Add statement</span>
+      <div class="list">The statements list stays below, full width, as now.</div>
+    </div>
+  </div>
+</div>
+
+<h2>2 · Correcting a statement uses the same panel</h2>
+<div class="screen" style="max-width:560px">
+  <div class="tabs"><span>Add a statement</span><span class="on">Correct · Diamond Platinum 6007 due 11/03</span></div>
+  <div class="f">
+    <div><label>Statement month</label><div class="in l">October 2026</div></div>
+    <div><label>Due date</label><div class="in l">11/03/2026</div></div>
+    <div><label>Total amount due</label><div class="in">489,412.77</div></div>
+    <div><label>Finance charge</label><div class="in">9,676.34</div></div>
+    <div><label>Credits</label><div class="in">0.00</div></div>
+    <div><label>Unbilled installments</label><div class="in target filled">418,537.11</div></div>
+  </div>
+  <span class="btn">Save the correction</span> <span class="btn ghost">Cancel</span>
+  <p class="small">Pressing <b>Edit</b> on a statement in the list opens it here, beside the picture, instead of at the bottom of the page. Cancel goes back to Add.</p>
+</div>
+
+<h2>3 · Smaller things the check found</h2>
+<div class="screen">
+  <ol style="margin:0 0 0 18px; padding:0">
+    <li><b>Say what a column added up to.</b> Today the line under the picture says only "Filled from the box.", so you cannot see which figures were read. It will list them with the total, as in the panel above.</li>
+    <li><b>Commas in the filled figure.</b> A snipped figure shows as "418537.11"; it will show "418,537.11" like the rest.</li>
+    <li><b>"Next snip goes to: …"</b> above the picture, so the box you picked is plain without looking back at the form; before a box is picked it reads "Click a box in the form first".</li>
+    <li><b>Old typed figures.</b> The figures you typed are kept while you move around the page; they are also cleared when you pick a <i>different</i> card, so one card's figures never land on another's statement.</li>
+  </ol>
+</div>
+
+<div class="q"><b>To decide</b>
+  <ol><li>Side by side as drawn (picture left, form right) — or the form on the left?</li>
+    <li>Correct a statement in the same panel (tab) — fine?</li>
+    <li>Any of the four smaller items to leave out?</li></ol>
+  <p class="small" style="margin:6px 0 0">On a phone nothing changes: the picture and the form stay one under the other.</p>
+</div>
+</main></body></html>
