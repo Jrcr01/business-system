@@ -81,6 +81,7 @@ def test_the_icon_shortcuts_are_complete_when_android_asks_without_a_sign_in(web
     """Owner, 2026-10-17: "Why no daily payable and record invoices" -- Android refreshed the app without the sign-in and got only POS."""
     import json
     from django.test import Client
+    _admin(web)                                                  # the system is set up (else everything goes to /setup/)
     _on()
     anon = Client()
     erp = [s["name"] for s in json.loads(anon.get("/phone/manifest.webmanifest").content)["shortcuts"]]
