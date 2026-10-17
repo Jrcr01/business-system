@@ -1,4 +1,4 @@
-"""Slicks Inventory and the quick quotation (owner, 2026-10-17; mock-ups an_slicks_inventory and ao_quick_quotation, answers all A): tires by rim
+"""Slick's Inventory and the quick quotation (owner, 2026-10-17; mock-ups an_slicks_inventory and ao_quick_quotation, answers all A): tires by rim
 like the notebook (size, brand, how many), its own app icon; a quote for one size lists what is on hand at cost, the markup is added and rounded up on
 the phone; the customer's view and what is shared never carry a cost; the staff phone gets the stock but no quote."""
 from tests.test_phone import _on
@@ -30,7 +30,7 @@ def test_slicks_inventory_shows_each_rim_size_brand_and_how_many(web, db):
     assert "185/65R15" in web.get("/phone/inventory/?q=1856515").content.decode()         # find works across rims
     assert web.cookies["slk_rim"].value == "16"
     m = web.get("/phone/manifest-inv.webmanifest")
-    assert m.status_code == 200 and b'"Slicks Inventory"' in m.content and b'"/phone/inventory/"' in m.content
+    assert m.status_code == 200 and "Slick's Inventory".encode() in m.content and b'"/phone/inventory/"' in m.content
 
 
 def test_the_quote_lists_what_is_on_hand_at_cost_cheapest_first(web, db):

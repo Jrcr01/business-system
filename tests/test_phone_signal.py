@@ -67,7 +67,7 @@ def test_the_app_icon_has_each_persons_own_shortcuts(web, db):
     names = [s["name"] for s in json.loads(web.get("/phone/manifest-ops.webmanifest").content)["shortcuts"]]
     assert names == ["Stock in", "Stock out", "Stock count", "Record a sale"]
     erp = [s["name"] for s in json.loads(web.get("/phone/manifest.webmanifest").content)["shortcuts"]]
-    assert erp == ["Slick's POS", "Slicks Inventory"]                         # owner, 2026-10-17: POS, then ERP pages
+    assert erp == ["Slick's POS", "Slick's Inventory"]                         # owner, 2026-10-17: POS, then ERP pages
     pics = json.loads(web.get("/phone/manifest.webmanifest").content)["shortcuts"]
     assert all(s["icons"][0]["src"].startswith("data:image/png;base64,") for s in pics)     # pictures inside: Cloudflare cannot stop them
     rack = _sign_in_new("rack@slicks.test", "scanner")
@@ -85,6 +85,6 @@ def test_the_icon_shortcuts_are_complete_when_android_asks_without_a_sign_in(web
     _on()
     anon = Client()
     erp = [s["name"] for s in json.loads(anon.get("/phone/manifest.webmanifest").content)["shortcuts"]]
-    assert erp == ["Slick's POS", "Slicks Inventory"]
+    assert erp == ["Slick's POS", "Slick's Inventory"]
     pos = [s["name"] for s in json.loads(anon.get("/phone/manifest-ops.webmanifest").content)["shortcuts"]]
     assert pos == ["Stock in", "Stock out", "Stock count", "Record a sale"]

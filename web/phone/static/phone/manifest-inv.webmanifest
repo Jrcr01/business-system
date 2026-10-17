@@ -1,7 +1,7 @@
 {
   "id": "/phone/inventory/",
-  "name": "Slicks Inventory",
-  "short_name": "Inventory",
+  "name": "Slick's Inventory",
+  "short_name": "Slick's Inventory",
   "description": "Stock by rim, like the notebook, and a quick quote",
   "start_url": "/phone/inventory/",
   "scope": "/phone/",

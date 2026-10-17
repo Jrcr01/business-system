@@ -1,4 +1,4 @@
-"""Slicks Inventory and the quick quotation (owner, 2026-10-17; mock-ups docs/mockups/an_slicks_inventory.html and ao_quick_quotation.html, answers all A).
+"""Slick's Inventory and the quick quotation (owner, 2026-10-17; mock-ups docs/mockups/an_slicks_inventory.html and ao_quick_quotation.html, answers all A).
 
 Tires by rim, the way the stock notebook is tabbed (12, 13, 14 ... 24): under each rim every size, under each size every brand with how many are on
 hand. The rim and the order come from the tire's size, so nothing has to be tagged. The quote takes one size, lists what is on hand at the cost the next

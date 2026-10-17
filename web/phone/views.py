@@ -108,8 +108,8 @@ SHORTCUTS = [("in", "Stock in", "/phone/in/", "Goods arrived against an order"),
              ("sale", "Record a sale", "/phone/sale/", "From the cash receipt")]
 
 
-# owner, 2026-10-17: "i want stock one clickaway", then "remove daily payables and record an invoice": the ERP icon = POS + Slicks Inventory
-ERP_SHORTCUTS = [("inventory", "Slicks Inventory", "/phone/inventory/", "Stock by rim, one tap away", "stock", False)]
+# owner, 2026-10-17: "i want stock one clickaway", then "remove daily payables and record an invoice": the ERP icon = POS + Slick's Inventory
+ERP_SHORTCUTS = [("inventory", "Slick's Inventory", "/phone/inventory/", "Stock by rim, one tap away", "stock", False)]
 
 
 def _with_shortcuts(request, path: str, keep_old: bool):
@@ -538,11 +538,11 @@ def count_add(request, count_id: int):
                                                          qty=typed.get("qty", ""), cost=typed.get("cost", ""), dot=typed.get("dot", "")))
 
 
-# ================= Slicks Inventory and the quick quotation (owner, 2026-10-17; mock-ups an_slicks_inventory, ao_quick_quotation; answers all A) ====
+# ================= Slick's Inventory and the quick quotation (owner, 2026-10-17; mock-ups an_slicks_inventory, ao_quick_quotation; answers all A) ====
 
 @phone_page("stock")
 def inventory(request):
-    """Tires by rim like the stock notebook: size, brand, how many. Its own app icon ("Slicks Inventory"), opening on the last rim used."""
+    """Tires by rim like the stock notebook: size, brand, how many. Its own app icon ("Slick's Inventory"), opening on the last rim used."""
     from engines import rim_stock
     q = request.GET.get("q", "").strip()
     tabs = rim_stock.tabs()
@@ -550,7 +550,7 @@ def inventory(request):
     if rim not in tabs:
         rim = "16"
     groups = rim_stock.find(q) if q else rim_stock.rim_tab(rim)
-    resp = render(request, "phone/inventory.html", _ctx(request, "Slicks Inventory", tabs=tabs, rim=rim, q=q, groups=groups,
+    resp = render(request, "phone/inventory.html", _ctx(request, "Slick's Inventory", tabs=tabs, rim=rim, q=q, groups=groups,
                                                          pieces=sum(g["total"] for g in groups)))
     if not q:
         resp.set_cookie("slk_rim", rim, max_age=31536000, samesite="Lax")
@@ -578,7 +578,7 @@ def quote(request):
 
 
 def manifest_inv(request):
-    """The third app (owner, 2026-10-17: "Slicks Inventory ... one click away"): its own id and icon, opening the stock by rim."""
+    """The third app (owner, 2026-10-17: "Slick's Inventory ... one click away"): its own id and icon, opening the stock by rim."""
     from django.contrib.staticfiles import finders
     from django.http import HttpResponse
     path = finders.find("phone/manifest-inv.webmanifest")

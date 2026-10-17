@@ -116,7 +116,7 @@ NUMBERS = [
      "fingerprint is not offered on a computer. Never the Scanner. Settings -> People -> Clear this phone, for a lost phone. 0: the password alone."),
     ("quote_round_to", "Phone", "Quick quote: round each price up to the next", 50, 0, 1000, 0, "pesos",
      "Owner, 2026-10-17 (mock-up ao_quick_quotation, answer 2 A): a quote's price each = cost + the markup picked, rounded UP to the next amount "
-     "here (50: 2,627 -> 2,650). 0 = no rounding, cost + markup exactly. Slicks Inventory -> Quote, on the phone."),
+     "here (50: 2,627 -> 2,650). 0 = no rounding, cost + markup exactly. Slick's Inventory -> Quote, on the phone."),
     ("phone_pages", "Phone", "The phone pages are on (1 = yes, 0 = no)", 0, 0, 1, 0, "",
      "Owner, 2026-10-12: \"We need pricelist, inventory. Stock in, stock out. Those items need mobility without using a laptop.\" 1: /phone/ opens -- "
      "Price list, Stock, Stock in and Stock out on a phone, added to its home screen -- for everyone allowed those pages, and the Scanner role signs in "
