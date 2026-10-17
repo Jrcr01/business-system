@@ -139,7 +139,7 @@
 {% include "payables/_card_snip.html" %}
 {% endif %}
 
-<form class="bar" method="get" action="/credit-cards/" style="margin-top:14px">
+<form class="bar" method="get" action="/credit-cards/" style="margin-top:14px">{% if doc %}<input type="hidden" name="f" value="{{ doc.token }}">{% if doc.page > 1 %}<input type="hidden" name="p" value="{{ doc.page }}">{% endif %}{% endif %}
   <div class="grow"><label for="fcard">Card</label><div class="pick-row">
     <input type="search" class="card-find" data-for="fcard" placeholder="Last 4 digits…" aria-label="Search the cards: last 4 digits, card or holder">
     <select id="fcard" name="card" onchange="this.form.submit()"><option value="">All cards</option>
@@ -149,14 +149,14 @@
 </form>
 {% if edit_stmt %}
 <div class="grp" id="edit">Correct the statement of {{ edit_stmt.card }} due {{ edit_stmt.due_date|dmy }}</div>
-<form method="post" class="bar">{% csrf_token %}<input type="hidden" name="action" value="correct_statement"><input type="hidden" name="statement_id" value="{{ edit_stmt.cc_statement_id }}"><input type="hidden" name="card" value="{{ card }}">
+<form method="post" class="bar" id="es-form">{% csrf_token %}<input type="hidden" name="action" value="correct_statement">{% if doc %}<input type="hidden" name="token" value="{{ doc.token }}">{% endif %}<input type="hidden" name="statement_id" value="{{ edit_stmt.cc_statement_id }}"><input type="hidden" name="card" value="{{ card }}">
   <div><label for="es_month">Statement month</label><input id="es_month" type="month" name="month" value="{{ edit_stmt.statement_month|default:'' }}"></div>
   <div><label for="es_due">Due date</label><input id="es_due" type="date" name="due" value="{{ edit_stmt.due_date|slice:':10' }}" required></div>
   {% if edit_stmt.is_latest %}<div><label for="es_total">Total amount due</label><input id="es_total" type="text" inputmode="decimal" name="total" value="{{ edit_stmt.total_amount_due|floatformat:2|intcomma }}" style="width:150px;text-align:right"></div>
   <div><label for="es_fee">Finance charge</label><input id="es_fee" type="text" inputmode="decimal" name="interest" value="{{ edit_stmt.interest_charged|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>
   <div><label for="es_credits">Credits</label><input id="es_credits" type="text" inputmode="decimal" name="credits" value="{{ edit_stmt.credits|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>
   <div><label for="es_unbilled">Unbilled installments</label><input id="es_unbilled" type="text" inputmode="decimal" name="unbilled" value="{{ edit_stmt.unbilled_installments|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>{% endif %}
-  <button class="btn small" type="submit"><span class="ms">save</span>Save the correction</button> <a class="btn small ghost" href="/credit-cards/{% if card %}?card={{ card }}&show={{ show }}{% endif %}">Cancel</a>
+  <button class="btn small" type="submit"><span class="ms">save</span>Save the correction</button> <a class="btn small ghost" href="/credit-cards/?{% if card %}card={{ card }}&{% endif %}show={{ show }}{{ keep_doc|default:'' }}">Cancel</a>
 </form>
 <p class="hint">{% if edit_stmt.is_latest %}This is the card's newest statement, so its amounts can be corrected too. To change the "payments since the earlier statement" figure, delete it and add it again.
   {% else %}A later statement was built on this one, so its amounts stay as they are; the month and the due date can be corrected.{% endif %} Every correction is in the audit log.</p>
@@ -170,15 +170,15 @@
     <td data-l="payments">{% for p in s.payments %}{{ p.payment_date|dmy }} · {{ p.amount|floatformat:2|intcomma }}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="hint">—</span>{% endfor %}</td>
     <td><span class="pill{% if s.status != 'Paid' %} warn{% endif %}">{{ s.status }}</span>{% if s.status == "Partially Paid" %}<div class="hint">{{ s.carried|floatformat:2|intcomma }} carried to the next statement</div>{% endif %}</td>
     <td data-l="SOA">{% if s.paid_confirmed %}confirmed{% else %}<span class="hint">not yet confirmed</span>{% endif %}</td>
-    <td class="c-r">{% if may_write %}<a class="btn small ghost" href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}&edit={{ s.cc_statement_id }}#edit">Edit</a> {% endif %}{% if may_write and s.is_latest %}<form method="post" style="display:inline" onsubmit="return confirm('Delete this statement of {{ s.total_amount_due|floatformat:2 }} due {{ s.due_date|dmy }}? Only the latest statement of a card can be deleted.');">{% csrf_token %}
+    <td class="c-r">{% if may_write %}<a class="btn small ghost" href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}{{ keep_doc|default:'' }}&edit={{ s.cc_statement_id }}#edit">Edit</a> {% endif %}{% if may_write and s.is_latest %}<form method="post" style="display:inline" onsubmit="return confirm('Delete this statement of {{ s.total_amount_due|floatformat:2 }} due {{ s.due_date|dmy }}? Only the latest statement of a card can be deleted.');">{% csrf_token %}
       <input type="hidden" name="action" value="delete_statement"><input type="hidden" name="statement_id" value="{{ s.cc_statement_id }}"><button class="btn small ghost" type="submit">Delete</button></form>{% endif %}</td></tr>{% endfor %}
 </table></div>
 {% if hidden_n %}<p class="note">{{ hidden_n }} earlier statement{{ hidden_n|pluralize }} (before {{ start_label }}) {{ hidden_n|pluralize:"is,are" }} not shown: card statements start from {{ start_label }}.
-  <a href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}&earlier=1">Show {{ hidden_n|pluralize:"it,them" }}</a></p>
-{% elif earlier and start_label %}<p class="note">Showing the statements from before {{ start_label }} too. <a href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}">Hide them</a></p>{% endif %}
+  <a href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}{{ keep_doc|default:'' }}&earlier=1">Show {{ hidden_n|pluralize:"it,them" }}</a></p>
+{% elif earlier and start_label %}<p class="note">Showing the statements from before {{ start_label }} too. <a href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}{{ keep_doc|default:'' }}">Hide them</a></p>{% endif %}
 <p class="hint">{{ stmts|length }} statement(s). Pay a card on <a href="/checks/">Daily payables</a>, in full or in part; the next SOA confirms it.</p>
 {% else %}<p class="note">No statements here.{% if hidden_n %} {{ hidden_n }} earlier one{{ hidden_n|pluralize }} (before {{ start_label }}) {{ hidden_n|pluralize:"is,are" }} not shown.
-  <a href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}&earlier=1">Show {{ hidden_n|pluralize:"it,them" }}</a>{% endif %}</p>{% endif %}
+  <a href="?{% if card %}card={{ card }}&{% endif %}show={{ show }}{{ keep_doc|default:'' }}&earlier=1">Show {{ hidden_n|pluralize:"it,them" }}</a>{% endif %}</p>{% endif %}
 {% endif %}
 <script>
 /* card pickers: type the last 4 digits (or part of the card or holder name) to narrow the list; one match is picked by itself (owner, 2026-10-09) */

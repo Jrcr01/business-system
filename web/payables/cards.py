@@ -133,6 +133,7 @@ def _snip_ctx(request) -> dict:
     if info:
         W, H = snip.page_size(token, page)
         out["doc"] = {"token": token, "filename": info["filename"], "pages": info["pages"], "page": page, "has_text": bool(info["has_text"]), "w": W, "h": H}
+        out["keep_doc"] = f"&f={token}" + (f"&p={page}" if page > 1 else "")      # every link on the page carries the open picture (owner, 2026-10-17)
     return out
 
 
@@ -164,8 +165,9 @@ def _post(request):
         ok, msg, token = snip.keep("card", None, f.name if f else "", f.read() if f else b"")
         _say(request, ok, msg)
         card = p.get("card", "") if (p.get("card") or "").isdigit() else ""         # the card already picked stays picked (owner, 2026-10-17)
-        q = "&".join(x for x in ((f"card={card}&show=all" if card else ""), (f"f={token}" if ok else "")) if x)
-        return redirect("/credit-cards/" + (f"?{q}" if q else ""))
+        fix = p.get("edit", "") if (p.get("edit") or "").isdigit() else ""            # pasting while correcting a statement: back to the correction
+        q = "&".join(x for x in ((f"card={card}&show=all" if card else ""), (f"f={token}" if ok else ""), (f"edit={fix}" if fix else "")) if x)
+        return redirect("/credit-cards/" + (f"?{q}" if q else "") + ("#edit" if fix else ""))
     if what == "statement":
         card, due, total = int(p.get("card") or 0), _date(p.get("due")), _num(p.get("total"))
         payments = p.get("payments", "").strip()
@@ -192,6 +194,9 @@ def _post(request):
         ok, msg = cr.correct_cc_statement(sid, p.get("month", ""), _date(p.get("due")), total, fee, credits, unbilled)
         _say(request, ok, msg)
         back = f"?card={p.get('card')}&show=all" if (p.get("card") or "").isdigit() else "?show=all"
+        from engines import snip
+        if p.get("token") and snip.file_info(p.get("token")):                      # the picture stays open after a correction
+            back += f"&f={p.get('token')}"
         return redirect("/credit-cards/" + back + ("" if ok else f"&edit={sid}#edit"))
     if what == "delete_statement":
         _say(request, *cr.delete_cc_statement(int(p.get("statement_id") or 0)))

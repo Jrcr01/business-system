@@ -148,3 +148,27 @@ def test_the_picked_card_and_the_open_statement_stay_together(web, db):
     page = web.get(f"/credit-cards/?card={card}&show=all&f={token}").content.decode()
     assert f'href="?card={card}&amp;show=all&amp;f={token}"' in page or f'href="?card={card}&show=all&f={token}"' in page   # its link keeps the card
     assert 'go.set("f", here.get("f"))' in page and "cc_soa_draft" in page                                       # picking a card keeps the statement; typed figures kept
+
+
+def test_correcting_a_statement_keeps_the_open_picture(web, db):
+    """Owner, 2026-10-17: "consider also the edit statement" / "when it loads i have to reupload again": Edit, Cancel, the filter and the saved
+    correction keep the open picture; pasting while correcting comes back to the correction; the Edit form's boxes take a snip too."""
+    from PIL import Image
+    from engines.card_rules import add_statement_from_soa
+    _admin(web)
+    card = _card(db)
+    _, _, sid = add_statement_from_soa(card, "2026-10", date(2026, 10, 30), 66_511.48, None)
+    buf = io.BytesIO()
+    Image.new("RGB", (300, 200), "white").save(buf, format="PNG")
+    r = web.post("/credit-cards/", {"action": "snip_upload", "card": str(card), "edit": str(sid), "file": SimpleUploadedFile("soa.png", buf.getvalue(), content_type="image/png")})
+    assert r.status_code == 302 and f"&edit={sid}#edit" in r["Location"]                                          # back to the correction
+    token = r["Location"].split("&f=")[1].split("&")[0]
+    page = web.get(f"/credit-cards/?card={card}&show=all&f={token}&edit={sid}").content.decode()
+    assert 'id="es-form"' in page and "es_unbilled" in page and 'id="sn_wrap"' in page
+    assert f"&amp;f={token}&amp;edit={sid}#edit" in page or f"&f={token}&edit={sid}#edit" in page              # the Edit links carry the picture
+    assert f'<input type="hidden" name="f" value="{token}">' in page                                              # so does the filter
+    r = web.post("/credit-cards/", {"action": "correct_statement", "statement_id": sid, "card": str(card), "month": "2026-10", "due": "2026-10-30",
+                                    "total": "66,511.48", "interest": "0", "credits": "0", "unbilled": "1,032,501.45", "token": token})
+    assert r.status_code == 302 and f"&f={token}" in r["Location"]                                                 # still open after saving
+    with sqlite3.connect(_db()) as conn:
+        assert conn.execute("SELECT unbilled_installments FROM cc_statements WHERE cc_statement_id = ?", (sid,)).fetchone()[0] == 1_032_501.45

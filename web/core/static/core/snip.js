@@ -59,7 +59,6 @@ var slicksSnip = (function () {
       g.grid.querySelectorAll("select").forEach(function (s) { s.addEventListener("change", function () { colmap[+s.dataset.col] = s.value; g.onChange && g.onChange(); }); });
       g.grid.querySelectorAll("input").forEach(function (inp) { inp.addEventListener("input", function () { rows[+inp.dataset.r][+inp.dataset.c] = inp.value; inp.parentNode.classList.remove("snip-doubt"); g.onChange && g.onChange(); });
         ["focus", "click"].forEach(function (evn) { inp.addEventListener(evn, function () { pick(inp); }); }); });
-      if (!g._targetsBound) { g._targetsBound = true; (g.targets || []).forEach(function (el) { ["focus", "click"].forEach(function (evn) { el.addEventListener(evn, function () { pick(el); }); }); }); }
       g.onChange && g.onChange();
     }
     function onResult(d, why) {
@@ -81,7 +80,10 @@ var slicksSnip = (function () {
       var r = sn && sn.rect(); if (!r || !rows.length) { e.preventDefault(); g.msg.textContent = "Snip a table first."; return; }
       g.hidden.rows.value = JSON.stringify(rows); g.hidden.colmap.value = JSON.stringify(colmap); g.hidden.header.value = header ? "1" : "0";
       g.hidden.x0.value = r.x0; g.hidden.y0.value = r.y0; g.hidden.x1.value = r.x1; g.hidden.y1.value = r.y1; });
-    return {onResult: onResult, onBusy: function (b, text) { if (b) g.msg.textContent = text || "Reading the box…"; }, bind: function (s) { sn = s; },
+    function listen(els) { (els || []).forEach(function (el) { if (!el || el._snipTarget) return; el._snipTarget = true;      /* from the start, not only after a table (2026-10-17) */
+      ["focus", "click"].forEach(function (evn) { el.addEventListener(evn, function () { pick(el); }); }); }); }
+    listen(g.targets);
+    return {onResult: onResult, onBusy: function (b, text) { if (b) g.msg.textContent = text || "Reading the box…"; }, bind: function (s) { sn = s; }, targets: listen,
             rows: function () { return rows; }, colmap: function () { return colmap; }, header: function () { return header; }};
   }
   /* Paste a picture from the clipboard as the document (owner, 2026-10-17): Ctrl+V anywhere on the page, or the Paste button (asks the browser for the
