@@ -23,6 +23,10 @@ DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 NUMBERS = [
     ("stale_check_days", "Checks", "A check is stale after", 180, 30, 720, 0, "days",
      "Philippine checks go stale about six months after their date. Checks the bank has not cleared by then are flagged in Data health, the Overview and the Dashboard."),
+    ("bank_match_other_debits", "Bank", "The bank import also matches card and bank-loan debits (1 = yes, 0 = checks only)", 0, 0, 1, 0, "",
+     "Owner, 2026-10-17: \"checks only\" -- \"since it is confirmed thru check number\". 0: the bank statement clears our checks by their numbers and "
+     "nothing else; a card statement is confirmed by the next card SOA or ticked on Daily payables, a bank-loan installment ticked paid. 1: a debit of "
+     "exactly a card statement's total (or a loan installment, within days of its due date) is matched and the card marked paid, as before."),
     ("stale_deposit_days", "Bank", "Old bank statement reminder after", 7, 0, 60, 0, "days",
      "Reminder when a check is still not cleared by the bank this many days after its check date, or the newest imported statement is this old."),
     ("recon_debit_alert_factor", "Bank", "Large bank debit alert at", 5, 1, 50, 1, "× usual",

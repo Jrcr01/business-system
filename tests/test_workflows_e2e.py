@@ -131,6 +131,8 @@ def test_the_loan_note_cycle_schedule_to_post_dated_checks_to_the_bank(db):
 
 
 def test_a_bank_loan_installment_is_matched_to_the_banks_debit(db):
+    from tests.test_bank_recon_v2 import _match_cards_and_loans
+    _match_cards_and_loans("1")                              # owner, 2026-10-17: off by default (checks only); the matching itself still works when on
     from engines.bank_loan_service import create_bank_loan, fill_flat_schedule
     from engines import data_health_service as dh
     bank = make_creditor(db, name="Metrobank Loans", creditor_type="BANK_LOAN", terms="0")
@@ -150,6 +152,8 @@ def test_a_bank_loan_installment_is_matched_to_the_banks_debit(db):
 
 
 def test_a_credit_card_statement_is_paid_by_the_banks_bills_payment(db):
+    from tests.test_bank_recon_v2 import _match_cards_and_loans
+    _match_cards_and_loans("1")                              # owner, 2026-10-17: off by default (checks only)
     from engines.card_rules import add_cardholder, add_cc_statement, add_credit_card
     issuer = make_creditor(db, name="BPI", creditor_type="CREDIT_CARD", terms="0")
     holder = add_cardholder("Rhodora Roxas", "Owner", "")

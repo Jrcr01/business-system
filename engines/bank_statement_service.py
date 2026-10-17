@@ -550,7 +550,14 @@ def match_checks() -> dict:
 def _match_other_debits(conn) -> int:
     """Bank debits that are not our checks: a debit memo of exactly a bank-loan installment's amount within 5 days of its due date is that
     installment (ADA); a bills payment of exactly a credit-card statement's amount due within 10 days of its due date is that card payment.
-    Anything else stays 'unmatched_debit' for the owner to tag."""
+    Anything else stays 'unmatched_debit' for the owner to tag. Only when Settings -> Bank -> bank_match_other_debits is 1 (owner, 2026-10-17:
+    "checks only ... since it is confirmed thru check number"; default 0): otherwise these debits are left for the owner to tag, and no card or loan
+    is marked paid from the bank statement."""
+    from engines.settings_registry import int_value
+    if not int_value("bank_match_other_debits"):
+        conn.execute("""UPDATE bank_transactions SET match_status = 'unmatched_debit' WHERE kind IN ('DEBIT_MEMO', 'BILLS_PAYMENT', 'OTHER') AND debit > 0
+                        AND reviewed = 0 AND match_status IS NULL""")
+        return 0
     n = 0
     rows = conn.execute("""SELECT txn_id, kind, debit, posting_date FROM bank_transactions
                            WHERE kind IN ('DEBIT_MEMO', 'BILLS_PAYMENT', 'OTHER') AND debit > 0 AND reviewed = 0

@@ -41,7 +41,8 @@ STATEMENT = [
 ]
 
 
-def _setup(db, monkeypatch, tmp_path):
+def _setup(db, monkeypatch, tmp_path, match_other=True):
+    _match_cards_and_loans("1" if match_other else "0")      # these tests check the card / loan matching; the default is checks only (2026-10-17)
     monkeypatch.setenv("AP_DRIVE_DIR", str(tmp_path / "drive"))
     creditor_id = make_creditor(db, name="S&P Tires")
     sid = make_statement(db, creditor_id)
@@ -76,6 +77,14 @@ def test_digit_rule():
     assert _one_digit_apart("3992000010", "3992000011") and _one_digit_apart("3992000021", "3992000012")
     assert not _one_digit_apart("3992000010", "3992000010") and not _one_digit_apart("3992000010", "3992000099")
     assert not _one_digit_apart("123", "1234") and not _one_digit_apart("1234", "3214")          # swapped but not neighbours
+
+
+def _match_cards_and_loans(value="1"):
+    """Settings -> Bank -> bank_match_other_debits (owner, 2026-10-17: default 0 = checks only)."""
+    from engines import settings_registry as sr
+    from engines.acting_user import acting_as
+    with acting_as("admin@slicks.test", "admin"):
+        sr.save("bank_match_other_debits", value)
 
 
 def test_loan_and_card_debits_are_matched_and_the_rest_left_to_tag(db, monkeypatch, tmp_path):
@@ -253,3 +262,16 @@ def test_a_loan_installment_with_no_bank_debit_is_a_data_health_finding_but_a_ma
         conn.execute("INSERT INTO bank_loan_installments (bank_loan_id, installment_no, due_date, amount) VALUES (1, 2, '2026-10-01', 31000)")
     flagged = [f for f in dh.findings(today=date(2026, 10, 9)) if f["check"] == "Bank loan installment with no bank debit"]
     assert len(flagged) == 1 and "31,000.00" in flagged[0]["detail"]                 # the Oct 1 installment has no debit; the Oct 3 one (25,000) does
+
+
+
+def test_checks_only_by_default_card_and_loan_debits_are_left_to_tag(db, monkeypatch, tmp_path):
+    """Owner, 2026-10-17: "checks only" -- "since it is confirmed thru check number". The bank statement clears our checks; a card statement is never
+    marked paid from it, a loan installment never cleared by it: those debits are left for the owner to tag."""
+    import sqlite3
+    ids = _setup(db, monkeypatch, tmp_path, match_other=False)
+    loan, card = _line(db, debit=25000.0), _line(db, debit=8000.0)
+    assert loan["match_status"] == "unmatched_debit" and loan["matched_installment_id"] is None
+    assert card["match_status"] == "unmatched_debit" and card["matched_cc_statement_id"] is None
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT status FROM cc_statements WHERE cc_statement_id = ?", (ids["cc"],)).fetchone()[0] != "Paid"
