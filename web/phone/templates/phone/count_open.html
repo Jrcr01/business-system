@@ -8,7 +8,7 @@ system does not have is added on the spot (the family only). Costs show only to 
   <button type="button" id="ct_cam" hidden aria-label="Camera"><span class="ms">photo_camera</span></button></div>
 <video id="ct_video" playsinline hidden></video>
 <div id="op_found" class="op-list" hidden></div>
-<form method="post" id="op_pick" class="ph-card" style="border-color:var(--bd-0b4f8a)" hidden>{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="item_id" id="op_item">
+<form method="post" id="op_pick" class="ph-card" style="border-color:var(--bd-0b4f8a)" hidden data-guard>{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="item_id" id="op_item">
   <b class="t" id="op_name"></b><span class="hint" id="op_code"></span>
   <div class="ph-row" style="margin-top:6px"><span class="hint">On the rack</span><input type="text" inputmode="decimal" class="ct_q" name="qty" id="op_qty" value="1" data-step="1" data-min="0" aria-label="How many on the rack"></div>
   <div class="ph-row" style="margin-top:6px">{% if show_cost %}<span id="op_costwrap" class="ph-row" style="flex:1 1 150px"><span class="hint">Cost each</span><input class="ph-field" style="flex:1 1 90px;text-align:right" type="text" inputmode="decimal" name="cost" id="op_cost" placeholder="notebook" aria-label="Cost each"></span>{% endif %}

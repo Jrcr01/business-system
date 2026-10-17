@@ -9,10 +9,10 @@
 <div id="ct_msg" class="hint" style="min-height:1.2em"></div>
 <form method="post" id="ct_form" data-guard>{% csrf_token %}<input type="hidden" name="counted_by" value="{{ c.counted_by|default:'' }}">
   {% for r in rows %}
-  <div class="ph-card" id="ln_{{ r.line_id }}"><b class="t">{{ r.name }}</b><span class="hint">{{ r.code }}</span>
+  <div class="ph-card" id="ln_{{ r.line_id }}"><b class="t"><span class="hint" style="font-weight:600">#{{ forloop.counter }}</span> {{ r.name }}</b><span class="hint">{{ r.code }}</span>
     <div class="ph-row" style="margin-top:6px"><span class="hint">Counted</span>
       <input type="text" inputmode="decimal" class="ct_q" name="c_{{ r.line_id }}" value="{% if r.counted is not None %}{{ r.counted|floatformat:'-2' }}{% endif %}" data-step="1" data-min="0" aria-label="Counted: {{ r.name }}">
-      <input class="ph-field" style="flex:1 1 120px" type="text" name="n_{{ r.line_id }}" value="{{ r.note }}" placeholder="note" aria-label="Note: {{ r.name }}"></div>
+      <input class="ph-field" style="flex:1 1 120px" type="text" name="n_{{ r.line_id }}" value="{{ r.note }}" placeholder="rack / area, note" aria-label="Note: {{ r.name }}"></div>
   </div>
   {% endfor %}
   <div class="ph-row" style="margin-top:10px"><button class="btn" type="submit" name="action" value="save" style="flex:1"><span class="ms">save</span>Save</button>
@@ -51,5 +51,5 @@ document.addEventListener("DOMContentLoaded", function () {
 {% else %}
 {% for r in rows %}<div class="ph-card"><b class="t">{{ r.name }}</b><span class="hint">{{ r.code }} · counted {% if r.counted is not None %}{{ r.counted|floatformat:"-2" }}{% else %}—{% endif %}</span></div>{% endfor %}
 {% endif %}
-<p style="margin-top:12px"><a class="btn small ghost" href="/phone/count/">All counts</a></p>
+<p style="margin-top:12px"><a class="btn small ghost" href="/phone/count/">All counts</a>{% if counting %} <a class="btn small ghost" href="/phone/count/{{ c.count_id }}/print/" target="_blank"><span class="ms">print</span>Print sheet</a>{% endif %}</p>
 {% endblock %}

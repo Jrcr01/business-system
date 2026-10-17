@@ -53,6 +53,35 @@ def phone_page(key: str | None, write: bool = False):
     return deco
 
 
+def _once(request):
+    """The one-time code of a phone form (2026-10-17): None to go ahead (the token is claimed), or the page to answer with when it was already saved
+    or is still being saved -- the signal dropped after the server got it and the person pressed again."""
+    from engines import form_once
+    from engines.acting_user import acting_email
+    token = request.POST.get("once", "")
+    state, row = form_once.claim(token, acting_email())
+    request._once = token if state == "new" else ""
+    if state == "done":
+        at = row["at"][11:16]
+        try:
+            from datetime import datetime
+            at = datetime.strptime(row["at"][:16], "%Y-%m-%d %H:%M").strftime("%I:%M %p").lstrip("0")
+        except ValueError:
+            pass
+        messages.success(request, f"Already saved at {at}" + (f": {row['note']}" if row["note"] else "") + ". Nothing was added twice.")
+        return redirect(row["url"] or request.path)
+    if state == "busy":
+        messages.warning(request, "That is still being saved from the first press. Wait a moment, then look: nothing was added twice.")
+        return redirect(request.path)
+    return None
+
+
+def _once_done(request, ok: bool, msg: str, url: str):
+    from engines import form_once
+    form_once.finish(getattr(request, "_once", ""), ok, msg, url)
+    return redirect(url) if url else None                      # no url: only the claim is dropped (the page answers with the form again)
+
+
 def _ctx(request, title: str, **more) -> dict:
     return {"title": title, "mine": getattr(request, "phone_mine", None) or _mine(request), **more}
 
@@ -110,7 +139,12 @@ def stock(request):
         if what == "barcode":
             ok, msg = sr.learn_barcode(request.POST.get("barcode"), iid)
         elif what == "take_in":                                  # a trade-in or a surplus lot (owner, 2026-10-12)
+            again = _once(request)
+            if again:
+                return again
             ok, msg = sr.take_in(iid, request.POST.get("qty"), request.POST.get("cost"), request.POST.get("note", ""))
+            _say(request, ok, msg)
+            return _once_done(request, ok, msg, f"/phone/stock/?id={iid}")
         elif what == "level":
             ok, msg = sr.set_reorder_level(iid, request.POST.get("level"))
         else:
@@ -152,6 +186,9 @@ def stock_in(request):
         _say(request, False, "That order is not waiting for goods any more.")
         return redirect("/phone/in/")
     if request.method == "POST" and order:
+        again = _once(request)
+        if again:
+            return again
         p = request.POST.copy()
         coming = [ln for ln in receivable_lines(order["creditor_id"]).to_dict("records") if int(ln["po_id"]) == order["po_id"]]
         for ln in coming:                                        # a quantity typed = that line ticked (the laptop has a checkbox)
@@ -166,7 +203,8 @@ def stock_in(request):
         ok, msg, ask = _arrive(request, order["creditor_id"], coming, True, True)
         if ask is None:
             _say(request, ok, msg)
-            return redirect("/phone/in/" + (f"?po={order['po_id']}" if not ok else ""))
+            return _once_done(request, ok, msg, "/phone/in/" + (f"?po={order['po_id']}" if not ok else ""))
+        _once_done(request, False, "", "")                       # a question first (more than ordered / part not come): the answer is a new send
     lines = []
     if order:
         lines = [ln for ln in receivable_lines(order["creditor_id"]).to_dict("records") if int(ln["po_id"]) == order["po_id"]]
@@ -201,11 +239,15 @@ def stock_out(request):
             ok, msg = sr.cancel_release(int(p.get("sale_id") or 0), "undone on the phone: the goods did not go out")
             _say(request, ok, msg)
             return redirect("/phone/out/")
+        again = _once(request)
+        if again:
+            return again
         cust, name = _customer(p)
         ok, msg, sale_id = sr.release(cust, name, _lines(p), "", si_hint=p.get("si_hint", ""))
         _say(request, ok, msg)
         if ok:
-            return redirect("/phone/out/")
+            return _once_done(request, True, msg, "/phone/out/")
+        _once_done(request, False, "", "")
         start = json.dumps([{"id": int(ln["item_id"]), "qty": float(ln["qty"] or 0), "price": ""} for ln in _lines(p) if str(ln["item_id"]).isdigit()])
         return render(request, "phone/out.html", _ctx(request, "Stock out", customer=p.get("customer", ""), si_hint=p.get("si_hint", ""), scan_lines=json.loads(start),
                                                        names=[c["name"] for c in sr.customers()], slips=slips_today(), scan_mode="out"))
@@ -225,6 +267,9 @@ def sale(request):
     today = manila_today()
     slips = sr.open_releases()
     if request.method == "POST":
+        again = _once(request)
+        if again:
+            return again
         p = request.POST
         cust, name = _customer(p)
         services = [{"description": p.get(f"svc_desc_{k}", ""), "amount": p.get(f"svc_amt_{k}", "")} for k in range(3)]
@@ -235,7 +280,8 @@ def sale(request):
                                            p.get("below_reason", ""), surplus)
         _say(request, ok, msg)
         if ok:
-            return redirect("/phone/sale/")
+            return _once_done(request, True, msg, "/phone/sale/")
+        _once_done(request, False, "", "")
         start = json.dumps([{"id": int(ln["item_id"]), "qty": float(ln["qty"] or 0), "price": ""} for ln in _lines(p) if str(ln["item_id"]).isdigit()])
         ctx = dict(si_no=p.get("si_no", ""), sale_date=p.get("sale_date") or today.isoformat(), customer=p.get("customer", ""), receipt=p.get("receipt", ""),
                    services=[{"k": k, **s} for k, s in enumerate(services)], method=p.get("method", "CASH"), reference=p.get("reference", ""), release_id=rel or "",
@@ -313,6 +359,10 @@ def count_sheet(request, count_id: int):
         raise Http404
     if request.method == "POST":
         p, what = request.POST, request.POST.get("action", "")
+        if what in ("finish", "add") and p.get("quiet") != "1":   # adding and finishing happen once; a Save of the same figures again is harmless
+            again = _once(request)
+            if again:
+                return again
         if what in ("save", "finish"):
             typed, bad = {}, None
             for row in cr.sheet_rows(count_id):
@@ -346,7 +396,10 @@ def count_sheet(request, count_id: int):
             from django.http import JsonResponse
             return JsonResponse({"ok": ok, "msg": msg})
         _say(request, ok, msg)
-        return redirect("/phone/count/" if (what in ("cancel", "finish") and ok) else f"/phone/count/{count_id}/")
+        url = "/phone/count/" if (what in ("cancel", "finish") and ok) else f"/phone/count/{count_id}/"
+        if what in ("finish", "add"):
+            return _once_done(request, ok, msg, url)
+        return redirect(url)
     rows = cr.sheet_rows(count_id)
     done = sum(1 for r in rows if r["counted"] is not None)
     if c["opening"]:
@@ -356,6 +409,16 @@ def count_sheet(request, count_id: int):
                                                               lines_json={r["item_id"]: r["line_id"] for r in rows}))
     return render(request, "phone/count_sheet.html", _ctx(request, c["count_no"], c=c, rows=rows, done=done, counting=c["status"] == "COUNTING",
                                                            codes_json={r["line_id"]: [x.upper() for x in r["codes"]] for r in rows}))
+
+
+@phone_page("count")
+def count_print(request, count_id: int):
+    """The paper sheet from the phone (owner, 2026-10-17): the same one the laptop prints."""
+    from engines import count_rules as cr
+    c = cr.get_count(count_id)
+    if not c or c["status"] != "COUNTING":
+        raise Http404
+    return render(request, "selling/count_sheet.html", {"c": c, "sheet": cr.sheet_rows(count_id)})
 
 
 def _may_add(request) -> bool:
@@ -378,13 +441,17 @@ def count_add(request, count_id: int):
         return redirect(f"/phone/count/{count_id}/")
     typed = {}
     if request.method == "POST":
+        again = _once(request)
+        if again:
+            return again
         p = request.POST
         cat = next((label for label, code in CODE.items() if code == p.get("category")), "")
         values = {f["key"]: p.get(f"f_{CODE[cat]}_{f['key']}", "") for f in CATEGORY_FIELDS.get(cat, [])}
         ok, msg = cr.add_new(count_id, cat, p.get("brand", ""), values, p.get("qty", ""), p.get("cost", "") if request.phone_mine["prices"] else None, p.get("dot", ""))
         _say(request, ok, msg)
         if ok:
-            return redirect(f"/phone/count/{count_id}/")
+            return _once_done(request, True, msg, f"/phone/count/{count_id}/")
+        _once_done(request, False, "", "")
         typed = p
     q = " ".join(request.GET.get("q", "").split())
     size = TIRE_SIZE.search(q.upper().replace(" ", ""))

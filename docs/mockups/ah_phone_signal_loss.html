@@ -1,0 +1,110 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: phone pages when the signal drops</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --ok: #0b6e4f; --warn: #9a3412; --red: #b3261e; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+main { max-width: 1180px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 22px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+h2 { color: var(--navy); font-size: 1.05rem; margin: 28px 0 8px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 92ch; }
+.row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.step { width: 260px; } .cap { font-size: .84rem; color: var(--muted); margin: 8px 2px 0; line-height: 1.4; } .cap b { color: var(--ink); }
+.num { display: inline-block; background: var(--blue); color: #fff; border-radius: 999px; width: 22px; height: 22px; text-align: center; font-weight: 700; font-size: .8rem; line-height: 22px; margin-right: 6px; }
+.phone { width: 260px; height: 540px; border-radius: 30px; background: #111; padding: 10px; box-shadow: 0 6px 18px rgba(16,24,40,.2); }
+.scr { width: 100%; height: 100%; border-radius: 22px; overflow: hidden; background: #f3f4f6; position: relative; font-size: .8rem; }
+.sb { height: 20px; display: flex; justify-content: space-between; padding: 3px 14px; font-size: .66rem; color: #333; font-weight: 600; background: #f3f4f6; }
+.bar { background: var(--navy); color: #fff; padding: 9px 12px; font-weight: 700; display: flex; align-items: center; gap: 6px; font-size: .86rem; }
+.bar .net { margin-left: auto; font-size: .66rem; font-weight: 700; border-radius: 999px; padding: 1px 7px; }
+.net.on { background: #e7f6ee; color: var(--ok); } .net.off { background: #fdecea; color: var(--red); }
+.body { padding: 8px 10px; }
+.scan { border: 2px solid var(--blue); border-radius: 10px; padding: 8px; color: #9aa4b2; background: #fff; margin-bottom: 8px; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 7px 9px; margin-bottom: 6px; }
+.card b { display: block; font-size: .82rem; } .card .kv { display: flex; justify-content: space-between; color: var(--muted); font-size: .74rem; }
+.card .kv b { display: inline; color: var(--ink); font-size: .95rem; }
+.keep { background: #eef3fa; border: 1px solid #b9c6d8; color: var(--ink); border-radius: 8px; padding: 6px 8px; font-size: .72rem; margin-bottom: 8px; }
+.keep b { color: var(--blue); }
+.bad { background: #fdecea; color: #7f1d1d; border-radius: 8px; padding: 7px 9px; font-weight: 600; font-size: .74rem; margin-bottom: 8px; }
+.okm { background: #e7f6ee; color: #14532d; border-radius: 8px; padding: 7px 9px; font-weight: 600; font-size: .74rem; margin-bottom: 8px; }
+.warnm { background: #fff4e5; color: var(--warn); border: 1px solid #f0b46a; border-radius: 10px; padding: 9px 10px; font-size: .76rem; margin-bottom: 8px; }
+.warnm b { display: block; font-size: .86rem; margin-bottom: 3px; color: #7c2d12; }
+.btn { background: var(--blue); color: #fff; border-radius: 10px; padding: 10px; text-align: center; font-weight: 700; font-size: .86rem; margin-top: 6px; }
+.btn.ghost { background: #fff; color: var(--blue); border: 1px solid #b9c6d8; } .btn.dim { opacity: .55; }
+.two { display: flex; gap: 6px; } .two .btn { flex: 1; }
+.q { background: #fffbea; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 14px; margin-top: 22px; max-width: 900px; } .q li { margin: 4px 0; }
+.note { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 12px 16px; max-width: 900px; } .note li { margin: 5px 0; }
+</style></head><body><main>
+
+<h1>Phone pages when the signal drops <small>mock-up · suggestions 1 and 2</small></h1>
+<p class="why">Two changes to the phone pages that already exist (Stock count, Stock in, Stock out, Record a sale, Take in). Nothing about how a count or a delivery is done
+changes. <b>1</b>: a save that went through but whose answer was lost can never be recorded twice. <b>2</b>: what has been scanned is kept on the phone itself until it is sent, so
+closing the app, a refresh, a call or a flat battery loses nothing.</p>
+
+<h2>2 · Scans kept on the phone (Stock count as the example)</h2>
+<div class="row">
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>2:14</span><span>▮▮▮ 61%</span></div>
+    <div class="bar">‹ Count · Yokohama <span class="net on">online</span></div>
+    <div class="body"><div class="scan">Scan or type a code…</div>
+      <div class="keep">✓ <b>Kept on this phone:</b> 23 scans · not sent yet</div>
+      <div class="card"><b>195R15 Yokohama RY55</b><div class="kv"><span>Counted</span><b>12</b></div></div>
+      <div class="card"><b>205/65R16 Yokohama BluEarth</b><div class="kv"><span>Counted</span><b>8</b></div></div>
+      <div class="card"><b>7.50R16 Yokohama LT</b><div class="kv"><span>Counted</span><b>3</b></div></div>
+      <div class="btn">Save</div></div></div></div>
+    <p class="cap"><span class="num">1</span><b>While scanning:</b> every scan is also written to the phone at once. A small blue line says how many are waiting to be sent.</p></div>
+
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>2:31</span><span>▮▮▮ 58%</span></div>
+    <div class="bar">‹ Count · Yokohama <span class="net on">online</span></div>
+    <div class="body">
+      <div class="warnm"><b>23 scans from 2:14 PM were not sent</b>The app closed before Save. They are still on this phone.
+        <div class="two" style="margin-top:6px"><div class="btn">Send them now</div><div class="btn ghost">Look first</div></div>
+        <div style="margin-top:6px;font-size:.7rem;color:var(--muted)">or <u>throw them away</u> (asks first)</div></div>
+      <div class="scan">Scan or type a code…</div></div></div></div>
+    <p class="cap"><span class="num">2</span><b>After the app was closed</b> (a call, a refresh, the battery): opening the same count brings the scans back. <b>Look first</b> shows them on the sheet before sending.</p></div>
+
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>2:40</span><span>✕ no signal</span></div>
+    <div class="bar">‹ Count · Yokohama <span class="net off">no signal</span></div>
+    <div class="body">
+      <div class="bad">Could not send: nothing was saved yet. Your 26 scans are kept on this phone; press Save again when there is signal.</div>
+      <div class="card"><b>195R15 Yokohama RY55</b><div class="kv"><span>Counted</span><b>13</b></div></div>
+      <div class="btn">Save</div></div></div></div>
+    <p class="cap"><span class="num">3</span><b>No signal at Save:</b> as today, nothing is lost on screen, and now also not if the app closes afterwards. The red "no signal" mark is in the top bar.</p></div>
+
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>2:44</span><span>▮▮ 57%</span></div>
+    <div class="bar">‹ Count · Yokohama <span class="net on">online</span></div>
+    <div class="body">
+      <div class="okm">Saved: 26 scans. Nothing waiting on this phone.</div>
+      <div class="scan">Scan or type a code…</div></div></div></div>
+    <p class="cap"><span class="num">4</span><b>Sent:</b> the copy on the phone is cleared only after the server says it was saved.</p></div>
+</div>
+
+<h2>1 · Never saved twice (Stock in as the example)</h2>
+<div class="row">
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>3:02</span><span>▮ 55%</span></div>
+    <div class="bar">‹ Stock in · PO-0142 <span class="net off">no signal</span></div>
+    <div class="body">
+      <div class="bad">Could not send. Check the signal and press again. If it did reach the server, pressing again will not record it twice.</div>
+      <div class="card"><b>DR 55433 · Tire Asia</b><div class="kv"><span>Received</span><b>24 pcs</b></div></div>
+      <div class="btn">Received</div></div></div></div>
+    <p class="cap"><span class="num">1</span><b>The signal dropped while sending.</b> The phone cannot know whether the server got it.</p></div>
+
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>3:04</span><span>▮▮▮ 55%</span></div>
+    <div class="bar">‹ Stock in <span class="net on">online</span></div>
+    <div class="body">
+      <div class="okm">Already received at 3:02 PM: DR 55433, 24 pcs. Nothing was added twice.</div>
+      <div class="btn ghost">Back to orders</div></div></div></div>
+    <p class="cap"><span class="num">2</span><b>Pressed again:</b> the server sees the same form code, does not save it a second time, and says it was already done.</p></div>
+</div>
+
+<h2>What does not change</h2>
+<div class="note"><ul style="margin:0 0 0 18px;padding:0">
+  <li>No working for hours offline: a new count, a new search or a new page still needs signal (that is suggestion 3, after the warehouse test).</li>
+  <li>The laptop pages: as now. Money pages already save all-or-nothing.</li>
+  <li>Kept scans live only on that phone, for that person. Signing out of the phone asks first if any are waiting. They are cleared after 7 days if never sent.</li>
+</ul></div>
+
+<div class="q"><b>To confirm</b>
+  <ol><li>The pages: Stock count, Stock in, Stock out, Record a sale, Take in — all five?</li>
+    <li>Kept scans cleared after 7 days if never sent — or longer?</li>
+    <li>"No signal" / "online" mark in the top bar of the phone pages — keep it?</li></ol>
+</div>
+</main></body></html>

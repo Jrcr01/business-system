@@ -181,6 +181,11 @@
     var start = JSON.parse(document.getElementById("sl_start").textContent || "[]");
     (Array.isArray(start) ? start : []).forEach(function (s) { if (byId[s.id]) lines.push({it: byId[s.id], qty: s.qty, price: s.price != null ? s.price : ""}); });
     draw(); changed();
+    box.addEventListener("restore", function (e) {               /* lines kept on the phone after a closed app (2026-10-17): back as they were */
+      lines = []; (e.detail || []).forEach(function (s) { if (byId[s.id]) lines.push({it: byId[s.id], qty: s.qty, price: s.price != null ? s.price : ""}); });
+      draw(); changed();
+    });
+    box.dataset.ready = "1"; box.dispatchEvent(new Event("ready"));
   });
 })();
 </script>

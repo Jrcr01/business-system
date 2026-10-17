@@ -1621,3 +1621,13 @@ CREATE TABLE IF NOT EXISTS snips (
     created_by TEXT,
     created_at DATETIME NOT NULL
 );
+
+-- migration 108 (2026-10-17): a phone form's one-time code, so a send pressed again after a lost answer is not saved twice (engines/form_once.py)
+CREATE TABLE IF NOT EXISTS form_once (
+    token TEXT PRIMARY KEY,
+    user_email TEXT,
+    claimed_at DATETIME NOT NULL,
+    done_at DATETIME,
+    note TEXT,
+    url TEXT
+);

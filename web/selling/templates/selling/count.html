@@ -10,11 +10,11 @@
   <span class="hint" id="ct_msg">Or type the quantities below.</span></div>
 <form method="post" id="ct_form">{% csrf_token %}
   <div class="scroll-x"><table class="list">
-    <tr><th>Code</th><th>Item</th><th>Counted</th><th>Note</th></tr>
+    <tr><th>#</th><th>Code</th><th>Item</th><th>Counted</th><th>Note <span class="hint" style="font-weight:400">(rack / area)</span></th></tr>
     {% for r in sheet %}<tr data-codes="{{ r.codes|join:'|' }}">
-      <td>{{ r.code }}</td><td>{{ r.name }}</td>
+      <td class="hint">{{ forloop.counter }}</td><td>{{ r.code }}</td><td>{{ r.name }}</td>
       <td><input class="inline-input ct-q" style="width:90px" inputmode="decimal" name="c_{{ r.line_id }}" value="{% if r.counted is not None %}{{ r.counted|floatformat:'-2' }}{% endif %}" placeholder="not yet" aria-label="Counted of {{ r.name }}"></td>
-      <td><input class="inline-input" style="width:280px" name="n_{{ r.line_id }}" value="{{ r.note }}" aria-label="Note for {{ r.name }}"></td></tr>{% endfor %}
+      <td><input class="inline-input" style="width:280px" name="n_{{ r.line_id }}" value="{{ r.note }}" placeholder="rack / area, note" aria-label="Note for {{ r.name }}"></td></tr>{% endfor %}
   </table></div>
   <div class="bar" style="margin-top:10px">
     <div class="grow"><label for="counted_by">Counted by</label><input id="counted_by" type="text" name="counted_by" value="{{ c.counted_by|default:'' }}" placeholder="the name of the person who counted"></div>

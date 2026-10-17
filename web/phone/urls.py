@@ -10,6 +10,7 @@ urlpatterns = [
     path("out/", views.stock_out, name="phone_out"),
     path("sale/", views.sale, name="phone_sale"),
     path("count/", views.count, name="phone_count"),
+    path("count/<int:count_id>/print/", views.count_print, name="phone_count_print"),
     path("count/<int:count_id>/", views.count_sheet, name="phone_count_sheet"),
     path("count/<int:count_id>/add/", views.count_add, name="phone_count_add"),
     path("day/", views.day, name="phone_day"),

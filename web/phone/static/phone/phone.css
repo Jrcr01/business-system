@@ -61,3 +61,9 @@ body { background: var(--bg-f3f4f6); }
 .op-chip span { display: inline-block; padding: 8px 16px; border: 1px solid var(--bd-cbd5e1); border-radius: 999px; background: var(--bg-ffffff); }
 .op-chip input:checked + span { background: var(--bg-e8f0fa); border-color: var(--bd-0b4f8a); color: var(--fg-0b4f8a); font-weight: 700; }
 .op-chip input:focus-visible + span { outline: 2px solid var(--bd-0b4f8a); outline-offset: 2px; }
+/* when the signal drops (2026-10-17): the mark in the top bar, the line under a form, the box for what was not sent */
+.ph-net { font-size: .7rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; margin-left: 4px; }
+.ph-net.on { background: var(--bg-e7f6ee); color: var(--fg-14532d); } .ph-net.off { background: var(--bg-fdecea); color: var(--fg-7f1d1d); }
+.ph-keep { background: var(--bg-eef3fa, #eef3fa); border: 1px solid var(--bd-b9c6d8); border-radius: 10px; padding: 6px 10px; margin-bottom: 10px; font-size: .85rem; font-weight: 600; color: var(--fg-0b4f8a); }
+.ph-kept { background: var(--bg-fff4e5); border: 1px solid var(--bd-f0b46a); color: var(--fg-7c2d12, #7c2d12); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: .9rem; }
+.ph-kept b { display: block; font-size: 1rem; margin-bottom: 2px; }
