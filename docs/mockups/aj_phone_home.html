@@ -1,0 +1,87 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: Home on a phone</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --ok: #0b6e4f; --warn: #9a3412; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 22px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 92ch; }
+.row { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+.step { width: 290px; } .cap { font-size: .86rem; color: var(--muted); margin: 8px 2px 0; line-height: 1.45; } .cap b { color: var(--ink); }
+.phone { width: 290px; height: 640px; border-radius: 30px; background: #111; padding: 10px; box-shadow: 0 6px 18px rgba(16,24,40,.2); }
+.scr { width: 100%; height: 100%; border-radius: 22px; overflow: hidden; background: #f3f4f6; font-size: .78rem; }
+.sb { height: 20px; display: flex; justify-content: space-between; padding: 3px 14px; font-size: .66rem; color: #333; font-weight: 600; }
+.tb { background: var(--navy); color: #fff; padding: 9px 12px; font-weight: 700; display: flex; align-items: center; gap: 6px; font-size: .84rem; }
+.tb .m { margin-left: auto; font-weight: 400; font-size: .74rem; opacity: .9; }
+.body { padding: 8px 10px; height: calc(100% - 58px); overflow: hidden; }
+.g { font-weight: 800; color: var(--navy); font-size: .8rem; margin: 8px 2px 5px; }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.t { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 7px 8px; min-height: 52px; }
+.t b { display: block; font-size: .78rem; } .t span { color: var(--muted); font-size: .68rem; } .t .n { font-size: 1rem; font-weight: 800; color: var(--blue); }
+.t.look .tag { float: right; font-size: .58rem; border: 1px solid #b9c6d8; border-radius: 999px; padding: 0 5px; color: var(--muted); }
+.t.grey { background: #eceff3; border-style: dashed; color: #9aa4b2; } .t.grey b { color: #9aa4b2; } .t.grey .tag { float: right; font-size: .58rem; border-radius: 999px; padding: 0 5px; background: #dfe3e8; color: #6b7280; }
+.cmp { background: #fff; border: 1px solid #d5dbe3; border-radius: 12px; padding: 10px 14px; margin-top: 22px; max-width: 900px; } .cmp li { margin: 5px 0; }
+.q { background: #fffbea; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 14px; margin-top: 18px; max-width: 900px; }
+</style></head><body><main>
+
+<h1>Home on a phone: laptop-only pages hidden or greyed? <small>mock-up · Jeane's Home</small></h1>
+<p class="why">The same Home, two ways. Look-only pages (B) are marked <b>look</b> in both. Laptop-only pages (A: Settings, Check booklets, Invoice booklets,
+Creditors) are either left out (left) or shown greyed with "laptop" (right). On a laptop, Home stays exactly as it is.</p>
+
+<div class="row">
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>3:20</span><span>▮▮▮</span></div>
+    <div class="tb">☰ Menu <span class="m">Jeane</span></div>
+    <div class="body">
+      <div class="g">Buy</div><div class="tiles">
+        <div class="t look"><b>Price lists <span class="tag">look</span></b><span>3 suppliers</span></div>
+        <div class="t look"><b>Purchase orders <span class="tag">look</span></b><span class="n">2</span> <span>waiting</span></div>
+        <div class="t"><b>Receive</b><span class="n">1</span> <span>to receive</span></div></div>
+      <div class="g">Sell</div><div class="tiles">
+        <div class="t"><b>Sales today</b><span class="n">₱18,450</span></div><div class="t"><b>Collect payments</b><span class="n">3</span> <span>owing</span></div>
+        <div class="t"><b>Customers</b><span>42</span></div></div>
+      <div class="g">Pay suppliers</div><div class="tiles">
+        <div class="t look"><b>Payment statements <span class="tag">look</span></b><span>PS 0032</span></div>
+        <div class="t"><b>Daily payables</b><span class="n">4</span> <span>due today</span></div>
+        <div class="t"><b>Calendar</b><span>next 7 days</span></div></div>
+      <div class="g">Bank</div><div class="tiles">
+        <div class="t"><b>Expenses</b><span>₱2,300 today</span></div><div class="t look"><b>Bank and cash <span class="tag">look</span></b><span>10 not cleared</span></div></div>
+      <div class="g">Set-up and system</div><div class="tiles">
+        <div class="t"><b>Checks and review</b><span class="n">2</span> <span>to look at</span></div></div>
+    </div></div></div>
+    <p class="cap"><b>Hidden</b> (as you said: "unshow to mobile"). Bank shows no Check booklets, Sell no Invoice booklets, Set-up no Creditors or Settings.
+      Shorter; nothing to tap that only says "use the laptop".</p></div>
+
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>3:20</span><span>▮▮▮</span></div>
+    <div class="tb">☰ Menu <span class="m">Jeane</span></div>
+    <div class="body">
+      <div class="g">Buy</div><div class="tiles">
+        <div class="t look"><b>Price lists <span class="tag">look</span></b><span>3 suppliers</span></div>
+        <div class="t look"><b>Purchase orders <span class="tag">look</span></b><span class="n">2</span> <span>waiting</span></div>
+        <div class="t"><b>Receive</b><span class="n">1</span> <span>to receive</span></div></div>
+      <div class="g">Sell</div><div class="tiles">
+        <div class="t"><b>Sales today</b><span class="n">₱18,450</span></div><div class="t"><b>Collect payments</b><span class="n">3</span> <span>owing</span></div>
+        <div class="t"><b>Customers</b><span>42</span></div><div class="t grey"><b>Invoice booklets <span class="tag">laptop</span></b><span>1 in use</span></div></div>
+      <div class="g">Pay suppliers</div><div class="tiles">
+        <div class="t look"><b>Payment statements <span class="tag">look</span></b><span>PS 0032</span></div>
+        <div class="t"><b>Daily payables</b><span class="n">4</span> <span>due today</span></div>
+        <div class="t"><b>Calendar</b><span>next 7 days</span></div></div>
+      <div class="g">Bank</div><div class="tiles">
+        <div class="t grey"><b>Check booklets <span class="tag">laptop</span></b><span>2 in use</span></div>
+        <div class="t"><b>Expenses</b><span>₱2,300 today</span></div><div class="t look"><b>Bank and cash <span class="tag">look</span></b><span>10 not cleared</span></div></div>
+      <div class="g">Set-up and system</div><div class="tiles">
+        <div class="t grey"><b>Creditors <span class="tag">laptop</span></b><span>118</span></div><div class="t grey"><b>Settings <span class="tag">laptop</span></b></div>
+        <div class="t"><b>Checks and review</b><span class="n">2</span> <span>to look at</span></div></div>
+    </div></div></div>
+    <p class="cap"><b>Greyed</b>: the tile is there, dashed and grey with "laptop"; its figure still shows (e.g. how many booklets are in use). Tapping it says
+      "done on the laptop".</p></div>
+</div>
+
+<div class="cmp"><b>Hidden or greyed</b>
+  <ul style="margin:6px 0 0 18px;padding:0">
+    <li><b>Hidden</b>: the cleanest phone Home; the family never sees what they cannot do there. Someone looking for Settings on the phone will not find it — it is on the laptop.</li>
+    <li><b>Greyed</b>: you still see those pages exist and their figures; a few more tiles to scroll past, and taps that lead nowhere useful.</li>
+    <li>The menu (☰) follows the same choice.</li></ul></div>
+
+<div class="q"><b>To decide:</b> hidden (left) or greyed (right)? My suggestion: hidden — it is what you asked for, and the grey tiles mostly add scrolling.</div>
+</main></body></html>

@@ -14,7 +14,7 @@ TERMS = ["", "COD", "30", "60", "90", "120", "140", "150"]          # the same c
 TYPES = [("SUPPLIER", "Supplier"), ("LENDER", "Lender"), ("LESSOR", "Lessor (rent)"), ("BANK_LOAN", "Bank loan")]
 
 
-def page_needed(page_id: str, action: str | None = None):
+def page_needed(page_id: str, action: str | None = None, phone_actions: tuple = ()):
     """The page is open only to roles allowed it (and, when given, the action): others get the 'not for your role' page.
     A page the person may only see (owners, 2026-10-09: view access to every module) is read-only: its forms are hidden and any save is refused here,
     before the view runs -- many engines rely on the page check alone."""
@@ -29,6 +29,22 @@ def page_needed(page_id: str, action: str | None = None):
             if page_id not in pages_for(role) or (action and not can(role, action)):
                 return render(request, "core/not_allowed.html", {"page": PAGES[page_id]}, status=403)
             request.view_only = page_id not in doable_pages(role)
+            from core.phone_rules import LAPTOP_WHY, PHONE_INSTEAD, kind
+            from core.views import _on_a_phone
+            rule = kind(page_id) if _on_a_phone(request) else None      # a phone or an iPad (owner, 2026-10-17)
+            if rule == "laptop":
+                return render(request, "core/laptop_only.html", {"page": PAGES[page_id], "why": LAPTOP_WHY.get(page_id, "")})
+            if rule == "look" and phone_actions:                   # a look-only page that still takes these steps on a phone (2026-10-17: invoices)
+                request.phone_partial, rule = True, None
+                if request.method == "POST" and request.POST.get("action", "") not in phone_actions:
+                    messages.error(request, "On a phone this is done on the laptop.")
+                    return redirect(request.get_full_path())
+            request.phone_look = rule == "look"
+            if request.phone_look:
+                request.view_only, request.phone_instead = True, PHONE_INSTEAD.get(page_id)
+                if request.method == "POST":
+                    messages.error(request, f"On a phone, {PAGES[page_id].title} is for looking. Do this on the laptop.")
+                    return redirect(request.get_full_path())
             if request.view_only and request.method == "POST":
                 messages.error(request, f"{PAGES[page_id].title} is view only for you. Ask the System admin to switch it on if you need to change things here.")
                 return redirect(request.get_full_path())

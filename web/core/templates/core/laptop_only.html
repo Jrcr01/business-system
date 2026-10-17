@@ -1,0 +1,11 @@
+{% extends "core/base.html" %}
+{% block title %}{{ page.title }}{% endblock %}
+{% block content %}
+{% comment %}A laptop-only page opened on a phone or an iPad (owner, 2026-10-17; core/phone_rules.py).{% endcomment %}
+<div style="max-width:420px;margin:30px auto;text-align:center">
+  <span class="ms" style="font-size:64px;color:var(--fg-0b4f8a)">laptop_mac</span>
+  <h2 style="margin:8px 0 6px">{{ page.title }} is done on the laptop</h2>
+  {% if why %}<p class="hint">{{ why }}</p>{% endif %}
+  <p><a class="btn" href="/">Back to Home</a></p>
+</div>
+{% endblock %}

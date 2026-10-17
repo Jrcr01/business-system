@@ -1,0 +1,102 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: what a phone may do</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy: #0f2a4a; --blue: #0B4F8A; --ink: #1c2733; --muted: #4b5563; --line: #e5e7eb; --ok: #0b6e4f; --warn: #9a3412; --red: #b3261e; }
+* { box-sizing: border-box; }
+body { font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif; color: var(--ink); background: #e9edf2; margin: 0; font-size: 15px; }
+main { max-width: 1180px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { color: var(--blue); font-size: 1.3rem; margin: 22px 0 4px; } h1 small { font-weight: 400; color: var(--muted); font-size: .9rem; margin-left: 6px; }
+h2 { color: var(--navy); font-size: 1.05rem; margin: 28px 0 8px; }
+.why { color: var(--muted); margin: 0 0 14px; max-width: 92ch; }
+.row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.step { width: 260px; } .cap { font-size: .84rem; color: var(--muted); margin: 8px 2px 0; line-height: 1.4; } .cap b { color: var(--ink); }
+.phone { width: 260px; height: 540px; border-radius: 30px; background: #111; padding: 10px; box-shadow: 0 6px 18px rgba(16,24,40,.2); }
+.scr { width: 100%; height: 100%; border-radius: 22px; overflow: hidden; background: #f3f4f6; position: relative; font-size: .8rem; }
+.sb { height: 20px; display: flex; justify-content: space-between; padding: 3px 14px; font-size: .66rem; color: #333; font-weight: 600; }
+.tb { background: var(--navy); color: #fff; padding: 9px 12px; font-weight: 700; display: flex; align-items: center; gap: 6px; font-size: .84rem; }
+.tb .m { margin-left: auto; font-weight: 400; font-size: .74rem; opacity: .9; }
+.body { padding: 10px 12px; }
+.lap { text-align: center; padding: 26px 10px 10px; }
+.lap .ic { font-size: 2.6rem; } .lap h3 { margin: 6px 0 4px; font-size: 1.02rem; color: var(--navy); }
+.lap p { color: var(--muted); font-size: .8rem; margin: 0 0 12px; line-height: 1.4; }
+.btn { display: block; background: var(--blue); color: #fff; border-radius: 10px; padding: 10px; text-align: center; font-weight: 700; font-size: .84rem; margin-top: 8px; }
+.btn.ghost { background: #fff; color: var(--blue); border: 1px solid #b9c6d8; }
+.ro { background: #eef3fa; border: 1px solid #b9c6d8; border-radius: 8px; padding: 6px 9px; font-size: .74rem; color: var(--ink); margin-bottom: 8px; }
+.ro b { color: var(--blue); }
+.card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 7px 9px; margin-bottom: 6px; }
+.card b { display: block; font-size: .82rem; } .kv { display: flex; justify-content: space-between; color: var(--muted); font-size: .74rem; } .kv b { display: inline; color: var(--ink); }
+.pill { display: inline-block; font-size: .64rem; border-radius: 999px; padding: 0 7px; font-weight: 700; background: #fff4e5; color: var(--warn); }
+.gone { border: 1px dashed #c9d2dd; border-radius: 8px; padding: 6px 9px; color: #9aa4b2; font-size: .72rem; margin-top: 6px; text-decoration: line-through; }
+.menu { background: #fff; } .menu div { padding: 9px 14px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; font-size: .8rem; }
+.menu div span { font-size: .66rem; color: var(--muted); border: 1px solid #c9d2dd; border-radius: 999px; padding: 0 6px; }
+.menu .h { background: #f3f4f6; font-weight: 700; color: var(--navy); font-size: .72rem; }
+table { border-collapse: collapse; width: 100%; font-size: .88rem; background: #fff; border-radius: 10px; overflow: hidden; }
+th { text-align: left; color: var(--muted); font-weight: 600; font-size: .78rem; border-bottom: 2px solid var(--line); padding: 7px 9px; background: #f8fafc; }
+td { border-bottom: 1px solid var(--line); padding: 7px 9px; vertical-align: top; }
+.tag { display: inline-block; font-size: .7rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
+.tA { background: #fdecea; color: var(--red); } .tB { background: #eef3fa; color: var(--blue); } .tC { background: #e7f6ee; color: var(--ok); }
+.q { background: #fffbea; border: 1px solid #f1e3a8; border-radius: 10px; padding: 10px 14px; margin-top: 22px; max-width: 900px; } .q li { margin: 4px 0; }
+</style></head><body><main>
+
+<h1>What a phone (or iPad) may do <small>mock-up · after the review of 10-17</small></h1>
+<p class="why">On a phone you look things up and record the day's work; setting up, making money documents, files and snips, and deleting stay on the laptop.
+Three kinds of page: <span class="tag tA">A · laptop only</span> <span class="tag tB">B · look on the phone</span> <span class="tag tC">C · as now</span>. Nothing changes on a laptop.</p>
+
+<h2>The three kinds, on a phone</h2>
+<div class="row">
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>3:10</span><span>▮▮▮</span></div>
+    <div class="tb">☰ Settings <span class="m">Jeane</span></div>
+    <div class="lap"><div class="ic">💻</div><h3>Settings are done on the laptop</h3>
+      <p>People, access, switches and sign-in can change who may do what, so they are kept off phones and iPads.</p>
+      <div class="btn ghost">Back to Home</div></div></div></div>
+    <p class="cap"><span class="tag tA">A</span> <b>Laptop only</b>: Settings, Check booklets, Invoice booklets, Creditors, the four snips, the price-list import.</p></div>
+
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>3:12</span><span>▮▮▮</span></div>
+    <div class="tb">☰ Purchase orders <span class="m">Jeane</span></div>
+    <div class="body"><div class="ro">👁 <b>Looking only on the phone.</b> Orders are made and sent on the laptop. Goods came? <u>Stock in</u></div>
+      <div class="card"><b>PO-0142 · Tire Asia Group</b><div class="kv"><span>ordered 10/12 · 24 pcs</span><span class="pill">waiting</span></div></div>
+      <div class="card"><b>PO-0141 · Sunny Tire</b><div class="kv"><span>ordered 10/10 · 12 pcs</span><b>received</b></div></div>
+      <div class="gone">New order · Send to supplier · Confirm</div></div></div></div>
+    <p class="cap"><span class="tag tB">B</span> <b>Look on the phone</b>: the page shows everything; its buttons and forms are left out, with a link to the phone page that does the job, where there is one.</p></div>
+
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>3:15</span><span>▮▮▮</span></div>
+    <div class="tb">☰ Daily payables <span class="m">Rhodora</span></div>
+    <div class="body">
+      <div class="card"><b>Metrobank · 1875</b><div class="kv"><span>due 10/30</span><b>₱66,511.48</b></div><div class="btn" style="padding:6px;margin-top:6px">Mark paid</div></div>
+      <div class="card"><b>Check 3992575940 · Sunny</b><div class="kv"><span>dated 10/18</span><b>₱54,235.96</b></div></div></div></div></div>
+    <p class="cap"><span class="tag tC">C</span> <b>As now</b>: Daily payables (Mark paid), Expenses, Other income, Collect payments, the phone pages, approving a sign-in.</p></div>
+
+  <div class="step"><div class="phone"><div class="scr"><div class="sb"><span>3:16</span><span>▮▮▮</span></div>
+    <div class="tb">☰ Menu <span class="m">Jeane</span></div>
+    <div class="menu"><div class="h">Pay suppliers</div><div>Invoices <span>look</span></div><div>Payment statements <span>look</span></div><div>Daily payables</div>
+      <div class="h">Bank</div><div>Bank and cash <span>look</span></div><div>Expenses</div><div>Other income</div>
+      <div class="h">Set-up</div><div style="color:#9aa4b2">Settings <span>laptop</span></div><div style="color:#9aa4b2">Check booklets <span>laptop</span></div></div></div></div>
+    <p class="cap"><b>The menu on a phone</b> marks each page: "look" for B, "laptop" (greyed) for A, nothing for C — so nobody opens a page to find out.</p></div>
+</div>
+
+<h2>The full list</h2>
+<table>
+  <tr><th>Page</th><th>On a phone / iPad</th><th>What stays on the laptop</th></tr>
+  <tr><td>Settings</td><td><span class="tag tA">A</span> laptop only</td><td>everything</td></tr>
+  <tr><td>Check booklets · Invoice booklets</td><td><span class="tag tA">A</span> laptop only</td><td>everything</td></tr>
+  <tr><td>Creditors</td><td><span class="tag tA">A</span> laptop only</td><td>everything</td></tr>
+  <tr><td>Snip: Price lists · Bank loans · Vendor SOA · Credit cards</td><td><span class="tag tA">A</span> the snip part hidden</td><td>opening, pasting and drawing on a statement</td></tr>
+  <tr><td>Price lists</td><td><span class="tag tB">B</span> look (the phone's Price list for lookups)</td><td>import, Excel, edit prices, the snip</td></tr>
+  <tr><td>Payment statements · Invoices</td><td><span class="tag tB">B</span> look</td><td>make checks, print, Many from Excel, add / delete invoices and drafts</td></tr>
+  <tr><td>Purchase orders</td><td><span class="tag tB">B</span> look → <u>Stock in</u></td><td>make, send, confirm orders</td></tr>
+  <tr><td>Bank and cash</td><td><span class="tag tB">B</span> look</td><td>import the bank statement, tag lines, adjustments</td></tr>
+  <tr><td>Lenders · Bank loans</td><td><span class="tag tB">B</span> look</td><td>new notes, schedules, pay principal, the snip</td></tr>
+  <tr><td>Credit cards</td><td><span class="tag tB">B</span> look</td><td>add and correct statements, the snip</td></tr>
+  <tr><td>Stock counts (laptop page)</td><td><span class="tag tB">B</span> look → <u>Stock count</u> on the phone</td><td>approve the differences</td></tr>
+  <tr><td>Reports · Analytics · Income statement</td><td><span class="tag tB">B</span> look (Excel downloads too)</td><td>—</td></tr>
+  <tr><td>Home · Calendar · Checks and review</td><td><span class="tag tC">C</span> as now</td><td>—</td></tr>
+  <tr><td>Daily payables · Expenses · Other income · Collect payments · Customers · Affiliates · Items and stock</td><td><span class="tag tC">C</span> as now</td><td>—</td></tr>
+  <tr><td>Phone pages · approving a sign-in</td><td><span class="tag tC">C</span> as now</td><td>—</td></tr>
+</table>
+
+<div class="q"><b>Notes and to confirm</b>
+  <ol><li>The phone is told apart from a laptop by what its browser says (an iPad by its touch screen). It stops slips and a found phone; someone set on faking it could — the real protection stays each person's access and the phone approval.</li>
+    <li>The System admin is limited the same way — or should the System admin be free on a phone?</li>
+    <li>A laptop showing a phone-size window (a narrow browser) is still a laptop: nothing is limited there.</li></ol>
+</div>
+</main></body></html>

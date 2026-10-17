@@ -30,7 +30,7 @@ def _floating() -> list[dict]:
     return rows
 
 
-@page_needed("order-statements")
+@page_needed("order-statements", phone_actions=("add", "save"))      # on a phone: add and edit; Make checks and Delete on the laptop (owner, 2026-10-17)
 def invoices(request):
     from engines.duplicate_service import invoice_warnings
     from engines.statement_rules import add_invoice, delete_invoice, doc_reference, edit_invoice, pay_invoices, resolve_due_date

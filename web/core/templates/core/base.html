@@ -14,7 +14,7 @@
 <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js?v=3").catch(function () {});</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
-<link rel="stylesheet" href="{% static 'core/slicks.css' %}?v=2026-10-17b">
+<link rel="stylesheet" href="{% static 'core/slicks.css' %}?v=2026-10-17c">
 <script src="{% static 'core/sort.js' %}?v=2" defer></script>
 </head>
 <body>
@@ -26,7 +26,7 @@
   <div class="tb-sec">
     <a class="tb-label" href="{{ sec.url }}" title="{{ sec.title }}: its tiles on Home">{{ sec.title }} &#9662;</a>
     <div class="tb-menu">
-      {% for it in sec.items %}<a href="{{ it.url }}"><span class="ms">{{ it.icon }}</span>{{ it.label }}</a>{% endfor %}
+      {% for it in sec.items %}<a href="{{ it.url }}"><span class="ms">{{ it.icon }}</span>{{ it.label }}{% if it.look %} <span class="ph-look">look</span>{% endif %}</a>{% endfor %}
     </div>
   </div>
   {% endfor %}
@@ -53,7 +53,8 @@
 {% endif %}
 <main{% if request.view_only %} class="view-only"{% endif %}>
 {% if page_notice %}<div class="notice page-notice"><span class="ms">campaign</span> {{ page_notice }}</div>{% endif %}
-{% if request.view_only %}<div class="msg view-note"><span class="ms">visibility</span> View only: you can look at this page, but the System admin has not switched on changes here for you.</div>{% endif %}
+{% if request.phone_look %}<div class="msg view-note"><span class="ms">visibility</span> <b>Looking only on the phone.</b> Changes here are done on the laptop.{% if request.phone_instead %} <a href="{{ request.phone_instead.0 }}">{{ request.phone_instead.1 }}</a>{% endif %}</div>
+{% elif request.view_only %}<div class="msg view-note"><span class="ms">visibility</span> View only: you can look at this page, but the System admin has not switched on changes here for you.</div>{% endif %}
 {% for m in messages %}<div class="msg {{ m.tags }}">{{ m|usdates }}</div>{% endfor %}
 {% if over_confirm %}{% load humanize %}<div class="warnbox over-confirm"><b>{{ over_confirm.what }} would put {% if over_confirm.over|length == 1 %}a day{% else %}{{ over_confirm.over|length }} days{% endif %}
   over the daily limit of ₱{{ over_confirm.ceiling|floatformat:2|intcomma }}</b>

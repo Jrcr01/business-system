@@ -7,6 +7,7 @@ is every invoice in no payment statement yet: add one, tick the ones being paid,
 <p class="note">Every supplier invoice not yet in a payment statement. Record one as soon as it arrives: it is owed from then on. Tick the ones you are paying and make their checks.
   <a href="/order-statements/">Payment statements →</a></p>
 
+{% if request.phone_partial %}<p class="hint"><span class="ms">smartphone</span> On the phone: add and edit invoices. Making checks and deleting are done on the laptop.</p>{% endif %}
 <div class="grp">Record an invoice</div>
 {% if warnings %}<div class="warnbox"><b>Check before saving</b>{% for w in warnings %}<div>· {{ w }}</div>{% endfor %}
   <div class="hint">If it is right, press "Save anyway". Otherwise correct it below.</div></div>{% endif %}
@@ -31,7 +32,7 @@ is every invoice in no payment statement yet: add one, tick the ones being paid,
   <div><label for="fe_gross">Amount</label><input id="fe_gross" type="text" inputmode="decimal" name="gross" value="{{ edit.gross_amount|floatformat:2|intcomma }}" style="width:150px;text-align:right"></div>
   <div><label for="fe_less">Less %</label><input id="fe_less" type="text" inputmode="decimal" name="less" value="{{ edit.less|floatformat:'-2' }}" style="width:80px;text-align:right"></div>
   <button class="btn small" type="submit" name="action" value="save"><span class="ms">save</span>Save</button>
-  {% if not edit.po_no %}<button class="btn small danger" type="submit" name="action" value="delete" onclick="return confirm('Delete invoice {{ edit.ref }}? It will no longer be owed.');"><span class="ms">delete</span>Delete</button>{% endif %}
+  {% if not edit.po_no and not request.phone_partial %}<button class="btn small danger" type="submit" name="action" value="delete" onclick="return confirm('Delete invoice {{ edit.ref }}? It will no longer be owed.');"><span class="ms">delete</span>Delete</button>{% endif %}
   <a class="btn small ghost" href="/order-statements/invoices/">Cancel</a>
 </form>
 {% if edit.po_no %}<p class="hint">It came from purchase order {{ edit.po_no }}, so it can be corrected but not deleted here.</p>{% endif %}
@@ -39,7 +40,7 @@ is every invoice in no payment statement yet: add one, tick the ones being paid,
 
 <div class="grp">Not yet in a payment statement <span class="hint" style="font-weight:400">· {{ n }} invoice{{ n|pluralize }} · ₱{{ total|floatformat:2|intcomma }}</span></div>
 {% if groups %}
-<form method="post" id="pay_form">{% csrf_token %}<input type="hidden" name="action" value="pay">
+<form method="post" id="pay_form"{% if request.phone_partial %} class="phone-look-only"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="pay">
 <div class="scroll-x"><table class="list cards">
   <tr><th style="width:52px">Pay</th><th>Date</th><th>SI / DR no.</th><th>Due</th><th style="text-align:right">Amount</th><th></th><th></th></tr>
   {% for g in groups %}

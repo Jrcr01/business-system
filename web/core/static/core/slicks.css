@@ -677,3 +677,8 @@ table.list th[aria-sort] { color: var(--fg-0b4f8a); } table.list th .sort-arrow 
   .cc-split.on .cc-panel .bar > .btn, .cc-split.on .cc-panel .bar > a.btn { grid-column: auto; }
   .cc-split.on .cc-snip { display: block; } .cc-split.on .cc-view { height: calc(100vh - 170px); min-height: 380px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 }
+/* a phone or an iPad (owner, 2026-10-17): "look" pages are marked in the menu; a snip never shows on a look-only page */
+.ph-look { font-size: .66rem; border: 1px solid var(--bd-b9c6d8); border-radius: 999px; padding: 0 6px; color: var(--muted); margin-left: 4px; font-weight: 600; }
+main.view-only #sn_split, main.view-only .cc-doc, main.view-only #sn_upload { display: none !important; }
+/* the Invoices page on a phone (2026-10-17): the list shows, its ticks and Make checks do not */
+form.phone-look-only input[type=checkbox], form.phone-look-only button[type=submit], form.phone-look-only .fi-bar { display: none !important; }
