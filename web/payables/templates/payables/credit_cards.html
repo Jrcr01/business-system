@@ -86,6 +86,10 @@
 
 {% else %}
 {% if may_write %}
+<div class="cc-split{% if doc %} on{% endif %}" id="cc_split">
+<div class="cc-panel" id="cc_panel">
+{% if doc and edit_stmt %}<div class="cc-tabs" role="tablist"><button type="button" data-tab="add">Add a statement</button><button type="button" class="on" data-tab="fix">Correct · {{ edit_stmt.card }} due {{ edit_stmt.due_date|dmy }}</button></div>{% endif %}
+<div id="cc_add"{% if doc and edit_stmt %} hidden{% endif %}>
 <div class="grp" style="margin-top:0">Add a statement (SOA)</div>
 <form method="post" id="soa-form">{% csrf_token %}<input type="hidden" name="action" value="statement">
   <div class="bar">
@@ -129,14 +133,31 @@
     out.textContent = line;
   }
   var KEEP = ["month", "due", "total", "payments", "credits", "interest", "unbilled"], DRAFT = "cc_soa_draft";
-  try { var d = JSON.parse(sessionStorage.getItem(DRAFT) || "{}"); KEEP.forEach(function (k) { if (d[k] && f[k] && !f[k].value) f[k].value = d[k]; }); } catch (e) {}
-  function keep() { try { var d = {}; KEEP.forEach(function (k) { if (f[k]) d[k] = f[k].value; }); sessionStorage.setItem(DRAFT, JSON.stringify(d)); } catch (e) {} }
+  try {
+    var d = JSON.parse(sessionStorage.getItem(DRAFT) || "{}");
+    if (d.card && f.card.value && d.card !== f.card.value) sessionStorage.removeItem(DRAFT);      /* another card picked: its figures start empty (2026-10-17) */
+    else KEEP.forEach(function (k) { if (d[k] && f[k] && !f[k].value) f[k].value = d[k]; });
+  } catch (e) {}
+  function keep() { try { var d = {card: f.card.value}; KEEP.forEach(function (k) { if (f[k]) d[k] = f[k].value; }); sessionStorage.setItem(DRAFT, JSON.stringify(d)); } catch (e) {} }
   f.addEventListener("input", keep); f.addEventListener("change", keep);
   f.addEventListener("submit", function () { try { sessionStorage.removeItem(DRAFT); } catch (e) {} });
   f.addEventListener("input", calc); f.addEventListener("change", calc); calc();
 })();
 </script>
-{% include "payables/_card_snip.html" %}
+</div>
+{% if doc and edit_stmt %}<div id="cc_fix">{% include "payables/_card_correct.html" %}</div>{% endif %}
+</div>
+<div class="cc-doc">{% include "payables/_card_snip.html" %}</div>
+</div>
+<script>
+(function () {   /* Add / Correct tabs beside the picture (2026-10-17) */
+  var tabs = document.querySelectorAll(".cc-tabs button"); if (!tabs.length) return;
+  tabs.forEach(function (t) { t.addEventListener("click", function () {
+    tabs.forEach(function (x) { x.classList.toggle("on", x === t); });
+    document.getElementById("cc_add").hidden = t.dataset.tab !== "add"; document.getElementById("cc_fix").hidden = t.dataset.tab !== "fix";
+  }); });
+})();
+</script>
 {% endif %}
 
 <form class="bar" method="get" action="/credit-cards/" style="margin-top:14px">{% if doc %}<input type="hidden" name="f" value="{{ doc.token }}">{% if doc.page > 1 %}<input type="hidden" name="p" value="{{ doc.page }}">{% endif %}{% endif %}
@@ -147,19 +168,8 @@
   <div><label for="show">Show</label><select id="show" name="show" onchange="this.form.submit()"><option value="open"{% if show == "open" %} selected{% endif %}>Not paid or not confirmed yet</option>
     <option value="all"{% if show == "all" %} selected{% endif %}>All</option></select></div>
 </form>
-{% if edit_stmt %}
-<div class="grp" id="edit">Correct the statement of {{ edit_stmt.card }} due {{ edit_stmt.due_date|dmy }}</div>
-<form method="post" class="bar" id="es-form">{% csrf_token %}<input type="hidden" name="action" value="correct_statement">{% if doc %}<input type="hidden" name="token" value="{{ doc.token }}">{% endif %}<input type="hidden" name="statement_id" value="{{ edit_stmt.cc_statement_id }}"><input type="hidden" name="card" value="{{ card }}">
-  <div><label for="es_month">Statement month</label><input id="es_month" type="month" name="month" value="{{ edit_stmt.statement_month|default:'' }}"></div>
-  <div><label for="es_due">Due date</label><input id="es_due" type="date" name="due" value="{{ edit_stmt.due_date|slice:':10' }}" required></div>
-  {% if edit_stmt.is_latest %}<div><label for="es_total">Total amount due</label><input id="es_total" type="text" inputmode="decimal" name="total" value="{{ edit_stmt.total_amount_due|floatformat:2|intcomma }}" style="width:150px;text-align:right"></div>
-  <div><label for="es_fee">Finance charge</label><input id="es_fee" type="text" inputmode="decimal" name="interest" value="{{ edit_stmt.interest_charged|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>
-  <div><label for="es_credits">Credits</label><input id="es_credits" type="text" inputmode="decimal" name="credits" value="{{ edit_stmt.credits|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>
-  <div><label for="es_unbilled">Unbilled installments</label><input id="es_unbilled" type="text" inputmode="decimal" name="unbilled" value="{{ edit_stmt.unbilled_installments|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>{% endif %}
-  <button class="btn small" type="submit"><span class="ms">save</span>Save the correction</button> <a class="btn small ghost" href="/credit-cards/?{% if card %}card={{ card }}&{% endif %}show={{ show }}{{ keep_doc|default:'' }}">Cancel</a>
-</form>
-<p class="hint">{% if edit_stmt.is_latest %}This is the card's newest statement, so its amounts can be corrected too. To change the "payments since the earlier statement" figure, delete it and add it again.
-  {% else %}A later statement was built on this one, so its amounts stay as they are; the month and the due date can be corrected.{% endif %} Every correction is in the audit log.</p>
+{% if edit_stmt and not doc %}
+{% include "payables/_card_correct.html" %}
 {% endif %}
 {% if stmts %}
 <div class="scroll-x"><table class="list cards cc-stmts">

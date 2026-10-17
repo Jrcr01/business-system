@@ -172,3 +172,20 @@ def test_correcting_a_statement_keeps_the_open_picture(web, db):
     assert r.status_code == 302 and f"&f={token}" in r["Location"]                                                 # still open after saving
     with sqlite3.connect(_db()) as conn:
         assert conn.execute("SELECT unbilled_installments FROM cc_statements WHERE cc_statement_id = ?", (sid,)).fetchone()[0] == 1_032_501.45
+
+
+def test_with_a_picture_open_the_form_sits_beside_it_with_add_and_correct_tabs(web, db):
+    """Owner, 2026-10-17 ("1 as drawn 2 yes 3 include all"): picture left, form right; Correct is a tab beside the picture; zoom; the next box named."""
+    from engines.card_rules import add_statement_from_soa
+    _admin(web)
+    card = _card(db)
+    _, _, sid = add_statement_from_soa(card, "2026-10", date(2026, 10, 30), 66_511.48, None)
+    r = web.post("/credit-cards/", {"action": "snip_upload", "file": SimpleUploadedFile("soa.pdf", _pdf(["TOTAL AMOUNT DUE 66,511.48"]), content_type="application/pdf")})
+    token = r["Location"].split("?f=")[1]
+    page = web.get(f"/credit-cards/?f={token}").content.decode()
+    assert 'class="cc-split on"' in page and 'id="cc_next"' in page and 'class="cc-zoom"' in page and 'class="cc-tabs"' not in page
+    page = web.get(f"/credit-cards/?f={token}&edit={sid}").content.decode()
+    panel = page[page.index('id="cc_panel"'):page.index('class="cc-doc"')]
+    assert 'class="cc-tabs"' in panel and 'id="es-form"' in panel and page.count('id="es-form"') == 1                  # the correction beside the picture, once
+    page = web.get(f"/credit-cards/?edit={sid}").content.decode()
+    assert 'class="cc-split"' in page and 'id="es-form"' in page and 'class="cc-tabs"' not in page                      # no picture: as before

@@ -1,0 +1,13 @@
+{% load humanize %}{% comment %}Correct a recorded card statement (moved here 2026-10-17 so it can sit beside the open picture).{% endcomment %}
+<div class="grp" id="edit">Correct the statement of {{ edit_stmt.card }} due {{ edit_stmt.due_date|dmy }}</div>
+<form method="post" class="bar" id="es-form">{% csrf_token %}<input type="hidden" name="action" value="correct_statement">{% if doc %}<input type="hidden" name="token" value="{{ doc.token }}">{% endif %}<input type="hidden" name="statement_id" value="{{ edit_stmt.cc_statement_id }}"><input type="hidden" name="card" value="{{ card }}">
+  <div><label for="es_month">Statement month</label><input id="es_month" type="month" name="month" value="{{ edit_stmt.statement_month|default:'' }}"></div>
+  <div><label for="es_due">Due date</label><input id="es_due" type="date" name="due" value="{{ edit_stmt.due_date|slice:':10' }}" required></div>
+  {% if edit_stmt.is_latest %}<div><label for="es_total">Total amount due</label><input id="es_total" type="text" inputmode="decimal" name="total" value="{{ edit_stmt.total_amount_due|floatformat:2|intcomma }}" style="width:150px;text-align:right"></div>
+  <div><label for="es_fee">Finance charge</label><input id="es_fee" type="text" inputmode="decimal" name="interest" value="{{ edit_stmt.interest_charged|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>
+  <div><label for="es_credits">Credits</label><input id="es_credits" type="text" inputmode="decimal" name="credits" value="{{ edit_stmt.credits|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>
+  <div><label for="es_unbilled">Unbilled installments</label><input id="es_unbilled" type="text" inputmode="decimal" name="unbilled" value="{{ edit_stmt.unbilled_installments|default:0|floatformat:2|intcomma }}" style="width:130px;text-align:right"></div>{% endif %}
+  <button class="btn small" type="submit"><span class="ms">save</span>Save the correction</button> <a class="btn small ghost" href="/credit-cards/?{% if card %}card={{ card }}&{% endif %}show={{ show }}{{ keep_doc|default:'' }}">Cancel</a>
+</form>
+<p class="hint">{% if edit_stmt.is_latest %}This is the card's newest statement, so its amounts can be corrected too. To change the "payments since the earlier statement" figure, delete it and add it again.
+  {% else %}A later statement was built on this one, so its amounts stay as they are; the month and the due date can be corrected.{% endif %} Every correction is in the audit log.</p>

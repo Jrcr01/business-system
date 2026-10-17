@@ -32,8 +32,10 @@ var slicksSnip = (function () {
     var last = null, scrolling = null;
     function autoscroll() {                                      /* the box runs past the screen: the page follows the pointer (owner, 2026-10-17) */
       if (!from || !last) { scrolling = null; return; }
-      var edge = 48, dy = last.clientY > window.innerHeight - edge ? 14 : last.clientY < edge ? -14 : 0;
-      if (dy) { window.scrollBy(0, dy); rect = show(from, pos(last)); }
+      var sc = o.scroller, top = 0, bottom = window.innerHeight;
+      if (sc && sc.scrollHeight > sc.clientHeight) { var br = sc.getBoundingClientRect(); top = br.top; bottom = br.bottom; }
+      var edge = 48, dy = last.clientY > bottom - edge ? 14 : last.clientY < top + edge ? -14 : 0;
+      if (dy) { if (sc && sc.scrollHeight > sc.clientHeight) sc.scrollTop += dy; else window.scrollBy(0, dy); rect = show(from, pos(last)); }
       scrolling = requestAnimationFrame(autoscroll);
     }
     var move = function (e) { if (!from) return; if (e.touches && e.touches.length > 1) { from = null; box.hidden = true; return; }
@@ -67,7 +69,8 @@ var slicksSnip = (function () {
         if (target && target.dataset.r !== undefined) {           /* a cell was picked: the snip fills it (owner, 2026-10-16: correct a snip by drawing a box) */
           var r = +target.dataset.r, c = +target.dataset.c; rows[r][c] = d.text; target.value = d.text; target.parentNode.classList.remove("snip-doubt");
           g.msg.textContent = "Cell filled from the box" + (d.doubtful ? " (OCR was not sure: check it)" : "") + ". Click another cell to fix it, or the Table button to snip a table."; g.onChange && g.onChange(); return; }
-        if (target) { if (g.onText) { g.onText(d.text); } else { target.value = d.text; target.dispatchEvent(new Event("input", {bubbles: true})); } g.msg.textContent = "Filled from the box."; return; }
+        if (target) { var said = false; if (g.onText) { said = g.onText(d.text) === true; } else { target.value = d.text; target.dispatchEvent(new Event("input", {bubbles: true})); }
+          if (!said) g.msg.textContent = "Filled from the box."; return; }
         g.text.textContent = d.text; g.text.hidden = false; g.msg.textContent = "Text snip" + (d.doubtful ? " (OCR was not sure: check it)" : "") + ":"; g.onText && g.onText(d.text); return; }
       g.text.hidden = true; rows = d.rows; doubt = d.doubt || []; colmap = d.colmap || []; header = !!d.header;
       var nd = doubt.reduce(function (n, r) { return n + r.filter(Boolean).length; }, 0);

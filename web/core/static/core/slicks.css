@@ -658,3 +658,22 @@ table.list th[aria-sort] { color: var(--fg-0b4f8a); } table.list th .sort-arrow 
   table.cc-stmts td[data-l="month"], table.cc-stmts td[data-l="due"], table.cc-stmts td[data-l="SOA"], table.cc-stmts td.c-r { white-space: nowrap; }
   table.cc-stmts td.c-r .btn { padding: 3px 9px; }
 }
+/* Credit cards: the statement beside the form (owner, 2026-10-17; mock-up docs/mockups/ag_card_snip_side_by_side.html). Picture left in its own scrolling
+   frame, the form right and in view; one under the other on a phone. */
+.cc-next { background: var(--bg-eef3fa, #eef3fa); border: 1px solid var(--bd-b9c6d8); border-radius: 8px; padding: 5px 10px; font-size: .86rem; margin: 0 0 6px; color: var(--muted); }
+.cc-next.on { color: var(--ink); } .cc-next.on b { color: var(--blue); }
+.cc-zoom { display: inline-flex; gap: 3px; margin-left: 6px; } .cc-zoom button { border: 1px solid var(--bd-b9c6d8); border-radius: 6px; background: var(--bg-ffffff); color: var(--ink); font: inherit; font-size: .82rem; font-weight: 700; padding: 1px 8px; cursor: pointer; }
+.cc-view { overflow: auto; } .cc-view .snip-wrap { min-width: 100%; }
+.cc-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.cc-tabs button { border: 1px solid var(--bd-b9c6d8); border-radius: 999px; background: var(--bg-ffffff); color: var(--muted); font: inherit; font-size: .84rem; font-weight: 700; padding: 4px 12px; cursor: pointer; }
+.cc-tabs button.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+@media (min-width: 901px) {
+  .cc-split.on { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(330px, 1fr); gap: 16px; align-items: start; }
+  .cc-split.on .cc-doc { order: 1; min-width: 0; } .cc-split.on .cc-panel { order: 2; position: sticky; top: 74px; max-height: calc(100vh - 84px); overflow: auto;
+    border: 1px solid var(--bd-b9c6d8); border-radius: 10px; padding: 12px; background: var(--bg-ffffff); }
+  .cc-split.on .cc-panel .bar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+  .cc-split.on .cc-panel .bar > div { min-width: 0; } .cc-split.on .cc-panel .bar .grow { grid-column: 1 / -1; }
+  .cc-split.on .cc-panel .bar input:not([type=search]), .cc-split.on .cc-panel .bar select { width: 100% !important; }
+  .cc-split.on .cc-panel .bar > .btn, .cc-split.on .cc-panel .bar > a.btn { grid-column: auto; }
+  .cc-split.on .cc-snip { display: block; } .cc-split.on .cc-view { height: calc(100vh - 170px); min-height: 380px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+}

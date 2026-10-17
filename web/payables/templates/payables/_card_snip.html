@@ -6,19 +6,21 @@ The document is deleted when the statement is added, or after a day.{% endcommen
   <div class="grow"><label for="sn_file">The statement (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png"></div>
   <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button>
   <button class="btn small ghost" type="button" id="sn_paste" title="A screenshot or a copied picture"><span class="ms">content_paste</span>Paste</button><span class="hint" id="sn_paste_hint"></span></form>
-{% if files %}<p class="hint" style="margin:6px 0 10px">Open statements: {% for f in files %}<a href="?{% if card %}card={{ card }}&show={{ show }}&{% endif %}f={{ f.token }}{% if edit_stmt %}&edit={{ edit_stmt.cc_statement_id }}#edit{% endif %}"{% if doc and doc.token == f.token %} style="font-weight:700"{% endif %}>{{ f.filename }}</a> <span class="hint">({{ f.pages }} p)</span><form method="post" action="/snip/discard/" class="snip-x-f">{% csrf_token %}<input type="hidden" name="token" value="{{ f.token }}"><input type="hidden" name="back" value="{{ request.get_full_path }}"><button class="snip-x" type="submit" title="Remove {{ f.filename }} now" aria-label="Remove {{ f.filename }}">✕</button></form>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
-<script src="/static/core/snip.js?v=10"></script>
+{% if files %}<div class="hint" style="margin:6px 0 10px">Open statements: {% for f in files %}<a href="?{% if card %}card={{ card }}&show={{ show }}&{% endif %}f={{ f.token }}{% if edit_stmt %}&edit={{ edit_stmt.cc_statement_id }}#edit{% endif %}"{% if doc and doc.token == f.token %} style="font-weight:700"{% endif %}>{{ f.filename }}</a> <span class="hint">({{ f.pages }} p)</span><form method="post" action="/snip/discard/" class="snip-x-f">{% csrf_token %}<input type="hidden" name="token" value="{{ f.token }}"><input type="hidden" name="back" value="{{ request.get_full_path }}"><button class="snip-x" type="submit" title="Remove {{ f.filename }} now" aria-label="Remove {{ f.filename }}">✕</button></form>{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+<script src="/static/core/snip.js?v=11"></script>
 <script>slicksSnip.paste({form: document.getElementById("sn_upload"), button: document.getElementById("sn_paste"), hint: document.getElementById("sn_paste_hint"), field: "file"});</script>
 {% if doc %}
-<div class="snip-split wide" id="sn_split">
+<div class="snip-split wide cc-snip" id="sn_split">
   <div class="snip-doc">
     <div class="snip-head"><span class="ms">{% if doc.has_text %}picture_as_pdf{% else %}photo_camera{% endif %}</span><b>{{ doc.filename }}</b>
       {% if doc.pages > 1 %}<span>· page <a href="?{% if card %}card={{ card }}&show={{ show }}&{% endif %}f={{ doc.token }}&p={{ doc.page|add:'-1' }}"{% if doc.page == 1 %} hidden{% endif %}>‹</a> {{ doc.page }} of {{ doc.pages }} <a href="?{% if card %}card={{ card }}&show={{ show }}&{% endif %}f={{ doc.token }}&p={{ doc.page|add:'1' }}"{% if doc.page == doc.pages %} hidden{% endif %}>›</a></span>{% endif %}
       <span class="pill{% if not doc.has_text %} warn{% endif %}">{% if doc.has_text %}real text: exact{% else %}picture: OCR{% endif %}</span>
-      <span class="snip-tool"><button type="button" class="on" data-mode="text" hidden>Text</button></span></div>
-    <div class="snip-wrap" id="sn_wrap"><img id="sn_img" src="/credit-cards/snip/{{ doc.token }}/page/{{ doc.page }}.jpg" alt="page {{ doc.page }}" draggable="false">
-      <div class="snip-box" id="sn_box" hidden><b id="sn_label"></b></div></div>
-    <p class="hint" style="margin:6px 0 0" id="sn_msg" role="status"><b>Click a box in the form</b> (Total amount due, Payments, Credits, Finance charge, Unbilled installments), then <b>drag a box over the figure</b> on the statement.
+      <span class="snip-tool"><button type="button" class="on" data-mode="text" hidden>Text</button></span>
+      <span class="cc-zoom" aria-label="Zoom"><button type="button" data-z="-1" title="Smaller">−</button><button type="button" data-z="0" title="Fit the width">Fit</button><button type="button" data-z="1" title="Bigger">+</button></span></div>
+    <div class="cc-next" id="cc_next" role="status">Click a box in the form first, then draw over its figure here.</div>
+    <div class="cc-view" id="cc_view"><div class="snip-wrap" id="sn_wrap"><img id="sn_img" src="/credit-cards/snip/{{ doc.token }}/page/{{ doc.page }}.jpg" alt="page {{ doc.page }}" draggable="false">
+      <div class="snip-box" id="sn_box" hidden><b id="sn_label"></b></div></div></div>
+    <p class="hint cc-msg" style="margin:6px 0 0" id="sn_msg" role="status"><b>Click a box in the form</b> (Total amount due, Payments, Credits, Finance charge, Unbilled installments), then <b>drag a box over the figure</b> on the statement.
       One figure fills the box; a column of figures is added up. A picture is read by OCR: check the figure.</p>
     <div id="sn_text" class="snip-text" hidden></div>
     <table id="sn_grid" hidden></table><span id="sn_actions" hidden></span>
@@ -37,14 +39,34 @@ document.addEventListener("DOMContentLoaded", function () {     /* the Edit form
       if (!tgt) { $("sn_msg").innerHTML = "<b>Click the box to fill first</b> (for example Unbilled installments), then draw over the figure again. Nothing was filled."; $("sn_msg").style.color = "var(--fg-b3261e)"; return; }
       $("sn_msg").style.color = "";
       if (!vals.length) { $("sn_msg").textContent = "No figure in the box. Draw it over the number(s)."; return; }
-      var sum = Math.round(vals.reduce(function (a, b) { return a + b; }, 0) * 100) / 100;
-      tgt.value = sum.toFixed(2); tgt.dispatchEvent(new Event("input", {bubbles: true}));
-      $("sn_msg").textContent = (vals.length === 1 ? "Filled " : vals.length + " figures added up into ") + (tgt.labels && tgt.labels[0] ? tgt.labels[0].textContent : tgt.name) + ": ₱" + sum.toLocaleString("en-PH", {minimumFractionDigits: 2}) + ". Click another box in the form to fill it.";
+      var sum = Math.round(vals.reduce(function (a, b) { return a + b; }, 0) * 100) / 100, fmt = function (v) { return v.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+      tgt.value = fmt(sum); tgt.dispatchEvent(new Event("input", {bubbles: true}));                 /* with commas, like the rest (2026-10-17) */
+      var name = tgt.labels && tgt.labels[0] ? tgt.labels[0].textContent : tgt.name;
+      $("sn_msg").innerHTML = "";
+      var head = document.createElement("b"); head.style.color = "var(--fg-0b6e4f)";
+      head.textContent = vals.length === 1 ? "Filled " + name + ": ₱" + fmt(sum) : vals.length + " figures added up into " + name;
+      $("sn_msg").appendChild(head);
+      if (vals.length > 1) { var line = document.createElement("div"); line.textContent = vals.map(fmt).join(" + ") + " = ₱" + fmt(sum); $("sn_msg").appendChild(line); }
+      var tail = document.createElement("div"); tail.textContent = "{% if doc.has_text %}Read exactly from the PDF.{% else %}From a picture: compare these with the statement before saving.{% endif %} Click another box to fill it.";
+      $("sn_msg").appendChild(tail);
+      return true;
     }});
-  var sn = slicksSnip.start({wrap: $("sn_wrap"), img: $("sn_img"), box: $("sn_box"), label: $("sn_label"), w: {{ doc.w }}, h: {{ doc.h }}, page: {{ doc.page }},
+  var sn = slicksSnip.start({scroller: $("cc_view"), wrap: $("sn_wrap"), img: $("sn_img"), box: $("sn_box"), label: $("sn_label"), w: {{ doc.w }}, h: {{ doc.h }}, page: {{ doc.page }},
     csrf: document.querySelector("#soa-form input[name=csrfmiddlewaretoken]").value, readUrl: "/credit-cards/snip/{{ doc.token }}/read/",
     modeButtons: Array.prototype.slice.call(document.querySelectorAll(".snip-tool button")), onBusy: g.onBusy, onResult: g.onResult});
   g.bind(sn); sn.setMode("text");
+  /* "Next snip goes to: …" (2026-10-17) */
+  boxes.forEach(function (el) { ["focus", "click"].forEach(function (ev) { el.addEventListener(ev, function () {
+    var name = el.labels && el.labels[0] ? el.labels[0].textContent : el.name; $("cc_next").innerHTML = "";
+    var t = document.createTextNode("Next snip goes to: "), b = document.createElement("b"); b.textContent = name;
+    $("cc_next").appendChild(t); $("cc_next").appendChild(b); $("cc_next").appendChild(document.createTextNode(" · draw a box over the figure or the column"));
+    $("cc_next").classList.add("on"); }); }); });
+  /* zoom: − / Fit / + (the boxes are drawn in the page's own coordinates, so any size reads the same) */
+  var z = 100, wrap = $("sn_wrap");
+  try { z = parseInt(localStorage.getItem("cc_zoom") || "100", 10) || 100; } catch (e) {}
+  function zoom(v) { z = Math.max(60, Math.min(300, v)); wrap.style.width = z + "%"; try { localStorage.setItem("cc_zoom", String(z)); } catch (e) {} }
+  zoom(z);
+  document.querySelectorAll(".cc-zoom button").forEach(function (bt) { bt.addEventListener("click", function () { var d = +bt.dataset.z; zoom(d === 0 ? 100 : z + d * 25); }); });
 });
 </script>
 {% endif %}
