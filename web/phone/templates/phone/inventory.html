@@ -1,0 +1,38 @@
+{% extends "phone/base.html" %}{% load static %}
+{% block appmeta %}<meta name="apple-mobile-web-app-title" content="Slicks Inventory">
+<link rel="manifest" href="/phone/manifest-inv.webmanifest" crossorigin="use-credentials">
+<link rel="icon" href="{% static 'phone/icon-inv-192.png' %}">
+<link rel="apple-touch-icon" sizes="180x180" href="{% static 'phone/icon-inv-180.png' %}">{% endblock %}
+{% block back %}<a href="/phone/" aria-label="Slick's POS"><span class="ms">tire_repair</span></a>{% endblock %}
+{% block content %}
+{% comment %}Slicks Inventory (owner, 2026-10-17: "just the size sorted by rim, brand, amount"; mock-up an_slicks_inventory): the notebook's tabs,
+each size with its total, each brand with how many. No cost here. Grey = none on hand. A line opens the item's stock card; Quote (family only)
+opens the quick quotation for that size.{% endcomment %}
+<style>
+.inv-tabs { display: flex; gap: 4px; overflow-x: auto; margin: -4px -14px 8px; padding: 6px 14px 0; border-bottom: 2px solid var(--navy); scrollbar-width: none; }
+.inv-tabs::-webkit-scrollbar { display: none; }
+.inv-tabs a { flex: 0 0 auto; background: #f2c200; color: #0f2a4a; font-weight: 800; border-radius: 8px 8px 0 0; padding: 7px 13px; text-decoration: none; opacity: .5; }
+.inv-tabs a.on { opacity: 1; }
+.inv-find { display: flex; gap: 6px; margin-bottom: 8px; } .inv-find input { flex: 1; min-width: 0; }
+.inv-sz { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--bg-fff8dc, #fff8dc); color: #7a2b16; padding: 8px 10px;
+  margin-top: 8px; border-radius: 8px 8px 0 0; border-bottom: 1px solid #e5d7a8; }
+.inv-sz b { font-size: 1.05rem; } .inv-sz .tot { margin-left: auto; font-weight: 800; color: var(--navy); }
+.inv-sz a.btn { padding: 4px 10px; font-size: .85rem; }
+.inv-ln { display: flex; justify-content: space-between; gap: 10px; padding: 9px 10px 9px 18px; border-bottom: 1px solid var(--line); background: var(--bg-ffffff);
+  color: var(--ink); text-decoration: none; }
+.inv-ln b { font-size: 1.05rem; min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums; }
+.inv-ln.z { color: #a3acb9; } .inv-ln.neg b { color: var(--fg-b3261e, #b3261e); }
+.inv-rim { font-size: .75rem; color: var(--muted); font-weight: 400; }
+</style>
+<nav class="inv-tabs" aria-label="Rim">{% for t in tabs %}<a href="?rim={{ t }}"{% if t == rim and not q %} class="on" aria-current="page"{% endif %}>{{ t }}</a>{% endfor %}</nav>
+<form class="inv-find" method="get"><input class="ph-field" type="search" name="q" value="{{ q }}" placeholder="Find any size or brand: 2055516, westlake 16" aria-label="Find"
+  inputmode="search"><button class="btn" type="submit"><span class="ms">search</span></button></form>
+{% if q %}<p class="hint">Found in every rim: “{{ q }}”. <a href="?rim={{ rim }}">Back to {{ rim }}</a></p>{% else %}<p class="hint">Rim {{ rim }}: {{ pieces|floatformat:"-2" }} pieces on hand.</p>{% endif %}
+{% for g in groups %}
+<div class="inv-sz"><b>{{ g.size }}</b>{% if g.rim %}<span class="inv-rim">rim {{ g.rim }}</span>{% endif %}<span class="tot">{{ g.total|floatformat:"-2" }}</span>
+  {% if mine.prices and g.total > 0 %}<a class="btn small" href="/phone/inventory/quote/?size={{ g.size|urlencode }}">Quote</a>{% endif %}</div>
+{% for ln in g.lines %}<a class="inv-ln{% if ln.qty == 0 %} z{% elif ln.qty < 0 %} neg{% endif %}" href="/phone/stock/?id={{ ln.id }}"><span>{{ ln.name }}</span><b>{{ ln.qty|floatformat:"-2" }}</b></a>{% endfor %}
+{% empty %}<p class="note">{% if q %}No tire matches “{{ q }}”.{% else %}No tire with rim {{ rim }} is in the item list yet.{% endif %}</p>
+{% endfor %}
+<p class="hint" style="text-align:center;margin-top:24px">The same stock as Slick's ERP: it changes by itself after every sale, delivery and count.</p>
+{% endblock %}

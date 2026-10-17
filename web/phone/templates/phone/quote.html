@@ -1,0 +1,125 @@
+{% extends "phone/base.html" %}{% load static %}
+{% block appmeta %}<meta name="apple-mobile-web-app-title" content="Slicks Inventory">
+<link rel="manifest" href="/phone/manifest-inv.webmanifest" crossorigin="use-credentials">
+<link rel="icon" href="{% static 'phone/icon-inv-192.png' %}">
+<link rel="apple-touch-icon" sizes="180x180" href="{% static 'phone/icon-inv-180.png' %}">{% endblock %}
+{% block back %}<a href="/phone/inventory/{% if rim %}?rim={{ rim }}{% endif %}" aria-label="Back to Slicks Inventory"><span class="ms">arrow_back</span></a>{% endblock %}
+{% block content %}
+{% comment %}The quick quote (owner, 2026-10-17: "for walk-in customers who canvass prices"; mock-up ao_quick_quotation, answers 1-5 A): what is on
+hand at cost, + the markup picked (at cost / +100 / +200 / typed), rounded up; tap one price to type its own; Show the customer = big prices only.
+Nothing is saved. Never a cost or a margin on the customer's view or in what is shared.{% endcomment %}
+<style>
+.qt-mk { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 4px; }
+.qt-mk button { font: inherit; font-weight: 700; border: 1px solid var(--bd-b9c6d8); border-radius: 999px; padding: 8px 14px; background: var(--bg-ffffff); color: var(--fg-0b4f8a); }
+.qt-mk button.on { background: var(--blue, #0B4F8A); color: #fff; border-color: transparent; }
+.qt-mk input { width: 96px; }
+.qt-list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg-ffffff); margin-top: 6px; }
+.qt-ln { display: grid; grid-template-columns: 30px 1fr auto; gap: 8px; align-items: center; padding: 10px; border-bottom: 1px solid var(--line); }
+.qt-ln:last-child { border-bottom: 0; } .qt-ln.off { opacity: .55; }
+.qt-ln input[type=checkbox] { width: 22px; height: 22px; }
+.qt-ln .nm b { display: block; } .qt-ln .nm small { color: var(--muted); }
+.qt-ln .pr { text-align: right; } .qt-ln .pr button { font: inherit; font-size: 1.1rem; font-weight: 800; color: var(--fg-14532d, #0b6e4f); background: none; border: 0; padding: 0; }
+.qt-ln .pr button.typed { color: var(--fg-9a3412, #9a3412); } .qt-ln .pr small { display: block; color: var(--muted); font-size: .75rem; }
+.qt-sum { margin-top: 12px; } .qt-sum .kv b { font-variant-numeric: tabular-nums; }
+.qt-cust { position: fixed; inset: 0; z-index: 50; background: #fff; color: #1c2733; overflow: auto; padding: 18px 18px 40px; }
+.qt-cust h1 { text-align: center; margin: 4px 0 0; color: #0f2a4a; font-size: 1.1rem; } .qt-cust .sz { text-align: center; font-size: 2rem; font-weight: 800; color: #7a2b16; margin: 6px 0 0; }
+.qt-cust .ea { text-align: center; color: #4b5563; margin-bottom: 10px; }
+.qt-cust .row { display: flex; justify-content: space-between; gap: 10px; padding: 12px 4px; border-bottom: 1px solid #e5e7eb; font-size: 1.35rem; }
+.qt-cust .row b { font-variant-numeric: tabular-nums; } .qt-cust .left { color: #9a3412; font-size: .9rem; font-weight: 700; }
+.qt-cust h2 { font-size: 1.05rem; color: #0f2a4a; margin: 18px 0 4px; } .qt-cust .set { display: flex; justify-content: space-between; padding: 6px 4px; font-size: 1.1rem; border-bottom: 1px solid #e5e7eb; }
+.qt-cust .foot { text-align: center; color: #4b5563; margin-top: 18px; } .qt-cust .tap { text-align: center; color: #9aa4b2; font-size: .8rem; margin-top: 24px; }
+</style>
+{% if not size %}
+  <form class="inv-find" method="get" style="display:flex;gap:6px"><input class="ph-field" type="search" name="q" value="{{ request.GET.q }}" placeholder="Which size? 2055516" autofocus>
+    <button class="btn" type="submit"><span class="ms">search</span></button></form>
+  {% for g in sizes %}{% if g.total > 0 %}<a class="ph-big" href="?size={{ g.size|urlencode }}">{{ g.size }}<span class="pill">{{ g.total|floatformat:"-2" }} on hand</span></a>{% endif %}{% endfor %}
+  {% if request.GET.q and not sizes %}<p class="note">No tire matches that.</p>{% endif %}
+{% elif not has_lines %}
+  <p class="note">Nothing in {{ size }} is on hand right now, so there is nothing to quote.</p>
+{% else %}
+<label>Markup each tire, on top of cost</label>
+<div class="qt-mk" id="qt_mk"><button type="button" data-m="0">At cost</button><button type="button" data-m="100">+100</button><button type="button" data-m="200">+200</button>
+  <input class="ph-field" type="text" inputmode="numeric" id="qt_other" placeholder="₱ other" aria-label="Other markup"></div>
+<div class="hint">{% if step %}Prices round up to the next ₱{{ step }}.{% else %}Cost + markup exactly.{% endif %} Tap a price to type its own.</div>
+<div class="ph-row" style="margin-top:10px"><label style="margin:0">Pieces each</label>
+  <span class="qty"><button type="button" id="qt_minus">−</button><input type="text" inputmode="numeric" id="qt_n" value="4" aria-label="Pieces"><button type="button" id="qt_plus">+</button></span></div>
+<div class="qt-list" id="qt_list"></div>
+<div class="qt-sum" id="qt_sum"></div>
+<button class="btn main" type="button" id="qt_show"><span class="ms">visibility</span>Show the customer</button>
+<div class="ph-row" style="margin-top:8px"><button class="btn ghost" type="button" id="qt_copy" style="flex:1"><span class="ms">content_copy</span>Copy</button>
+  <button class="btn ghost" type="button" id="qt_share" style="flex:1"><span class="ms">share</span>Share</button></div>
+<div class="qt-cust" id="qt_cust" hidden></div>
+{% if admin %}<details style="margin-top:22px"><summary class="hint">The line under the customer's view (System admin)</summary>
+  <form method="post" style="margin-top:6px">{% csrf_token %}<input class="ph-field" type="text" name="footer" value="{{ footer }}" maxlength="160" placeholder="Blank = no line">
+    <button class="btn small" type="submit" style="margin-top:6px">Save</button></form></details>{% endif %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var LINES = {{ lines_json|safe }}, STEP = {{ step|default:0 }}, SIZE = "{{ size|escapejs }}", FOOT = "{{ footer|escapejs }}", SELL = {{ may_sell|yesno:"true,false" }};
+  var $ = function (id) { return document.getElementById(id); };
+  var markup = 0, typed = {}, ticked = {};
+  LINES.forEach(function (ln, k) { ticked[ln.id] = k < 4; });        // the four cheapest ticked to start
+  function peso(n) { return "₱" + Number(n).toLocaleString("en-US", {minimumFractionDigits: 0, maximumFractionDigits: 2}); }
+  function up(x) { if (STEP <= 0) return Math.round(x * 100) / 100; return Math.ceil(Math.round(x * 100) / 100 / STEP - 1e-9) * STEP; }
+  function price(ln) { return typed[ln.id] != null ? typed[ln.id] : (ln.cost > 0 ? up(ln.cost + markup) : null); }
+  function pieces() { var n = parseInt($("qt_n").value, 10); return n > 0 ? n : 1; }
+  function chosen() { return LINES.filter(function (ln) { return ticked[ln.id] && price(ln) != null; }); }
+  function draw() {
+    document.querySelectorAll("#qt_mk button").forEach(function (b) { b.classList.toggle("on", $("qt_other").value === "" && Number(b.dataset.m) === markup); });
+    var box = $("qt_list"); box.innerHTML = "";
+    LINES.forEach(function (ln) {
+      var p = price(ln), row = document.createElement("div"); row.className = "qt-ln" + (ticked[ln.id] ? "" : " off");
+      var ck = document.createElement("input"); ck.type = "checkbox"; ck.checked = !!ticked[ln.id]; ck.setAttribute("aria-label", "Quote " + ln.name);
+      ck.onchange = function () { ticked[ln.id] = ck.checked; draw(); };
+      var nm = document.createElement("span"); nm.className = "nm"; nm.innerHTML = "<b></b><small></small>"; nm.firstChild.textContent = ln.name; nm.lastChild.textContent = ln.qty + " on hand";
+      var pr = document.createElement("span"); pr.className = "pr"; var b = document.createElement("button"); b.type = "button";
+      b.textContent = p == null ? "type a price" : peso(p); if (typed[ln.id] != null) b.className = "typed";
+      b.onclick = function () { var v = window.prompt("Price each for " + ln.name + " (blank = cost + markup)", typed[ln.id] != null ? typed[ln.id] : (p || ""));
+        if (v === null) return; v = String(v).replace(/[^0-9.]/g, ""); if (v === "") delete typed[ln.id]; else typed[ln.id] = Number(v); draw(); };
+      var c = document.createElement("small"); c.textContent = ln.cost > 0 ? "cost " + peso(ln.cost) + (typed[ln.id] != null ? " · typed" : "") : "no cost yet";
+      pr.appendChild(b); pr.appendChild(c); row.appendChild(ck); row.appendChild(nm); row.appendChild(pr); box.appendChild(row);
+    });
+    var n = pieces(), sum = $("qt_sum"); sum.innerHTML = "";
+    chosen().forEach(function (ln) {
+      var k = Math.min(n, ln.qty), p = price(ln), row = document.createElement("div"); row.className = "kv";
+      var a = document.createElement("span"); a.textContent = ln.name + " · " + peso(p) + " × " + k + (k < n ? " (only " + ln.qty + ")" : "") + (ln.cost > 0 ? " · margin " + peso(p - ln.cost) + " each" : "");
+      var t = document.createElement("b"); t.textContent = peso(p * k); row.appendChild(a); row.appendChild(t);
+      if (SELL) { var s = document.createElement("a"); s.className = "btn small ghost"; s.style.marginLeft = "6px"; s.textContent = "Sell";
+        s.href = "/phone/sale/?item=" + ln.id + "&qty=" + k + "&receipt=" + (p * k).toFixed(2); row.appendChild(s); }
+      sum.appendChild(row);
+    });
+    if (!chosen().length) sum.innerHTML = '<p class="hint">Tick at least one brand.</p>';
+  }
+  function text() {
+    var n = pieces(), d = new Date(), out = ["Slick's Tire Supply · quote " + (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear(), SIZE + ", price each:"];
+    chosen().forEach(function (ln) { out.push("• " + ln.name + " " + peso(price(ln)) + (ln.qty < n ? " (" + ln.qty + " left)" : "")); });
+    if (n > 1) out.push("Set of " + n + ": " + chosen().map(function (ln) { return ln.name + " " + peso(price(ln) * Math.min(n, ln.qty)); }).join(" · "));
+    out.push("Prices good today, while stock lasts."); if (FOOT) out.push(FOOT);
+    return out.join("\n");                                           // selling prices only: never a cost or a margin (owner, 2026-10-17)
+  }
+  function show() {
+    var n = pieces(), c = $("qt_cust"), h = '<h1>Slick\'s Tire Supply</h1><div class="sz"></div><div class="ea">price each · today</div>';
+    c.innerHTML = h; c.querySelector(".sz").textContent = SIZE;
+    chosen().forEach(function (ln) { var r = document.createElement("div"); r.className = "row"; r.innerHTML = "<span></span><b></b>";
+      r.firstChild.textContent = ln.name + " "; if (ln.qty < n) { var l = document.createElement("span"); l.className = "left"; l.textContent = ln.qty + " left"; r.firstChild.appendChild(l); }
+      r.lastChild.textContent = peso(price(ln)); c.appendChild(r); });
+    if (n > 1 && chosen().length) { var t = document.createElement("h2"); t.textContent = "Set of " + n; c.appendChild(t);
+      chosen().forEach(function (ln) { if (ln.qty < n) return; var r = document.createElement("div"); r.className = "set"; r.innerHTML = "<span></span><b></b>";
+        r.firstChild.textContent = ln.name; r.lastChild.textContent = peso(price(ln) * n); c.appendChild(r); }); }
+    if (FOOT) { var f = document.createElement("div"); f.className = "foot"; f.textContent = FOOT; c.appendChild(f); }
+    var tap = document.createElement("div"); tap.className = "tap"; tap.textContent = "tap to go back"; c.appendChild(tap);
+    c.hidden = false; c.onclick = function () { c.hidden = true; };
+  }
+  document.querySelectorAll("#qt_mk button").forEach(function (b) { b.onclick = function () { markup = Number(b.dataset.m); $("qt_other").value = ""; draw(); }; });
+  $("qt_other").addEventListener("input", function () { var v = Number(String(this.value).replace(/[^0-9.]/g, "")); markup = v > 0 ? v : 0; draw(); });
+  $("qt_minus").onclick = function () { $("qt_n").value = Math.max(1, pieces() - 1); draw(); };
+  $("qt_plus").onclick = function () { $("qt_n").value = pieces() + 1; draw(); };
+  $("qt_n").addEventListener("input", draw);
+  $("qt_show").onclick = show;
+  $("qt_copy").onclick = function () { var t = text(), b = this; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { var old = b.innerHTML; b.textContent = "Copied: paste it in Viber"; setTimeout(function () { b.innerHTML = old; }, 1800); })
+    .catch(function () { window.prompt("Copy this:", t); }); };
+  $("qt_share").onclick = function () { var t = text(); if (navigator.share) navigator.share({title: "Quote " + SIZE, text: t}).catch(function () {}); else $("qt_copy").click(); };
+  draw();
+});
+</script>
+{% endif %}
+{% endblock %}

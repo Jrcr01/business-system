@@ -17,4 +17,7 @@ urlpatterns = [
     path("day/", views.day, name="phone_day"),
     path("manifest.webmanifest", views.manifest, name="phone_manifest"),
     path("manifest-ops.webmanifest", views.manifest_ops, name="phone_manifest_ops"),
+    path("manifest-inv.webmanifest", views.manifest_inv, name="phone_manifest_inv"),
+    path("inventory/", views.inventory, name="phone_inventory"),
+    path("inventory/quote/", views.quote, name="phone_quote"),
 ]

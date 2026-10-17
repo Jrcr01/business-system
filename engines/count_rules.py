@@ -192,6 +192,9 @@ def set_cost(line_id: int, cost) -> tuple[bool, str]:
         conn.execute("UPDATE stock_count_lines SET cost_typed = ?, unit_cost = CASE WHEN expected IS NOT NULL THEN ? ELSE unit_cost END WHERE line_id = ?", (c, c, int(line_id)))
         if decision == "APPROVED":
             conn.execute("UPDATE items SET avg_cost = ? WHERE id = ?", (c, int(item_id)))
+            from engines import fifo                              # the count's batch had no cost: it takes this one, and so do sales that took its pieces
+            fifo.reprice(conn, int(item_id), c, "stock_counts", int(count_id), only_zero=True)
+            fifo.refresh(conn, int(item_id))
             conn.execute("""INSERT INTO stock_ledger (item_id, kind, qty, unit_cost, on_hand_after, avg_after, ref_type, ref_id, moved_on, note, created_by)
                             VALUES (?, 'COST', 0, ?, ?, ?, 'stock_counts', ?, ?, ?, acting_user())""",
                          (int(item_id), c, float(on_hand or 0), c, int(count_id), str(manila_today()), f"{number}: cost typed after the count"))

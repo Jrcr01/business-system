@@ -37,7 +37,7 @@ def stock(request):
 
         import pandas as pd
         df = pd.DataFrame([{"Code": r["code"], "Item": r["name"], "Type": sr.CATEGORY_LABEL.get(r["category"], r["category"]), "On hand": r["on_hand"],
-                            "Average cost": r["avg_cost"], "Value": r["value"], "Low at": r["reorder_level"], "Last in": r["last_in"] or "", "Last out": r["last_out"] or "",
+                            "Next sale costs": r["next_cost"], "Average of what is left": r["avg_cost"], "Value": r["value"], "Low at": r["reorder_level"], "Last in": r["last_in"] or "", "Last out": r["last_out"] or "",
                             "Oldest DOT": r["dot"], "Last counted": r["last_counted_at"] or ""} for r in rows])
         buf = io.BytesIO()
         df.to_excel(buf, index=False, sheet_name="Stock")
@@ -77,7 +77,12 @@ def stock_item(request, item_id: int):
     from engines.common import get_conn
     with get_conn() as conn:
         barcodes = [r[0] for r in conn.execute("SELECT barcode FROM item_barcodes WHERE item_id = ? ORDER BY created_at", (int(item_id),))]
-    return render(request, "selling/stock_item.html", {"page_id": "stock", "it": it, "ledger": sr.ledger(item_id), "barcodes": barcodes,
+    from engines.fifo import batches, sync
+    if it["on_hand"] > 0 and not batches(item_id):               # stock from before FIFO (2026-10-17): its first batch, at its average cost
+        from engines.common import write_tx
+        with write_tx() as conn:
+            sync(conn, int(item_id))
+    return render(request, "selling/stock_item.html", {"page_id": "stock", "it": it, "ledger": sr.ledger(item_id), "batches": batches(item_id), "barcodes": barcodes,
                                                        "may_adjust": _can(request, "inventory.approve"), "sizes": [(k, v[0]) for k, v in SIZES.items()],
                                                        "size": request.session.get("label_size", DEFAULT_SIZE), "type": sr.CATEGORY_LABEL.get(it["category"], it["category"])})
 

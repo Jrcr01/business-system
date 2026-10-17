@@ -78,19 +78,19 @@ def stock_list(search: str = "", show: str = "") -> list[dict]:
     today, limit = manila_today(), old_years()
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT i.id, i.code, i.name, i.category, i.on_hand, i.avg_cost, i.reorder_level, i.oldest_dot, i.last_counted_at,
+            """SELECT i.id, i.code, i.name, i.category, i.on_hand, i.avg_cost, i.reorder_level, i.oldest_dot, i.last_counted_at, COALESCE(NULLIF(i.next_cost, 0), i.avg_cost),
                       (SELECT MAX(moved_on) FROM stock_ledger s WHERE s.item_id = i.id AND s.qty > 0),
                       (SELECT MAX(moved_on) FROM stock_ledger s WHERE s.item_id = i.id AND s.qty < 0)
                FROM items i WHERE i.is_active = 1 ORDER BY i.category, i.name COLLATE NOCASE""").fetchall()
     out = []
-    for iid, code, name, cat, on_hand, cost, low_at, dot, counted, last_in, last_out in rows:
+    for iid, code, name, cat, on_hand, cost, low_at, dot, counted, nxt, last_in, last_out in rows:
         text = f"{code} {name}".lower()
         if any(w not in text and w not in re.sub(r"[^a-z0-9]", "", text) and w not in re.sub(r"\D", "", name) for w in words):     # '2055516' finds 205/55R16
             continue
         on_hand, cost = float(on_hand or 0), float(cost or 0)
         age = dot_age(dot, today) if on_hand > 0 else None
         days = (today - date.fromisoformat(str(counted)[:10])).days if counted else None
-        r = {"id": int(iid), "code": code, "name": name, "category": cat, "on_hand": on_hand, "avg_cost": cost, "value": round(on_hand * cost, 2),
+        r = {"id": int(iid), "code": code, "name": name, "category": cat, "on_hand": on_hand, "avg_cost": cost, "next_cost": float(nxt or 0), "value": round(on_hand * cost, 2),
              "reorder_level": int(low_at or 0), "last_in": last_in, "last_out": last_out, "dot": dot_text(dot) if on_hand > 0 else "", "age": age,
              "last_counted_at": counted, "low": 0 <= on_hand <= int(low_at or 0) and bool(last_in or last_out), "negative": on_hand < 0, "old": age is not None and age >= limit,
              "uncounted": days is None or days > 90}
@@ -117,7 +117,7 @@ def item(item_id: int) -> dict | None:
         row = conn.execute("SELECT id, code, name, category, on_hand, avg_cost, reorder_level, oldest_dot, last_counted_at FROM items WHERE id = ?", (int(item_id),)).fetchone()
     if not row:
         return None
-    return {"id": row[0], "code": row[1], "name": row[2], "category": row[3], "on_hand": float(row[4] or 0), "avg_cost": float(row[5] or 0),
+    return {"id": row[0], "code": row[1], "name": row[2], "category": row[3], "on_hand": float(row[4] or 0), "avg_cost": float(row[5] or 0), "next_cost": float(row[5] or 0),
             "value": round(float(row[4] or 0) * float(row[5] or 0), 2), "reorder_level": int(row[6] or 0), "dot": dot_text(row[7]), "age": dot_age(row[7]),
             "last_counted_at": row[8], "low": False, "negative": float(row[4] or 0) < 0, "old": False, "uncounted": True, "last_in": None, "last_out": None}
 

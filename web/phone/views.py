@@ -352,6 +352,14 @@ def sale(request):
     else:
         rel = int(request.GET.get("slip")) if request.GET.get("slip", "").isdigit() else None
         start, pre = "[]", {}
+        if not rel and request.GET.get("item", "").isdigit():  # from a quick quote (owner, 2026-10-17): that tire, those pieces, the quoted total
+            try:
+                q_n = float(request.GET.get("qty") or 1)
+                q_r = float(request.GET.get("receipt") or 0)
+            except ValueError:
+                q_n, q_r = 1.0, 0.0
+            start = json.dumps([{"id": int(request.GET["item"]), "qty": q_n, "price": ""}])
+            pre = {"receipt": f"{q_r:.2f}" if q_r > 0 else ""}
         if rel:                                                  # the slip's goods, already out: shown, not scanned again
             head = sr.get_sale(rel)
             if head and head["status"] == "RELEASED":
@@ -360,7 +368,7 @@ def sale(request):
             else:
                 rel = None
         nxt = sr.next_si_no()
-        ctx = dict(si_no=pre.get("si_no") or (f"{nxt:06d}" if nxt else ""), sale_date=today.isoformat(), customer=pre.get("customer", ""), receipt="",
+        ctx = dict(si_no=pre.get("si_no") or (f"{nxt:06d}" if nxt else ""), sale_date=today.isoformat(), customer=pre.get("customer", ""), receipt=pre.get("receipt", ""),
                    services=[{"k": k, "description": "", "amount": ""} for k in range(3)], method="CASH", reference="", release_id=rel or "",
                    surplus_rows=[{"k": k, "item_id": "", "qty": "", "cost": ""} for k in range(2)])
     from engines.stock_rules import surplus_items
@@ -528,3 +536,57 @@ def count_add(request, count_id: int):
     return render(request, "phone/count_add.html", _ctx(request, "Add an item", c=c, groups=groups, brands=known, show_cost=request.phone_mine["prices"],
                                                          category=typed.get("category", "tire"), brand=typed.get("brand", start["brand"]),
                                                          qty=typed.get("qty", ""), cost=typed.get("cost", ""), dot=typed.get("dot", "")))
+
+
+# ================= Slicks Inventory and the quick quotation (owner, 2026-10-17; mock-ups an_slicks_inventory, ao_quick_quotation; answers all A) ====
+
+@phone_page("stock")
+def inventory(request):
+    """Tires by rim like the stock notebook: size, brand, how many. Its own app icon ("Slicks Inventory"), opening on the last rim used."""
+    from engines import rim_stock
+    q = request.GET.get("q", "").strip()
+    tabs = rim_stock.tabs()
+    rim = request.GET.get("rim") or request.COOKIES.get("slk_rim") or "16"
+    if rim not in tabs:
+        rim = "16"
+    groups = rim_stock.find(q) if q else rim_stock.rim_tab(rim)
+    resp = render(request, "phone/inventory.html", _ctx(request, "Slicks Inventory", tabs=tabs, rim=rim, q=q, groups=groups,
+                                                         pieces=sum(g["total"] for g in groups)))
+    if not q:
+        resp.set_cookie("slk_rim", rim, max_age=31536000, samesite="Lax")
+    return resp
+
+
+@phone_page("prices")
+def quote(request):
+    """A quick quote for a walk-in customer canvassing prices: one size, what is on hand at cost (FIFO, the next sale's), plus the markup the person
+    picks (+100, +200 or typed; default at cost), rounded up to the next ₱50. Nothing is saved. Never on the staff phone (it shows costs)."""
+    from engines import rim_stock
+    from engines.permissions import can
+    from engines.settings_registry import int_value
+    admin = can(request.slicks_user["role"], "settings.edit")
+    if request.method == "POST" and admin:
+        ok, msg = rim_stock.save_quote_footer(request.POST.get("footer", ""))
+        _say(request, ok, msg)
+        return redirect(request.get_full_path())
+    size = request.GET.get("size", "").strip()
+    lines = rim_stock.quote_lines(size) if size else []
+    return render(request, "phone/quote.html", _ctx(request, f"Quote · {size}" if size else "Quote", size=size, rim=rim_stock.rim_of(size),
+                                                     lines_json=json.dumps(lines), has_lines=bool(lines), step=int_value("quote_round_to"),
+                                                     footer=rim_stock.quote_footer(), admin=admin, may_sell=request.phone_mine.get("sale_do"),
+                                                     sizes=rim_stock.find(request.GET.get("q", "")) if not size and request.GET.get("q") else []))
+
+
+def manifest_inv(request):
+    """The third app (owner, 2026-10-17: "Slicks Inventory ... one click away"): its own id and icon, opening the stock by rim."""
+    from django.contrib.staticfiles import finders
+    from django.http import HttpResponse
+    path = finders.find("phone/manifest-inv.webmanifest")
+    if not path:
+        raise Http404
+    with open(path, encoding="utf-8") as f:
+        body = f.read()
+    resp = HttpResponse(body, content_type="application/manifest+json")
+    resp["Cache-Control"] = "private, no-cache"
+    return resp
+

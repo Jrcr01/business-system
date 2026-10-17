@@ -1,0 +1,83 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: FIFO cost</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy:#0f2a4a; --blue:#0B4F8A; --ink:#1c2733; --muted:#4b5563; --line:#e5e7eb; --ok:#0b6e4f; --warn:#9a3412; --red:#b3261e; --card:#fff; --bg:#e9edf2; --soft:#f6f8fb; }
+* { box-sizing:border-box; }
+body { font-family:"Source Sans 3","Segoe UI",system-ui,sans-serif; color:var(--ink); background:var(--bg); margin:0; font-size:15px; }
+main { max-width:1100px; margin:0 auto; padding:18px 16px 60px; }
+h1 { color:var(--blue); font-size:1.35rem; margin:16px 0 4px; }
+h2 { color:var(--navy); font-size:1.05rem; margin:30px 0 4px; } h2 .n { display:inline-block; background:var(--blue); color:#fff; border-radius:999px; width:24px; height:24px; text-align:center; line-height:24px; font-size:.8rem; margin-right:6px; }
+.sub { color:var(--muted); margin:0 0 10px; max-width:92ch; font-size:.93rem; }
+.card { background:var(--card); border-radius:12px; box-shadow:0 2px 8px rgba(16,24,40,.08); padding:14px 16px; margin:8px 0; overflow-x:auto; }
+table { border-collapse:collapse; width:100%; font-size:.9rem; } th,td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+th { color:var(--muted); font-weight:600; font-size:.8rem; } td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
+tr.used td { color:#9aa4b2; text-decoration:line-through; } tr.tot td { font-weight:700; border-top:2px solid var(--ink); border-bottom:0; }
+.pill { border-radius:999px; padding:1px 8px; font-size:.75rem; font-weight:700; } .p-old { background:#fff1d6; color:var(--warn); }
+.kv { display:flex; gap:26px; flex-wrap:wrap; margin:6px 0 10px; } .kv div span { display:block; font-size:.78rem; color:var(--muted); } .kv div b { font-size:1.15rem; }
+.top { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; } .top b { font-size:1.05rem; } .hint { color:var(--muted); font-size:.82rem; }
+.cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; } @media (max-width:760px){ .cols { grid-template-columns:1fr; } }
+.calc { font-family:ui-monospace,Consolas,monospace; font-size:.88rem; background:var(--soft); border-radius:8px; padding:10px 12px; line-height:1.6; white-space:pre; overflow-x:auto; }
+.q { background:#fff; border-left:4px solid var(--blue); border-radius:8px; padding:10px 14px; margin:8px 0; } .q b { color:var(--blue); }
+.rule td:first-child { font-weight:700; } .rule td { white-space:normal; }
+.note { background:#eef4fb; border-radius:8px; padding:8px 12px; font-size:.88rem; color:#21456e; margin-top:8px; }
+</style></head><body><main>
+<h1>Mock-up: cost by FIFO (first in, first out, by delivery date)</h1>
+<p class="sub">Owner, 2026-10-17: "Yes by delivery date". Every delivery keeps its own cost as a <b>batch</b>. A sale takes its cost from the oldest batch first. Sample figures only. The screens the family uses to sell and receive do not change; only the cost and margin behind them.</p>
+
+<h2><span class="n">1</span>The item card on Stock (laptop): its cost batches</h2>
+<p class="sub">A new box under the item. Each line is one delivery, or the opening count. "Left" goes down as pieces are sold, oldest first.</p>
+<div class="card">
+  <div class="top"><b>MRF 7.50-16 Supermiller 14-ply (Rib)</b><span class="hint">TR-0412 · oldest DOT 3825</span></div>
+  <div class="kv"><div><span>On hand</span><b>10</b></div><div><span>Stock value</span><b>₱101,600.00</b></div><div><span>Next sale costs</span><b>₱9,850.00</b></div><div><span>Average of what is left</span><b>₱10,160.00</b></div></div>
+  <table><tr><th>Received</th><th>From</th><th>Document</th><th class="n">Came in</th><th class="n">Left</th><th class="n">Cost each</th><th class="n">Value left</th><th></th></tr>
+  <tr class="used"><td>10/31/2026</td><td>Opening count</td><td>CT-0002</td><td class="n">2</td><td class="n">0</td><td class="n">9,500.00</td><td class="n">0.00</td><td>used up</td></tr>
+  <tr><td>11/04/2026</td><td>New Century</td><td>DR 55433</td><td class="n">4</td><td class="n">2</td><td class="n">9,850.00</td><td class="n">19,700.00</td><td><span class="pill p-old">sells next</span></td></tr>
+  <tr><td>11/12/2026</td><td>Sunny</td><td>DR 10872</td><td class="n">8</td><td class="n">8</td><td class="n">10,237.50</td><td class="n">81,900.00</td><td></td></tr>
+  <tr class="tot"><td colspan="4">On hand</td><td class="n">10</td><td></td><td class="n">101,600.00</td><td></td></tr></table>
+  <div class="note">The opening count before 11/01 becomes the first batch of every tire, at the cost typed from the notebook.</div>
+</div>
+
+<h2><span class="n">2</span>A sale: where its cost comes from</h2>
+<p class="sub">The family records the sale as today. Behind it, the system takes the pieces from the oldest batches and keeps the cost on the sale line, so the margin is exact.</p>
+<div class="cols">
+<div class="card"><div class="top"><b>SI 004812 · 11/15/2026 · 6 pieces at ₱12,500</b></div>
+  <table><tr><th>Batch taken</th><th class="n">Pieces</th><th class="n">Cost each</th><th class="n">Cost</th></tr>
+  <tr><td>DR 55433 (11/04)</td><td class="n">2</td><td class="n">9,850.00</td><td class="n">19,700.00</td></tr>
+  <tr><td>DR 10872 (11/12)</td><td class="n">4</td><td class="n">10,237.50</td><td class="n">40,950.00</td></tr>
+  <tr class="tot"><td>Cost of the sale</td><td class="n">6</td><td class="n">10,108.33</td><td class="n">60,650.00</td></tr></table></div>
+<div class="card"><b>The margin on this sale</b>
+<div class="calc">Sales    6 x 12,500.00  =  75,000.00
+Cost     FIFO above     =  60,650.00
+<b>Margin                  =  14,350.00  (19.1%)</b></div>
+  <p class="hint">With today's average method the same sale would cost 6 x 10,160.00 = 60,960.00. FIFO uses what those exact pieces cost.</p>
+  <p class="hint">Left after the sale: 4 pieces, all from DR 10872, worth 40,950.00.</p></div>
+</div>
+
+<h2><span class="n">3</span>Every other stock movement, under FIFO</h2>
+<div class="card"><table class="rule"><tr><th>When</th><th>What happens to the batches</th></tr>
+<tr><td>Goods received (Receive, phone Stock in)</td><td>A new batch: the date received, the DR, the pieces, the order's net price each.</td></tr>
+<tr><td>The supplier's invoice has another price</td><td>That delivery's batch takes the invoice price (the actual price prevails). Pieces of it already sold: their sales take the difference too, so their margin is right.</td></tr>
+<tr><td>A delivery undone (recorded by mistake)</td><td>Its batch is removed. If some of it was already sold, those pieces move to the next batch, and the sale's cost follows.</td></tr>
+<tr><td>Customer return, void</td><td>The pieces go back at the cost they left at, as a batch placed first, so they sell next.</td></tr>
+<tr><td>Lent to / borrowed from an affiliate</td><td>Lending takes from the oldest batch like a sale; what comes back returns at that cost, placed first.</td></tr>
+<tr><td>Count finds fewer</td><td>The missing pieces leave from the oldest batch (shrinkage at that cost).</td></tr>
+<tr><td>Count finds more</td><td>A batch for the extra pieces at the newest batch's cost (the last price paid).</td></tr>
+<tr><td>Sold before it was received (stock below zero)</td><td>Still never refused, still on the Review list. See question 1.</td></tr>
+</table></div>
+
+<h2><span class="n">4</span>Where the figures show</h2>
+<div class="card"><table class="rule"><tr><th>Page</th><th>Changes to</th></tr>
+<tr><td>Items and stock list</td><td>"Avg cost" becomes "Next sale costs" (the oldest batch's cost). Stock value = the sum of the batches left.</td></tr>
+<tr><td>Sales, Income statement, Analytics</td><td>Cost of sales and margin from the batches each sale took. Nothing to type.</td></tr>
+<tr><td>Phone</td><td>No change. The staff phone still never sees a cost.</td></tr>
+<tr><td>Price list</td><td>No change: each supplier's price today, cheapest first. Price lists are what we would pay; batches are what we did pay.</td></tr>
+</table></div>
+
+<h2><span class="n">5</span>To decide</h2>
+<div class="q"><b>1. A tire sold before its delivery is recorded</b> (stock reads below zero).<br>
+A) <b>Recommended:</b> the sale takes the last price paid for now; when the delivery is recorded, the sale is corrected to that delivery's cost. The margin ends up exact.<br>
+B) The sale keeps the last price paid; nothing is corrected later. Simpler, a little off.</div>
+<div class="q"><b>2. The cost shown on the Items list</b><br>
+A) <b>Recommended:</b> "Next sale costs" (the oldest batch). B) The average of what is left. Both are on the item card, as in screen 1.</div>
+<div class="q"><b>3. When</b><br>Build on the sandbox now and release before the opening count, so the count's costs go straight in as the first batches. Live has no stock movements yet, so nothing old needs redoing.</div>
+</main></body></html>

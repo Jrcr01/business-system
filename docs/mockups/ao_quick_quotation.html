@@ -1,0 +1,141 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: quick quotation</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy:#0f2a4a; --blue:#0B4F8A; --ink:#1c2733; --muted:#4b5563; --line:#e5e7eb; --gold:#f2c200; --ok:#0b6e4f; --warn:#9a3412; }
+* { box-sizing:border-box; }
+body { font-family:"Source Sans 3","Segoe UI",system-ui,sans-serif; color:var(--ink); background:#e9edf2; margin:0; font-size:15px; }
+main { max-width:1180px; margin:0 auto; padding:18px 16px 60px; }
+h1 { color:var(--blue); font-size:1.35rem; margin:14px 0 4px; } h2 { color:var(--navy); font-size:1.05rem; margin:28px 0 6px; }
+h2 .n { display:inline-block; background:var(--blue); color:#fff; border-radius:999px; width:24px; height:24px; text-align:center; line-height:24px; font-size:.8rem; margin-right:6px; }
+.sub { color:var(--muted); margin:0 0 10px; max-width:95ch; font-size:.93rem; }
+.row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+.cap { font-size:.83rem; color:var(--muted); margin:8px 2px 0; max-width:270px; line-height:1.4; } .cap b { color:var(--ink); }
+.phone { width:270px; height:580px; border-radius:30px; background:#111; padding:10px; box-shadow:0 6px 18px rgba(16,24,40,.2); }
+.scr { width:100%; height:100%; border-radius:22px; overflow:hidden; background:#fff; font-size:.8rem; display:flex; flex-direction:column; position:relative; }
+.hdr { background:var(--navy); color:#fff; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; font-weight:800; }
+.hdr span { font-weight:400; font-size:.7rem; color:#c9d6e6; }
+.ptabs { display:flex; gap:3px; overflow:hidden; padding:6px 6px 0; background:#f6f7f9; border-bottom:2px solid var(--navy); }
+.tab { background:var(--gold); color:var(--navy); font-weight:800; border-radius:6px 6px 0 0; padding:4px 9px; opacity:.5; font-size:.8rem; } .tab.on { opacity:1; }
+.body { padding:8px 10px; overflow:hidden; flex:1; }
+.sz { display:flex; justify-content:space-between; align-items:center; color:#7a2b16; background:#fff8dc; padding:5px 6px; margin-top:4px; border-bottom:1px solid #e5d7a8; }
+.sz .q { background:var(--blue); color:#fff; border-radius:7px; padding:2px 8px; font-size:.7rem; font-weight:700; }
+.ln { display:flex; justify-content:space-between; padding:3px 6px 3px 14px; border-bottom:1px solid var(--line); } .ln.z { color:#b0b7c3; }
+.big { font-size:1rem; font-weight:800; color:var(--navy); }
+.lbl { font-size:.68rem; color:var(--muted); font-weight:600; margin:6px 0 3px; }
+.mk { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
+.chip { border:1px solid #b9c6d8; border-radius:999px; padding:4px 10px; font-weight:700; font-size:.78rem; color:var(--blue); background:#fff; }
+.chip.on { background:var(--blue); color:#fff; border-color:var(--blue); }
+.in { border:1px solid #b9c6d8; border-radius:8px; padding:4px 8px; width:72px; font-size:.78rem; color:#555; }
+.qt { border:1px solid var(--line); border-radius:10px; margin-top:6px; overflow:hidden; }
+.ql { display:grid; grid-template-columns:18px 1fr auto; gap:6px; padding:6px 8px; border-bottom:1px solid var(--line); align-items:center; }
+.ql:last-child { border-bottom:0; } .ql.off { color:#a3acb9; }
+.ck { width:15px; height:15px; border-radius:4px; border:2px solid var(--blue); } .ck.on { background:var(--blue); box-shadow:inset 0 0 0 2px #fff; }
+.ql .nm b { display:block; font-size:.82rem; } .ql .nm small { color:var(--muted); font-size:.68rem; }
+.ql .pr { text-align:right; } .ql .pr b { font-size:.95rem; color:var(--ok); display:block; } .ql .pr small { color:#9aa4b2; font-size:.64rem; }
+.ql .pr .ed { color:var(--warn); }
+.tot { display:flex; justify-content:space-between; align-items:baseline; padding:8px 4px 2px; font-weight:800; }
+.btn { display:block; background:var(--blue); color:#fff; border-radius:10px; padding:9px; text-align:center; font-weight:700; font-size:.8rem; margin-top:8px; }
+.btn.ghost { background:#fff; color:var(--blue); border:1px solid #b9c6d8; }
+.two { display:flex; gap:6px; } .two .btn { flex:1; }
+.qty { display:inline-flex; align-items:center; gap:6px; font-size:.75rem; color:var(--muted); margin-top:2px; } .qty b { color:var(--ink); border:1px solid #c9d2dd; border-radius:6px; padding:0 6px; }
+.viber { background:#efe9fb; height:100%; padding:10px; }
+.bub { background:#fff; border-radius:12px 12px 12px 2px; padding:9px 11px; font-size:.76rem; line-height:1.45; box-shadow:0 1px 2px rgba(0,0,0,.1); white-space:pre-line; }
+.vb { background:#7360f2; color:#fff; padding:8px 12px; font-weight:700; margin:-10px -10px 10px; }
+.card { background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(16,24,40,.08); padding:12px 16px; margin:8px 0; max-width:95ch; }
+table { border-collapse:collapse; width:100%; font-size:.9rem; } th,td { padding:5px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; } th { color:var(--muted); font-size:.8rem; }
+td.n { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.q2 { background:#fff; border-left:4px solid var(--blue); border-radius:8px; padding:10px 14px; margin:8px 0; max-width:95ch; } .q2 b { color:var(--blue); }
+</style></head><body><main>
+<h1>Mock-up: quick quotation on the phone (Slicks Inventory)</h1>
+<p class="sub">Owner, 2026-10-17: "add a quick quotation feature which can list down the size then all available on hand then amount plus markup set by the user. add a preset button of +100, +200. default at cost." For <b>walk-in customers canvassing prices</b> at the counter: quote fast, then turn the phone around. A phone feature inside Slicks Inventory. Sample figures only. Cost = the price the next sale takes (FIFO, the oldest batch).</p>
+
+<h2><span class="n">1</span>From the size to the quote, in three taps</h2>
+<div class="row">
+
+<div><div class="phone"><div class="scr">
+  <div class="hdr">Slicks Inventory<span>tab 16</span></div>
+  <div class="ptabs"><span class="tab">14</span><span class="tab">15</span><span class="tab on">16</span><span class="tab">17</span><span class="tab">17.5</span><span class="tab">18</span></div>
+  <div class="body">
+    <div class="sz"><b>195/60R16</b><span class="q">Quote</span></div>
+    <div class="ln"><span>Westlake</span><b>4</b></div><div class="ln"><span>Yokohama (Japan)</span><b>2</b></div><div class="ln z"><span>Bridgestone</span><b>0</b></div>
+    <div class="sz"><b>205/55R16</b><span class="q">Quote</span></div>
+    <div class="ln"><span>Westlake SA37</span><b>6</b></div><div class="ln"><span>Westlake RP36</span><b>4</b></div><div class="ln"><span>Yokohama</span><b>2</b></div>
+    <div class="ln"><span>Michelin</span><b>4</b></div><div class="ln z"><span>Bridgestone</span><b>0</b></div><div class="ln"><span>GT Radial</span><b>3</b></div>
+    <div class="ln"><span>Sunny</span><b>8</b></div><div class="ln z"><span>Dunlop Ensave</span><b>0</b></div><div class="ln"><span>Pirelli</span><b>2</b></div>
+    <div class="sz"><b>215/55R16</b><span class="q">Quote</span></div>
+    <div class="ln"><span>Westlake</span><b>4</b></div><div class="ln z"><span>Pirelli</span><b>0</b></div>
+  </div></div></div>
+<p class="cap"><b>1 · Tap "Quote" on a size.</b> Every size on the stock list has it. (A "Quote" button on the home of Slicks Inventory also opens a size search: type 2055516.)</p></div>
+
+<div><div class="phone"><div class="scr">
+  <div class="hdr">Quote · 205/55R16<span>‹ back</span></div>
+  <div class="body">
+    <div class="lbl">Markup each tire (on top of cost)</div>
+    <div class="mk"><span class="chip">At cost</span><span class="chip on">+100</span><span class="chip">+200</span><input class="in" value="₱ other"></div>
+    <div class="lbl" style="margin-top:8px">On hand, cheapest first · tick what to quote</div>
+    <div class="qt">
+      <div class="ql"><span class="ck on"></span><span class="nm"><b>Sunny</b><small>8 on hand</small></span><span class="pr"><b>₱2,650</b><small>cost 2,550</small></span></div>
+      <div class="ql"><span class="ck on"></span><span class="nm"><b>Westlake RP36</b><small>4 on hand</small></span><span class="pr"><b>₱2,950</b><small>cost 2,850</small></span></div>
+      <div class="ql"><span class="ck on"></span><span class="nm"><b>Westlake SA37</b><small>6 on hand</small></span><span class="pr"><b>₱3,200</b><small>cost 3,100</small></span></div>
+      <div class="ql"><span class="ck"></span><span class="nm"><b>GT Radial</b><small>3 on hand</small></span><span class="pr"><b>₱3,550</b><small>cost 3,450</small></span></div>
+      <div class="ql"><span class="ck on"></span><span class="nm"><b>Yokohama</b><small>2 on hand</small></span><span class="pr"><b class="ed">₱4,500</b><small>cost 4,180 · typed</small></span></div>
+      <div class="ql"><span class="ck"></span><span class="nm"><b>Pirelli</b><small>2 on hand</small></span><span class="pr"><b>₱5,300</b><small>cost 5,200</small></span></div>
+      <div class="ql"><span class="ck"></span><span class="nm"><b>Michelin</b><small>4 on hand</small></span><span class="pr"><b>₱6,400</b><small>cost 6,300</small></span></div>
+    </div>
+    <div class="qty">Pieces each: <b>− 4 +</b></div>
+  </div></div></div>
+<p class="cap"><b>2 · The quote.</b> Opens <b>at cost</b>. A preset (+100, +200) or a typed amount adds to every line. Tap one price to type its own (shown in orange: "typed"). Brands with none on hand are left out. Cheapest first.</p></div>
+
+<div><div class="phone"><div class="scr">
+  <div class="hdr">Quote · 205/55R16<span>4 pcs each</span></div>
+  <div class="body">
+    <div class="qt">
+      <div class="ql"><span></span><span class="nm"><b>Sunny</b><small>₱2,650 × 4</small></span><span class="pr"><b>₱10,600</b></span></div>
+      <div class="ql"><span></span><span class="nm"><b>Westlake RP36</b><small>₱2,950 × 4</small></span><span class="pr"><b>₱11,800</b></span></div>
+      <div class="ql"><span></span><span class="nm"><b>Westlake SA37</b><small>₱3,200 × 4</small></span><span class="pr"><b>₱12,800</b></span></div>
+      <div class="ql"><span></span><span class="nm"><b>Yokohama</b><small>₱4,500 × 2 (only 2 on hand)</small></span><span class="pr"><b>₱9,000</b></span></div>
+    </div>
+    <div class="lbl" style="margin-top:8px">Your margin (only you see this)</div>
+    <div class="ln" style="padding-left:6px"><span>Sunny, Westlake</span><b>₱100 a tire</b></div>
+    <div class="ln" style="padding-left:6px"><span>Yokohama</span><b>₱320 a tire</b></div>
+    <span class="btn">Show the customer</span><div class="two"><span class="btn ghost">Copy</span><span class="btn ghost">Share</span></div>
+    <span class="btn ghost">Start a sale from Sunny</span>
+  </div></div></div>
+<p class="cap"><b>3 · Ready.</b> The choices with totals. <b>"Show the customer"</b> turns it into the big customer view. "Share" is there for one who asks for it on Viber. "Start a sale" opens the POS with that brand and price filled in. Nothing is saved unless a sale is made.</p></div>
+
+<div><div class="phone"><div class="scr" style="background:#fff">
+  <div class="hdr" style="justify-content:center">Slick's Tire Supply</div>
+  <div class="body" style="padding:12px 14px">
+    <div style="text-align:center;font-size:1.25rem;font-weight:800;color:#7a2b16">205/55R16</div>
+    <div style="text-align:center;color:var(--muted);font-size:.72rem;margin-bottom:8px">price each · today</div>
+    <div class="ln" style="padding:8px 4px;font-size:1rem"><span>Sunny</span><b>₱2,650</b></div>
+    <div class="ln" style="padding:8px 4px;font-size:1rem"><span>Westlake RP36</span><b>₱2,950</b></div>
+    <div class="ln" style="padding:8px 4px;font-size:1rem"><span>Westlake SA37</span><b>₱3,200</b></div>
+    <div class="ln" style="padding:8px 4px;font-size:1rem"><span>Yokohama <small style="color:var(--warn)">2 left</small></span><b>₱4,500</b></div>
+    <div style="margin-top:12px;font-weight:700;color:var(--navy)">Set of 4</div>
+    <div class="ln" style="padding:4px"><span>Sunny</span><b>₱10,600</b></div>
+    <div class="ln" style="padding:4px"><span>Westlake RP36</span><b>₱11,800</b></div>
+    <div class="ln" style="padding:4px"><span>Westlake SA37</span><b>₱12,800</b></div>
+    <div style="text-align:center;color:var(--muted);font-size:.68rem;margin-top:10px">Mounting and balancing included? Ask us.</div>
+  </div></div></div>
+<p class="cap"><b>4 · Turn the phone to the customer.</b> Big prices, nothing else: no cost, no margin, no stock count except "2 left". Tap anywhere to go back to your view.</p></div>
+</div>
+
+<h2><span class="n">2</span>The rules behind it</h2>
+<div class="card"><table>
+<tr><th>What</th><th>How</th></tr>
+<tr><td>Cost on each line</td><td>The cost the next sale of that brand takes (FIFO: its oldest batch). A tire with no cost yet shows "no cost" and must be typed.</td></tr>
+<tr><td>Markup</td><td>Pesos on top of cost, per tire. Default: at cost. Presets +100 and +200; "other" takes any amount. Picking a preset re-prices every line except the ones typed by hand.</td></tr>
+<tr><td>Rounding</td><td>Prices round up to the next ₱50 (2,627 → 2,650). A setting: none / ₱10 / ₱50.</td></tr>
+<tr><td>Pieces</td><td>One number for the quote (default 4). A brand with fewer on hand is quoted for what is there, and says so.</td></tr>
+<tr><td>Who</td><td>The family (it shows costs). The staff phone has no Quote button.</td></tr>
+<tr><td>Saved?</td><td>No. A walk-in who canvasses and leaves leaves nothing behind. A sale started from it is recorded the usual way.</td></tr>
+</table></div>
+
+<h2><span class="n">3</span>To decide</h2>
+<div class="q2"><b>1. Presets:</b> A) At cost, +100, +200 and "other" (as drawn). B) add +300 / +500 too.</div>
+<div class="q2"><b>2. Round the price up to ₱50:</b> A) yes (as drawn). B) no, cost + markup exactly.</div>
+<div class="q2"><b>3. Pieces:</b> A) one number for the whole quote, default 4 (as drawn). B) per brand.</div>
+<div class="q2"><b>4. The bottom line on the customer view</b> ("Mounting and balancing included? Ask us."): A) keep, editable in Settings. B) none.</div>
+<div class="q2"><b>5. "Start a sale from this":</b> A) include it. B) leave it out for now.</div>
+</main></body></html>

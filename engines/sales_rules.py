@@ -299,7 +299,7 @@ def _clean_lines(conn, lines: list[dict], need_price: bool) -> tuple[list[dict] 
             item_id, qty = int(ln.get("item_id") or 0), float(str(ln.get("qty") or 0).replace(",", ""))
         except (TypeError, ValueError):
             return None, "A quantity is not a number."
-        it = conn.execute("SELECT name, avg_cost FROM items WHERE id = ?", (item_id,)).fetchone()
+        it = conn.execute("SELECT name, COALESCE(NULLIF(next_cost, 0), avg_cost) FROM items WHERE id = ?", (item_id,)).fetchone()
         if not it:
             return None, "An item was not found. Choose it again."
         if qty <= 0:

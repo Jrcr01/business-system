@@ -5,9 +5,19 @@
 <h2>{{ it.code }} · {{ it.name }} <span class="pill">{{ type }}</span>
   {% if it.negative %}<span class="pill warn">Below zero</span>{% elif it.low %}<span class="pill warn">Low</span>{% endif %}{% if it.old %} <span class="pill warn">Old stock</span>{% endif %}</h2>
 <div class="facts"><div><span>On hand</span><b{% if it.negative %} class="neg"{% endif %}>{{ it.on_hand|floatformat:"-2" }}</b></div>
-  <div><span>Average cost</span><b>₱{{ it.avg_cost|floatformat:2|intcomma }}</b></div><div><span>Value</span><b>₱{{ it.value|floatformat:2|intcomma }}</b></div>
+  <div><span>Next sale costs</span><b>₱{{ it.next_cost|floatformat:2|intcomma }}</b></div><div><span>Average of what is left</span><b>₱{{ it.avg_cost|floatformat:2|intcomma }}</b></div>
+  <div><span>Value</span><b>₱{{ it.value|floatformat:2|intcomma }}</b></div>
   <div><span>Oldest DOT</span><b>{{ it.dot|default:"—" }}</b></div><div><span>Low at</span><b>{{ it.reorder_level }}</b></div>
   <div><span>Last counted</span><b>{{ it.last_counted_at|default:"never"|dmy }}</b></div></div>
+
+{% if batches %}<div class="grp">Cost batches (FIFO: the oldest leaves first)</div>
+<div class="scroll-x"><table class="list">
+  <tr><th>Received</th><th>From</th><th>Document</th><th style="text-align:right">Came in</th><th style="text-align:right">Left</th><th style="text-align:right">Cost each</th><th style="text-align:right">Value left</th><th></th></tr>
+  {% for b in batches %}<tr{% if b.used_up %} style="opacity:.55"{% endif %}>
+    <td>{{ b.day|dmy }}</td><td>{{ b.from }}</td><td>{{ b.doc }}</td><td class="num">{{ b.came|floatformat:"-2" }}</td><td class="num">{{ b.left|floatformat:"-2" }}</td>
+    <td class="num">{{ b.cost|floatformat:2|intcomma }}{% if b.est %}<div class="hint">order price, invoice to come</div>{% endif %}</td><td class="num">{{ b.value|floatformat:2|intcomma }}</td>
+    <td>{% if b.next %}<span class="pill warn">sells next</span>{% elif b.used_up %}<span class="hint">used up</span>{% elif b.returned %}<span class="hint">returned</span>{% endif %}</td></tr>{% endfor %}
+</table></div>{% endif %}
 
 <div class="grp">Everything that happened to it</div>
 {% if ledger %}

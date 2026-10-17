@@ -8,11 +8,11 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Slick's POS">
+{% block appmeta %}<meta name="apple-mobile-web-app-title" content="Slick's POS">
 <title>{% if is_sandbox %}SANDBOX · {% endif %}{{ title }} · Slick's</title>
 <link rel="manifest" href="/phone/manifest-ops.webmanifest" crossorigin="use-credentials">
 <link rel="icon" href="{% static 'phone/icon-pos-192.png' %}">
-<link rel="apple-touch-icon" sizes="180x180" href="{% static 'phone/icon-pos-180.png' %}">
+<link rel="apple-touch-icon" sizes="180x180" href="{% static 'phone/icon-pos-180.png' %}">{% endblock %}
 <script>try { if (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) document.cookie = "slk_ipad=1; path=/; max-age=31536000; secure; samesite=lax"; } catch (e) {}</script><!-- an iPad says it is a Mac: this tells the ERP it is an iPad, treated as a phone (owner, 2026-10-17) -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
@@ -25,7 +25,7 @@
 <body class="phone" data-me="{{ me.user_id|default:'x' }}">
 {% comment %}The phone pages (owner, 2026-10-12): one bar -- back, the page, who -- then one column. No top bar, no search: the four pages only.{% endcomment %}
 <div class="ph-bar">
-  {% if title == "Slick's" %}<span class="ms">home</span>{% else %}<a href="/phone/" aria-label="Back to the phone home"><span class="ms">arrow_back</span></a>{% endif %}
+  {% block back %}{% if title == "Slick's" %}<span class="ms">home</span>{% else %}<a href="/phone/" aria-label="Back to the phone home"><span class="ms">arrow_back</span></a>{% endif %}{% endblock %}
   <span>{{ title }}</span>{% if is_sandbox %}<span class="tb-tag">SANDBOX</span>{% endif %}<span class="ph-net on" id="ph_net">online</span>
   <span class="who">{{ me.name }}<form method="post" action="/logout/">{% csrf_token %}<button type="submit" aria-label="Sign out"><span class="ms">logout</span></button></form></span>
 </div>

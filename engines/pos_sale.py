@@ -52,7 +52,7 @@ def costs_of(item_ids: list[int]) -> dict[int, float]:
         return {}
     marks = ",".join("?" for _ in item_ids)
     with get_conn() as conn:
-        return {int(r[0]): float(r[1] or 0) for r in conn.execute(f"SELECT id, avg_cost FROM items WHERE id IN ({marks})", [int(i) for i in item_ids])}
+        return {int(r[0]): float(r[1] or 0) for r in conn.execute(f"SELECT id, COALESCE(NULLIF(next_cost, 0), avg_cost) FROM items WHERE id IN ({marks})", [int(i) for i in item_ids])}
 
 
 def record(si_no, sale_date, customer_id, customer_name: str, lines: list[dict], receipt, services: list[dict], payment: dict,
@@ -126,9 +126,10 @@ def _undo_take_ins(before: dict, why: str) -> None:
             diff = float(now[0] or 0) - float(row[0] or 0)
             if abs(diff) < 1e-9:
                 continue
-            conn.execute("UPDATE items SET on_hand = ?, avg_cost = ? WHERE id = ?", (row[0], row[1], item_id))
-            conn.execute("""INSERT INTO stock_ledger (item_id, kind, qty, unit_cost, on_hand_after, avg_after, ref_type, ref_id, moved_on, note, created_by)
-                            VALUES (?, 'ADJ', ?, 0, ?, ?, 'take_in', ?, ?, ?, acting_user())""",
-                         (item_id, -diff, row[0], row[1], item_id, str(manila_today()), f"take-in undone: {why}"))
+            from engines.stock_ledger import stock_back
+            if diff > 0:                                     # the take-in's batch leaves again (FIFO, 2026-10-17)
+                stock_back(conn, item_id, diff, 0, "take_in", item_id, manila_today(), note=f"take-in undone: {why}")
+            else:
+                conn.execute("UPDATE items SET on_hand = ? WHERE id = ?", (row[0], item_id))
             conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'STOCK_TAKE_IN_UNDONE', 'items', ?, ?)",
                          (item_id, f"{diff:g} taken in for a sale that was not saved, put back: {why}"))

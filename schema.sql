@@ -930,7 +930,8 @@ CREATE TABLE IF NOT EXISTS items (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by TEXT NOT NULL DEFAULT '',
     oldest_dot TEXT,                                                -- migration 087: the oldest tire age on the rack, 'WWYY' (week, year), typed at receiving; a note, not lot accounting
-    last_counted_at DATE                                            -- migration 087: the day of the last approved count of this item
+    last_counted_at DATE,                                           -- migration 087: the day of the last approved count of this item
+    next_cost REAL                                                  -- migration 110: FIFO, the cost the next sale takes (the oldest batch's)
 );
 -- What each supplier calls an item (their own item code), so their code and our code point at the same thing.
 CREATE TABLE IF NOT EXISTS supplier_items (
@@ -1185,6 +1186,39 @@ CREATE TABLE IF NOT EXISTS stock_ledger (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_stock_ledger_item ON stock_ledger (item_id, move_id);
+
+-- FIFO COST (migration 110, owner 2026-10-17: "Yes by delivery date"; mock-up al_fifo_cost.html). Every delivery is a batch; pieces leave oldest first.
+CREATE TABLE IF NOT EXISTS stock_layers (
+    layer_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES items(id),
+    received_on DATE NOT NULL,                                      -- the delivery date: the FIFO order
+    prio INTEGER NOT NULL DEFAULT 1,                                -- 0 = pieces returned, placed first so they sell next
+    qty_in REAL NOT NULL,
+    qty_left REAL NOT NULL,
+    unit_cost REAL NOT NULL DEFAULT 0,
+    est INTEGER NOT NULL DEFAULT 0,                                 -- 1 = still at the order's net price, waiting for the supplier's invoice
+    ref_type TEXT,
+    ref_id INTEGER,
+    source TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_stock_layers_item ON stock_layers (item_id, prio, received_on, layer_id);
+CREATE INDEX IF NOT EXISTS idx_stock_layers_ref ON stock_layers (ref_type, ref_id);
+CREATE TABLE IF NOT EXISTS stock_layer_uses (
+    use_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES items(id),
+    layer_id INTEGER REFERENCES stock_layers(layer_id),             -- NULL = sold before its delivery was recorded: at the last price until the delivery comes
+    qty REAL NOT NULL,
+    unit_cost REAL NOT NULL DEFAULT 0,
+    ref_type TEXT,
+    ref_id INTEGER,
+    move_id INTEGER,                                                -- the stock_ledger row
+    used_on DATE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_stock_layer_uses_layer ON stock_layer_uses (layer_id);
+CREATE INDEX IF NOT EXISTS idx_stock_layer_uses_ref ON stock_layer_uses (ref_type, ref_id, item_id);
+CREATE INDEX IF NOT EXISTS idx_stock_layer_uses_pending ON stock_layer_uses (item_id) WHERE layer_id IS NULL;
 
 -- PREPARING FOR SELL (migration 074, 2026-10-03)
 CREATE TABLE IF NOT EXISTS customers (

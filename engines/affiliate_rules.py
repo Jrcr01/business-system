@@ -55,7 +55,7 @@ def record_move(customer_id: int, direction: str, lines: list[dict], move_date=N
                 item_id, qty = int(ln.get("item_id") or 0), float(str(ln.get("qty") or 0).replace(",", ""))
             except (TypeError, ValueError):
                 return False, "A quantity is not a number.", None
-            it = conn.execute("SELECT name, avg_cost FROM items WHERE id = ?", (item_id,)).fetchone()
+            it = conn.execute("SELECT name, COALESCE(NULLIF(next_cost, 0), avg_cost) FROM items WHERE id = ?", (item_id,)).fetchone()
             if not it or qty <= 0:
                 return False, "Choose the items and give each a quantity above zero.", None
             cost = float(it[1] or 0)
