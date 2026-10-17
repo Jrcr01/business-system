@@ -162,7 +162,7 @@
   {% else %}A later statement was built on this one, so its amounts stay as they are; the month and the due date can be corrected.{% endif %} Every correction is in the audit log.</p>
 {% endif %}
 {% if stmts %}
-<div class="scroll-x"><table class="list cards">
+<div class="scroll-x"><table class="list cards cc-stmts">
   <tr><th>Card</th><th>Month</th><th>Due</th><th style="text-align:right">Total due</th><th style="text-align:right">Paid</th>{% if any_unbilled %}<th style="text-align:right">Unbilled installments</th>{% endif %}<th>Payments (posting date)</th><th>Status</th><th>SOA</th><th></th></tr>
   {% for s in stmts %}<tr><td class="c-t">{{ s.card }}{% if s.holder %} <span class="hint">· {{ s.holder }}</span>{% endif %}</td><td data-l="month">{{ s.statement_month|default:"—" }}</td><td data-l="due">{{ s.due_date|dmy }}</td>
     <td class="num c-big">{{ s.total_amount_due|floatformat:2|intcomma }}</td><td class="num" data-l="paid">{{ s.amount_paid|floatformat:2|intcomma }}</td>

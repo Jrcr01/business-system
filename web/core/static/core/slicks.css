@@ -651,3 +651,10 @@ table.list th[aria-sort] { color: var(--fg-0b4f8a); } table.list th .sort-arrow 
 .snip-text { font-size: 1.05rem; font-weight: 700; color: var(--ok); margin: 6px 0; overflow-wrap: anywhere; }
 .snip-src { color: var(--fg-0b4f8a); text-decoration: none; } .snip-src .ms { font-size: 15px; width: 15px; height: 15px; vertical-align: -2px; }
 .snip-x-f { display: inline; margin: 0 2px 0 0; } .snip-x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: .85rem; padding: 0 4px; border-radius: 4px; line-height: 1; } .snip-x:hover { color: var(--fg-b3261e); background: var(--bg-fdecea, #fdecea); }   /* remove a snip document now (2026-10-17) */
+/* Credit cards statements list (owner, 2026-10-17: "zoom out a little bit to make some room for wrap parts"): a touch smaller on a computer, and
+   month, due date, SOA and the Edit / Delete buttons each on one line. Phones keep their card layout. */
+@media (min-width: 481px) {
+  table.cc-stmts th, table.cc-stmts td { font-size: .9rem; padding-top: 6px; padding-bottom: 6px; }
+  table.cc-stmts td[data-l="month"], table.cc-stmts td[data-l="due"], table.cc-stmts td[data-l="SOA"], table.cc-stmts td.c-r { white-space: nowrap; }
+  table.cc-stmts td.c-r .btn { padding: 3px 9px; }
+}
