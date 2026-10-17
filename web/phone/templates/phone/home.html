@@ -5,10 +5,9 @@ resumes it; only the POS shortcut carries an address). So the way across is here
 {% if me.role != "scanner" %}<a class="btn ghost" href="/" style="width:100%;justify-content:center;margin:0 0 12px"><span class="ms">home</span>Slick's ERP: the whole system</a>{% endif %}
 {% include "core/_fingerprint_offer.html" %}
 {% include "core/_phone_setup.html" %}
-{% if mine.stock %}<a class="ph-big" href="/phone/look/"><span class="ms">barcode_scanner</span>Scan a tire</a>{% endif %}
+{% if mine.stock %}<a class="ph-big" href="/phone/look/"><span class="ms">barcode_scanner</span>Scan barcode</a>{% endif %}
 {% if mine.prices %}<a class="ph-big" href="/phone/prices/"><span class="ms">sell</span>Price list</a>{% endif %}
 {% if mine.stock %}<a class="ph-big" href="/phone/stock/"><span class="ms">inventory_2</span>Stock</a>{% endif %}
-{% if mine.stock %}<a class="ph-big" href="/phone/inventory/"><span class="ms">tire_repair</span>Slick's Inventory: stock by rim{% if mine.prices %}<span class="pill">quote</span>{% endif %}</a>{% endif %}
 {% if mine.in %}<a class="ph-big" href="/phone/in/"><span class="ms">move_to_inbox</span>Stock in{% if waiting %}<span class="pill warn">{{ waiting }} order{{ waiting|pluralize }} waiting</span>{% endif %}</a>{% endif %}
 {% if mine.out %}<a class="ph-big" href="/phone/out/"><span class="ms">outbox</span>Stock out{% if slips %}<span class="pill">{{ slips }} slip{{ slips|pluralize }} today</span>{% endif %}</a>{% endif %}
 {% if mine.count %}<a class="ph-big" href="/phone/count/"><span class="ms">fact_check</span>Stock count{% if counting %}<span class="pill">{{ counting }} open</span>{% endif %}</a>{% endif %}

@@ -173,14 +173,14 @@ def prices(request):
 
 @phone_page("stock")
 def look(request):
-    """Scan a tire: its stock and, to a person who sees prices, the price list (owner, 2026-10-17; mock-up ak_phone_features #6). ?code= answers
+    """Scan barcode: its stock and, to a person who sees prices, the price list (owner, 2026-10-17; mock-up ak_phone_features #6). ?code= answers
     as JSON for the page's own script."""
     from django.http import JsonResponse
     from engines import stock_rules as sr
     from engines.phone_lookup import price_of_item, stock_card
     code = request.GET.get("code", "").strip()
     if not code:
-        return render(request, "phone/look.html", _ctx(request, "Scan a tire"))
+        return render(request, "phone/look.html", _ctx(request, "Scan barcode"))
     hit = sr.find_by_code(code)
     if not hit:
         return JsonResponse({"ok": False, "code": code, "msg": f"No item has the code {code}. Teach it on Stock: find the item, then Teach this barcode."})

@@ -1,6 +1,6 @@
 {% extends "phone/base.html" %}
 {% block content %}
-{% comment %}Scan a tire (owner, 2026-10-17; mock-up ak_phone_features #6): point the camera at its barcode; its stock, oldest DOT and, to a person who
+{% comment %}Scan barcode (owner, 2026-10-17; mock-up ak_phone_features #6): point the camera at its barcode; its stock, oldest DOT and, to a person who
 sees prices, the price list's net price per supplier. Read only. A Bluetooth scanner or typing works in the box too.{% endcomment %}
 <div class="ph-scan"><input type="text" id="lk_q" placeholder="Scan or type a code" autocomplete="off" aria-label="Code" autofocus>
   <button type="button" id="lk_cam" hidden aria-label="Camera"><span class="ms">photo_camera</span></button></div>
