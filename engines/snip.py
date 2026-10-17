@@ -129,23 +129,101 @@ def files_for(kind: str, owner_id: int | None, limit: int = 12) -> list[dict]:
 
 # --- the page picture and its words -------------------------------------------------------------------------------------------------------------------
 
+# --- straightening (owner, 2026-10-17: mock-up ap_snip_rows_columns, answer 1 A) ----------------------------------------------------------------------
+# A photo taken at a slant has rows that slope, so a straight cut takes the bottom of one row and the top of the next. The page is turned until the
+# table's own lines run level, once, before anything is shown or read; the person can nudge it (set_angle). A PDF with real text is never turned.
+
+def straightens(info: dict) -> bool:
+    return not (info["ext"] == "pdf" and info["has_text"])
+
+
+def _angle_path(token: str, page: int) -> Path:
+    return folder() / f"{token}.p{page}.angle"
+
+
+def _detect_angle(img) -> float:
+    """The turn (degrees, counter-clockwise) that makes the page's lines of text and rules level: the angle whose row profile is sharpest."""
+    import numpy as np
+    from PIL import Image, ImageOps
+    g = ImageOps.grayscale(img)
+    if g.width > 900:
+        g = g.resize((900, max(1, int(g.height * 900 / g.width))), Image.BILINEAR)
+    g = ImageOps.autocontrast(g)
+
+    def score(a: float) -> float:
+        r = g.rotate(a, resample=Image.BILINEAR, fillcolor=255)
+        dark = (np.asarray(r) < 140).sum(axis=1).astype(float)
+        return float(np.sum(np.diff(dark) ** 2))
+    best = max((a / 4 for a in range(-32, 33)), key=score)            # -8 .. +8 degrees, by a quarter
+    best = max((best + a / 20 for a in range(-5, 6)), key=score)       # then by a twentieth
+    return round(best, 2) if abs(best) >= 0.15 else 0.0
+
+
+def page_angle(token: str, page: int) -> float:
+    """The page's turn: found the first time the page is shown, then kept (and changed only by the person)."""
+    info = file_info(token)
+    if not info or not straightens(info):
+        return 0.0
+    p = _angle_path(token, page)
+    if p.exists():
+        try:
+            return float(p.read_text(encoding="utf-8").strip() or 0)
+        except ValueError:
+            pass
+    try:
+        a = _detect_angle(_raw_picture(info, page, RENDER_SCALE))
+    except Exception:                                   # noqa: BLE001 -- a picture that cannot be measured is shown as it is
+        a = 0.0
+    p.write_text(str(a), encoding="utf-8")
+    return a
+
+
+def set_angle(token: str, page: int, angle: float) -> float:
+    """The person's own turn (−15° .. +15°): kept, and the page picture made again."""
+    info = file_info(token)
+    if not info or not straightens(info) or not 1 <= page <= info["pages"]:
+        return 0.0
+    a = round(max(-15.0, min(15.0, float(angle))), 2)
+    _angle_path(token, page).write_text(str(a), encoding="utf-8")
+    for old in folder().glob(f"{token}.p{page}.*jpg"):          # the pictures at the old turn (one may still be open while it is sent: left for discard)
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    return a
+
+
+def _raw_picture(info: dict, page: int, scale: float):
+    """The page as an RGB picture, not turned: a PDF page rendered at `scale`, a photo as taken (its EXIF turn applied)."""
+    from PIL import Image, ImageOps
+    if info["ext"] == "pdf":
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(str(info["path"]))
+        img = pdf[page - 1].render(scale=scale).to_pil().convert("RGB")
+        pdf.close()                                              # else Windows keeps the file locked and it cannot be deleted after use
+        return img
+    return ImageOps.exif_transpose(Image.open(info["path"])).convert("RGB")
+
+
+def _picture(info: dict, page: int, scale: float):
+    """The page as the person sees it: turned by the page's angle (same size, white corners), so a box drawn on the screen is the box read."""
+    from PIL import Image
+    img = _raw_picture(info, page, scale)
+    a = page_angle(info["token"], page) if straightens(info) else 0.0
+    return img.rotate(a, resample=Image.BICUBIC, fillcolor=(255, 255, 255)) if a else img
+
+
 def page_image(token: str, page: int) -> Path | None:
     """The page as a JPEG, made once and kept beside the file."""
     info = file_info(token)
     if not info or not 1 <= page <= info["pages"]:
         return None
-    out = folder() / f"{token}.p{page}.jpg"
+    a = page_angle(token, page)
+    out = folder() / (f"{token}.p{page}.jpg" if not a else f"{token}.p{page}.a{a:+.2f}.jpg")     # one picture per turn: a nudge never waits on a file in use
     if out.exists():
         return out
     try:
-        if info["ext"] == "pdf":
-            import pypdfium2 as pdfium
-            pdf = pdfium.PdfDocument(str(info["path"]))
-            img = pdf[page - 1].render(scale=RENDER_SCALE).to_pil()
-            pdf.close()                                          # else Windows keeps the file locked and it cannot be deleted after use
-        else:
-            from PIL import Image, ImageOps
-            img = ImageOps.exif_transpose(Image.open(info["path"])).convert("RGB")
+        img = _picture(info, page, RENDER_SCALE)
         img.save(out, "JPEG", quality=82)
     except Exception:                                   # noqa: BLE001
         return None
@@ -179,14 +257,11 @@ def _ocr_words(info: dict, page: int, box: tuple[float, float, float, float]) ->
     import pytesseract
     from PIL import Image, ImageOps
     if info["ext"] == "pdf":
-        import pypdfium2 as pdfium
-        pdf = pdfium.PdfDocument(str(info["path"]))
         scale = OCR_SCALE * 1.5
-        img = pdf[page - 1].render(scale=scale).to_pil()
-        pdf.close()
+        img = _picture(info, page, scale)
         factor = scale
     else:
-        img = ImageOps.exif_transpose(Image.open(info["path"])).convert("RGB")
+        img = _picture(info, page, 1.0)
         factor = 1.0
     x0, y0, x1, y1 = [v * factor for v in box]
     crop = img.crop((int(x0), int(y0), int(x1) + 1, int(y1) + 1))
@@ -224,14 +299,9 @@ def _clean_cell(t: str) -> str:
 
 def _page_gray(info: dict, page: int, scale_pdf: float = 3.0):
     """The page as a greyscale picture plus the factor from the box's coordinates (PDF points, or picture pixels) to its pixels."""
-    from PIL import Image, ImageOps
     if info["ext"] == "pdf":
-        import pypdfium2 as pdfium
-        pdf = pdfium.PdfDocument(str(info["path"]))
-        img = pdf[page - 1].render(scale=scale_pdf).to_pil().convert("L")
-        pdf.close()
-        return img, scale_pdf
-    return ImageOps.exif_transpose(Image.open(info["path"])).convert("L"), 1.0
+        return _picture(info, page, scale_pdf).convert("L"), scale_pdf
+    return _picture(info, page, 1.0).convert("L"), 1.0
 
 
 def _lines(profile, thresh: float, min_gap: int) -> list[float]:
@@ -293,7 +363,89 @@ def _ocr_one(gray, cell_box) -> tuple[str, float]:
     return " ".join(parts), (min(confs) if confs else 100.0)
 
 
-def _ocr_cells(info: dict, page: int, box) -> tuple[list[list[str]], list[list[float]]] | None:
+def _inner(edges: list[float], lo: float, hi: float, gap: float = 3.0) -> list[float]:
+    """The lines strictly inside a box side (its own edges are not lines to move), sorted, none closer than `gap`."""
+    out: list[float] = []
+    for v in sorted(float(e) for e in edges):
+        if lo + gap < v < hi - gap and (not out or v - out[-1] >= gap):
+            out.append(round(v, 2))
+    return out
+
+
+def lines_from_words(ws: list[dict], box) -> dict:
+    """Where the rows and columns of a table are, from its words: a row line halfway between two rows of words, a column line halfway between the
+    end of one column's words and the start of the next's. {'cols': [x, ...], 'rows': [y, ...]} in the page's coordinates, inside the box."""
+    x0, y0, x1, y1 = box
+    rows = _rows(ws)
+    ys = []
+    for a, b in zip(rows, rows[1:]):
+        bottom, top = max(w["y1"] for w in a), min(w["y0"] for w in b)
+        ys.append((bottom + top) / 2 if top > bottom else top - 1)
+    cells, cols = _cells_and_cols(ws)
+    xs = []
+    for k in range(1, len(cols)):
+        left = [c["x1"] for r in cells for c in r if _col_of(c, cols) == k - 1]
+        right = [c["x0"] for r in cells for c in r if _col_of(c, cols) == k]
+        if left and right:
+            le, ri = max(left), min(right)
+            xs.append((le + ri) / 2 if ri > le else ri - 2)
+        else:
+            xs.append(cols[k]["x"] - 4)
+    return {"cols": _inner(xs, x0, x1), "rows": _inner(ys, y0, y1)}
+
+
+def _guess_lines(info: dict, page: int, box) -> dict:
+    """Lines for a box without reading it: the words of a text PDF, else the ruled lines found in the picture (no OCR: fast)."""
+    if info["ext"] == "pdf" and info["has_text"]:
+        ws = [w for w in _pdf_words(info, page) if _inside(w, box)]
+        return lines_from_words(ws, box) if ws else {"cols": [], "rows": []}
+    gray, f = _page_gray(info, page)
+    hl, vl = table_lines(gray, [v * f for v in box])
+    return {"cols": _inner([v / f for v in vl], box[0], box[2]), "rows": _inner([v / f for v in hl], box[1], box[3])}
+
+
+def merge_lines(mine: dict, guess: dict, near: float = 8.0) -> dict:
+    """The person's lines win; a guessed line is added only where none of theirs is near (the box was made bigger: the new part gets the guess)."""
+    out = {}
+    for k in ("cols", "rows"):
+        keep = [float(v) for v in mine.get(k, [])]
+        out[k] = sorted(keep + [g for g in guess.get(k, []) if all(abs(g - m) > near for m in keep)])
+    return out
+
+
+def read_by_lines(info: dict, page: int, box, lines: dict) -> dict:
+    """The person's own rows and columns: every cell between two lines is read on its own -- the words inside it (a text PDF, exact) or an OCR of
+    just that cell (a picture). Rows with nothing in any cell are left out."""
+    from concurrent.futures import ThreadPoolExecutor
+    x0, y0, x1, y1 = [float(v) for v in box]
+    cx = [x0] + _inner(lines.get("cols", []), x0, x1) + [x1]
+    cy = [y0] + _inner(lines.get("rows", []), y0, y1) + [y1]
+    used = {"cols": cx[1:-1], "rows": cy[1:-1]}
+    cells = [[(cx[c], cy[r], cx[c + 1], cy[r + 1]) for c in range(len(cx) - 1)] for r in range(len(cy) - 1)]
+    if info["ext"] == "pdf" and info["has_text"]:
+        ws = [w for w in _pdf_words(info, page) if _inside(w, box)]
+        grid = []
+        for row in cells:
+            line = []
+            for (a, b, c, d) in row:
+                inside = sorted((w for w in ws if _inside(w, (a, b, c, d))), key=lambda w: (round(w["y0"]), w["x0"]))
+                line.append(" ".join(w["t"] for w in inside))
+            grid.append(line)
+        confs = [[100.0] * len(r) for r in grid]
+    else:
+        gray, f = _page_gray(info, page)
+        flat = [(int(a * f) + 2, int(b * f) + 2, int(c * f) - 1, int(d * f) - 1) for row in cells for (a, b, c, d) in row]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            got = list(pool.map(lambda cb: _ocr_one(gray, cb) if cb[2] - cb[0] >= 6 and cb[3] - cb[1] >= 6 else ("", 100.0), flat))
+        w = len(cx) - 1
+        grid = [[got[r * w + c][0] for c in range(w)] for r in range(len(cy) - 1)]
+        confs = [[got[r * w + c][1] for c in range(w)] for r in range(len(cy) - 1)]
+    keep = [i for i, r in enumerate(grid) if any(c.strip() for c in r)]
+    return {"mode": "table", "rows": [grid[i] for i in keep], "doubt": [[c < OCR_DOUBT for c in confs[i]] for i in keep], "text": "",
+            "how": "lines", "lines": used}
+
+
+def _ocr_cells(info: dict, page: int, box) -> tuple[list[list[str]], list[list[float]], dict] | None:
     """A ruled table in a scan or photo: the table's own lines are found, each cell is cut out and read on its own (far more accurate than the block:
     JRCR's Yokohama photos, 2026-10-16), several cells at a time. None when the box holds no ruled table."""
     from concurrent.futures import ThreadPoolExecutor
@@ -326,7 +478,9 @@ def _ocr_cells(info: dict, page: int, box) -> tuple[list[list[str]], list[list[f
         if any(texts):
             grid.append(texts)
             confs.append(cf)
-    return (grid, confs) if grid else None
+    if not grid:
+        return None
+    return grid, confs, {"cols": _inner([v / f for v in vl], box[0], box[2]), "rows": _inner([v / f for v in hl], box[1], box[3])}
 
 
 def words(token: str, page: int) -> list[dict]:
@@ -357,9 +511,32 @@ def _rows(ws: list[dict]) -> list[list[dict]]:
     return [sorted(r["w"], key=lambda w: w["x0"]) for r in rows]
 
 
+def _col_of(c: dict, cols: list[dict]) -> int:
+    k = 0
+    for i, col in enumerate(cols):
+        if c["x0"] >= col["x"] - 18:
+            k = i
+    return k
+
+
 def _grid(ws: list[dict]) -> tuple[list[list[str]], list[list[float]]]:
     """The position method: cells = words closer than a space and a half; column edges = where cells start across the rows. Returns the grid and,
     per cell, the lowest OCR confidence inside it (100 for a text PDF)."""
+    cells, cols = _cells_and_cols(ws)
+    grid, confs = [], []
+    for r in cells:
+        line, conf = [""] * len(cols), [100.0] * len(cols)
+        for c in r:
+            k = _col_of(c, cols)
+            line[k] = (line[k] + " " if line[k] else "") + c["t"]
+            conf[k] = min(conf[k], c["conf"])
+        grid.append(line)
+        confs.append(conf)
+    return grid, confs
+
+
+def _cells_and_cols(ws: list[dict]) -> tuple[list[list[dict]], list[dict]]:
+    """Words joined into cells (closer than a space and a half), and the column starts found across the rows."""
     rows = _rows(ws)
     cells = []
     for r in rows:
@@ -382,19 +559,7 @@ def _grid(ws: list[dict]) -> tuple[list[list[str]], list[list[float]]]:
             else:
                 starts.append({"x": c["x0"], "n": 1})
     cols = sorted([s for s in starts if s["n"] >= max(2, len(cells) * 0.3)], key=lambda s: s["x"]) or [{"x": 0}]
-    grid, confs = [], []
-    for r in cells:
-        line, conf = [""] * len(cols), [100.0] * len(cols)
-        for c in r:
-            k = 0
-            for i, col in enumerate(cols):
-                if c["x0"] >= col["x"] - 18:
-                    k = i
-            line[k] = (line[k] + " " if line[k] else "") + c["t"]
-            conf[k] = min(conf[k], c["conf"])
-        grid.append(line)
-        confs.append(conf)
-    return grid, confs
+    return cells, cols
 
 
 def _real_cols(grid: list[list[str]]) -> int:
@@ -429,14 +594,29 @@ def _ruled_table(info: dict, page: int, box) -> list[list[str]] | None:
     return [[r[i] for i in keep] for r in rows] if len(keep) >= 2 else None
 
 
-def read_box(token: str, page: int, box, mode: str = "table") -> dict:
-    """What is inside the box: {'mode', 'rows': [[cell, ...]], 'doubt': [[bool, ...]], 'text', 'how': 'ruled' | 'positions' | 'ocr' | 'none'}."""
+def read_box(token: str, page: int, box, mode: str = "table", lines: dict | None = None, merge: bool = False) -> dict:
+    """What is inside the box: {'mode', 'rows': [[cell, ...]], 'doubt': [[bool, ...]], 'text', 'how': 'ruled' | 'positions' | 'ocr' | 'lines' | 'none',
+    'lines': {'cols', 'rows'}}. With `lines` (the person's rows and columns) each cell between them is read on its own; with `merge` too, the
+    system's guess fills the part of the box the person's lines do not reach (a box made bigger)."""
     info = file_info(token)
     if not info or not 1 <= page <= info["pages"]:
         return {"mode": mode, "rows": [], "doubt": [], "text": "", "how": "none"}
     box = tuple(float(v) for v in box)
     if box[2] - box[0] < 4 or box[3] - box[1] < 4:
         return {"mode": mode, "rows": [], "doubt": [], "text": "", "how": "none"}
+    if mode == "table" and lines is not None:
+        mine = {k: [float(v) for v in (lines.get(k) or []) if isinstance(v, (int, float))] for k in ("cols", "rows")}
+        if merge:
+            mine = merge_lines(mine, _guess_lines(info, page, box))
+        return read_by_lines(info, page, box, mine)
+    r = _read_box(info, page, box, mode)
+    if mode == "table" and r["how"] != "none" and "lines" not in r:
+        r["lines"] = _guess_lines(info, page, box) if r["how"] == "ruled" else r.pop("_lines", {"cols": [], "rows": []})
+    r.pop("_lines", None)
+    return r
+
+
+def _read_box(info: dict, page: int, box, mode: str) -> dict:
     how = "positions"
     if info["ext"] == "pdf" and info["has_text"]:
         ws = [w for w in _pdf_words(info, page) if _inside(w, box)]
@@ -445,13 +625,14 @@ def read_box(token: str, page: int, box, mode: str = "table") -> dict:
             if ruled and ws:
                 by_pos, _ = _grid(ws)
                 if _real_cols(ruled) >= _real_cols(by_pos):               # a box that cuts a border loses a ruled column: then the positions win
-                    return {"mode": mode, "rows": ruled, "doubt": [[False] * len(r) for r in ruled], "text": "", "how": "ruled"}
+                    return {"mode": mode, "rows": ruled, "doubt": [[False] * len(r) for r in ruled], "text": "", "how": "ruled",
+                            "lines": lines_from_words(ws, box)}
     else:
         if mode == "table":
             cells = _ocr_cells(info, page, box)
             if cells:
-                grid, confs = cells
-                return {"mode": mode, "rows": grid, "doubt": [[c < OCR_DOUBT for c in r] for r in confs], "text": "", "how": "ocr"}
+                grid, confs, found = cells
+                return {"mode": mode, "rows": grid, "doubt": [[c < OCR_DOUBT for c in r] for r in confs], "text": "", "how": "ocr", "lines": found}
         ws = [w for w in _ocr_words(info, page, box) if _clean_cell(w["t"])]
         for w in ws:
             w["t"] = _clean_cell(w["t"])
@@ -462,7 +643,7 @@ def read_box(token: str, page: int, box, mode: str = "table") -> dict:
         text = " ".join(" ".join(w["t"] for w in r) for r in _rows(ws))
         return {"mode": mode, "rows": [], "doubt": [], "text": text, "how": how, "doubtful": any(w["conf"] < OCR_DOUBT for w in ws)}
     grid, confs = _grid(ws)
-    return {"mode": mode, "rows": grid, "doubt": [[c < OCR_DOUBT for c in r] for r in confs], "text": "", "how": how}
+    return {"mode": mode, "rows": grid, "doubt": [[c < OCR_DOUBT for c in r] for r in confs], "text": "", "how": how, "lines": lines_from_words(ws, box)}
 
 
 # --- remembering a snip while its rows travel to the import (deleted with the document) ------------------------------------------------------------------
@@ -743,7 +924,7 @@ def _jobs() -> Path:
     return p
 
 
-def start_job(token: str, page: int, box, mode: str) -> str:
+def start_job(token: str, page: int, box, mode: str, lines: dict | None = None, merge: bool = False) -> str:
     """Starts the read in the background; returns the job's id. The result lands in jobs/<id>.json."""
     import threading
     job = secrets.token_hex(8)
@@ -752,7 +933,7 @@ def start_job(token: str, page: int, box, mode: str) -> str:
 
     def run():
         try:
-            r = read_box(token, page, box, mode)
+            r = read_box(token, page, box, mode, lines, merge)
             r["state"] = "done"
         except Exception as e:                                   # noqa: BLE001 -- the OCR program missing, a broken file: the page says so
             r = {"state": "failed", "msg": f"Could not read the box: {e}"}

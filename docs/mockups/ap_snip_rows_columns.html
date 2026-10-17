@@ -1,0 +1,142 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mock-up: snip rows and columns</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;800&display=swap">
+<style>
+:root { --navy:#0f2a4a; --blue:#0B4F8A; --ink:#1c2733; --muted:#4b5563; --line:#e5e7eb; --pur:#7c3aed; --ok:#0b6e4f; --warn:#c2410c; }
+* { box-sizing:border-box; }
+body { font-family:"Source Sans 3","Segoe UI",system-ui,sans-serif; color:var(--ink); background:#e9edf2; margin:0; font-size:15px; }
+main { max-width:1200px; margin:0 auto; padding:18px 16px 60px; }
+h1 { color:var(--blue); font-size:1.35rem; margin:14px 0 4px; } h2 { color:var(--navy); font-size:1.05rem; margin:30px 0 6px; }
+h2 .n { display:inline-block; background:var(--blue); color:#fff; border-radius:999px; width:24px; height:24px; text-align:center; line-height:24px; font-size:.8rem; margin-right:6px; }
+.sub { color:var(--muted); margin:0 0 10px; max-width:100ch; font-size:.93rem; }
+.split { display:grid; grid-template-columns: 1.05fr 1fr; gap:14px; background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(16,24,40,.08); padding:12px; }
+@media (max-width:900px) { .split { grid-template-columns:1fr; } }
+.tools { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; align-items:center; }
+.tb { border:1px solid #b9c6d8; border-radius:8px; padding:5px 10px; font-weight:700; font-size:.85rem; color:var(--blue); background:#fff; }
+.tb.on { background:var(--pur); color:#fff; border-color:var(--pur); } .tb.main { background:var(--blue); color:#fff; border-color:var(--blue); }
+.hint { color:var(--muted); font-size:.82rem; }
+.pic { position:relative; background:#dfe3e8; border-radius:8px; padding:14px; overflow:hidden; }
+.paper { background:#f7f7f2; padding:14px 12px 10px; transform:rotate(var(--rot,0deg)); transform-origin:50% 50%; box-shadow:0 2px 6px rgba(0,0,0,.18); }
+.paper h3 { margin:0; font-size:1rem; } .paper .eff { font-size:.7rem; font-weight:700; margin-bottom:6px; }
+.ptab { position:relative; border:1.5px solid #333; font-size:.74rem; }
+.prow { display:grid; grid-template-columns: 30% 14% 14% 14% 14% 14%; border-bottom:1px solid #555; }
+.prow div { padding:4px 4px; border-right:1px solid #555; white-space:nowrap; overflow:hidden; } .prow div:last-child { border-right:0; }
+.prow.hd { background:#5b6470; color:#fff; font-weight:700; font-size:.64rem; }
+.prow div.n { text-align:right; }
+.vl, .hl { position:absolute; background:var(--pur); }
+.vl { width:2px; top:-6px; bottom:-6px; } .hl { height:2px; left:-6px; right:-6px; }
+.vl::before { content:""; position:absolute; top:-9px; left:-6px; width:14px; height:10px; background:var(--pur); border-radius:3px; }
+.hl::before { content:""; position:absolute; left:-9px; top:-6px; width:10px; height:14px; background:var(--pur); border-radius:3px; }
+.vl.drag { background:#f59e0b; } .vl.drag::before { background:#f59e0b; }
+.hl.x::after { content:"✕"; position:absolute; right:-24px; top:-9px; background:#fff; color:var(--warn); border:1px solid var(--warn); border-radius:50%; width:18px; height:18px; font-size:.65rem; text-align:center; line-height:16px; }
+.hd8 { position:absolute; width:12px; height:12px; background:#fff; border:2px solid var(--pur); border-radius:3px; }
+.box { position:absolute; border:2px dashed var(--pur); background:rgba(124,58,237,.06); }
+.tag { position:absolute; background:var(--pur); color:#fff; font-size:.7rem; font-weight:700; padding:2px 7px; border-radius:6px; }
+.grid { width:100%; border-collapse:collapse; font-size:.82rem; } .grid th { background:#f3f4f6; color:var(--muted); font-weight:600; text-align:left; padding:5px 6px; border:1px solid var(--line); }
+.grid td { border:1px solid var(--line); padding:5px 6px; } .grid td.n { text-align:right; font-variant-numeric:tabular-nums; } .grid td.lo { background:#fff4e5; color:var(--warn); font-weight:700; }
+.cap { font-size:.86rem; color:var(--muted); margin:8px 2px 0; max-width:100ch; line-height:1.45; } .cap b { color:var(--ink); }
+.card { background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(16,24,40,.08); padding:12px 16px; margin:8px 0; max-width:100ch; }
+table.rules { border-collapse:collapse; width:100%; font-size:.9rem; } table.rules th, table.rules td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; } table.rules th { color:var(--muted); font-size:.8rem; }
+.q { background:#fff; border-left:4px solid var(--blue); border-radius:8px; padding:10px 14px; margin:8px 0; max-width:100ch; } .q b { color:var(--blue); }
+</style></head><body><main>
+<h1>Mock-up: fix the rows and columns of a snip yourself (like DataSnipper)</h1>
+<p class="sub">Owner, 2026-10-17: "I think it is the row and column. Can you do like the DataSnipper, I can fix the rows and columns?" and "make it sizable like DataSnipper" (the box). On Price lists, Bank loans and the SOA matcher, after a table box is drawn, the system shows <b>where it thinks every column and row is</b>, as purple lines on the picture. You drag, add or remove lines, then press Read: each cell is read on its own, inside the lines you set. Sample: your Ultra Plus batteries photo.</p>
+
+<h2><span class="n">1</span>Draw the box: the system shows its guess</h2>
+<div class="split">
+ <div>
+  <div class="tools"><span class="tb">Box</span><span class="tb on">Columns</span><span class="tb">Rows</span><span class="tb">↻ Straighten: auto (−3.1°)</span><span class="hint">Tap the table to add a line · drag a line to move it · tap ✕ to remove</span></div>
+  <div class="pic"><div class="paper" style="--rot:-3deg">
+   <h3>ULTRA PLUS BATTERIES</h3><div class="eff">EFFECTIVE MAY 01, 2026</div>
+   <div class="ptab">
+    <div class="prow hd"><div>BRAND</div><div>TYPE</div><div></div><div class="n">Dealer Price</div><div class="n">SRP</div><div class="n">INSTITUTIONAL</div></div>
+    <div class="prow"><div>Ultra MF Plus</div><div>NS40</div><div>NS40</div><div class="n">2,060</div><div class="n">2,890</div><div class="n">2,475</div></div>
+    <div class="prow"><div>Ultra MF Plus</div><div>NS40R</div><div>NS40R</div><div class="n">2,170</div><div class="n">2,890</div><div class="n">2,530</div></div>
+    <div class="prow"><div>Ultra MF Plus</div><div>NS60</div><div>NS60</div><div class="n">2,710</div><div class="n">3,460</div><div class="n">3,085</div></div>
+    <div class="prow"><div>Ultra MF Plus</div><div>NS50</div><div>1SMF</div><div class="n">2,930</div><div class="n">3,710</div><div class="n">3,320</div></div>
+    <div class="prow"><div>Ultra MF Plus</div><div>N50</div><div>2SMF</div><div class="n">3,150</div><div class="n">4,020</div><div class="n">3,585</div></div>
+    <div class="prow"><div>Ultra MF Plus</div><div>N70</div><div>3SMF</div><div class="n">3,800</div><div class="n">4,950</div><div class="n">4,375</div></div>
+    <div class="prow"><div>Ultra MF Plus</div><div>DIN66H</div><div>DIN66H</div><div class="n">4,550</div><div class="n">5,980</div><div class="n">5,265</div></div>
+    <div class="prow" style="border-bottom:0"><div>Ultra LM Plus</div><div>NS40</div><div>NS40</div><div class="n">2,060</div><div class="n">2,490</div><div class="n">2,275</div></div>
+    <!-- the system's lines (straightened with the photo) -->
+    <span class="vl" style="left:30%"></span><span class="vl" style="left:44%"></span><span class="vl" style="left:58%"></span><span class="vl" style="left:72%"></span><span class="vl" style="left:86%"></span>
+    <span class="hl" style="top:22px"></span><span class="hl" style="top:44px"></span><span class="hl" style="top:66px"></span><span class="hl" style="top:88px"></span><span class="hl" style="top:110px"></span>
+    <span class="hl" style="top:132px"></span><span class="hl" style="top:154px"></span><span class="hl" style="top:176px"></span>
+   </div></div>
+   <span class="tag" style="left:14px;top:6px">Table · 8 rows · 6 columns</span>
+  </div>
+ </div>
+ <div>
+  <div class="tools"><span class="hint">What will be read (before pressing Read)</span></div>
+  <table class="grid"><tr><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th></tr>
+   <tr><td colspan="6" class="hint">6 columns × 8 rows found. Heading row: row 1. Move a line if a column cuts through words, then press <b>Read</b>.</td></tr></table>
+  <p class="cap"><b>Straighten.</b> The photo is turned so the table's own lines run level <b>before</b> anything is read (here −3.1°). A ↻ button nudges it by hand when the guess is off. This alone fixes the tilted-photo mess of today.</p>
+ </div>
+</div>
+<p class="cap"><b>1 ·</b> The purple handles sit on the box's edges, like DataSnipper's. Columns mode: tap inside the box to add a column line there. Rows mode: the same for rows.</p>
+
+<h2><span class="n">2</span>Resize or move the box: no drawing again</h2>
+<div class="split">
+ <div><div class="pic" style="height:250px">
+  <div class="paper" style="height:220px"><h3>ULTRA PLUS BATTERIES</h3><div class="eff">EFFECTIVE MAY 01, 2026</div>
+   <div class="ptab"><div class="prow hd"><div>BRAND</div><div>TYPE</div><div></div><div class="n">Dealer Price</div><div class="n">SRP</div><div class="n">INSTITUTIONAL</div></div>
+   <div class="prow"><div>Ultra MF Plus</div><div>NS40</div><div>NS40</div><div class="n">2,060</div><div class="n">2,890</div><div class="n">2,475</div></div>
+   <div class="prow"><div>Ultra MF Plus</div><div>NS40R</div><div>NS40R</div><div class="n">2,170</div><div class="n">2,890</div><div class="n">2,530</div></div>
+   <div class="prow"><div>Ultra MF Plus</div><div>NS60</div><div>NS60</div><div class="n">2,710</div><div class="n">3,460</div><div class="n">3,085</div></div></div></div>
+  <div class="box" style="left:24px;top:62px;width:58%;height:150px"></div>
+  <span class="hd8" style="left:18px;top:56px"></span><span class="hd8" style="left:calc(24px + 58% - 6px);top:56px"></span>
+  <span class="hd8" style="left:18px;top:206px"></span><span class="hd8" style="left:calc(24px + 58% - 6px);top:206px;background:#f59e0b;border-color:#f59e0b"></span>
+  <span class="hd8" style="left:calc(24px + 29% - 6px);top:56px"></span><span class="hd8" style="left:calc(24px + 29% - 6px);top:206px"></span>
+  <span class="hd8" style="left:18px;top:131px"></span><span class="hd8" style="left:calc(24px + 58% - 6px);top:131px"></span>
+  <span class="tag" style="left:calc(24px + 58% + 12px);top:196px;background:#f59e0b">drag → to take in SRP and Institutional</span>
+ </div></div>
+ <div class="card" style="margin:0"><table class="rules"><tr><th>Do this</th><th>To</th></tr>
+  <tr><td>Drag a corner</td><td>Resize the box both ways.</td></tr>
+  <tr><td>Drag an edge (the middle handles)</td><td>Move only that side: take in a column you left out, or drop the heading.</td></tr>
+  <tr><td>Drag inside the box (Box mode)</td><td>Move the whole box.</td></tr>
+  <tr><td>After a resize</td><td>The lines inside stay where they are on the picture; new space gets the system's guess for its columns and rows.</td></tr>
+  <tr><td>Arrow keys (laptop)</td><td>Nudge the side picked by 1 pixel; Shift + arrow by 10.</td></tr></table>
+ <p class="cap">The box is kept with the file, as today, so a reload or coming back later shows it where you left it, still resizable.</p></div>
+</div>
+
+<h2><span class="n">3</span>Fix them: drag, add, remove</h2>
+<div class="split">
+ <div>
+  <div class="tools"><span class="tb">Box</span><span class="tb on">Columns</span><span class="tb">Rows</span><span class="tb">Same height for every row</span><span class="tb">Undo</span><span class="tb">Start over</span></div>
+  <div class="pic"><div class="paper">
+   <div class="ptab">
+    <div class="prow hd"><div>BRAND</div><div>TYPE</div><div></div><div class="n">Dealer Price</div><div class="n">SRP</div><div class="n">INSTITUTIONAL</div></div>
+    <div class="prow"><div>Ultra MF Plus</div><div>NS40</div><div>NS40</div><div class="n">2,060</div><div class="n">2,890</div><div class="n">2,475</div></div>
+    <div class="prow"><div>Ultra MF Plus</div><div>NS40R</div><div>NS40R</div><div class="n">2,170</div><div class="n">2,890</div><div class="n">2,530</div></div>
+    <div class="prow" style="border-bottom:0"><div>Ultra MF Plus</div><div>NS60</div><div>NS60</div><div class="n">2,710</div><div class="n">3,460</div><div class="n">3,085</div></div>
+    <span class="vl" style="left:30%"></span><span class="vl drag" style="left:44%"></span><span class="vl" style="left:58%"></span><span class="vl" style="left:72%"></span><span class="vl" style="left:86%"></span>
+    <span class="hl" style="top:22px"></span><span class="hl x" style="top:44px"></span><span class="hl" style="top:66px"></span>
+   </div></div></div>
+ </div>
+ <div class="card" style="margin:0">
+  <table class="rules"><tr><th>Do this</th><th>To</th></tr>
+   <tr><td>Drag a line (orange while held)</td><td>Move a column or row edge off the words it cuts.</td></tr>
+   <tr><td>Tap inside the box</td><td>Add a line there (in Columns or Rows mode).</td></tr>
+   <tr><td>Tap ✕ on a line</td><td>Remove it: two columns or two rows become one (e.g. a description on two lines).</td></tr>
+   <tr><td>Same height for every row</td><td>Spread the row lines evenly between the first and last: one tap for a long, regular list.</td></tr>
+   <tr><td>Undo / Start over</td><td>Back one step / back to the system's guess.</td></tr></table>
+ </div>
+</div>
+
+<h2><span class="n">4</span>Read: each cell inside your lines</h2>
+<div class="split">
+ <div>
+  <table class="grid"><tr><th>Brand</th><th>Model / group</th><th>Type</th><th>List price</th><th>SRP</th><th>Institutional</th></tr>
+   <tr><td>Ultra MF Plus</td><td>NS40</td><td>NS40</td><td class="n">2,060</td><td class="n">2,890</td><td class="n">2,475</td></tr>
+   <tr><td>Ultra MF Plus</td><td>NS40R</td><td>NS40R</td><td class="n">2,170</td><td class="n">2,890</td><td class="n">2,530</td></tr>
+   <tr><td>Ultra MF Plus</td><td>NS60</td><td>NS60</td><td class="n">2,710</td><td class="n">3,460</td><td class="n">3,085</td></tr>
+   <tr><td>Ultra MF Plus</td><td>NS50</td><td class="lo">1SMF</td><td class="n">2,930</td><td class="n">3,710</td><td class="n">3,320</td></tr>
+   <tr><td>Ultra MF Plus</td><td>DIN66H</td><td>DIN66H</td><td class="n lo">4,550</td><td class="n">5,980</td><td class="n">5,265</td></tr></table>
+ </div>
+ <p class="cap" style="margin:0"><b>The same grid as today</b> (name the columns, confirm the orange cells, then go on), only read from the cells you set. Orange = the reader is unsure: check it against the picture beside it. The lines stay with the snip, so <b>Read again</b> after a nudge re-reads only what changed.</p>
+</div>
+
+<h2><span class="n">5</span>To decide</h2>
+<div class="q"><b>1. Straighten the photo automatically first:</b> A) yes, with ↻ to nudge by hand (as drawn). B) no, lines only.</div>
+<div class="q"><b>2. Where:</b> A) every snip page: Price lists, Bank loans, the SOA matcher, card statements (as drawn). B) Price lists only for now.</div>
+<div class="q"><b>3. A text PDF</b> (read exactly, no OCR): A) show the lines there too, so columns can be fixed the same way. B) only for photos and scans.</div>
+</main></body></html>

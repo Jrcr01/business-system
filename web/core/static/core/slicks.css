@@ -682,3 +682,23 @@ table.list th[aria-sort] { color: var(--fg-0b4f8a); } table.list th .sort-arrow 
 main.view-only #sn_split, main.view-only .cc-doc, main.view-only #sn_upload { display: none !important; }
 /* the Invoices page on a phone (2026-10-17): the list shows, its ticks and Make checks do not */
 form.phone-look-only input[type=checkbox], form.phone-look-only button[type=submit], form.phone-look-only .fi-bar { display: none !important; }
+
+/* the snip box and its lines (owner, 2026-10-17: "sizable like DataSnipper", "I can fix the rows and columns") */
+.snip-layer { position: absolute; inset: 0; pointer-events: none; }
+.snip-h { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; background: #fff; border: 2px solid #7c3aed; border-radius: 3px; pointer-events: auto; touch-action: none; }
+.snip-h.sel { background: #f59e0b; border-color: #f59e0b; }
+.snip-h.h-nw, .snip-h.h-se { cursor: nwse-resize; } .snip-h.h-ne, .snip-h.h-sw { cursor: nesw-resize; } .snip-h.h-n, .snip-h.h-s { cursor: ns-resize; } .snip-h.h-e, .snip-h.h-w { cursor: ew-resize; }
+@media (pointer: coarse) { .snip-h { width: 20px; height: 20px; margin: -10px 0 0 -10px; } }
+.snip-ln { position: absolute; pointer-events: auto; touch-action: none; }
+.snip-ln.col { width: 12px; margin-left: -6px; cursor: ew-resize; } .snip-ln.row { height: 12px; margin-top: -6px; cursor: ns-resize; }
+.snip-ln i { position: absolute; background: #7c3aed; opacity: .85; } .snip-ln.col i { left: 5px; top: 0; bottom: 0; width: 2px; } .snip-ln.row i { top: 5px; left: 0; right: 0; height: 2px; }
+.snip-ln.sel i { background: #f59e0b; opacity: 1; }
+.snip-ln b { position: absolute; width: 20px; height: 20px; border-radius: 50%; background: #fff; color: #c2410c; border: 1px solid #c2410c; font-size: 12px; line-height: 18px; text-align: center; cursor: pointer; }
+.snip-ln.col b { top: -24px; left: -4px; } .snip-ln.row b { right: -26px; top: -4px; }
+.snip-wrap[data-edit="box"] { cursor: crosshair; } .snip-wrap[data-edit="cols"] { cursor: col-resize; } .snip-wrap[data-edit="rows"] { cursor: row-resize; }
+.snip-edit { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin: 0 0 6px; font-size: .84rem; }
+.snip-edit button { border: 1px solid var(--bd-b9c6d8); border-radius: 6px; padding: 3px 9px; font: inherit; background: var(--bg-ffffff); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+.snip-edit button .ms { font-size: 18px; } .snip-seg { display: inline-flex; gap: 0; } .snip-seg button { border-radius: 0; margin-left: -1px; } .snip-seg button:first-child { border-radius: 6px 0 0 6px; } .snip-seg button:last-child { border-radius: 0 6px 6px 0; }
+.snip-seg button.on { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+.snip-edit .snip-read.due { background: var(--blue); color: #fff; border-color: var(--blue); }
+.snip-tilt { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--muted); } .snip-tilt button { padding: 2px 6px; }

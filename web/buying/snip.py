@@ -60,7 +60,7 @@ def page_image_response(token: str, page: int, kind: str):
     if not path:
         raise Http404
     resp = FileResponse(open(path, "rb"), content_type="image/jpeg")
-    resp["Cache-Control"] = "private, max-age=86400"
+    resp["Cache-Control"] = "private, no-cache"                 # the picture changes when the page is straightened again (2026-10-17)
     return resp
 
 
@@ -90,10 +90,12 @@ def read_json(request, token: str, kind: str, guess):
         except (ValueError, KeyError, TypeError):
             return JsonResponse({"ok": False, "msg": "No box."}, status=400)
         mode = "text" if d.get("mode") == "text" else "table"
+        lines = d.get("lines") if isinstance(d.get("lines"), dict) else None   # the person's own rows and columns (owner, 2026-10-17)
+        merge = bool(d.get("merge"))
         if snip.needs_job(token):                            # OCR: a minute or two on the server; the page checks back
-            return JsonResponse({"ok": True, "pending": True, "job": snip.start_job(token, page, box, mode)})
+            return JsonResponse({"ok": True, "pending": True, "job": snip.start_job(token, page, box, mode, lines, merge)})
         try:
-            r = snip.read_box(token, page, box, mode)
+            r = snip.read_box(token, page, box, mode, lines, merge)
         except Exception as e:                               # noqa: BLE001 -- a broken file: say so, never a blank page
             return JsonResponse({"ok": False, "msg": f"Could not read the box: {e}"}, status=500)
     r["ok"] = r["how"] != "none"
@@ -131,6 +133,29 @@ def discard(request):
         messages.success(req, f"{info['filename']} removed.")
         return redirect(back)
     return page_needed(page, action)(_do)(request)
+
+
+def angle(request, token: str):
+    """The page's turn (owner, 2026-10-17: mock-up ap_snip_rows_columns, answer 1 A): GET ?p= -> {can, angle}; POST {page, delta} turns it a little
+    more, with the rights of the page the document belongs to. A text PDF is never turned (can = false)."""
+    from engines import snip
+    info = snip.file_info(token)
+    if not info or info["kind"] not in DISCARD_RIGHTS:
+        return JsonResponse({"ok": False, "msg": "No such document."}, status=404)
+    page_id, action = DISCARD_RIGHTS[info["kind"]]
+
+    def _do(req):
+        if req.method == "POST":
+            try:
+                d = json.loads(req.body or b"{}")
+                p, delta = int(d.get("page") or 1), float(d.get("delta") or 0)
+            except (ValueError, TypeError):
+                return JsonResponse({"ok": False, "msg": "Bad request."}, status=400)
+            a = snip.set_angle(token, p, snip.page_angle(token, p) + delta)
+            return JsonResponse({"ok": True, "can": snip.straightens(info), "angle": a})
+        p = int(req.GET.get("p") or 1)
+        return JsonResponse({"ok": True, "can": snip.straightens(info), "angle": snip.page_angle(token, p)})
+    return page_needed(page_id)(_do)(request)
 
 
 @page_needed("price-lists")

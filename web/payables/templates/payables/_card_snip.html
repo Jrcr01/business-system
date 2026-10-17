@@ -7,7 +7,7 @@ The document is deleted when the statement is added, or after a day.{% endcommen
   <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button>
   <button class="btn small ghost" type="button" id="sn_paste" title="A screenshot or a copied picture"><span class="ms">content_paste</span>Paste</button><span class="hint" id="sn_paste_hint"></span></form>
 {% if files %}<div class="hint" style="margin:6px 0 10px">Open statements: {% for f in files %}<a href="?{% if card %}card={{ card }}&show={{ show }}&{% endif %}f={{ f.token }}{% if edit_stmt %}&edit={{ edit_stmt.cc_statement_id }}#edit{% endif %}"{% if doc and doc.token == f.token %} style="font-weight:700"{% endif %}>{{ f.filename }}</a> <span class="hint">({{ f.pages }} p)</span><form method="post" action="/snip/discard/" class="snip-x-f">{% csrf_token %}<input type="hidden" name="token" value="{{ f.token }}"><input type="hidden" name="back" value="{{ request.get_full_path }}"><button class="snip-x" type="submit" title="Remove {{ f.filename }} now" aria-label="Remove {{ f.filename }}">✕</button></form>{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
-<script src="/static/core/snip.js?v=11"></script>
+<script src="/static/core/snip.js?v=13"></script>
 <script>slicksSnip.paste({form: document.getElementById("sn_upload"), button: document.getElementById("sn_paste"), hint: document.getElementById("sn_paste_hint"), field: "file"});</script>
 {% if doc %}
 <div class="snip-split wide cc-snip" id="sn_split">

@@ -7,7 +7,7 @@ step as a schedule file; the document is then deleted.{% endcomment %}
   <div class="grow"><label for="sn_file">The bank's document (PDF, JPG, PNG)</label><input id="sn_file" type="file" name="file" accept=".pdf,.jpg,.jpeg,.png"></div>
   <button class="btn small" type="submit"><span class="ms">upload_file</span>Open</button>
   <button class="btn small ghost" type="button" id="sn_paste" title="A screenshot or a copied picture"><span class="ms">content_paste</span>Paste</button><span class="hint" id="sn_paste_hint"></span></form>
-<script src="/static/core/snip.js?v=11"></script>
+<script src="/static/core/snip.js?v=13"></script>
 <script>slicksSnip.paste({form: document.getElementById("sn_upload"), button: document.getElementById("sn_paste"), hint: document.getElementById("sn_paste_hint"), field: "file"});</script>
 {% if files %}<div class="hint" style="margin:6px 0 10px">Documents of this loan: {% for f in files %}<a href="?tab=snip&f={{ f.token }}"{% if doc and doc.token == f.token %} style="font-weight:700"{% endif %}>{{ f.filename }}</a> <span class="hint">({{ f.pages }} p{% if f.snips %}, {{ f.snips }} snip{{ f.snips|pluralize }}{% endif %})</span><form method="post" action="/snip/discard/" class="snip-x-f">{% csrf_token %}<input type="hidden" name="token" value="{{ f.token }}"><input type="hidden" name="back" value="{{ request.get_full_path }}"><button class="snip-x" type="submit" title="Remove {{ f.filename }} now" aria-label="Remove {{ f.filename }}">✕</button></form>{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
 
