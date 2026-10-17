@@ -1,8 +1,8 @@
 {% extends "phone/base.html" %}{% load static %}
 {% block appmeta %}<meta name="apple-mobile-web-app-title" content="Slicks Inventory">
 <link rel="manifest" href="/phone/manifest-inv.webmanifest" crossorigin="use-credentials">
-<link rel="icon" href="{% static 'phone/icon-inv-192.png' %}">
-<link rel="apple-touch-icon" sizes="180x180" href="{% static 'phone/icon-inv-180.png' %}">{% endblock %}
+<link rel="icon" href="{% static 'phone/icon-inv-192.png' %}?v=2">
+<link rel="apple-touch-icon" sizes="180x180" href="{% static 'phone/icon-inv-180.png' %}?v=2">{% endblock %}
 {% block back %}<a href="/phone/" aria-label="Slick's POS"><span class="ms">tire_repair</span></a>{% endblock %}
 {% block content %}
 {% comment %}Slicks Inventory (owner, 2026-10-17: "just the size sorted by rim, brand, amount"; mock-up an_slicks_inventory): the notebook's tabs,
