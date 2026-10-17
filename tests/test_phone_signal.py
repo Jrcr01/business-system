@@ -55,3 +55,19 @@ def test_the_paper_count_sheet_numbers_its_rows_has_a_rack_column_and_prints_fro
     assert '<td class="hint">1</td>' in laptop and "rack / area, note" in laptop
     page = web.get("/phone/").content.decode()
     assert 'id="ph_net"' in page and 'data-me="' in page                                                   # the signal mark; the kept copy is per person
+
+
+def test_the_app_icon_has_each_persons_own_shortcuts(web, db):
+    """Owner, 2026-10-17 ("1" of ak_phone_features): long-press the icon -> Stock in, Stock out, Stock count, Record a sale; the staff phone never
+    gets Record a sale."""
+    import json
+    from tests.test_web_d0 import _sign_in_new
+    _admin(web)
+    _on()
+    names = [s["name"] for s in json.loads(web.get("/phone/manifest-ops.webmanifest").content)["shortcuts"]]
+    assert names == ["Stock in", "Stock out", "Stock count", "Record a sale"]
+    erp = [s["name"] for s in json.loads(web.get("/phone/manifest.webmanifest").content)["shortcuts"]]
+    assert erp[:4] == names and erp[-1] == "Slick's POS"
+    rack = _sign_in_new("rack@slicks.test", "scanner")
+    staff = [s["name"] for s in json.loads(rack.get("/phone/manifest-ops.webmanifest").content)["shortcuts"]]
+    assert "Record a sale" not in staff and "Stock count" in staff

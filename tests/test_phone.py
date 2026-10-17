@@ -31,7 +31,7 @@ def test_off_until_the_switch_and_then_the_four_buttons(web, db):
     assert 'rel="manifest"' in page and "apple-mobile-web-app-capable" in page
     r = web.get("/phone/manifest.webmanifest")
     assert r.status_code == 200 and r["Content-Type"].startswith("application/manifest+json")
-    assert '"start_url": "/"' in b"".join(r.streaming_content).decode()          # the whole site is the app (owner, 2026-10-12: "can we have this")
+    assert '"start_url": "/"' in r.content.decode()          # the whole site is the app (owner, 2026-10-12: "can we have this")
     assert "On the phone" in web.get("/").content.decode()                     # the laptop's person menu links to it
 
 
@@ -184,8 +184,8 @@ def test_the_site_is_installable_from_any_page_and_the_service_worker_is_served(
     assert r.status_code == 200 and r["Content-Type"].startswith("application/javascript") and r["Service-Worker-Allowed"] == "/"
     assert b"addEventListener(\"fetch\"" in b"".join(r.streaming_content)
     r = web.get("/phone/manifest.webmanifest")
-    r2 = b"".join(r.streaming_content).decode(); r = web.get("/phone/manifest.webmanifest")
-    assert '"id": "/"' in b"".join(r.streaming_content).decode() and '"scope": "/"' in r2
+    r2 = r.content.decode(); r = web.get("/phone/manifest.webmanifest")
+    assert '"id": "/"' in r.content.decode() and '"scope": "/"' in r2
     assert '"shortcuts"' in r2 and '"url": "/phone/"' in r2                     # Chrome blocks a second app inside the first: the POS is a shortcut of the ERP app (2026-10-12)
 
 
@@ -194,9 +194,9 @@ def test_the_phone_pages_are_their_own_app_beside_the_whole_site(web, db):
     _admin(web)
     _on()
     r = web.get("/phone/manifest-ops.webmanifest")
-    ops = b"".join(r.streaming_content).decode()
+    ops = r.content.decode()
     assert r.status_code == 200 and '"id": "/phone/"' in ops and '"scope": "/phone/"' in ops and "Slick's POS" in ops and "icon-pos-192" in ops
-    whole = b"".join(web.get("/phone/manifest.webmanifest").streaming_content).decode()
+    whole = web.get("/phone/manifest.webmanifest").content.decode()
     assert '"id": "/"' in whole                                                 # two ids: Chrome installs them as two apps
     assert 'href="/phone/manifest-ops.webmanifest"' in web.get("/phone/").content.decode()
     assert 'href="/phone/manifest.webmanifest"' in web.get("/").content.decode()

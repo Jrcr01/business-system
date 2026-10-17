@@ -102,6 +102,29 @@ def _open_counts() -> int:
         return int(conn.execute("SELECT COUNT(*) FROM stock_counts WHERE status = 'COUNTING'").fetchone()[0])
 
 
+SHORTCUTS = [("in", "Stock in", "/phone/in/", "Goods arrived against an order"),
+             ("out", "Stock out", "/phone/out/", "The slip: goods out now"),
+             ("count", "Stock count", "/phone/count/", "Count the racks"),
+             ("sale", "Record a sale", "/phone/sale/", "From the cash receipt")]
+
+
+def _with_shortcuts(request, path: str, keep_old: bool):
+    """The manifest file plus the person's own shortcuts (owner, 2026-10-17): only the phone pages they may use; read again by the phone when the
+    app is opened, so a changed access shows there too."""
+    import json
+    from django.http import HttpResponse
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    mine = _mine(request) if getattr(request, "slicks_user", None) else {}
+    may = {"in": mine.get("in"), "out": mine.get("out"), "count": mine.get("count"), "sale": mine.get("sale")}
+    icon = [{"src": "/static/phone/icon-pos2-96.png", "sizes": "96x96", "type": "image/png"}]
+    data["shortcuts"] = [{"name": name, "short_name": name, "description": why, "url": url, "icons": icon} for key, name, url, why in SHORTCUTS if may.get(key)] \
+        + (data.get("shortcuts", []) if keep_old else [])
+    resp = HttpResponse(json.dumps(data, ensure_ascii=False), content_type="application/manifest+json")
+    resp["Cache-Control"] = "private, no-cache"
+    return resp
+
+
 def manifest_ops(request):
     """The second app on the phone (owner, 2026-10-12: "Can we have seperate shortcut for on the phone? This will be used primarily for operations"):
     its own id, so Chrome installs it beside the whole-site app; it opens the phone pages and stays within them."""
@@ -109,7 +132,7 @@ def manifest_ops(request):
     path = finders.find("phone/manifest-ops.webmanifest")
     if not path:
         raise Http404
-    return FileResponse(open(path, "rb"), content_type="application/manifest+json")
+    return _with_shortcuts(request, path, keep_old=False)
 
 
 def manifest(request):
@@ -118,7 +141,7 @@ def manifest(request):
     path = finders.find("phone/manifest.webmanifest")
     if not path:
         raise Http404
-    return FileResponse(open(path, "rb"), content_type="application/manifest+json")
+    return _with_shortcuts(request, path, keep_old=True)          # the whole-site app keeps its "Slick's POS" shortcut after the four
 
 
 @phone_page("prices")
