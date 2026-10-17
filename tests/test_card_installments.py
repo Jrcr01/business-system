@@ -133,3 +133,18 @@ def test_a_snip_document_can_be_removed_now_with_the_page_own_rights(web, db):
     assert r.status_code == 302 and r["Location"] == "/credit-cards/" and snip.file_info(token) is None
     r = web.post("/snip/discard/", {"token": token, "back": "https://evil.example/"})
     assert r["Location"] == "/"                                               # gone already; never sent off the site
+
+
+def test_the_picked_card_and_the_open_statement_stay_together(web, db):
+    """Owner, 2026-10-17: "when i upload the statement then pick a card the statement will close upon refresh. vice versa"."""
+    from PIL import Image
+    _admin(web)
+    card = _card(db)
+    buf = io.BytesIO()
+    Image.new("RGB", (300, 200), "white").save(buf, format="PNG")
+    r = web.post("/credit-cards/", {"action": "snip_upload", "card": str(card), "file": SimpleUploadedFile("soa.png", buf.getvalue(), content_type="image/png")})
+    assert r.status_code == 302 and r["Location"].startswith(f"/credit-cards/?card={card}&show=all&f=")          # the card stays picked
+    token = r["Location"].split("&f=")[1]
+    page = web.get(f"/credit-cards/?card={card}&show=all&f={token}").content.decode()
+    assert f'href="?card={card}&amp;show=all&amp;f={token}"' in page or f'href="?card={card}&show=all&f={token}"' in page   # its link keeps the card
+    assert 'go.set("f", here.get("f"))' in page and "cc_soa_draft" in page                                       # picking a card keeps the statement; typed figures kept

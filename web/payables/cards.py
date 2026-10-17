@@ -163,7 +163,9 @@ def _post(request):
         f = request.FILES.get("file")
         ok, msg, token = snip.keep("card", None, f.name if f else "", f.read() if f else b"")
         _say(request, ok, msg)
-        return redirect("/credit-cards/" + (f"?f={token}" if ok else ""))
+        card = p.get("card", "") if (p.get("card") or "").isdigit() else ""         # the card already picked stays picked (owner, 2026-10-17)
+        q = "&".join(x for x in ((f"card={card}&show=all" if card else ""), (f"f={token}" if ok else "")) if x)
+        return redirect("/credit-cards/" + (f"?{q}" if q else ""))
     if what == "statement":
         card, due, total = int(p.get("card") or 0), _date(p.get("due")), _num(p.get("total"))
         payments = p.get("payments", "").strip()

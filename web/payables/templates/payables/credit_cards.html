@@ -128,6 +128,11 @@
                                                          : "  ⚠ Daily payables recorded " + peso(daily) + ": it differs, so it will go on the Review list (the SOA figure is kept).";
     out.textContent = line;
   }
+  var KEEP = ["month", "due", "total", "payments", "credits", "interest", "unbilled"], DRAFT = "cc_soa_draft";
+  try { var d = JSON.parse(sessionStorage.getItem(DRAFT) || "{}"); KEEP.forEach(function (k) { if (d[k] && f[k] && !f[k].value) f[k].value = d[k]; }); } catch (e) {}
+  function keep() { try { var d = {}; KEEP.forEach(function (k) { if (f[k]) d[k] = f[k].value; }); sessionStorage.setItem(DRAFT, JSON.stringify(d)); } catch (e) {} }
+  f.addEventListener("input", keep); f.addEventListener("change", keep);
+  f.addEventListener("submit", function () { try { sessionStorage.removeItem(DRAFT); } catch (e) {} });
   f.addEventListener("input", calc); f.addEventListener("change", calc); calc();
 })();
 </script>
@@ -196,7 +201,9 @@ document.querySelectorAll(".card-find").forEach(function (box) {
     if (!sel.value) return;
     var here = new URLSearchParams(location.search);
     if (here.get("card") === sel.value) return;
-    location.href = "/credit-cards/?card=" + encodeURIComponent(sel.value) + "&show=all";
+    var go = new URLSearchParams({card: sel.value, show: "all"});          /* the open statement stays open (owner, 2026-10-17) */
+    if (here.get("f")) { go.set("f", here.get("f")); if (here.get("p")) go.set("p", here.get("p")); }
+    location.href = "/credit-cards/?" + go.toString();
   });
 })();
 </script>
