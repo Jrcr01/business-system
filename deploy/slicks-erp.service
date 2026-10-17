@@ -8,7 +8,7 @@ Group=slicks
 EnvironmentFile=/etc/slicks-erp/env
 WorkingDirectory=/srv/slicks/app/current/web
 # 3 worker processes on the 2 GB server (owner resized, 2026-10-08): several people at once without waiting on each other
-ExecStart=/srv/slicks/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3 --timeout 60 --access-logfile -
+ExecStart=/srv/slicks/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3 --timeout 60 --access-logfile - --no-control-socket
 Restart=always
 RestartSec=3
 # hardening: the system may write only its data, static and backup folders

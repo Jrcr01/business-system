@@ -13,6 +13,8 @@ set -euo pipefail
 # Use Windows' own SSH when it is there: it holds the key unlocked by ssh-add (ssh-agent service); Git Bash's ssh cannot see it.
 if [ -x /c/Windows/System32/OpenSSH/ssh.exe ]; then SSH=/c/Windows/System32/OpenSSH/ssh.exe; SCP=/c/Windows/System32/OpenSSH/scp.exe
 else SSH=ssh; SCP=scp; fi
+# A dropped connection must not hang the release (2026-10-17: the log scan once waited 10 minutes): give up on a dead link after ~30 s.
+SSH_OPTS=(-o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
 export MSYS_NO_PATHCONV=1                                   # keep /srv/... paths as they are when talking to the server
 
 TARGET="${1:?usage: deploy/deploy_to_server.sh slicks@<server> [--anyway]}"
@@ -40,7 +42,7 @@ fi
 # 2. Who is active right now
 if [ "$ANYWAY" != "--anyway" ]; then
   set +e
-  ACTIVE="$("$SSH" "$TARGET" "cd /srv/slicks/app/current && set -a && . /etc/slicks-erp/env && set +a && /srv/slicks/venv/bin/python web/manage.py who_is_active --minutes 10" 2>&1)"
+  ACTIVE="$("$SSH" "${SSH_OPTS[@]}" "$TARGET" "cd /srv/slicks/app/current && set -a && . /etc/slicks-erp/env && set +a && /srv/slicks/venv/bin/python web/manage.py who_is_active --minutes 10" 2>&1)"
   CODE=$?
   set -e
   echo "$ACTIVE"
@@ -54,13 +56,13 @@ fi
 ID="$(date +%Y%m%d_%H%M%S)_$(git rev-parse --short HEAD)"
 echo "Deploying $(git log -1 --format='%h %s') as release $ID to $TARGET ..."
 STARTED="$(date -u '+%Y-%m-%d %H:%M:%S')"
-git archive --format=tar HEAD | "$SSH" "$TARGET" "mkdir -p /srv/slicks/app/releases/$ID && tar -x -C /srv/slicks/app/releases/$ID"
-"$SSH" "$TARGET" "bash /srv/slicks/app/releases/$ID/deploy/release.sh $ID"
+git archive --format=tar HEAD | "$SSH" "${SSH_OPTS[@]}" "$TARGET" "mkdir -p /srv/slicks/app/releases/$ID && tar -x -C /srv/slicks/app/releases/$ID"
+"$SSH" "${SSH_OPTS[@]}" "$TARGET" "bash /srv/slicks/app/releases/$ID/deploy/release.sh $ID"
 git tag "live-$ID"
 echo "Tagged live-$ID (what is live now)."
 
 # 4. Errors since the restart
 sleep 20
-ERRORS="$("$SSH" "$TARGET" "journalctl -u slicks-erp --since '$STARTED UTC' --no-pager 2>/dev/null | grep -E '\" 5[0-9][0-9] |Traceback|ERROR' | grep -v 'Control server error' | tail -20" || true)"
+ERRORS="$(timeout 90 "$SSH" "${SSH_OPTS[@]}" "$TARGET" "journalctl -u slicks-erp --since '$STARTED UTC' --no-pager 2>/dev/null | grep -E '\" 5[0-9][0-9] |Traceback|ERROR' | tail -20" || echo "(could not read the server log within 90 s: check it by hand, the release itself is done)")"
 if [ -n "$ERRORS" ]; then echo "Errors in the server log since the release:"; echo "$ERRORS"
 else echo "No errors in the server log since the release."; fi
