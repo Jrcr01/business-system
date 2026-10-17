@@ -117,9 +117,14 @@ def _with_shortcuts(request, path: str, keep_old: bool):
         data = json.load(f)
     mine = _mine(request) if getattr(request, "slicks_user", None) else {}
     may = {"in": mine.get("in"), "out": mine.get("out"), "count": mine.get("count"), "sale": mine.get("sale")}
-    icon = [{"src": "/static/phone/icon-pos2-96.png", "sizes": "96x96", "type": "image/png"}]
-    data["shortcuts"] = [{"name": name, "short_name": name, "description": why, "url": url, "icons": icon} for key, name, url, why in SHORTCUTS if may.get(key)] \
-        + (data.get("shortcuts", []) if keep_old else [])
+    # the pictures go inside the file: Android's installed app has its icons fetched by Google, which Cloudflare stops (owner, 2026-10-17: "why no logo")
+    import os
+    with open(os.path.join(os.path.dirname(__file__), "shortcut_icons.json"), encoding="utf-8") as f:
+        pics = json.load(f)
+    jobs = [{"name": name, "short_name": name, "description": why, "url": url, "icons": [{"src": pics[key], "sizes": "96x96", "type": "image/png"}]}
+            for key, name, url, why in SHORTCUTS if may.get(key)]
+    # Android shows only the first three here (owner, 2026-10-17: "Pos lost"): Slick's POS first, then the jobs
+    data["shortcuts"] = (data.get("shortcuts", []) if keep_old else []) + jobs
     resp = HttpResponse(json.dumps(data, ensure_ascii=False), content_type="application/manifest+json")
     resp["Cache-Control"] = "private, no-cache"
     return resp
@@ -141,7 +146,7 @@ def manifest(request):
     path = finders.find("phone/manifest.webmanifest")
     if not path:
         raise Http404
-    return _with_shortcuts(request, path, keep_old=True)          # the whole-site app keeps its "Slick's POS" shortcut after the four
+    return _with_shortcuts(request, path, keep_old=True)          # the whole-site app: "Slick's POS" first, then the jobs
 
 
 @phone_page("prices")
