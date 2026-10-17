@@ -8,7 +8,7 @@
   };
   /* camera(button, video, onCode): the button shows only where the browser has BarcodeDetector; a code is reported once per 2.5 s while it stays in view */
   ph.camera = function (btn, video, onCode) {
-    if (!btn || !("BarcodeDetector" in window) || !navigator.mediaDevices) return;
+    if (!btn || !window.slicksBarcode || !slicksBarcode.ok()) return;          /* iPhone / iPad too, through ZXing (2026-10-17) */
     btn.hidden = false;
     var stream = null, timer = null, liveFailed = false;
     function liveAllowed() { try { return !document.featurePolicy || document.featurePolicy.allowsFeature("camera"); } catch (e) { return true; } }
@@ -16,7 +16,7 @@
       var pick = document.createElement("input"); pick.type = "file"; pick.accept = "image/*"; pick.capture = "environment";
       pick.addEventListener("change", function () {
         var f = pick.files && pick.files[0]; if (!f) return;
-        createImageBitmap(f).then(function (bmp) { return new BarcodeDetector().detect(bmp); })
+        createImageBitmap(f).then(function (bmp) { return slicksBarcode.detector().detect(bmp); })
           .then(function (found) { if (found.length) onCode(found[0].rawValue); else fail("No barcode was read in that photo. Hold the phone closer, keep it steady, and try again."); })
           .catch(function () { fail("That photo could not be read. Try again."); });
       });
@@ -29,7 +29,7 @@
       if (liveFailed || !liveAllowed()) { snap(onCode, function (m) { alert(m); }); return; }
       navigator.mediaDevices.getUserMedia({video: {facingMode: "environment"}}).then(function (s) {
         stream = s; video.srcObject = s; video.hidden = false; video.play();
-        var det = new BarcodeDetector(), last = "", when = 0;
+        var det = slicksBarcode.detector(), last = "", when = 0;
         timer = setInterval(function () {
           det.detect(video).then(function (found) {
             if (!found.length) return;
