@@ -24,6 +24,8 @@
 {% if item %}
   {% if found %}<div class="ph-ok">Found: {{ item.code }}</div>{% endif %}
   <div class="ph-card"><b class="t">{{ item.name }}</b><span class="hint">{{ item.code }}</span>
+    <button class="btn small ghost" type="button" style="float:right" data-share-title="Stock" data-share-text="{{ item.name }}: {{ item.on_hand|floatformat:'-2' }} in stock{% if item.dot %} (DOT {{ item.dot }}){% endif %} — Slick's Tire Supply"><span class="ms">share</span>Share</button>
+    <script src="/static/core/share.js?v=1"></script>
     <div class="kv"><span>On hand</span><b class="n{% if item.negative %} neg{% endif %}">{{ item.on_hand|floatformat:"-2"|intcomma }}</b></div>
     <div class="kv"><span>Oldest DOT</span><b>{% if item.dot %}{{ item.dot }}{% if item.old %} <span class="pill warn">old stock</span>{% endif %}{% else %}—{% endif %}</b></div>
     <div class="kv"><span>Low at</span><b>{{ item.reorder_level }}{% if item.low %} <span class="pill warn">low</span>{% endif %}</b></div>

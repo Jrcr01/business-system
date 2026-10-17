@@ -195,6 +195,9 @@ def statement(request, sid: int):
     from engines import statement_links
     from engines.permissions import can
     ctx.update({"qr_on": statement_links.on(), "qr": statement_links.state(sid), "qr_admin": can(request.slicks_user["role"], "settings.edit")})
+    q = ctx["qr"]
+    if q and not q["off"] and not q["expired"]:                # Share the supplier's link (owner, 2026-10-17)
+        ctx["qr_url"] = statement_links.url_for(sid, request.build_absolute_uri("/"))
     return render(request, "payables/statement.html", ctx)
 
 

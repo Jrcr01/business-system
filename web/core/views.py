@@ -385,6 +385,25 @@ def _ua(request) -> str:
     return ua
 
 
+PHOTO_PAGE = {"expenses": "expenses", "collections": "collect"}
+
+
+def photo(request, photo_id: int):
+    """A kept photo (2026-10-17), shown only to someone who may open the page it belongs to."""
+    from django.http import FileResponse, Http404
+    from engines import photos
+    from masters.views import page_needed
+    p = photos.one(photo_id)
+    if not p:
+        raise Http404
+
+    def _send(req):
+        resp = FileResponse(open(p["path"], "rb"), content_type="image/jpeg")
+        resp["Cache-Control"] = "private, max-age=86400"
+        return resp
+    return page_needed(PHOTO_PAGE[p["ref_type"]])(_send)(request)
+
+
 def apple_icon(request):
     """/apple-touch-icon.png: the Home Screen icon an iPhone or iPad fetches by itself (no sign-in, a picture only)."""
     from django.contrib.staticfiles import finders

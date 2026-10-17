@@ -23,6 +23,12 @@ def collect(request):
             lines = [{"sale_id": k.split("_", 1)[1], "amount": p.get(k, "")} for k in p if k.startswith("amt_")]
             ok, msg, _kid = cr.collect(cust, p.get("cr_no", ""), p.get("collect_date", ""), lines, _payments(p), p.get("note", ""),
                                        white_copy=p.get("white_copy") == "1")
+            if ok:                                               # the check's photos, front and back (owner, 2026-10-17)
+                from engines import photos
+                for field, kind in (("check_front", "check_front"), ("check_back", "check_back")):
+                    if request.FILES.get(field):
+                        pok, pmsg = photos.save(request.FILES[field], "collections", _kid, kind)
+                        msg += " " + pmsg if pok else f" The photo was not kept: {pmsg}"
             _say(request, ok, msg)
             return redirect(f"/collect/?c={cust}")
         if what == "void":
@@ -63,4 +69,8 @@ def collect(request):
     if cid:
         ctx.update({"cust": sr.customer(cid), "rows": cr.owed_rows(cid), "bal": cr.balance(cid), "aging": cr.aging(cid),
                     "advance": cr.advance_balance(cid), "history": cr.collections_of(cid)})
+        from engines import photos
+        pics = photos.for_refs("collections", [h["collection_id"] for h in ctx["history"]])
+        for h in ctx["history"]:
+            h["photos"] = pics.get(h["collection_id"], [])
     return render(request, "selling/collect.html", ctx)

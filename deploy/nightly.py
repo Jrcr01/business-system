@@ -35,6 +35,7 @@ def main() -> int:
         print("Removed old backup", os.path.basename(old))
     try:
         statement_files()
+        photo_files()
     except Exception as e:
         print(f"Statement files step could not run: {e}")
     try:
@@ -68,6 +69,25 @@ def statement_files() -> None:
             shutil.copy2(src, dst)
             new += 1
     print(f"Statement files: {len(os.listdir(folder))} kept, {new} newly backed up, {len(gone)} removed")
+
+
+def photo_files() -> None:
+    """The kept photos (2026-10-17): copied to /srv/slicks/backups/photos like the bank files (new ones only; nothing is removed)."""
+    import shutil
+    from engines.photos import folder
+    src_root, dst_root = folder(), os.path.join(DEST, "photos")
+    if not os.path.isdir(src_root):
+        return
+    new = 0
+    for here, _dirs, files in os.walk(src_root):
+        rel = os.path.relpath(here, src_root)
+        for name in files:
+            dst = os.path.join(dst_root, rel, name)
+            if not os.path.exists(dst):
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(os.path.join(here, name), dst)
+                new += 1
+    print(f"Photos: {new} newly backed up")
 
 
 if __name__ == "__main__":

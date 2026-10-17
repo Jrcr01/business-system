@@ -20,6 +20,8 @@ try {
     foreach ($f in @("audit_seal.key", "audit_seal.state", "push_keys.json", "mail_out.json")) { & scp -i $key -o BatchMode=yes -q "${server}:/srv/slicks/data/$f" "$dest\secrets\$f" }
     & scp -i $key -o BatchMode=yes -q "${server}:/etc/slicks-erp/env" "$dest\secrets\env"
     & scp -i $key -o BatchMode=yes -q -r "${server}:/srv/slicks/backups/bank/." "$dest\bank\"
+    if (-not (Test-Path "$dest\photos")) { New-Item -ItemType Directory -Force "$dest\photos" | Out-Null }
+    & scp -i $key -o BatchMode=yes -q -r "${server}:/srv/slicks/backups/photos/." "$dest\photos\"      # the kept photos (2026-10-17)
     Get-ChildItem "$dest\db\slicks_erp_backup_*.db" | Sort-Object Name -Descending | Select-Object -Skip 30 | ForEach-Object { Remove-Item $_.FullName; Say "removed old $($_.Name)" }
     Say "done"
 } catch {

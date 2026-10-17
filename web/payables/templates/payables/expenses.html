@@ -4,13 +4,14 @@
 {% comment %}Owner, 2026-10-11: the drawer's money out -- electricity, rent, wages, meals, supplies -- one line each, a category from the owner's
 list, who and why. Taken back only with a reason. Feeds the Deposits page and the month's Income statement.{% endcomment %}
 <h2><span class="ms" style="font-size:28px">wallet</span> Expenses</h2>
-<form method="post" class="bar">{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="m" value="{{ m }}">
+<form method="post" class="bar" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="add"><input type="hidden" name="m" value="{{ m }}">
   <div><label for="e_date">Date</label><input id="e_date" type="date" name="expense_date" value="{{ today }}"></div>
   <div><label for="e_cat">Category</label><select id="e_cat" name="category_id" required><option value="">Pick one</option>
     {% for c in categories %}<option value="{{ c.category_id }}">{{ c.name }}</option>{% endfor %}</select></div>
   <div><label for="e_from">Paid from</label><select id="e_from" name="paid_from">{% for s in sources %}<option>{{ s }}</option>{% endfor %}</select></div>
   <div><label for="e_amt">Amount</label><input id="e_amt" type="text" inputmode="decimal" name="amount" style="width:150px;text-align:right" required></div>
   <div class="grow"><label for="e_det">For / received by</label><input id="e_det" type="text" name="detail" placeholder="e.g. Meralco bill Sept, OR 5512"></div>
+  <div><label for="e_pic">Receipt photo (optional)</label><input id="e_pic" type="file" name="receipt" accept="image/*" capture="environment"></div>
   <button class="btn small" type="submit"><span class="ms">save</span>Save</button>
 </form>
 
@@ -19,7 +20,7 @@ list, who and why. Taken back only with a reason. Feeds the Deposits page and th
 <div class="scroll-x"><table class="list cards">
   <tr><th>No.</th><th>Date</th><th>Category</th><th>For / received by</th><th>From</th><th class="num">Amount</th><th>By</th><th></th></tr>
   {% for r in rows %}<tr{% if r.void %} style="opacity:.55"{% endif %}>
-    <td>{{ r.exp_no }}</td><td>{{ r.day|dmy }}</td><td class="c-t">{{ r.category }}{% if r.detail %} <span class="hint">· {{ r.detail }}</span>{% endif %}</td><td class="c-x">{{ r.detail }}</td><td data-l="from">{{ r.paid_from }}</td>
+    <td>{{ r.exp_no }}</td><td>{{ r.day|dmy }}</td><td class="c-t">{{ r.category }}{% if r.detail %} <span class="hint">· {{ r.detail }}</span>{% endif %}{% for ph in r.photos %} <a href="/photos/{{ ph.photo_id }}.jpg" target="_blank" title="{{ ph.label }}"><span class="ms" style="font-size:18px;vertical-align:-4px">receipt</span></a>{% endfor %}</td><td class="c-x">{{ r.detail }}</td><td data-l="from">{{ r.paid_from }}</td>
     <td class="num c-big">{{ r.amount|floatformat:2|intcomma }}</td><td data-l="by">{{ r.by }}</td>
     <td class="c-r">{% if r.void %}<span class="pill off" title="{{ r.void_reason }}">taken back</span>
       {% else %}<form method="post" onsubmit="var x = prompt('Why is {{ r.exp_no }} taken back?'); if (!x) return false; this.reason.value = x;">{% csrf_token %}

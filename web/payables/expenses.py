@@ -18,6 +18,10 @@ def expenses(request):
         p, what = request.POST, request.POST.get("action")
         if what == "add":
             ok, msg, _eid = er.add(p.get("expense_date", ""), p.get("category_id"), p.get("paid_from", ""), p.get("detail", ""), p.get("amount", ""))
+            if ok and request.FILES.get("receipt"):              # the receipt's photo (owner, 2026-10-17): kept as proof
+                from engines import photos
+                pok, pmsg = photos.save(request.FILES["receipt"], "expenses", _eid, "receipt")
+                msg += " " + pmsg if pok else f" The photo was not kept: {pmsg}"
         elif what == "void":
             ok, msg = er.void(int(p.get("expense_id") or 0), p.get("reason", ""))
         elif what == "category":
@@ -28,6 +32,10 @@ def expenses(request):
         return redirect("/expenses/" + (f"?m={p.get('m')}" if p.get("m") else ""))
     month = request.GET.get("m") or manila_today().strftime("%Y-%m")
     rows = er.listing(month=month)
+    from engines import photos
+    pics = photos.for_refs("expenses", [r["expense_id"] for r in rows])
+    for r in rows:
+        r["photos"] = pics.get(int(r["expense_id"]), [])
     return render(request, "payables/expenses.html", {
         "page_id": "expenses", "rows": rows, "m": month, "month_label": month, "today": manila_today().isoformat(),
         "total": round(sum(r["amount"] for r in rows if not r["void"]), 2), "by_cat": er.month_by_category(month),

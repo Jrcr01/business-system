@@ -88,3 +88,24 @@ def slips_today() -> list[dict]:
     from engines.sales_rules import open_releases
     today = str(manila_today())
     return [r for r in open_releases() if str(r["day"])[:10] == today]
+
+
+def price_of_item(item_id: int) -> list[dict]:
+    """Every supplier's net price in force today for one item (by the item it is tied to on the price lists), cheapest first -- the scan card
+    (owner, 2026-10-17). [{'supplier', 'net', 'since'}]."""
+    from engines.discount_rules import chain_from, discount_rows, net_price
+    today = str(manila_today())
+    with get_conn() as conn:
+        rows = conn.execute("""SELECT s.creditor_id, c.creditor_name, s.item_name, s.unit_price, s.effective_date FROM supplier_price_list s
+                               JOIN creditors c ON c.creditor_id = s.creditor_id
+                               WHERE s.is_active = 1 AND s.item_id = ? AND s.effective_date <= ?
+                               ORDER BY s.creditor_id, s.effective_date DESC, s.price_id DESC""", (int(item_id), today)).fetchall()
+    seen, out = set(), []
+    for cid, supplier, name, price, since in rows:
+        if cid in seen:
+            continue
+        seen.add(cid)
+        chain = chain_from(discount_rows(cid, manila_today()), name)
+        out.append({"supplier": supplier, "net": net_price(float(price), chain), "since": str(since)[:10]})
+    return sorted(out, key=lambda x: x["net"])
+

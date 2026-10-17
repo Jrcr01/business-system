@@ -1,0 +1,44 @@
+{% extends "phone/base.html" %}
+{% block content %}
+{% comment %}Scan a tire (owner, 2026-10-17; mock-up ak_phone_features #6): point the camera at its barcode; its stock, oldest DOT and, to a person who
+sees prices, the price list's net price per supplier. Read only. A Bluetooth scanner or typing works in the box too.{% endcomment %}
+<div class="ph-scan"><input type="text" id="lk_q" placeholder="Scan or type a code" autocomplete="off" aria-label="Code" autofocus>
+  <button type="button" id="lk_cam" hidden aria-label="Camera"><span class="ms">photo_camera</span></button></div>
+<video id="lk_video" playsinline hidden></video>
+<div id="lk_msg" class="hint" style="min-height:1.2em">Tap the camera and point it at the tire's barcode.</div>
+<div id="lk_card" class="ph-card" hidden>
+  <b class="t" id="lk_name"></b><span class="hint" id="lk_code"></span>
+  <div class="kv"><span>On hand</span><b class="n" id="lk_on"></b></div>
+  <div class="kv"><span>Oldest DOT</span><b id="lk_dot"></b></div>
+  <div class="kv"><span>Low at</span><b id="lk_low"></b></div>
+  <div id="lk_prices"></div>
+  <div class="ph-row" style="margin-top:8px"><a class="btn small ghost" id="lk_open" href="#">Open in Stock</a>
+    <button class="btn small ghost" type="button" id="lk_share" data-share-title="Stock"><span class="ms">share</span>Share</button></div>
+</div>
+<script src="/static/core/share.js?v=1"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var $ = function (id) { return document.getElementById(id); }, peso = function (n) { return "₱" + Number(n).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  function show(code) {
+    code = String(code || "").trim(); if (!code) return;
+    $("lk_msg").textContent = "Looking up " + code + "…";
+    fetch("/phone/look/?code=" + encodeURIComponent(code), {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) { $("lk_card").hidden = true; $("lk_msg").textContent = d.msg; $("lk_msg").style.color = "var(--fg-b3261e)"; return; }
+      window.phone.beep(); $("lk_msg").textContent = ""; $("lk_msg").style.color = "";
+      $("lk_name").textContent = d.name; $("lk_code").textContent = d.code; $("lk_on").textContent = d.on_hand;
+      $("lk_dot").textContent = (d.dot || "—") + (d.old ? " (old stock)" : ""); $("lk_low").textContent = (d.low_at == null ? "—" : d.low_at) + (d.low ? " · low" : "");
+      var pr = $("lk_prices"); pr.innerHTML = "";
+      (d.prices || []).forEach(function (p, k) { var row = document.createElement("div"); row.className = "kv";
+        var a = document.createElement("span"); a.textContent = (k === 0 ? "Price list · " : "") + p.supplier; var b = document.createElement("b"); b.textContent = peso(p.net);
+        row.appendChild(a); row.appendChild(b); pr.appendChild(row); });
+      if (d.prices && !d.prices.length) { pr.innerHTML = '<div class="hint">Not on any price list.</div>'; }
+      $("lk_open").href = "/phone/stock/?id=" + d.id;
+      $("lk_share").dataset.shareText = d.name + ": " + d.on_hand + " in stock" + (d.dot ? " (DOT " + d.dot + ")" : "") + " — Slick's Tire Supply";
+      $("lk_card").hidden = false;
+    }).catch(function () { $("lk_msg").textContent = "Could not reach the system. Check the signal."; });
+  }
+  $("lk_q").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); show($("lk_q").value); $("lk_q").value = ""; } });
+  window.phone.camera($("lk_cam"), $("lk_video"), show);
+});
+</script>
+{% endblock %}

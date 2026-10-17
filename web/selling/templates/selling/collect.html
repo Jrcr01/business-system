@@ -41,7 +41,7 @@ their advance, the receipt number optional. Write-off is the System admin's alon
 <p class="hint">Aging: not due ₱{{ aging.current|floatformat:2|intcomma }} · 1–30 ₱{{ aging.d30|floatformat:2|intcomma }} · 31–60 ₱{{ aging.d60|floatformat:2|intcomma }} ·
   61–90 ₱{{ aging.d90|floatformat:2|intcomma }} · over 90 ₱{{ aging.over|floatformat:2|intcomma }}</p>
 {% if rows %}
-<form method="post" id="collect_form">{% csrf_token %}<input type="hidden" name="action" value="collect"><input type="hidden" name="customer_id" value="{{ cust.customer_id }}">
+<form method="post" id="collect_form" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="collect"><input type="hidden" name="customer_id" value="{{ cust.customer_id }}">
   <div class="scroll-x"><table class="list cards">
     <tr><th>Invoice</th><th>Date</th><th>Due</th><th class="num">Owed</th><th class="num">Collect now</th><th></th></tr>
     {% for r in rows %}<tr><td class="c-t">{{ r.ref }}{% if r.is_opening %} <span class="pill off">opening</span>{% endif %}</td>
@@ -65,6 +65,8 @@ their advance, the receipt number optional. Write-off is the System admin's alon
     <input class="in" style="width:120px" name="pay_no_{{ forloop.counter0 }}" placeholder="check no.">
     <input class="in" type="date" name="pay_date_{{ forloop.counter0 }}" aria-label="Check date, line {{ forloop.counter }}">
     <input class="in" style="width:130px" name="pay_ref_{{ forloop.counter0 }}" placeholder="reference"></div>{% endfor %}
+  <div class="payrow"><span><label for="ck_f">Photo of the check (optional): front</label><input id="ck_f" type="file" name="check_front" accept="image/*" capture="environment"></span>
+    <span><label for="ck_b">back (after endorsing)</label><input id="ck_b" type="file" name="check_back" accept="image/*" capture="environment"></span></div>
   <p class="hint">A post-dated check counts: it waits to be deposited. Paid more than put on invoices: the rest stays as {{ cust.name }}'s advance.</p>
   <label class="inline" style="display:flex;gap:6px;margin:8px 0"><input type="checkbox" name="white_copy" value="1" checked> The white copy of each invoice fully paid now was handed over</label>
   <div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save the collection</button></div>
@@ -77,7 +79,7 @@ their advance, the receipt number optional. Write-off is the System admin's alon
 <div class="grp">Receipts</div>
 {% if history %}<div class="scroll-x"><table class="list" style="max-width:860px">
   <tr><th>Receipt</th><th>Date</th><th class="num">Received</th><th class="num">On invoices</th><th class="num">Kept as advance</th><th>Covers</th><th>By</th><th></th></tr>
-  {% for h in history %}<tr{% if h.void %} style="opacity:.55"{% endif %}><td>{{ h.label }}{% if h.void %} <span class="pill off">taken back</span>{% endif %}</td>
+  {% for h in history %}<tr{% if h.void %} style="opacity:.55"{% endif %}><td>{{ h.label }}{% if h.void %} <span class="pill off">taken back</span>{% endif %}{% for ph in h.photos %} <a href="/photos/{{ ph.photo_id }}.jpg" target="_blank" title="{{ ph.label }}"><span class="ms" style="font-size:18px;vertical-align:-4px">photo_camera</span></a>{% endfor %}</td>
     <td>{{ h.day|dmy }}</td><td class="num">{{ h.received|floatformat:2|intcomma }}</td><td class="num">{{ h.allocated|floatformat:2|intcomma }}</td>
     <td class="num">{% if h.extra > 0 %}{{ h.extra|floatformat:2|intcomma }}{% endif %}</td><td>{{ h.covers }}</td><td>{{ h.by }}</td>
     <td>{% if not h.void %}<form method="post" onsubmit="var r = prompt('Why is {{ h.label }} taken back?'); if (!r) return false; this.reason.value = r;">{% csrf_token %}

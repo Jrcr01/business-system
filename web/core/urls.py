@@ -8,6 +8,7 @@ urlpatterns = [
     path("health/", views.health, name="health"),
     path("sw.js", views.service_worker, name="service_worker"),
     path("apple-touch-icon.png", views.apple_icon, name="apple_icon"),
+    path("photos/<int:photo_id>.jpg", views.photo, name="photo"),
     path("apple-touch-icon-precomposed.png", views.apple_icon, name="apple_icon_pre"),
     path("setup/", views.setup, name="setup"),
     path("login/", views.login, name="login"),

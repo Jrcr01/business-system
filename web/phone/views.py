@@ -171,6 +171,27 @@ def prices(request):
     return render(request, "phone/prices.html", _ctx(request, "Price list", q=q, rows=rows, asked=bool(q)))
 
 
+@phone_page("stock")
+def look(request):
+    """Scan a tire: its stock and, to a person who sees prices, the price list (owner, 2026-10-17; mock-up ak_phone_features #6). ?code= answers
+    as JSON for the page's own script."""
+    from django.http import JsonResponse
+    from engines import stock_rules as sr
+    from engines.phone_lookup import price_of_item, stock_card
+    code = request.GET.get("code", "").strip()
+    if not code:
+        return render(request, "phone/look.html", _ctx(request, "Scan a tire"))
+    hit = sr.find_by_code(code)
+    if not hit:
+        return JsonResponse({"ok": False, "code": code, "msg": f"No item has the code {code}. Teach it on Stock: find the item, then Teach this barcode."})
+    card = stock_card(hit["id"]) or {}
+    out = {"ok": True, "id": hit["id"], "name": card.get("name") or hit["name"], "code": card.get("code") or hit["code"], "on_hand": card.get("on_hand"),
+           "dot": card.get("dot") or "", "old": bool(card.get("old")), "low_at": card.get("reorder_level"), "low": bool(card.get("low"))}
+    if request.phone_mine["prices"]:                           # never on the staff phone (owner, 2026-10-12)
+        out["prices"] = [{**p, "net": round(p["net"], 2)} for p in price_of_item(hit["id"])]
+    return JsonResponse(out)
+
+
 @phone_page("stock", write=True)
 def stock(request):
     from engines import stock_rules as sr
