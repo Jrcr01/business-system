@@ -119,7 +119,10 @@ def _with_shortcuts(request, path: str, keep_old: bool):
     from django.http import HttpResponse
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
-    mine = _mine(request) if getattr(request, "slicks_user", None) else {}
+    known = bool(getattr(request, "slicks_user", None))
+    # Android refreshes an installed app's file in the background, often without the sign-in (owner, 2026-10-17: the ERP icon lost Daily payables and
+    # Record an invoice): nobody known = the full set; a page a person may not use answers "not for you" when opened. Known = that person's own.
+    mine = _mine(request) if known else {"in": True, "out": True, "count": True, "sale": True}
     may = {"in": mine.get("in"), "out": mine.get("out"), "count": mine.get("count"), "sale": mine.get("sale")}
     # the pictures go inside the file: Android's installed app has its icons fetched by Google, which Cloudflare stops (owner, 2026-10-17: "why no logo")
     import os
@@ -130,7 +133,7 @@ def _with_shortcuts(request, path: str, keep_old: bool):
     if keep_old:                                                 # the Slick's ERP icon: POS first, then the laptop pages wanted on the go (owner, 2026-10-17)
         from core.menu import doable_pages, pages_for
         role = (getattr(request, "slicks_user", None) or {}).get("role")
-        see, do = (pages_for(role), doable_pages(role)) if role else (set(), set())
+        see, do = (pages_for(role), doable_pages(role)) if role else ({"checks", "order-statements"}, {"checks", "order-statements"})
         erp = [{"name": name, "short_name": name, "description": why, "url": url, "icons": [{"src": pics[key], "sizes": "96x96", "type": "image/png"}]}
                for key, name, url, why, page, needs_do in ERP_SHORTCUTS if page in (do if needs_do else see)]
         data["shortcuts"] = data.get("shortcuts", []) + (erp or jobs)          # nobody with the ERP pages (the staff phone): the jobs instead

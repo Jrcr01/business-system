@@ -75,3 +75,15 @@ def test_the_app_icon_has_each_persons_own_shortcuts(web, db):
     assert "Record a sale" not in staff and "Stock count" in staff
     staff_erp = [x["name"] for x in json.loads(rack.get("/phone/manifest.webmanifest").content)["shortcuts"]]
     assert staff_erp[0] == "Slick's POS" and "Daily payables" not in staff_erp and "Stock in" in staff_erp     # the staff phone: the jobs
+
+
+def test_the_icon_shortcuts_are_complete_when_android_asks_without_a_sign_in(web, db):
+    """Owner, 2026-10-17: "Why no daily payable and record invoices" -- Android refreshed the app without the sign-in and got only POS."""
+    import json
+    from django.test import Client
+    _on()
+    anon = Client()
+    erp = [s["name"] for s in json.loads(anon.get("/phone/manifest.webmanifest").content)["shortcuts"]]
+    assert erp == ["Slick's POS", "Daily payables", "Record an invoice"]
+    pos = [s["name"] for s in json.loads(anon.get("/phone/manifest-ops.webmanifest").content)["shortcuts"]]
+    assert pos == ["Stock in", "Stock out", "Stock count", "Record a sale"]
