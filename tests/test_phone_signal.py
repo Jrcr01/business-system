@@ -67,9 +67,11 @@ def test_the_app_icon_has_each_persons_own_shortcuts(web, db):
     names = [s["name"] for s in json.loads(web.get("/phone/manifest-ops.webmanifest").content)["shortcuts"]]
     assert names == ["Stock in", "Stock out", "Stock count", "Record a sale"]
     erp = [s["name"] for s in json.loads(web.get("/phone/manifest.webmanifest").content)["shortcuts"]]
-    assert erp[0] == "Slick's POS" and erp[1:] == names                                          # Android shows the first three: POS first
+    assert erp == ["Slick's POS", "Daily payables", "Record an invoice"]                         # owner, 2026-10-17: POS, then ERP pages
     pics = json.loads(web.get("/phone/manifest.webmanifest").content)["shortcuts"]
     assert all(s["icons"][0]["src"].startswith("data:image/png;base64,") for s in pics)     # pictures inside: Cloudflare cannot stop them
     rack = _sign_in_new("rack@slicks.test", "scanner")
     staff = [s["name"] for s in json.loads(rack.get("/phone/manifest-ops.webmanifest").content)["shortcuts"]]
     assert "Record a sale" not in staff and "Stock count" in staff
+    staff_erp = [x["name"] for x in json.loads(rack.get("/phone/manifest.webmanifest").content)["shortcuts"]]
+    assert staff_erp[0] == "Slick's POS" and "Daily payables" not in staff_erp and "Stock in" in staff_erp     # the staff phone: the jobs

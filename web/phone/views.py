@@ -108,6 +108,10 @@ SHORTCUTS = [("in", "Stock in", "/phone/in/", "Goods arrived against an order"),
              ("sale", "Record a sale", "/phone/sale/", "From the cash receipt")]
 
 
+ERP_SHORTCUTS = [("payables", "Daily payables", "/checks/", "What is due, mark paid", "checks", False),
+                 ("invoice", "Record an invoice", "/order-statements/invoices/#add", "A supplier invoice as it arrives", "order-statements", True)]
+
+
 def _with_shortcuts(request, path: str, keep_old: bool):
     """The manifest file plus the person's own shortcuts (owner, 2026-10-17): only the phone pages they may use; read again by the phone when the
     app is opened, so a changed access shows there too."""
@@ -123,8 +127,15 @@ def _with_shortcuts(request, path: str, keep_old: bool):
         pics = json.load(f)
     jobs = [{"name": name, "short_name": name, "description": why, "url": url, "icons": [{"src": pics[key], "sizes": "96x96", "type": "image/png"}]}
             for key, name, url, why in SHORTCUTS if may.get(key)]
-    # Android shows only the first three here (owner, 2026-10-17: "Pos lost"): Slick's POS first, then the jobs
-    data["shortcuts"] = (data.get("shortcuts", []) if keep_old else []) + jobs
+    if keep_old:                                                 # the Slick's ERP icon: POS first, then the laptop pages wanted on the go (owner, 2026-10-17)
+        from core.menu import doable_pages, pages_for
+        role = (getattr(request, "slicks_user", None) or {}).get("role")
+        see, do = (pages_for(role), doable_pages(role)) if role else (set(), set())
+        erp = [{"name": name, "short_name": name, "description": why, "url": url, "icons": [{"src": pics[key], "sizes": "96x96", "type": "image/png"}]}
+               for key, name, url, why, page, needs_do in ERP_SHORTCUTS if page in (do if needs_do else see)]
+        data["shortcuts"] = data.get("shortcuts", []) + (erp or jobs)          # nobody with the ERP pages (the staff phone): the jobs instead
+    else:
+        data["shortcuts"] = jobs
     resp = HttpResponse(json.dumps(data, ensure_ascii=False), content_type="application/manifest+json")
     resp["Cache-Control"] = "private, no-cache"
     return resp
