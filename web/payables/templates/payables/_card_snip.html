@@ -32,7 +32,9 @@ The document is deleted when the statement is added, or after a day.{% endcommen
     hidden: {}, wide: null, split: null, category: null, targets: boxes,
     onText: function (t) {
       var m = String(t || "").match(/\(?[₱P]?\s*\d[\d,]*\.\d{2}\)?C?/g) || String(t || "").match(/\d[\d,]*/g), vals = (m || []).map(money).filter(function (v) { return v !== null; });
-      var tgt = document.querySelector("#soa-form input.snip-target") || boxes[0];
+      var tgt = document.querySelector("#soa-form input.snip-target");      /* no box picked: fill nothing (owner, 2026-10-17: it went into Total amount due) */
+      if (!tgt) { $("sn_msg").innerHTML = "<b>Click the box to fill first</b> (for example Unbilled installments), then draw over the figure again. Nothing was filled."; $("sn_msg").style.color = "var(--fg-b3261e)"; return; }
+      $("sn_msg").style.color = "";
       if (!vals.length) { $("sn_msg").textContent = "No figure in the box. Draw it over the number(s)."; return; }
       var sum = Math.round(vals.reduce(function (a, b) { return a + b; }, 0) * 100) / 100;
       tgt.value = sum.toFixed(2); tgt.dispatchEvent(new Event("input", {bubbles: true}));
