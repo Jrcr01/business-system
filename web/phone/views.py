@@ -108,8 +108,8 @@ SHORTCUTS = [("in", "Stock in", "/phone/in/", "Goods arrived against an order"),
              ("sale", "Record a sale", "/phone/sale/", "From the cash receipt")]
 
 
-ERP_SHORTCUTS = [("payables", "Daily payables", "/checks/", "What is due, mark paid", "checks", False),
-                 ("invoice", "Record an invoice", "/order-statements/invoices/#add", "A supplier invoice as it arrives", "order-statements", True)]
+# owner, 2026-10-17: "i want stock one clickaway", then "remove daily payables and record an invoice": the ERP icon = POS + Slicks Inventory
+ERP_SHORTCUTS = [("inventory", "Slicks Inventory", "/phone/inventory/", "Stock by rim, one tap away", "stock", False)]
 
 
 def _with_shortcuts(request, path: str, keep_old: bool):
@@ -133,10 +133,10 @@ def _with_shortcuts(request, path: str, keep_old: bool):
     if keep_old:                                                 # the Slick's ERP icon: POS first, then the laptop pages wanted on the go (owner, 2026-10-17)
         from core.menu import doable_pages, pages_for
         role = (getattr(request, "slicks_user", None) or {}).get("role")
-        see, do = (pages_for(role), doable_pages(role)) if role else ({"checks", "order-statements"}, {"checks", "order-statements"})
+        see, do = (pages_for(role), doable_pages(role)) if role else ({"checks", "order-statements", "stock"}, {"checks", "order-statements", "stock"})
         erp = [{"name": name, "short_name": name, "description": why, "url": url, "icons": [{"src": pics[key], "sizes": "96x96", "type": "image/png"}]}
                for key, name, url, why, page, needs_do in ERP_SHORTCUTS if page in (do if needs_do else see)]
-        data["shortcuts"] = data.get("shortcuts", []) + (erp or jobs)          # nobody with the ERP pages (the staff phone): the jobs instead
+        data["shortcuts"] = data.get("shortcuts", []) + erp + (jobs if role == "scanner" else [])   # the staff phone keeps its jobs after them
     else:
         data["shortcuts"] = jobs
     resp = HttpResponse(json.dumps(data, ensure_ascii=False), content_type="application/manifest+json")

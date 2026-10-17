@@ -252,6 +252,76 @@ def _pdf_words(info: dict, page: int) -> list[dict]:
                 for w in p.extract_words(keep_blank_chars=False, use_text_flow=False)]
 
 
+# --- RapidOCR (owner, 2026-10-17: "setup AI" -> RapidOCR for snips) ------------------------------------------------------------------------------------
+# On the owner's Ultra Plus battery photo it read 96 of 96 cells where Tesseract read 11 of 39 (scratch comparison, 2026-10-17). It runs on our own
+# server (PaddleOCR's models via onnxruntime, ~100 MB once loaded, per worker that reads a picture); nothing leaves the server. It finds the text in
+# the whole box itself -- its strength -- and each piece goes to the cell its centre falls in. Tesseract stays as the fallback when it cannot load.
+
+RAPID_DOUBT = 85                   # RapidOCR's score (0-100) under this: the cell is shown orange, to confirm
+_RAPID = {"engine": None, "failed": False}
+import threading as _threading
+_RAPID_LOCK = _threading.Lock()
+
+
+def _rapid():
+    """The RapidOCR engine, loaded once per process on first use; None when it cannot load (then Tesseract reads)."""
+    if _RAPID["engine"] is None and not _RAPID["failed"]:
+        with _RAPID_LOCK:
+            if _RAPID["engine"] is None and not _RAPID["failed"]:
+                try:
+                    from rapidocr_onnxruntime import RapidOCR
+                    _RAPID["engine"] = RapidOCR()
+                except Exception:                       # noqa: BLE001 -- not installed, or its models missing
+                    _RAPID["failed"] = True
+    return _RAPID["engine"]
+
+
+def _rapid_words(info: dict, page: int, box) -> list[dict] | None:
+    """The text pieces RapidOCR finds inside the box, with their positions in the page's own coordinates; None when RapidOCR is not there."""
+    eng = _rapid()
+    if eng is None:
+        return None
+    import numpy as np
+    from PIL import Image
+    scale = 3.0 if info["ext"] == "pdf" else 1.0                 # a scanned PDF page rendered sharp; a photo as it is
+    img = _picture(info, page, scale)
+    x0, y0, x1, y1 = [v * scale for v in box]
+    crop = img.crop((int(x0), int(y0), int(x1) + 1, int(y1) + 1))
+    up = 2 if crop.width < 2400 else 1                            # small text is enlarged (the tested setting)
+    if up != 1:
+        crop = crop.resize((crop.width * up, crop.height * up), Image.LANCZOS)
+    with _RAPID_LOCK:                                             # one read at a time per process: the server has one processor
+        res, _ = eng(np.asarray(crop))
+    out = []
+    for pts, text, score in res or []:
+        t = _clean_cell(text)
+        if not t:
+            continue
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        f = up * scale
+        out.append({"t": t, "x0": int(x0) / scale + min(xs) / f, "x1": int(x0) / scale + max(xs) / f, "y0": int(y0) / scale + min(ys) / f,
+                    "y1": int(y0) / scale + max(ys) / f, "conf": float(score) * 100})
+    return out
+
+
+def _cells_from_words(ws: list[dict], box, lines: dict) -> tuple[list[list[str]], list[list[float]]]:
+    """Each word into the cell (between the lines) its centre falls in; per cell its text and its lowest score. Rows with nothing are kept here."""
+    x0, y0, x1, y1 = [float(v) for v in box]
+    cx = [x0] + list(lines.get("cols", [])) + [x1]
+    cy = [y0] + list(lines.get("rows", [])) + [y1]
+    grid = [["" for _ in range(len(cx) - 1)] for _ in range(len(cy) - 1)]
+    conf = [[100.0 for _ in range(len(cx) - 1)] for _ in range(len(cy) - 1)]
+    for w in sorted(ws, key=lambda w: (round(w["y0"]), w["x0"])):
+        mx, my = (w["x0"] + w["x1"]) / 2, (w["y0"] + w["y1"]) / 2
+        c = next((i for i in range(len(cx) - 1) if cx[i] <= mx < cx[i + 1]), None)
+        r = next((i for i in range(len(cy) - 1) if cy[i] <= my < cy[i + 1]), None)
+        if c is None or r is None:
+            continue
+        grid[r][c] = (grid[r][c] + " " if grid[r][c] else "") + w["t"]
+        conf[r][c] = min(conf[r][c], w["conf"])
+    return grid, conf
+
+
 def _ocr_words(info: dict, page: int, box: tuple[float, float, float, float]) -> list[dict]:
     """OCR on the box only: cut out, enlarged, greyscale, read as a block; words come back with their positions in the page's own coordinates."""
     import pytesseract
@@ -432,6 +502,9 @@ def read_by_lines(info: dict, page: int, box, lines: dict) -> dict:
                 line.append(" ".join(w["t"] for w in inside))
             grid.append(line)
         confs = [[100.0] * len(r) for r in grid]
+    elif (rw := _rapid_words(info, page, box)) is not None:
+        grid, confs = _cells_from_words(rw, box, used)
+        confs = [[100.0 if c >= RAPID_DOUBT else 0.0 for c in r] for r in confs]
     else:
         gray, f = _page_gray(info, page)
         flat = [(int(a * f) + 2, int(b * f) + 2, int(c * f) - 1, int(d * f) - 1) for row in cells for (a, b, c, d) in row]
@@ -628,6 +701,26 @@ def _read_box(info: dict, page: int, box, mode: str) -> dict:
                     return {"mode": mode, "rows": ruled, "doubt": [[False] * len(r) for r in ruled], "text": "", "how": "ruled",
                             "lines": lines_from_words(ws, box)}
     else:
+        rw = _rapid_words(info, page, box)
+        if rw is not None:
+            if not rw:
+                return {"mode": mode, "rows": [], "doubt": [], "text": "", "how": "none"}
+            if mode == "text":
+                return {"mode": mode, "rows": [], "doubt": [], "text": " ".join(" ".join(w["t"] for w in r) for r in _rows(rw)), "how": "ocr",
+                        "doubtful": any(w["conf"] < RAPID_DOUBT for w in rw)}
+            ruled = _guess_lines(info, page, box)
+            if len(ruled["cols"]) >= 1 and len(ruled["rows"]) >= 1:
+                grid, confs = _cells_from_words(rw, box, ruled)
+                ruled = {"cols": list(ruled["cols"]), "rows": ruled["rows"]}
+                while ruled["cols"] and grid and not any(r[0].strip() for r in grid):          # the table's own outer border inside the box: no empty column
+                    grid, confs, ruled["cols"] = [r[1:] for r in grid], [r[1:] for r in confs], ruled["cols"][1:]
+                while ruled["cols"] and grid and not any(r[-1].strip() for r in grid):
+                    grid, confs, ruled["cols"] = [r[:-1] for r in grid], [r[:-1] for r in confs], ruled["cols"][:-1]
+                keep = [i for i, r in enumerate(grid) if any(c.strip() for c in r)]
+                return {"mode": mode, "rows": [grid[i] for i in keep], "doubt": [[c < RAPID_DOUBT for c in confs[i]] for i in keep], "text": "",
+                        "how": "ocr", "lines": ruled}
+            grid, confs = _grid(rw)
+            return {"mode": mode, "rows": grid, "doubt": [[c < RAPID_DOUBT for c in r] for r in confs], "text": "", "how": "ocr", "lines": lines_from_words(rw, box)}
         if mode == "table":
             cells = _ocr_cells(info, page, box)
             if cells:
@@ -907,7 +1000,7 @@ JOB_MINUTES = 6
 
 
 def needs_job(token: str) -> bool:
-    """A picture, or a PDF page without real text: read by OCR, so slowly."""
+    """A picture, or a PDF page without real text: read by OCR in the background (RapidOCR takes seconds; Tesseract, the fallback, minutes)."""
     info = file_info(token)
     return bool(info) and not (info["ext"] == "pdf" and info["has_text"])
 

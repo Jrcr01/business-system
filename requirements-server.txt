@@ -3,3 +3,4 @@
 # invoice photos) is a system program: bootstrap_server.sh installs it with apt.
 -r requirements-web.txt
 -r requirements.txt
+-r requirements-ocr.txt

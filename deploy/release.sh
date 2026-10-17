@@ -14,6 +14,7 @@ set -a; . /etc/slicks-erp/env; set +a
 cd "$NEW"
 "$PY" -m pip install -q --upgrade pip
 "$PY" -m pip install -q -r requirements-server.txt
+"$PY" -m pip install -q --no-deps rapidocr-onnxruntime==1.4.4     # the snip reader; its OpenCV is the headless one above (requirements-ocr.txt)
 if [ -f "$WEB_DB_PATH" ]; then
   "$PY" -c "from db_location import safe_copy; import sys; safe_copy(sys.argv[1], sys.argv[2])" "$WEB_DB_PATH" "/srv/slicks/backups/before_release_$ID.db"
   "$PY" apply_pending_migrations.py --db "$WEB_DB_PATH"

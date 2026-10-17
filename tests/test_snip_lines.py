@@ -73,3 +73,34 @@ def test_a_photo_is_straightened_and_can_be_nudged_a_text_pdf_never(web, db):
     pdf = _open(web, cid, ruled=False)
     assert json.loads(web.get(f"/snip/{pdf}/angle/?p=1").content) == {"ok": True, "can": False, "angle": 0.0}
     assert ROWS                                                                                  # (the text PDF of the other tests)
+
+
+def test_rapidocr_reads_a_photo_table_into_its_ruled_cells(web, db):
+    """RapidOCR (owner, 2026-10-17: "setup AI" -> RapidOCR): a picture of a ruled price table comes back cell for cell, prices with their commas."""
+    import pytest
+    pytest.importorskip("rapidocr_onnxruntime")
+    from PIL import Image, ImageDraw, ImageFont
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    _admin(web)
+    cid = _supplier_with_price(web, db, "New Century City Marketing Corp.")
+    try:
+        f = ImageFont.truetype("arial.ttf", 26)
+    except OSError:
+        f = ImageFont.truetype("DejaVuSans.ttf", 26)
+    rows = [("Ultra MF Plus", "NS40", "2,060"), ("Ultra MF Plus", "NS60", "2,710"), ("Ultra LM Plus", "DIN66H", "4,550"), ("Ultra LM Plus", "N150", "6,800")]
+    xs, im = [100, 450, 750, 1000], Image.new("RGB", (1100, 600), "white")
+    d = ImageDraw.Draw(im)
+    for i, r in enumerate(rows):
+        for x, t in zip(xs, r):
+            d.text((x + 14, 120 + i * 60 + 14), t, fill="black", font=f)
+    for i in range(len(rows) + 1):
+        d.line([(100, 120 + i * 60), (1000, 120 + i * 60)], fill="black", width=3)
+    for x in xs:
+        d.line([(x, 120), (x, 120 + len(rows) * 60)], fill="black", width=3)
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG", quality=90)
+    loc = web.post("/price-lists/snip/upload/", {"s": cid, "file": SimpleUploadedFile("Ultra.jpg", buf.getvalue(), content_type="image/jpeg")})["Location"]
+    token = loc.split("&f=")[1].split("&")[0]
+    from engines import snip
+    r = snip.read_box(token, 1, (90, 110, 1010, 370), "table")
+    assert r["rows"] == [list(x) for x in rows] and len(r["lines"]["cols"]) == 2
