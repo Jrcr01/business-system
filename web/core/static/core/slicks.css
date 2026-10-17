@@ -650,3 +650,4 @@ table.list th[aria-sort] { color: var(--fg-0b4f8a); } table.list th .sort-arrow 
 .snip-out input.snip-target { outline: 2px solid var(--blue); outline-offset: 1px; } .snip-head-row input.in { font-weight: 700; color: var(--muted); }
 .snip-text { font-size: 1.05rem; font-weight: 700; color: var(--ok); margin: 6px 0; overflow-wrap: anywhere; }
 .snip-src { color: var(--fg-0b4f8a); text-decoration: none; } .snip-src .ms { font-size: 15px; width: 15px; height: 15px; vertical-align: -2px; }
+.snip-x-f { display: inline; margin: 0 2px 0 0; } .snip-x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: .85rem; padding: 0 4px; border-radius: 4px; line-height: 1; } .snip-x:hover { color: var(--fg-b3261e); background: var(--bg-fdecea, #fdecea); }   /* remove a snip document now (2026-10-17) */

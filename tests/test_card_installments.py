@@ -112,3 +112,24 @@ def test_every_snip_page_offers_paste_from_the_clipboard(web, db):
     Image.new("RGB", (400, 300), "white").save(buf, format="PNG")
     r = web.post("/order-statements/soa/", {"s": cid, "action": "snip_upload", "file": SimpleUploadedFile("pasted-20261017.png", buf.getvalue(), content_type="image/png")})
     assert r.status_code == 302 and "&f=" in r["Location"]
+
+
+def test_a_snip_document_can_be_removed_now_with_the_page_own_rights(web, db):
+    """Owner, 2026-10-17: a ✕ beside each open document removes it at once (instead of after a day)."""
+    from PIL import Image
+    from engines import snip
+    from tests.test_web_d0 import _sign_in_new
+    _admin(web)
+    buf = io.BytesIO()
+    Image.new("RGB", (300, 200), "white").save(buf, format="PNG")
+    r = web.post("/credit-cards/", {"action": "snip_upload", "file": SimpleUploadedFile("Pasted 17 Oct 10:30 AM.png", buf.getvalue(), content_type="image/png")})
+    token = r["Location"].split("?f=")[1]
+    page = web.get(f"/credit-cards/?f={token}").content.decode()
+    assert "Pasted 17 Oct 10:30 AM.png" in page and 'action="/snip/discard/"' in page and f'name="token" value="{token}"' in page
+    viewer = _sign_in_new("view@slicks.test", "viewer")
+    r = viewer.post("/snip/discard/", {"token": token, "back": "/credit-cards/"})
+    assert snip.file_info(token) is not None                                  # without the card rights nothing is removed
+    r = web.post("/snip/discard/", {"token": token, "back": f"/credit-cards/?f={token}"})
+    assert r.status_code == 302 and r["Location"] == "/credit-cards/" and snip.file_info(token) is None
+    r = web.post("/snip/discard/", {"token": token, "back": "https://evil.example/"})
+    assert r["Location"] == "/"                                               # gone already; never sent off the site

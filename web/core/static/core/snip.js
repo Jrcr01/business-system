@@ -90,7 +90,8 @@ var slicksSnip = (function () {
     if (!o.form || !o.button) return;
     function send(blob, type) {
       var fd = new FormData(o.form), ext = (type.split("/")[1] || "png").replace("jpeg", "jpg").split("+")[0];
-      fd.delete(o.field); fd.append(o.field, blob, "pasted-" + new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "") + "." + ext);
+      var now = new Date(), when = now.toLocaleDateString("en-PH", {day: "numeric", month: "short"}) + " " + now.toLocaleTimeString("en-PH", {hour: "numeric", minute: "2-digit"});
+      fd.delete(o.field); fd.append(o.field, blob, "Pasted " + when + "." + ext);     /* "Pasted 17 Oct 10:30 AM.png", local time (2026-10-17) */
       o.button.disabled = true; if (o.hint) o.hint.textContent = "Opening the picture…";
       fetch(o.form.getAttribute("action") || location.href, {method: "POST", body: fd, credentials: "same-origin", redirect: "follow"})
         .then(function (r) { location.href = r.url || location.href; })

@@ -106,6 +106,33 @@ def read_json(request, token: str, kind: str, guess):
 
 
 
+# Removing a document now instead of waiting a day (owner, 2026-10-17): the ✕ beside each name, on every snip page, with that page's own rights.
+DISCARD_RIGHTS = {"price": ("price-lists", "price.write"), "loan": ("bank-loans", "bankloans.use"), "soa": ("order-statements", None), "card": ("credit-cards", "cards.use")}
+
+
+@require_POST
+def discard(request):
+    from django.contrib import messages
+    from django.utils.http import url_has_allowed_host_and_scheme
+    from engines import snip
+    token = request.POST.get("token", "")
+    back = request.POST.get("back", "/")
+    if not back.startswith("/") or not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}):
+        back = "/"
+    back = "&".join(x for x in back.split("&") if not x.startswith("f=")).replace("?f=" + token, "?").rstrip("?&")   # not back to the document just removed
+    info = snip.file_info(token)
+    if not info or info["kind"] not in DISCARD_RIGHTS:
+        messages.error(request, "That document is already gone.")
+        return redirect(back)
+    page, action = DISCARD_RIGHTS[info["kind"]]
+
+    def _do(req):
+        snip.discard(token)
+        messages.success(req, f"{info['filename']} removed.")
+        return redirect(back)
+    return page_needed(page, action)(_do)(request)
+
+
 @page_needed("price-lists")
 def page_image(request, token: str, page: int):
     return page_image_response(token, page, "price")
