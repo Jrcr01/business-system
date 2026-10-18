@@ -361,6 +361,19 @@ def _profit_month():
     return f"{r['profit']:,.0f}", "profit this month so far", ("alert" if r["profit"] < 0 else "none")
 
 
+def _quotations():
+    """Stage C (2026-10-17): quotations waiting for the customer."""
+    from engines.quote_rules import counts
+    n = counts()["waiting"]
+    return str(n), "waiting for the customer", "warn" if n else "none"
+
+
+def _follow_ups():
+    from engines.quote_rules import follow_ups
+    n = len(follow_ups())
+    return str(n), "to call", "warn" if n else "none"
+
+
 def _customers():
     return str(_count("SELECT COUNT(*) FROM customers WHERE is_active = 1")), "customers", "none"
 
@@ -534,10 +547,12 @@ for _t in (
     Tile("stock", "stock", "Items and stock", _stock_items, needs="inventory.use"),
     Tile("stock-counts", "stock", "Stock counts", _stock_counts, needs="inventory.use"),
     Tile("affiliates", "stock", "Affiliates", _affiliates, needs="inventory.use"),
+    Tile("quotations", "sell", "Quotations", _quotations, needs="sales.use"),
     Tile("sales", "sell", "Scan out", _scan_out, key="scan-out", icon=":material/barcode_scanner:", state=(("sales_view", "scan"),), needs="sales.use", when=_scan_on),
     Tile("sales", "sell", "Record the day's invoices", _to_record, needs="sales.use"),
     Tile("sales", "sell", "Sales today", _sales_today, key="sales-today", icon=":material/today:", state=(("sales_view", "day"),), needs="sales.use"),
     Tile("collect", "sell", "Collect payments", _receivables, needs="collect.use"),
+    Tile("follow-ups", "sell", "Follow-ups", _follow_ups, needs="sales.use"),
     Tile("customers", "sell", "Customers", _customers, needs="sales.use"),
     Tile("si-booklets", "sell", "Invoice booklets", _si_booklets, needs="sales.use"),
     Tile("bank-cash", "bank", "Bank and cash", _bank_cash, actions=[

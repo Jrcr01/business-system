@@ -11,10 +11,11 @@
     <label for="op_by">Counted by</label><input class="ph-field" id="op_by" type="text" name="counted_by" value="{{ me_name }}">
     <button class="btn main" type="submit" style="margin-top:8px"><span class="ms">play_arrow</span>Start an opening count</button>
   </form></details>
-<details class="ph-card" style="margin-top:12px"{% if not rows %} open{% endif %}><summary style="font-weight:700;cursor:pointer"><span class="ms">fact_check</span> Count a brand</summary>
+<details class="ph-card" style="margin-top:12px"{% if not rows %} open{% endif %}><summary style="font-weight:700;cursor:pointer"><span class="ms">fact_check</span> Count a brand or a size</summary>
   <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="start">
     <label for="ct_cat">Type</label><select class="ph-field" id="ct_cat" name="category"><option value="">All types</option>{% for k, label in categories %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select>
     <label for="ct_brand">Brand</label><select class="ph-field" id="ct_brand" name="brand"><option value="">All brands</option>{% for b in brands %}<option value="{{ b }}">{{ b }}</option>{% endfor %}</select>
+    <label for="ct_rim">Size</label><select class="ph-field" id="ct_rim" name="rim"><option value="">All sizes</option>{% for r in rims %}<option value="{{ r }}">Rim {{ r }}</option>{% endfor %}</select>
     <label style="display:flex;gap:8px;align-items:center;font-size:.95rem;color:var(--ink)"><input type="checkbox" name="uncounted" value="1" style="width:22px;height:22px"> Only items not counted in 90 days</label>
     <label for="ct_by">Counted by</label><input class="ph-field" id="ct_by" type="text" name="counted_by" value="{{ me_name }}">
     <button class="btn main" type="submit" style="margin-top:8px"><span class="ms">play_arrow</span>Start</button>

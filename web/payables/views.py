@@ -15,6 +15,7 @@ from django.shortcuts import redirect, render
 
 from buying.views import _date, _suppliers
 from masters.views import page_needed
+from engines.common import get_conn  # the one-step invoice edit (2026-10-18)
 
 CREATED = [("all", "All time"), ("today", "Today"), ("7", "Last 7 days"), ("30", "Last 30 days")]
 STAGES = ["Draft", "Parked", "Issued", "Cancelled"]
@@ -166,6 +167,8 @@ def statement(request, sid: int):
            "no_po": sum(1 for r in invoices if not r["from_po"] and r["status"] != "Cancelled"), "waiting": waiting,
            "cancelled": cancelled, "locked": locked, "editable": not cancelled and not locked,
            "may_reopen": locked and not cancelled and _can(request, "check.void"), "may_cancel": not cancelled and _can(request, "check.void"),
+           # owner, 2026-10-18: an invoice of a closed statement is edited in one step (engines/statement_fix.py): the checks follow it
+           "inv_edit": not cancelled and (not locked or _can(request, "check.void")), "fix": request.session.get(f"fix_{sid}") if request.GET.get("fix") else None,
            "may_delete": str(b["statement_ref"]).startswith("DRAFT-") and not memos and not checks and _can(request, "check.void"),
            "may_number": b["status"] == "Draft" and str(b["statement_ref"]).startswith("DRAFT-") and n_inv > 0 and not cancelled,
            "today": manila_today(), "due_today": resolve_due_date(manila_today(), b["terms"] or ""),
@@ -201,6 +204,103 @@ def statement(request, sid: int):
     return render(request, "payables/statement.html", ctx)
 
 
+def _fix_mode(what: str) -> str:
+    return {"save_invoice": "edit", "delete_invoice": "delete", "take_out": "take_out"}[what]
+
+
+def _new_net(p) -> float | None:
+    from engines.statement_rules import calculate_trade_discount
+    gross, less = _num(p.get("gross"), 0), _num(p.get("less"), 0) or 0
+    return calculate_trade_discount(gross, [less] if less else [])[1] if gross > 0 else None
+
+
+def _needs_fix(sid: int, p, what: str) -> bool:
+    """A closed statement, or checks that would pay more than is owed after this change: the one-step edit (owner, 2026-10-18)."""
+    from engines.statement_fix import plan
+    with get_conn() as conn:
+        locked = bool(conn.execute("SELECT is_locked FROM order_statements WHERE statement_id = ?", (sid,)).fetchone()[0])
+    if locked:
+        return True
+    pl = plan(sid, int(p.get("invoice_id") or 0), _fix_mode(what), _new_net(p) if what == "save_invoice" else None)
+    return bool(pl["steps"]) or not pl["ok"]
+
+
+def _invoice_fix(request, b: dict, p, what: str):
+    """Edit / delete / take out an invoice whose statement is closed or whose checks would pay too much: what happens to the checks is worked out
+    first; when a numbered check must be replaced (or a closed statement needs its reason) the page asks, then everything is done in one go."""
+    from engines import statement_fix as sf
+    from engines.statement_rules import delete_invoice, doc_reference, edit_invoice, resolve_due_date, take_out_of_batch
+    sid, cid, terms = int(b["statement_id"]), int(b["creditor_id"]), b["terms"] or ""
+    back = f"/order-statements/{sid}/"
+    key = f"fix_{sid}"
+    if what == "confirm_fix":
+        pending = request.session.get(key)
+        if not pending:
+            _say(request, False, "That change is no longer waiting. Make it again.")
+            return redirect(back)
+        what, data = pending["what"], pending["post"]
+        reason = " ".join((p.get("reason") or pending.get("reason") or "").split())
+        numbers = {int(k[4:]): v for k, v in p.items() if k.startswith("num_") and k[4:].isdigit()}
+    else:
+        data, reason, numbers = {k: p.get(k, "") for k in ("invoice_id", "stamp", "doc", "dr", "date", "gross", "less")}, " ".join(p.get("reason", "").split()), {}
+    if not _can(request, "check.void"):
+        _say(request, False, "Your role cannot change a payment statement that checks already cover.")
+        return redirect(back)
+    inv_id = int(data.get("invoice_id") or 0)
+    now = next((r for r in _invoices(sid) if r["invoice_id"] == inv_id), None)
+    if now is None or now["stamp"] != data.get("stamp"):
+        request.session.pop(key, None)
+        _say(request, False, "Someone else changed or removed this invoice after you opened it. Nothing was saved; this is the current list.")
+        return redirect(back)
+    mode = _fix_mode(what)
+    change, new_net = None, None
+    if mode == "edit":                                           # the invoice change is checked fully BEFORE any check is touched
+        day, gross, less = _date(data.get("date")), _num(data.get("gross"), 0), _num(data.get("less"), 0) or 0
+        ref = doc_reference(data.get("doc"), data.get("dr"))
+        bad = ("Enter the date received." if not day else "An invoice needs a document reference: its SI no. or DR no." if not ref
+               else "Amount must be greater than zero." if gross <= 0 else "Less % must be between 0 and 100." if not 0 <= less <= 100 else "")
+        if not bad:
+            with get_conn() as conn:
+                if conn.execute("SELECT 1 FROM invoices WHERE creditor_id = ? AND doc_ref = ? AND invoice_id != ?", (cid, ref, inv_id)).fetchone():
+                    bad = f"'{ref}' already exists for this supplier: choose a different reference."
+        if bad:
+            _say(request, False, bad)
+            return redirect(back + f"?edit_inv={inv_id}")
+        new_net = _new_net(data)
+        change = lambda: edit_invoice(inv_id, ref, day, resolve_due_date(day, terms), gross, less, dr_no=data.get("dr", ""))   # noqa: E731
+    elif mode == "delete":
+        with get_conn() as conn:
+            po = conn.execute("SELECT p.po_no FROM po_receipts r JOIN purchase_orders p ON p.po_id = r.po_id WHERE r.invoice_id = ? LIMIT 1", (inv_id,)).fetchone()
+        if po:
+            _say(request, False, f"Invoice {now['doc_ref']} was matched to purchase order {po[0]}, so it can't be deleted here. Correct its amount instead.")
+            return redirect(back)
+        change = lambda: delete_invoice(inv_id)                  # noqa: E731
+    else:
+        change = lambda: take_out_of_batch(inv_id)               # noqa: E731
+    planned = sf.plan(sid, inv_id, mode, new_net)
+    if not planned["ok"]:
+        request.session.pop(key, None)
+        _say(request, False, planned["msg"])
+        return redirect(back)
+    locked = bool(b["is_locked"])
+    missing = [c for c in planned["needs_number"] if not str(numbers.get(c) or "").strip()]
+    if (locked and not reason) or missing:                       # ask on the page, then come back here with the answers
+        request.session[key] = {"what": what, "post": data, "reason": reason, "doc": now["doc_ref"],
+                                "lines": sf.describe(planned), "needs": [{"check_id": s["check_id"], "number": s["number"], "new": s["new"]}
+                                                                        for s in planned["steps"] if s["kind"] == "replace"],
+                                "ask_reason": locked, "label": {"edit": "Save the change to", "delete": "Delete", "take_out": "Take out"}[mode]}
+        return redirect(back + "?fix=1#fix")
+    ok, msg = sf.apply(sid, inv_id, mode, reason, numbers, change, planned)
+    if ok:
+        request.session.pop(key, None)
+    elif key not in request.session:                             # kept waiting, so a better number can be typed
+        request.session[key] = {"what": what, "post": data, "reason": reason, "doc": now["doc_ref"], "lines": sf.describe(planned),
+                                "needs": [{"check_id": s["check_id"], "number": s["number"], "new": s["new"]} for s in planned["steps"] if s["kind"] == "replace"],
+                                "ask_reason": bool(b["is_locked"]), "label": {"edit": "Save the change to", "delete": "Delete", "take_out": "Take out"}[mode]}
+    _say(request, ok, msg)
+    return redirect(back if ok else back + "?fix=1#fix")
+
+
 def _statement_post(request, b: dict):
     from engines.check_rules import cancel_order_statement
     from engines.db_engine import promote_draft_statement
@@ -231,6 +331,8 @@ def _statement_post(request, b: dict):
             except sqlite3.IntegrityError:
                 _say(request, False, f"Invoice {doc} already exists for this supplier.")
         return redirect(back + "#add_invoice")
+    if what == "confirm_fix" or (what in ("save_invoice", "delete_invoice", "take_out") and _needs_fix(sid, p, what)):
+        return _invoice_fix(request, b, p, what)
     if what in ("save_invoice", "delete_invoice"):
         inv_id = int(p.get("invoice_id", 0))
         now = next((r for r in _invoices(sid) if r["invoice_id"] == inv_id), None)

@@ -1,0 +1,46 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}{{ customer.name }}{% endblock %}
+{% block content %}
+{% comment %}Stage C (mock-up f_stage_c_customers screens 2 and 4): one customer -- what they owe, their quotes and sales, their agreed prices, the contact notes.{% endcomment %}
+<p class="note"><a href="/customers/">← Customers</a></p>
+<h2><span class="ms" style="font-size:28px">person</span> {{ customer.name }} <span class="pill">{{ customer.type_label }}</span>{% if customer.credit_allowed %} <span class="pill ok">may buy on charge</span>{% endif %}</h2>
+<div class="facts">
+  {% if customer.contact_person or customer.contact_number %}<div><span>Contact</span><b>{{ customer.contact_person|default:"" }} {{ customer.contact_number|default:"" }}</b></div>{% endif %}
+  {% if owed %}<div><span>Owes now</span><b>₱{{ owed.owed|default:0|floatformat:2|intcomma }}</b></div>{% endif %}
+  <div><span>Bought to date</span><b>₱{{ customer.sold|default:0|floatformat:2|intcomma }}</b></div>
+  <div><span>Quotations</span><b>{{ quotes|length }}</b></div></div>
+{% if not view_only %}<p><a class="btn small" href="/quotations/new/"><span class="ms">request_quote</span>New quotation</a></p>{% endif %}
+
+<div class="grp">Agreed prices</div>
+<p class="hint">Used by itself when this customer is quoted: one item's own price wins over its brand's percent, the brand's over "everything".</p>
+{% if agreed %}<div class="scroll-x"><table class="list"><tr><th>Item or brand</th><th style="text-align:right">Agreed</th><th>Since</th><th>Until</th><th></th></tr>
+  {% for a in agreed %}<tr><td>{{ a.what }}</td><td class="num"><b>{% if a.price is not None %}₱{{ a.price|floatformat:2|intcomma }}{% else %}{{ a.pct|floatformat:"-2" }}% off{% endif %}</b></td>
+    <td>{{ a.since|dmy }}</td><td>{{ a.until|dmy|default:"no end" }}</td>
+    <td>{% if not view_only %}<form method="post" style="margin:0">{% csrf_token %}<input type="hidden" name="action" value="stop"><input type="hidden" name="cp_id" value="{{ a.id }}"><button class="btn small ghost" type="submit">Stop</button></form>{% endif %}</td></tr>{% endfor %}
+</table></div>{% else %}<p class="note">No agreed price.</p>{% endif %}
+{% if not view_only %}<details><summary class="hint" style="cursor:pointer">Add an agreed price</summary>
+  <form class="bar" method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="agreed">
+    <div><label for="ag_brand">Brand (empty = everything)</label><select id="ag_brand" name="brand"><option value="">Everything</option>{% for b in brands %}<option>{{ b }}</option>{% endfor %}</select></div>
+    <div><label for="ag_pct">Percent off</label><input id="ag_pct" name="pct" placeholder="e.g. 3" style="width:90px"></div>
+    <div><label for="ag_since">Since</label><input id="ag_since" type="date" name="since"></div><div><label for="ag_until">Until (optional)</label><input id="ag_until" type="date" name="until"></div>
+    <button class="btn small" type="submit">Save</button></form>
+  <p class="hint">A fixed price for one item: type it in a quotation for this customer (the price is kept on the quotation); a standing one-item price can be added here later.</p></details>{% endif %}
+
+<div class="grp">Quotations</div>
+{% if quotes %}<div class="scroll-x"><table class="list"><tr><th>Quotation</th><th>Date</th><th style="text-align:right">Amount</th><th>Where it stands</th></tr>
+  {% for q in quotes %}<tr><td><a href="/quotations/{{ q.id }}/">{{ q.no }}</a></td><td>{{ q.date|dmy }}</td><td class="num">{{ q.total|floatformat:2|intcomma }}</td><td>{{ q.label }}</td></tr>{% endfor %}
+</table></div>{% else %}<p class="note">No quotation yet.</p>{% endif %}
+
+<div class="grp">Last sales</div>
+{% if sales %}<div class="scroll-x"><table class="list"><tr><th>Invoice</th><th>Date</th><th style="text-align:right">Amount</th></tr>
+  {% for s in sales %}<tr><td><a href="/sales/{{ s.id }}/">{% if s.si %}SI {{ s.si|stringformat:'06d' }}{% else %}slip{% endif %}</a></td><td>{{ s.date|dmy }}</td><td class="num">{{ s.total|floatformat:2|intcomma }}</td></tr>{% endfor %}
+</table></div>{% else %}<p class="note">No sale yet.</p>{% endif %}
+
+<div class="grp">Contact notes</div>
+{% if not view_only %}<form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="contact">
+  <div class="grow"><label for="cn">What was said</label><input id="cn" name="note" required placeholder="e.g. asked for 11R22.5 prices for next month"></div>
+  <div><label for="cnx">Call again on</label><input id="cnx" type="date" name="next_on"></div><button class="btn small" type="submit">Note a contact</button></form>{% endif %}
+{% if contacts %}<div class="scroll-x"><table class="list"><tr><th>On</th><th>What was said</th><th>Call again</th><th>By</th></tr>
+  {% for c in contacts %}<tr><td>{{ c.on|dmy }}</td><td>{{ c.note }}{% if c.qt %} <span class="hint">· {{ c.qt }}</span>{% endif %}</td><td>{{ c.next_on|dmy|default:"" }}</td><td class="hint">{{ c.by }}</td></tr>{% endfor %}
+</table></div>{% else %}<p class="note">No contact noted yet.</p>{% endif %}
+{% endblock %}

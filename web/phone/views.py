@@ -406,7 +406,7 @@ def count(request):
     from engines.stock_rules import CATEGORY_LABEL
     if request.method == "POST" and request.POST.get("action") == "start":
         p = request.POST
-        ok, msg, cid = cr.start_count(p.get("category", ""), p.get("brand", ""), p.get("uncounted") == "1", "", p.get("counted_by", ""))
+        ok, msg, cid = cr.start_count(p.get("category", ""), p.get("brand", ""), p.get("uncounted") == "1", "", p.get("counted_by", ""), p.get("rim", ""))
         _say(request, ok, msg)
         return redirect(f"/phone/count/{cid}/" if ok else "/phone/count/")
     if request.method == "POST" and request.POST.get("action") == "start_opening":
@@ -416,7 +416,8 @@ def count(request):
     with get_conn() as conn:
         brands = [r[0] for r in conn.execute("SELECT DISTINCT brand FROM items WHERE is_active = 1 AND brand != '' ORDER BY brand COLLATE NOCASE")]
     rows = [c for c in cr.listing() if c["status"] in ("COUNTING", "WAITING")]
-    return render(request, "phone/count.html", _ctx(request, "Stock count", rows=rows, brands=brands, categories=list(CATEGORY_LABEL.items()),
+    from engines.rim_stock import tabs
+    return render(request, "phone/count.html", _ctx(request, "Stock count", rows=rows, brands=brands, categories=list(CATEGORY_LABEL.items()), rims=tabs(),
                                                       me_name=request.slicks_user.get("name", "")))
 
 
@@ -565,6 +566,17 @@ def quote(request):
     from engines.permissions import can
     from engines.settings_registry import int_value
     admin = can(request.slicks_user["role"], "settings.edit")
+    from selling.quotes import _stage_c
+    may_keep = _stage_c() and can(request.slicks_user["role"], "sales.use")
+    if request.method == "POST" and request.POST.get("action") == "keep" and may_keep:      # Save as quotation (stage C, 2026-10-17)
+        from engines import quote_rules as qr
+        try:
+            lines = json.loads(request.POST.get("lines") or "[]")
+        except ValueError:
+            lines = []
+        ok, msg, qid = qr.save_quote(None, request.POST.get("customer", ""), request.POST.get("good_until"), lines)
+        _say(request, ok, msg)
+        return redirect(request.get_full_path())
     if request.method == "POST" and admin:
         ok, msg = rim_stock.save_quote_footer(request.POST.get("footer", ""))
         _say(request, ok, msg)
@@ -573,7 +585,7 @@ def quote(request):
     lines = rim_stock.quote_lines(size) if size else []
     return render(request, "phone/quote.html", _ctx(request, f"Quote · {size}" if size else "Quote", size=size, rim=rim_stock.rim_of(size),
                                                      lines_json=json.dumps(lines), has_lines=bool(lines), step=int_value("quote_round_to"),
-                                                     footer=rim_stock.quote_footer(), admin=admin, may_sell=request.phone_mine.get("sale_do"),
+                                                     footer=rim_stock.quote_footer(), admin=admin, may_sell=request.phone_mine.get("sale_do"), may_keep=may_keep,
                                                      sizes=rim_stock.find(request.GET.get("q", "")) if not size and request.GET.get("q") else []))
 
 

@@ -90,10 +90,17 @@ def sales(request):
         else:
             ok, msg, sale_id = sr.save_sale(p.get("si_no"), p.get("sale_date"), cust, name, _lines(p), _services(p), _payments(p), p.get("below_reason", ""))
             _say(request, ok, msg)
+            if ok and p.get("qt", "").isdigit():                # made from a quotation (stage C, 2026-10-17): it is sold now
+                from engines.quote_rules import mark_sold
+                mark_sold(int(p["qt"]), sale_id)
             if ok:
                 return redirect("/sales/?view=new")             # the next invoice straight away: they are typed one after another after close
         start = json.dumps([{"id": int(ln["item_id"]), "qty": float(ln["qty"] or 0), "price": ln["price"]} for ln in _lines(p) if str(ln["item_id"]).isdigit()])
-        return render(request, "selling/sale.html", _sale_ctx(request, p, start))
+        ctx = _sale_ctx(request, p, start)
+        if p.get("qt", "").isdigit():
+            from engines.quote_rules import get_quote
+            ctx["qt"] = get_quote(int(p["qt"]))
+        return render(request, "selling/sale.html", ctx)
     if view == "day":
         from datetime import date, timedelta
         try:
@@ -109,6 +116,13 @@ def sales(request):
             return redirect("/sales/")
         return render(request, "selling/scan.html", _scan_ctx(request, None, "[]"))
     if view == "new":                                           # an invoice typed with no slip
+        if request.GET.get("qt", "").isdigit():                 # Make it a sale, from a quotation (stage C, 2026-10-17)
+            from engines.quote_rules import get_quote
+            qt = get_quote(int(request.GET["qt"]))
+            if qt and qt["state"] in ("WAITING", "LAPSED"):
+                ctx = _sale_ctx(request, None, json.dumps([{"id": ln["item_id"], "qty": ln["qty"], "price": ln["price"]} for ln in qt["lines"] if ln["item_id"]]))
+                ctx.update({"customer": qt["customer"], "qt": qt})
+                return render(request, "selling/sale.html", ctx)
         return render(request, "selling/sale.html", _sale_ctx(request, None, "[]"))
     sr.flag_open_releases()                                     # the page: the day's slips, each becoming its invoice after close
     rows = sr.open_releases()
@@ -177,7 +191,8 @@ def customers(request):
         return redirect("/customers/")
     q = request.GET.get("q", "")
     edit = sr.customer(int(request.GET["edit"])) if request.GET.get("edit", "").isdigit() else None
-    return render(request, "selling/customers.html", {"page_id": "customers", "rows": sr.customers(q), "q": q, "types": list(sr.CUSTOMER_TYPES.items()), "edit": edit,
+    from selling.quotes import _stage_c
+    return render(request, "selling/customers.html", {"page_id": "customers", "rows": sr.customers(q), "q": q, "types": list(sr.CUSTOMER_TYPES.items()), "edit": edit, "stage_c": _stage_c(),
                                                       "may_credit": _can(request, "inventory.approve")})
 
 

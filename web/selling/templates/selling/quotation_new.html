@@ -1,0 +1,101 @@
+{% extends "core/base.html" %}
+{% block title %}New quotation{% endblock %}
+{% block content %}
+{% comment %}The quick quote on the laptop (owner, 2026-10-17: "for quotation we need the quick one"): a size, the brands on hand at cost (FIFO, the next
+sale's), a markup (+100 / +200 / typed, rounded up as the phone does); Add another size for a mixed order; the customer's agreed price is used by itself;
+then Save as quotation.{% endcomment %}
+<p class="note"><a href="/quotations/">← Quotations</a></p>
+<h2><span class="ms" style="font-size:28px">request_quote</span> New quotation</h2>
+<style>
+.qb-size { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 10px 0; background: var(--bg-ffffff); }
+.qb-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.qb-head b { font-size: 1.1rem; color: #7a2b16; }
+.qb-mk button { font: inherit; border: 1px solid var(--bd-b9c6d8); border-radius: 999px; padding: 4px 12px; background: var(--bg-ffffff); color: var(--fg-0b4f8a); font-weight: 700; cursor: pointer; }
+.qb-mk button.on { background: var(--blue); color: #fff; border-color: transparent; }
+.qb-mk input, .qb-n { width: 80px; }
+.qb-price { width: 110px; text-align: right; } .qb-price.typed { color: var(--fg-9a3412, #9a3412); font-weight: 700; }
+</style>
+<div class="bar">
+  <div class="grow"><label for="qb_q">Size</label><input id="qb_q" type="text" placeholder="Type a size: 2055516, 7.50-16 …" autocomplete="off"></div>
+  <div id="qb_found" class="chips" style="align-self:flex-end"></div>
+</div>
+<div id="qb_sizes"></div>
+<p class="hint" id="qb_empty">Pick a size above. Each size shows the brands on hand at cost; the markup is added and rounded up{% if step %} to the next ₱{{ step }}{% endif %}.</p>
+<form method="post" id="qb_form" hidden>{% csrf_token %}<input type="hidden" name="lines" id="qb_lines">
+  <div class="grp">Save as quotation</div>
+  <div class="bar">
+    <div class="grow"><label for="qb_cust">Customer</label><input id="qb_cust" name="customer" list="qb_names" placeholder="a customer on the list, or a name" autocomplete="off" required>
+      <datalist id="qb_names">{% for n in names %}<option value="{{ n }}">{% endfor %}</datalist><div class="hint" id="qb_agreed"></div></div>
+    <div><label for="qb_until">Good until</label><input id="qb_until" type="date" name="good_until" value="{{ until }}"></div>
+    <div class="grow"><label for="qb_note">Note (optional)</label><input id="qb_note" name="note" placeholder="e.g. includes mounting"></div>
+  </div>
+  <p><b>Total: <span id="qb_total">₱0</span></b> <span class="hint" id="qb_margin"></span></p>
+  <button class="btn" type="submit"><span class="ms">save</span>Save as quotation</button>
+</form>
+<script>
+(function () {
+  var STEP = {{ step|default:0 }}, $ = function (id) { return document.getElementById(id); }, blocks = [], agreed = {}, known = false, t = null;
+  function peso(n) { return "₱" + Number(n).toLocaleString("en-US", {maximumFractionDigits: 2}); }
+  function up(x) { if (STEP <= 0) return Math.round(x * 100) / 100; return Math.ceil(Math.round(x * 100) / 100 / STEP - 1e-9) * STEP; }
+  function priceOf(b, ln) {
+    if (b.typed[ln.id] != null) return b.typed[ln.id];
+    var a = agreed[ln.id]; if (a && a.price != null) return a.price;
+    if (!(ln.cost > 0)) return null;
+    var p = up(ln.cost + b.markup); if (a && a.pct) p = up(p * (1 - a.pct / 100)); return p;
+  }
+  function draw() {
+    var box = $("qb_sizes"); box.innerHTML = ""; var total = 0, margin = 0, all = [];
+    blocks.forEach(function (b, bi) {
+      var d = document.createElement("div"); d.className = "qb-size";
+      var h = '<div class="qb-head"><b></b><span class="qb-mk">';
+      [0, 100, 200].forEach(function (m) { h += '<button type="button" data-m="' + m + '"' + (b.other === "" && b.markup === m ? ' class="on"' : "") + ">" + (m ? "+" + m : "At cost") + "</button> "; });
+      h += '<input class="in" placeholder="₱ other" value="' + b.other + '"></span><label class="inline">Pieces each <input class="in qb-n" value="' + b.n + '"></label>' +
+           '<button type="button" class="btn small ghost" data-rm style="margin-left:auto">Remove this size</button></div>';
+      h += '<div class="scroll-x"><table class="list"><tr><th></th><th>Brand on hand</th><th style="text-align:right">On hand</th><th style="text-align:right">Cost</th><th style="text-align:right">Price each</th><th style="text-align:right">Amount</th></tr>';
+      b.lines.forEach(function (ln, k) {
+        var p = priceOf(b, ln), q = Math.min(b.n, ln.qty), a = agreed[ln.id];
+        h += '<tr><td><input type="checkbox" data-k="' + k + '"' + (b.tick[ln.id] ? " checked" : "") + '></td><td>' + ln.name.replace(/</g, "&lt;") + (a ? ' <span class="pill ok">' + a.label + "</span>" : "") +
+             '</td><td class="num">' + ln.qty + (ln.qty < b.n ? ' <span class="pill warn">only ' + ln.qty + "</span>" : "") + '</td><td class="num">' + (ln.cost > 0 ? peso(ln.cost) : "no cost") +
+             '</td><td class="num"><input class="in qb-price' + (b.typed[ln.id] != null ? " typed" : "") + '" data-p="' + k + '" value="' + (p == null ? "" : p) + '"></td><td class="num">' + (b.tick[ln.id] && p != null ? peso(p * q) : "") + "</td></tr>";
+        if (b.tick[ln.id] && p != null) { total += p * q; if (ln.cost > 0) margin += (p - ln.cost) * q; all.push({item_id: ln.id, qty: q, price: p}); }
+      });
+      h += "</table></div>"; d.innerHTML = h; d.querySelector("b").textContent = b.size;
+      d.querySelectorAll("[data-m]").forEach(function (x) { x.onclick = function () { b.markup = +x.dataset.m; b.other = ""; draw(); }; });
+      d.querySelector(".qb-mk input").oninput = function () { b.other = this.value; var v = Number(String(this.value).replace(/[^0-9.]/g, "")); b.markup = v > 0 ? v : 0; clearTimeout(t); t = setTimeout(draw, 500); };
+      d.querySelector(".qb-n").oninput = function () { var v = parseInt(this.value, 10); b.n = v > 0 ? v : 1; clearTimeout(t); t = setTimeout(draw, 500); };
+      d.querySelectorAll("[data-k]").forEach(function (x) { x.onchange = function () { b.tick[b.lines[+x.dataset.k].id] = x.checked; draw(); }; });
+      d.querySelectorAll("[data-p]").forEach(function (x) { x.onchange = function () { var v = String(x.value).replace(/[^0-9.]/g, ""), ln = b.lines[+x.dataset.p]; if (v === "") delete b.typed[ln.id]; else b.typed[ln.id] = +v; draw(); }; });
+      d.querySelector("[data-rm]").onclick = function () { blocks.splice(bi, 1); draw(); };
+      box.appendChild(d);
+    });
+    $("qb_total").textContent = peso(total); $("qb_margin").textContent = total ? "· margin " + peso(margin) + " (only you see this)" : "";
+    $("qb_lines").value = JSON.stringify(all); $("qb_form").hidden = !blocks.length; $("qb_empty").hidden = !!blocks.length;
+  }
+  function addSize(size) {
+    if (blocks.some(function (b) { return b.size === size; })) return;
+    fetch("/quotations/data/?size=" + encodeURIComponent(size), {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.lines || !d.lines.length) { $("qb_found").textContent = "Nothing in " + size + " is on hand."; return; }
+      var b = {size: size, lines: d.lines, markup: 0, other: "", n: 4, tick: {}, typed: {}};
+      d.lines.forEach(function (ln, k) { b.tick[ln.id] = k < 4; });
+      blocks.push(b); $("qb_q").value = ""; $("qb_found").innerHTML = ""; loadAgreed(); draw();
+    });
+  }
+  $("qb_q").addEventListener("input", function () {
+    clearTimeout(t); var q = this.value.trim(); if (q.length < 3) { $("qb_found").innerHTML = ""; return; }
+    t = setTimeout(function () { fetch("/quotations/data/?q=" + encodeURIComponent(q), {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
+      var f = $("qb_found"); f.innerHTML = ""; (d.sizes || []).forEach(function (s) { var a = document.createElement("a"); a.className = "chip"; a.href = "#"; a.textContent = s.size + " · " + s.on_hand;
+        a.onclick = function (e) { e.preventDefault(); addSize(s.size); }; f.appendChild(a); });
+      if (!(d.sizes || []).length) f.textContent = "No size on hand matches."; }); }, 300);
+  });
+  function loadAgreed() {
+    var ids = []; blocks.forEach(function (b) { b.lines.forEach(function (ln) { ids.push(ln.id); }); });
+    fetch("/quotations/data/?customer=" + encodeURIComponent($("qb_cust").value) + "&items=" + ids.join(","), {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
+      agreed = d.agreed || {}; known = d.known; var n = Object.keys(agreed).length;
+      $("qb_agreed").textContent = !$("qb_cust").value.trim() ? "" : (known ? (n ? n + " agreed price(s) used for this customer." : "A customer on the list.") : "Not on the Customers list: kept as a walk-in by this name.");
+      draw(); });
+  }
+  $("qb_cust").addEventListener("change", loadAgreed);
+  {% if size %}addSize("{{ size|escapejs }}");{% endif %}
+})();
+</script>
+{% endblock %}

@@ -1235,6 +1235,57 @@ CREATE TABLE IF NOT EXISTS customers (
     is_affiliate INTEGER NOT NULL DEFAULT 0 CHECK(is_affiliate IN (0, 1)),      -- migration 087: a relative's business we lend tires to and borrow from
     credit_allowed INTEGER NOT NULL DEFAULT 0 CHECK(credit_allowed IN (0, 1))   -- migration 087: may buy on charge; set by the System admin only (no peso limit: alerts instead)
 );
+-- STAGE C, CUSTOMERS (migration 112)
+CREATE TABLE IF NOT EXISTS quotations (
+    qt_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    qt_no TEXT NOT NULL UNIQUE,                                     -- QT-0001
+    customer_id INTEGER REFERENCES customers(customer_id),          -- NULL = a walk-in, named in customer_name
+    customer_name TEXT,
+    quote_date DATE NOT NULL,
+    good_until DATE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN', 'SOLD', 'CANCELLED')),   -- lapsed = OPEN past good_until (not stored)
+    sale_id INTEGER REFERENCES sales(sale_id),
+    note TEXT,
+    cancel_reason TEXT,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS quotation_lines (
+    line_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    qt_id INTEGER NOT NULL REFERENCES quotations(qt_id),
+    item_id INTEGER REFERENCES items(id),
+    description TEXT NOT NULL,
+    qty REAL NOT NULL CHECK(qty > 0),
+    unit_price REAL NOT NULL CHECK(unit_price >= 0),
+    unit_cost REAL NOT NULL DEFAULT 0                               -- the cost when quoted (FIFO, the next sale's): never shown to the customer
+);
+CREATE INDEX IF NOT EXISTS idx_quotation_lines_qt ON quotation_lines (qt_id);
+CREATE TABLE IF NOT EXISTS customer_prices (
+    cp_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES customers(customer_id),
+    item_id INTEGER REFERENCES items(id),                           -- one item ...
+    brand TEXT,                                                     -- ... or a whole brand ... (both empty = everything)
+    price REAL,                                                     -- a fixed price (one item only) ...
+    pct_off REAL,                                                   -- ... or a percent off the price quoted
+    since DATE NOT NULL,
+    until DATE,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_customer_prices_c ON customer_prices (customer_id);
+CREATE TABLE IF NOT EXISTS customer_contacts (
+    contact_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES customers(customer_id),
+    qt_id INTEGER REFERENCES quotations(qt_id),
+    contacted_on DATE NOT NULL,
+    note TEXT NOT NULL,
+    next_on DATE,                                                   -- call again on (empty = no follow-up)
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_customer_contacts_c ON customer_contacts (customer_id);
+
 CREATE TABLE IF NOT EXISTS item_prices (
     price_id INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id INTEGER NOT NULL REFERENCES items(id),
@@ -1273,7 +1324,8 @@ CREATE TABLE IF NOT EXISTS stock_counts (
     finished_by TEXT,
     finished_at DATETIME,
     closed_at DATETIME,
-    opening INTEGER NOT NULL DEFAULT 0                              -- migration 094: 1 = an opening count: starts empty, items found or added at the rack
+    opening INTEGER NOT NULL DEFAULT 0,                             -- migration 094: 1 = an opening count: starts empty, items found or added at the rack
+    scope_json TEXT                                                 -- migration 111: the choices it was started with (type, brand, rim, words, 90 days), so it can be changed while counting
 );
 CREATE TABLE IF NOT EXISTS stock_count_lines (
     line_id INTEGER PRIMARY KEY AUTOINCREMENT,

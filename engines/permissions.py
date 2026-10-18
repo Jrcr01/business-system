@@ -95,7 +95,7 @@ PAGE_ACTION = {
     "payment-run": "invoice.enter", "add-data": "invoice.enter", "order-statements": "invoice.enter", "checks": "payables.mark_paid", "release": "check.release", "controls": "controls.view", "bank-cash": "bank.use", "booklets": "booklets.use", "planner": "bank.use",
     "lenders": "loans.use", "bank-loans": "bankloans.use", "credit-cards": "cards.use", "creditors": "creditors.edit",
     "stock": "inventory.use", "stock-counts": "inventory.use", "affiliates": "inventory.use",                   # revenue cycle, stage A (2026-10-11)
-    "sales": "sales.use", "customers": "sales.use", "si-booklets": "sales.use", "collect": "collect.use",
+    "sales": "sales.use", "customers": "sales.use", "quotations": "sales.use", "follow-ups": "sales.use", "si-booklets": "sales.use", "collect": "collect.use",
     "expenses": "expenses.use", "other-income": "expenses.use", "income-statement": "reports.use",
     "reports": "reports.use", "analytics": "reports.use", "review": "review.use", "data-health": "health.view",
     "settings": "settings.edit", "admin": "audit.view",
@@ -286,6 +286,8 @@ ACCESS_ROWS: list[tuple[str, list[tuple[str, str, list[str], list[tuple[str, str
     ("Sell", [
         ("sales", "Sales: scan out, the day's invoices, sales today", ["sales.use"], []),
         ("collect", "Collect customer payments (receivables, receipts, advances)", ["collect.use"], []),
+        ("quotations", "Quotations (the quick quote kept for a customer)", ["sales.use"], []),
+        ("follow-ups", "Follow-ups (quotes waiting, calls to make)", ["sales.use"], []),
         ("customers", "Customers", ["sales.use"], []),
         ("si-booklets", "Sales invoice booklets", ["sales.use"], [])]),
     ("Pay suppliers", [

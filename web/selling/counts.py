@@ -30,10 +30,11 @@ def counts(request):
     from engines.stock_rules import CATEGORY_LABEL
     if request.method == "POST" and request.POST.get("action") == "start":
         p = request.POST
-        ok, msg, cid = cr.start_count(p.get("type", ""), p.get("brand", ""), p.get("uncounted") == "1", p.get("q", ""), p.get("counted_by", ""))
+        ok, msg, cid = cr.start_count(p.get("type", ""), p.get("brand", ""), p.get("uncounted") == "1", p.get("q", ""), p.get("counted_by", ""), p.get("rim", ""))
         _say(request, ok, msg)
         return redirect(f"/stock-counts/{cid}/" if ok else "/stock-counts/")
-    return render(request, "selling/counts.html", {"page_id": "stock-counts", "rows": cr.listing(), "types": list(CATEGORY_LABEL.items()), "brands": brands()})
+    from engines.rim_stock import tabs
+    return render(request, "selling/counts.html", {"page_id": "stock-counts", "rows": cr.listing(), "types": list(CATEGORY_LABEL.items()), "brands": brands(), "rims": tabs()})
 
 
 @page_needed("stock-counts")
@@ -56,6 +57,8 @@ def count(request, count_id: int):
             ok, msg = (False, bad) if bad else cr.save_counted(count_id, typed, p.get("counted_by", ""))
             if ok and what == "finish":
                 ok, msg = cr.finish(count_id)
+        elif what == "change":                                   # while counting: who counts, and what it covers (owner, 2026-10-17)
+            ok, msg = cr.change_count(count_id, p.get("type", ""), p.get("brand", ""), p.get("uncounted") == "1", p.get("q", ""), p.get("counted_by", ""), p.get("rim", ""))
         elif what == "cancel":
             ok, msg = cr.cancel(count_id)
         elif what == "approve":
@@ -73,6 +76,10 @@ def count(request, count_id: int):
     ctx = {"page_id": "stock-counts", "c": c, "may_approve": can(request.slicks_user["role"], "inventory.approve")}
     if c["status"] == "COUNTING":
         ctx["sheet"] = cr.sheet_rows(count_id)
+        from engines.product_catalog import brands
+        from engines.rim_stock import tabs
+        from engines.stock_rules import CATEGORY_LABEL
+        ctx.update({"types": list(CATEGORY_LABEL.items()), "brands": brands(), "rims": tabs()})
         if request.GET.get("print") == "1":                      # the blank sheet for the employee who counts: items only
             return render(request, "selling/count_sheet.html", ctx)
         return render(request, "selling/count.html", ctx)

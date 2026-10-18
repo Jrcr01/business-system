@@ -1,0 +1,20 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Follow-ups{% endblock %}
+{% block content %}
+{% comment %}Stage C (mock-up f_stage_c_customers screen 3): who to call -- quotes waiting for an answer, quotes lapsed lately, and calls someone said to
+make again. "Note a contact" records the call; no promise is tracked, nothing nags.{% endcomment %}
+<h2><span class="ms" style="font-size:28px">call</span> Follow-ups</h2>
+<p class="note">Quotes waiting for an answer, quotes lapsed in the last two weeks, and the calls someone said to make again. Note what was said; set a day to call again if needed.</p>
+{% if rows %}<div class="scroll-x"><table class="list cards">
+  <tr><th>Customer</th><th>Why</th><th>Quotation</th><th style="text-align:right">Amount</th><th>Note a contact</th></tr>
+  {% for r in rows %}<tr>
+    <td class="c-t">{% if r.customer_id %}<a href="/customers/{{ r.customer_id }}/">{{ r.customer }}</a>{% else %}{{ r.customer }} <span class="hint">walk-in</span>{% endif %}</td>
+    <td>{% if r.kind == 'waiting' %}<span class="pill warn">{{ r.why }}</span>{% elif r.kind == 'lapsed' %}<span class="pill red">{{ r.why }}</span>{% else %}<span class="pill">{{ r.why }}</span>{% endif %}</td>
+    <td>{% if r.qt_id %}<a href="/quotations/{{ r.qt_id }}/">{{ r.qt_no }}</a>{% endif %}</td>
+    <td class="num">{% if r.total %}{{ r.total|floatformat:2|intcomma }}{% endif %}</td>
+    <td>{% if r.customer_id and not view_only %}<form class="bar" method="post" style="margin:0;gap:6px">{% csrf_token %}<input type="hidden" name="customer_id" value="{{ r.customer_id }}">
+        {% if r.qt_id %}<input type="hidden" name="qt_id" value="{{ r.qt_id }}">{% endif %}
+        <input name="note" placeholder="what was said" required style="width:200px"><input type="date" name="next_on" title="call again on (optional)">
+        <button class="btn small" type="submit">Note</button></form>{% elif not r.customer_id %}<span class="hint">a walk-in: add them to Customers to note calls</span>{% endif %}</td></tr>{% endfor %}
+</table></div>{% else %}<p class="note">Nobody to call right now.</p>{% endif %}
+{% endblock %}

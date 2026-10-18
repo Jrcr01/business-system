@@ -20,13 +20,19 @@ EPS = 1e-9
 STATUS = {"COUNTING": "Counting", "WAITING": "Waiting for approval", "CLOSED": "Closed", "CANCELLED": "Cancelled"}
 
 
-def _scope_items(conn, category: str = "", brand: str = "", uncounted: bool = False, search: str = "") -> tuple[list[int], str]:
-    """The items a new count covers, and the count's scope in words."""
+def _scope_items(conn, category: str = "", brand: str = "", uncounted: bool = False, search: str = "", rim: str = "") -> tuple[list[int], str]:
+    """The items a new count covers, and the count's scope in words. `rim`: tires of that rim size, as the stock notebook is tabbed (2026-10-17)."""
+    from engines.rim_stock import rim_of
     from engines.stock_rules import CATEGORY_LABEL, stock_list
     rows = stock_list(search, category if category in CATEGORY_LABEL else "")
     words = []
     if category in CATEGORY_LABEL:
         words.append(CATEGORY_LABEL[category])
+    if str(rim or "").strip():
+        rim = str(rim).strip()
+        on_rim = {int(i) for i, size in conn.execute("SELECT id, size_model FROM items WHERE category = 'tire'") if rim_of(size) == rim}
+        rows = [r for r in rows if r["id"] in on_rim]
+        words.append(f"Rim {rim}")
     if brand:
         brands = {int(r[0]) for r in conn.execute("SELECT id FROM items WHERE LOWER(brand) = LOWER(?)", (brand,))}
         rows = [r for r in rows if r["id"] in brands]
@@ -39,25 +45,69 @@ def _scope_items(conn, category: str = "", brand: str = "", uncounted: bool = Fa
     return [r["id"] for r in rows], " · ".join(words) or "Everything"
 
 
-def start_count(category: str = "", brand: str = "", uncounted: bool = False, search: str = "", counted_by: str = "") -> tuple[bool, str, int | None]:
+def _choices(category, brand, uncounted, search, rim) -> str:
+    import json
+    return json.dumps({"category": category or "", "brand": brand or "", "uncounted": bool(uncounted), "search": " ".join(str(search or "").split()),
+                       "rim": str(rim or "").strip()})
+
+
+def start_count(category: str = "", brand: str = "", uncounted: bool = False, search: str = "", counted_by: str = "", rim: str = "") -> tuple[bool, str, int | None]:
     """A new count sheet for the items chosen. Nothing about stock changes."""
     allowed, why = require_permission("inventory.use")
     if not allowed:
         return False, why, None
     with write_tx() as conn:
-        ids, scope = _scope_items(conn, category, brand, uncounted, search)
+        ids, scope = _scope_items(conn, category, brand, uncounted, search, rim)
         if not ids:
             return False, "No item matches that choice, so there is nothing to count.", None
         if len(ids) > 600:
             return False, f"That is {len(ids)} items in one count. Choose a type or a brand: a count is done a part at a time.", None
         used = [int(r[0][3:]) for r in conn.execute("SELECT count_no FROM stock_counts WHERE count_no LIKE 'CT-%'") if r[0][3:].isdigit()]
         number = f"CT-{next_doc_number(conn, 'CT', 0, max(used, default=0)):04d}"
-        cid = conn.execute("INSERT INTO stock_counts (count_no, scope, counted_by, started_by) VALUES (?, ?, ?, acting_user()) RETURNING count_id",
-                           (number, scope, " ".join(str(counted_by or "").split()) or None)).fetchone()[0]
+        cid = conn.execute("INSERT INTO stock_counts (count_no, scope, counted_by, started_by, scope_json) VALUES (?, ?, ?, acting_user(), ?) RETURNING count_id",
+                           (number, scope, " ".join(str(counted_by or "").split()) or None, _choices(category, brand, uncounted, search, rim))).fetchone()[0]
         conn.executemany("INSERT INTO stock_count_lines (count_id, item_id) VALUES (?, ?)", [(cid, i) for i in ids])
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'COUNT_STARTED', 'stock_counts', ?, ?)",
                      (cid, f"{number}: {scope}, {len(ids)} item(s)"))
     return True, f"{number} started: {len(ids)} item(s) to count.", int(cid)
+
+
+def change_count(count_id: int, category: str = "", brand: str = "", uncounted: bool = False, search: str = "", counted_by: str = "",
+                 rim: str = "") -> tuple[bool, str]:
+    """A count still being counted is changed (owner, 2026-10-17: "make this editable until closed or finished"): who counts, and what it covers.
+    Items the new choice adds come onto the sheet; items it drops leave it only when nothing was typed for them -- a figure typed is never lost.
+    An opening count has no choice to change (its items are added as found): only who counts."""
+    allowed, why = require_permission("inventory.use")
+    if not allowed:
+        return False, why
+    who = " ".join(str(counted_by or "").split()) or None
+    with write_tx() as conn:
+        row = conn.execute("SELECT status, count_no, opening FROM stock_counts WHERE count_id = ?", (int(count_id),)).fetchone()
+        if not row:
+            return False, "Count not found."
+        if row[0] != "COUNTING":
+            return False, f"{row[1]} is already finished: it can no longer be changed."
+        if row[2]:
+            conn.execute("UPDATE stock_counts SET counted_by = ? WHERE count_id = ?", (who, int(count_id)))
+            return True, f"{row[1]}: counted by {who or 'nobody named'}."
+        ids, scope = _scope_items(conn, category, brand, uncounted, search, rim)
+        if not ids:
+            return False, "No item matches that choice: the count was not changed."
+        if len(ids) > 600:
+            return False, f"That is {len(ids)} items in one count. Choose a type, a brand or a size: the count was not changed."
+        lines = {int(i): (c, (n or "").strip()) for i, c, n in conn.execute("SELECT item_id, counted, note FROM stock_count_lines WHERE count_id = ?", (int(count_id),))}
+        want = set(ids)
+        add = [i for i in ids if i not in lines]
+        drop = [i for i, (c, n) in lines.items() if i not in want and c is None and not n]
+        kept = [i for i, (c, n) in lines.items() if i not in want and (c is not None or n)]
+        conn.executemany("INSERT INTO stock_count_lines (count_id, item_id) VALUES (?, ?)", [(int(count_id), i) for i in add])
+        conn.executemany("DELETE FROM stock_count_lines WHERE count_id = ? AND item_id = ? AND counted IS NULL", [(int(count_id), i) for i in drop])
+        conn.execute("UPDATE stock_counts SET scope = ?, scope_json = ?, counted_by = ? WHERE count_id = ?",
+                     (scope, _choices(category, brand, uncounted, search, rim), who, int(count_id)))
+        msg = f"{row[1]} now covers {scope}: {len(add)} item(s) added, {len(drop)} removed" + (f", {len(kept)} already counted kept on the sheet" if kept else "") + "."
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'COUNT_CHANGED', 'stock_counts', ?, ?)",
+                     (int(count_id), msg + (f" Counted by {who}." if who else "")))
+    return True, msg
 
 
 def start_opening(counted_by: str = "") -> tuple[bool, str, int | None]:
@@ -207,12 +257,18 @@ def get_count(count_id: int) -> dict | None:
     with get_conn() as conn:
         row = conn.execute("""SELECT count_id, count_no, scope, status, counted_by, started_by, datetime(started_at, '+8 hours'), finished_by, datetime(finished_at, '+8 hours'), closed_at,
                                      (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = c.count_id),
-                                     (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = c.count_id AND l.counted IS NOT NULL), opening
+                                     (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = c.count_id AND l.counted IS NOT NULL), opening, scope_json
                               FROM stock_counts c WHERE count_id = ?""", (int(count_id),)).fetchone()
     if not row:
         return None
-    keys = ("count_id", "count_no", "scope", "status", "counted_by", "started_by", "started_at", "finished_by", "finished_at", "closed_at", "items", "typed", "opening")
+    keys = ("count_id", "count_no", "scope", "status", "counted_by", "started_by", "started_at", "finished_by", "finished_at", "closed_at", "items", "typed", "opening",
+            "scope_json")
     out = dict(zip(keys, row))
+    import json
+    try:
+        out["choices"] = json.loads(out.pop("scope_json") or "{}")
+    except ValueError:
+        out["choices"] = {}
     out["status_label"] = STATUS.get(out["status"], out["status"])
     return out
 

@@ -14,7 +14,7 @@
   You can still type a number.</div>{% endif %}
 {% if skipped %}<div class="warnbox"><b>{{ skipped|length }} number{{ skipped|length|pluralize }} skipped:</b> {% for n in skipped %}{{ n|stringformat:"06d" }}{% if not forloop.last %}, {% endif %}{% endfor %}.
   The first one is offered below. If a leaf was spoiled, <a href="/si-booklets/">cancel it with a reason</a>.</div>{% endif %}
-<form method="post" id="sale_form">{% csrf_token %}
+<form method="post" id="sale_form">{% csrf_token %}{% if qt %}<input type="hidden" name="qt" value="{{ qt.id }}"><p class="note">From quotation <a href="/quotations/{{ qt.id }}/">{{ qt.no }}</a> for {{ qt.customer }}: saving this invoice marks it sold.</p>{% endif %}
   <div class="formgrid">
     <div><label for="si_no">SI no.</label><input id="si_no" type="text" inputmode="numeric" name="si_no" value="{{ si_no }}" required>
       <div class="hint">The next unused number of the booklet. Change it if you wrote another.</div></div>

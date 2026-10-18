@@ -33,6 +33,15 @@
   <p class="hint">It closes again by itself when you save and the checks still cover it.</p></details>
 {% endif %}
 
+{% if fix %}<div class="card" id="fix" style="border:2px solid var(--bd-f0b46a);border-radius:12px;padding:12px 14px;margin:10px 0;background:var(--bg-fff4e5)">
+  <b>{{ fix.label }} {{ fix.doc }}: what happens to the checks</b>
+  <ul style="margin:6px 0">{% for l in fix.lines %}<li>{{ l }}</li>{% empty %}<li>No check changes.</li>{% endfor %}</ul>
+  <form class="bar" method="post" style="margin:0">{% csrf_token %}<input type="hidden" name="action" value="confirm_fix">
+    {% if fix.ask_reason %}<div class="grow"><label for="fx_why">Why is it changed?</label><input id="fx_why" name="reason" value="{{ fix.reason }}" required placeholder="e.g. wrong amount on the SI"></div>{% endif %}
+    {% for n in fix.needs %}<div><label for="fx_{{ n.check_id }}">New check number (replaces {{ n.number }}, for ₱{{ n.new|floatformat:2|intcomma }})</label>
+      <input id="fx_{{ n.check_id }}" name="num_{{ n.check_id }}" required inputmode="numeric" autocomplete="off"></div>{% endfor %}
+    <button class="btn small" type="submit"><span class="ms">check</span>Do it</button> <a class="hint" href="?tab=invoices">Cancel</a></form>
+  <p class="hint" style="margin:6px 0 0">Nothing is saved until you press Do it. The statement closes again by itself when its checks cover it.</p></div>{% endif %}
 <nav class="tabs" style="margin-top:14px">
   <a href="?tab=invoices"{% if tab == "invoices" %} class="on"{% endif %}>Invoices ({{ invoices|length }})</a>
   <a href="?tab=memos"{% if tab == "memos" %} class="on"{% endif %}>Credit memos ({{ memos|length }})</a>
@@ -44,9 +53,9 @@
   {% if links %}<p class="note"><b>Matched to purchase orders:</b> {{ n_links }} of {{ invoices|length }} invoice(s).
     {% for l in links %}{{ l.doc_ref }} {% if l.matches %}✓ same as the order{% else %}Δ {{ l.difference|floatformat:2|intcomma }}{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
   <div class="scroll-x"><table class="list">
-    <tr><th>Reference (SI or DR)</th><th>DR no.</th><th>Date received</th><th>Due</th><th>Amount</th><th>Less %</th><th>Net</th><th>Status</th>{% if editable %}<th></th>{% endif %}</tr>
+    <tr><th>Reference (SI or DR)</th><th>DR no.</th><th>Date received</th><th>Due</th><th>Amount</th><th>Less %</th><th>Net</th><th>Status</th>{% if inv_edit %}<th></th>{% endif %}</tr>
     {% for r in invoices %}
-      {% if editable and edit_inv == r.invoice_id|stringformat:"s" %}
+      {% if inv_edit and edit_inv == r.invoice_id|stringformat:"s" %}
       <tr style="background:var(--bg-f8fafc)"><td colspan="9">
         <form method="post" class="bar" style="margin:0">{% csrf_token %}<input type="hidden" name="invoice_id" value="{{ r.invoice_id }}"><input type="hidden" name="stamp" value="{{ r.stamp }}">
           <div><label>SI no.</label><input class="inline-input" name="doc" value="{% if r.doc_ref|slice:':3' != 'DR ' %}{{ r.doc_ref }}{% endif %}" placeholder="if there is one"></div>
@@ -54,16 +63,17 @@
           <div><label>Date received</label><input type="date" name="date" value="{{ r.invoice_date|slice:':10' }}"></div>
           <div><label>Amount</label><input class="inline-input" inputmode="decimal" name="gross" value="{{ r.gross_amount|floatformat:2 }}"></div>
           <div><label>Less %</label><input class="inline-input" style="width:60px" inputmode="decimal" name="less" value="{{ r.less_pct|floatformat:'-2' }}"></div>
+          {% if locked %}<div class="grow"><label>Why is it changed?</label><input class="inline-input" name="reason" required placeholder="e.g. wrong amount on the SI" style="width:100%"></div>{% endif %}
           <button class="btn small" type="submit" name="action" value="save_invoice" onclick="return confirm('Save the changes to {{ r.doc_ref|escapejs }}?');">Save</button>
           <button class="btn small danger" type="submit" name="action" value="delete_invoice" onclick="return confirm('Delete invoice {{ r.doc_ref|escapejs }} ({{ r.amount|floatformat:2|intcomma }})?');">Delete</button>
           <button class="btn small ghost" type="submit" name="action" value="take_out" onclick="return confirm('Take {{ r.doc_ref|escapejs }} out of this payment statement? It waits for another payment statement.');">Take out of the payment statement</button>
           <a class="hint" href="?tab=invoices">Cancel</a>
-        </form><p class="hint" style="margin:4px 0 0">The due date is worked out again from the date and the supplier's terms when you save.</p></td></tr>
+        </form><p class="hint" style="margin:4px 0 0">The due date is worked out again from the date and the supplier's terms when you save.{% if n %} The checks follow the change: a parked check is lowered by itself; a numbered check that would pay too much is replaced (you type the new number).{% endif %}</p></td></tr>
       {% else %}
       <tr><td>{{ r.doc_ref }}{% if not r.from_po and r.status != "Cancelled" %} <span class="pill warn" title="Typed in with no purchase order">No PO</span>{% endif %}</td>
         <td>{{ r.dr_no|default:"" }}</td><td>{{ r.invoice_date|dmy }}</td><td>{{ r.due_date|dmy }}</td><td class="num">{{ r.gross_amount|floatformat:2|intcomma }}</td>
         <td class="num">{% if r.less_pct %}{{ r.less_pct|floatformat:"-2" }}{% else %}—{% endif %}</td><td class="num">{{ r.amount|floatformat:2|intcomma }}</td><td>{{ r.status }}</td>
-        {% if editable %}<td><a href="?tab=invoices&amp;edit_inv={{ r.invoice_id }}">Edit</a></td>{% endif %}</tr>
+        {% if inv_edit %}<td><a href="?tab=invoices&amp;edit_inv={{ r.invoice_id }}">Edit</a></td>{% endif %}</tr>
       {% endif %}
     {% empty %}<tr><td colspan="9" class="note">No invoices in this payment statement yet.</td></tr>{% endfor %}
   </table></div>

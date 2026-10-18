@@ -1,0 +1,26 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Quotations{% endblock %}
+{% block content %}
+{% comment %}Stage C (owner, 2026-10-17; mock-up f_stage_c_customers screen 1): the quick quote kept for a customer. A quotation moves no stock and is
+not money owed; "Make it a sale" opens Record a sale with its lines.{% endcomment %}
+<h2><span class="ms" style="font-size:28px">request_quote</span> Quotations</h2>
+<p class="note">A quotation is the quick quote kept for a customer: a size, the brands on hand, a markup, then <b>Save as quotation</b>. It moves no stock and is
+  not money owed. When the customer says yes, <b>Make it a sale</b>.</p>
+<div class="bar" style="align-items:center">
+  <div class="chips">
+    <a class="chip{% if show == 'waiting' %} on{% endif %}" href="?show=waiting">Waiting for the customer {{ n.waiting }}</a>
+    <a class="chip{% if show == 'sold' %} on{% endif %}" href="?show=sold">Sold {{ n.sold }}</a>
+    <a class="chip{% if show == 'lapsed' %} on{% endif %}" href="?show=lapsed">Lapsed {{ n.lapsed }}</a>
+    <a class="chip{% if show == 'all' %} on{% endif %}" href="?show=all">All</a></div>
+  {% if not view_only %}<a class="btn" href="/quotations/new/" style="margin-left:auto"><span class="ms">add</span>New quotation</a>{% endif %}
+</div>
+{% if rows %}<div class="scroll-x"><table class="list cards">
+  <tr><th>Quotation</th><th>Customer</th><th>Date</th><th>Good until</th><th style="text-align:right">Amount</th><th>Where it stands</th><th></th></tr>
+  {% for q in rows %}<tr>
+    <td class="c-t"><a href="/quotations/{{ q.id }}/">{{ q.no }}</a></td>
+    <td>{% if q.customer_id %}<a href="/customers/{{ q.customer_id }}/">{{ q.customer }}</a>{% else %}{{ q.customer }} <span class="hint">walk-in</span>{% endif %}</td>
+    <td data-l="date">{{ q.date|dmy }}</td><td data-l="good until">{{ q.good_until|dmy }}</td><td class="num c-big">{{ q.total|floatformat:2|intcomma }}</td>
+    <td>{% if q.state == 'WAITING' %}<span class="pill warn">waiting · {{ q.days }} day{{ q.days|pluralize }}</span>{% elif q.state == 'SOLD' %}<span class="pill ok">sold{% if q.si_no %} · SI {{ q.si_no|stringformat:'06d' }}{% endif %}</span>{% elif q.state == 'LAPSED' %}<span class="pill red">lapsed</span>{% else %}<span class="pill off">cancelled</span>{% endif %}</td>
+    <td>{% if q.state == 'WAITING' and not view_only %}<a class="btn small" href="/sales/?view=new&qt={{ q.id }}">Make it a sale</a>{% endif %}</td></tr>{% endfor %}
+</table></div>{% else %}<p class="note">No quotation here yet.</p>{% endif %}
+{% endblock %}

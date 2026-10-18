@@ -25,6 +25,17 @@
     <button class="btn" type="submit" name="action" value="finish" onclick="return confirm('Finish the count? Items left empty will not be part of it.');"><span class="ms">send</span>Finish the count</button>
   </div>
 </form>
+{% if not c.opening %}<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Change this count (who counts, and what it covers)</summary>
+  <form class="bar" method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="change">
+    <div><label for="ch_type">Type</label><select id="ch_type" name="type"><option value="">All types</option>{% for k, label in types %}<option value="{{ k }}"{% if c.choices.category == k %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div><label for="ch_brand">Brand</label><select id="ch_brand" name="brand"><option value="">All brands</option>{% for b in brands %}<option{% if c.choices.brand|lower == b|lower %} selected{% endif %}>{{ b }}</option>{% endfor %}</select></div>
+    <div><label for="ch_rim">Size</label><select id="ch_rim" name="rim"><option value="">All sizes</option>{% for r in rims %}<option value="{{ r }}"{% if c.choices.rim == r %} selected{% endif %}>Rim {{ r }}</option>{% endfor %}</select></div>
+    <div class="grow"><label for="ch_q">Or only items with these words</label><input id="ch_q" type="text" name="q" value="{{ c.choices.search|default:'' }}" placeholder="e.g. 16 or 205/55"></div>
+    <div><label class="inline"><input type="checkbox" name="uncounted" value="1"{% if c.choices.uncounted %} checked{% endif %}> Only items not counted in 90 days</label></div>
+    <div><label for="ch_by">Counted by</label><input id="ch_by" type="text" name="counted_by" value="{{ c.counted_by|default:'' }}" placeholder="the employee's name"></div>
+    <button class="btn small" type="submit"><span class="ms">edit</span>Change the count</button>
+  </form>
+  <p class="hint">Save what you typed first. Items the new choice adds come onto the sheet; items it leaves out go only if nothing was typed for them.</p></details>{% endif %}
 <details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Cancel this count</summary>
   <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="cancel">
     <button class="btn small danger" type="submit">Cancel the count</button> <span class="hint">Nothing about stock changes.</span></form></details>

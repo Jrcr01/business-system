@@ -114,6 +114,9 @@ NUMBERS = [
      "person whose phone is not set up (notifications and fingerprint, on a phone) cannot sign in on a computer until it is; the phone itself still "
      "signs in with the password, and its Home shows Set up this phone. The System admin's last two phones both get it (a backup). The laptop's own "
      "fingerprint is not offered on a computer. Never the Scanner. Settings -> People -> Clear this phone, for a lost phone. 0: the password alone."),
+    ("quote_good_days", "Sell", "A quotation is good for", 7, 1, 90, 0, "days",
+     "Owner, 2026-10-17 (stage C): the good-until date a new quotation starts with (it can be changed on each one). After it, the quotation shows as "
+     "lapsed on Quotations and on Follow-ups; nothing else happens."),
     ("quote_round_to", "Phone", "Quick quote: round each price up to the next", 50, 0, 1000, 0, "pesos",
      "Owner, 2026-10-17 (mock-up ao_quick_quotation, answer 2 A): a quote's price each = cost + the markup picked, rounded UP to the next amount "
      "here (50: 2,627 -> 2,650). 0 = no rounding, cost + markup exactly. Slick's Inventory -> Quote, on the phone."),

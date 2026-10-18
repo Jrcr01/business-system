@@ -32,6 +32,8 @@ PAGES: dict[str, Page] = {
     "affiliates": Page("Affiliates", "handshake", "R-A"),
     "sales": Page("Sales", "point_of_sale", "R-A"),
     "customers": Page("Customers", "group", "R-A"),
+    "quotations": Page("Quotations", "request_quote", "R-C"),        # stage C (owner, 2026-10-17): the quick quote kept for a customer
+    "follow-ups": Page("Follow-ups", "call", "R-C"),
     "si-booklets": Page("Invoice booklets", "receipt_long", "R-A"),
     "collect": Page("Collect payments", "payments", "R-B"),
     "expenses": Page("Expenses", "wallet", "BK"),
@@ -43,17 +45,17 @@ PAGES: dict[str, Page] = {
     "review": Page("Checks and review", "fact_check", "D8"),     # Roles and controls + Admin and audit + Data health, combined (owner, 2026-10-09)
 }
 
-BUILT = {"stock", "stock-counts", "affiliates", "sales", "customers", "si-booklets", "collect", "expenses", "other-income", "income-statement", "home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "calendar",
+BUILT = {"stock", "stock-counts", "affiliates", "sales", "customers", "quotations", "follow-ups", "si-booklets", "collect", "expenses", "other-income", "income-statement", "home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "calendar",
          "reports", "checks", "bank-cash", "booklets", "lenders", "analytics", "bank-loans", "credit-cards", "review"}     # drawn by Django (D0-D3; Reports: the schedule of payments first; Checks: waiting for the bank + the cleared tick, 2026-10-08)
 
-STAGE_NAME = {"R-A": "Sell and stock", "R-B": "Collect", "BK": "The books", "D1": "Masters", "D2": "Buying", "D3": "Payables", "D4": "Paying", "D5": "Release", "D6": "Loans", "D7": "Cards and bank", "D8": "Oversight"}
+STAGE_NAME = {"R-A": "Sell and stock", "R-B": "Collect", "R-C": "Customers", "BK": "The books", "D1": "Masters", "D2": "Buying", "D3": "Payables", "D4": "Paying", "D5": "Release", "D6": "Loans", "D7": "Cards and bank", "D8": "Oversight"}
 
 # (label, icon, page id, query, needed action): a shortcut that opens a page already in a mode, shown only to a role allowed that action (a tuple: any of them)
 MENU: dict[str, list] = {
     "Buy": ["price-lists", "purchase-orders", ("Receive", "inventory_2", "purchase-orders", "mode=receive", ("po.receive_goods", "po.receive"))],   # one page (owner, 2026-10-11)
     "Stock": ["stock", "stock-counts", "affiliates"],
-    "Sell": [("Scan out", "barcode_scanner", "sales", "view=scan", "sales.use"), ("Record the day's invoices", "receipt_long", "sales", "", "sales.use"),
-             ("Sales today", "today", "sales", "view=day", "sales.use"), "collect", ("Checks to deposit", "price_check", "collect", "view=checks", "collect.use"), "customers", "si-booklets"],
+    "Sell": ["quotations", ("Scan out", "barcode_scanner", "sales", "view=scan", "sales.use"), ("Record the day's invoices", "receipt_long", "sales", "", "sales.use"),
+             ("Sales today", "today", "sales", "view=day", "sales.use"), "collect", ("Checks to deposit", "price_check", "collect", "view=checks", "collect.use"), "follow-ups", "customers", "si-booklets"],
     "Pay suppliers": [("Invoices", "receipt_long", "order-statements", "view=invoices", "invoice.enter"), "order-statements", "calendar", "checks"],     # Payment run, Release checks and Add data removed (owner, 2026-10-09): its work is in the batch and Daily payables
     "Bank": ["bank-cash", "booklets", "expenses", "other-income"],     # the Check-date planner dropped with /more/ (owner, 2026-10-09)
     "Other payables": ["lenders", "bank-loans", "credit-cards"],

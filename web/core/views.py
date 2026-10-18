@@ -725,7 +725,7 @@ ROW_ORDER = {
     "mine": ["New order", "purchase-orders", "Record an invoice", "order-statements", "calendar", "checks", "review"],
     "buy": ["Import a price list", "price-lists", "New order", "purchase-orders", "receive-goods"],
     "stock": ["stock", "stock-counts", "affiliates"],
-    "sell": ["scan-out", "sales", "sales-today", "collect", "customers", "si-booklets"],
+    "sell": ["quotations", "scan-out", "sales", "sales-today", "collect", "follow-ups", "customers", "si-booklets"],   # a quote comes before the sale (stage C, 2026-10-17)
     "pay": ["Record an invoice", "order-statements", "payment-run", "calendar", "over-limit-days", "payables-due", "checks", "release"],
     "bank": ["Import bank statement", "bank-cash", "booklets", "expenses", "other-income"],
     "other": ["New loan note", "lenders", "bank-loans", "credit-cards"],

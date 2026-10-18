@@ -1,0 +1,20 @@
+{% load humanize %}<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quotation {{ q.no }} · Slick's Tire Supply</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; color: #1c2733; background: #fff; margin: 0; padding: 28px; font-size: 14px; }
+.wrap { max-width: 760px; margin: 0 auto; } h1 { margin: 0; color: #0f2a4a; font-size: 1.5rem; } .sub { color: #4b5563; }
+.top { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #f2c200; padding-bottom: 10px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; } th, td { padding: 7px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+th { background: #0f2a4a; color: #fff; font-weight: 600; } td.n, th.n { text-align: right; } tr.tot td { font-weight: 800; border-top: 2px solid #0f2a4a; border-bottom: 0; }
+.foot { margin-top: 18px; color: #4b5563; } @media print { .noprint { display: none; } body { padding: 0; } }
+</style></head><body><div class="wrap">
+{% comment %}The customer's copy: selling prices only -- never a cost or a margin (owner, 2026-10-17).{% endcomment %}
+<div class="top"><div><h1>Slick's Tire Supply</h1><div class="sub">Quotation</div></div>
+  <div style="text-align:right"><b style="font-size:1.2rem">{{ q.no }}</b><br>{{ q.date|dmy }}</div></div>
+<p><b>For:</b> {{ q.customer }}<br><b>Good until:</b> {{ q.good_until|dmy }}, while stock lasts</p>
+<table><tr><th>Item</th><th class="n">Pieces</th><th class="n">Price each</th><th class="n">Amount</th></tr>
+  {% for ln in q.lines %}<tr><td>{{ ln.description }}</td><td class="n">{{ ln.qty|floatformat:"-2" }}</td><td class="n">₱{{ ln.price|floatformat:2|intcomma }}</td><td class="n">₱{{ ln.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}
+  <tr class="tot"><td colspan="3">Total</td><td class="n">₱{{ q.total|floatformat:2|intcomma }}</td></tr></table>
+{% if q.note %}<p class="foot">{{ q.note }}</p>{% endif %}{% if footer %}<p class="foot">{{ footer }}</p>{% endif %}
+<p class="noprint" style="margin-top:24px"><button onclick="window.print()">Print / save as PDF</button></p>
+</div></body></html>

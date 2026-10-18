@@ -13,6 +13,14 @@ from tests.test_web_d0 import _admin, _sign_in_new
 TODAY = manila_today()
 
 
+def _soon():
+    """A weekday 2 to 6 days ahead: a weekend date counts on the next banking day, which may fall outside "Next 7 days" (found on a Sunday, 2026-10-18)."""
+    d = TODAY + timedelta(days=2)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
+
+
 def _loan_and_card(db, day):
     bank = make_creditor(db, name="BDO", creditor_type="BANK_LOAN")
     blid = create_bank_loan(bank, "L-77", "A", date(2026, 1, 1), date(2028, 1, 1), None, 500000.0, "ADA")
@@ -50,7 +58,7 @@ def test_the_checklist_shows_every_track_and_ticks_many_at_once(web, db):
 def test_a_bank_loan_not_due_yet_may_be_paid_early_with_the_rest(web, db):
     _admin(web)
     _, cid = _issued(db)
-    iid, _ = _loan_and_card(db, TODAY + timedelta(days=6))                   # not due yet
+    iid, _ = _loan_and_card(db, _soon())                   # not due yet
     assert "L-77" not in web.get("/checks/?show=due").content.decode()      # only today and overdue by default
     assert "L-77" in web.get("/checks/?show=week").content.decode()
     web.post("/checks/", {"action": "clear_many", f"tick_check_{cid}": "1", f"tick_loan_{iid}": "1", "on": str(TODAY)})
@@ -122,7 +130,7 @@ def test_daily_payables_rows_carry_their_banking_day(web, db):
 def test_a_card_statement_can_be_paid_before_its_due_date(web, db):
     # owner, 2026-10-12: "allow credit cards can be paid in advance"; checks and loan payments still wait for their day
     _admin(web)
-    iid, csid = _loan_and_card(db, TODAY + timedelta(days=6))
+    iid, csid = _loan_and_card(db, _soon())
     page = web.get("/checks/?show=week").content.decode()
     assert f'name="tick_card_{csid}" value="1" data-amt="3000.0" data-due="0" aria-label' in page            # the card's tick is live
     assert f'name="tick_loan_{iid}" value="1" data-amt="20000.0" data-due="0" disabled' not in page         # a bank loan may be paid early too (owner, 2026-10-14)

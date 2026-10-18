@@ -9,7 +9,7 @@
 <div class="scroll-x"><table class="list cards">
   <tr><th>Customer</th><th>Kind</th><th>Terms</th><th>Contact</th><th style="text-align:right">Sold to date</th><th style="text-align:right">On charge</th><th>Last sale</th><th>Charge</th><th></th></tr>
   {% for c in rows %}<tr>
-    <td class="c-t">{{ c.name }}{% if c.is_affiliate %} <span class="pill off">Affiliate</span>{% endif %}</td><td>{{ c.type_label }}</td><td data-l="terms">{{ c.terms }}</td>
+    <td class="c-t">{% if stage_c %}<a href="/customers/{{ c.customer_id }}/">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %}{% if c.is_affiliate %} <span class="pill off">Affiliate</span>{% endif %}</td><td>{{ c.type_label }}</td><td data-l="terms">{{ c.terms }}</td>
     <td>{{ c.contact_person }}{% if c.contact_number %} · {{ c.contact_number }}{% endif %}</td>
     <td class="num" data-l="sold">{{ c.sold|floatformat:2|intcomma }}</td><td class="num c-big">{{ c.charged|floatformat:2|intcomma }}</td><td data-l="last sale">{{ c.last_sale|default:"—"|dmy }}</td>
     <td class="c-r">{% if c.credit_allowed %}<span class="pill">Credit allowed</span>{% else %}<span class="pill off">Not allowed</span>{% endif %}

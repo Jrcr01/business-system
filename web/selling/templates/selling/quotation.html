@@ -1,0 +1,32 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}{{ q.no }}{% endblock %}
+{% block content %}
+<p class="note"><a href="/quotations/">← Quotations</a></p>
+<h2><span class="ms" style="font-size:28px">request_quote</span> {{ q.no }} · {% if q.customer_id %}<a href="/customers/{{ q.customer_id }}/">{{ q.customer }}</a>{% else %}{{ q.customer }}{% endif %}
+  {% if q.state == 'WAITING' %}<span class="pill warn">waiting</span>{% elif q.state == 'SOLD' %}<span class="pill ok">sold</span>{% elif q.state == 'LAPSED' %}<span class="pill red">lapsed</span>{% else %}<span class="pill off">cancelled</span>{% endif %}</h2>
+<div class="facts"><div><span>Date</span><b>{{ q.date|dmy }}</b></div><div><span>Good until</span><b>{{ q.good_until|dmy }}</b></div><div><span>Total</span><b>₱{{ q.total|floatformat:2|intcomma }}</b></div>
+  <div><span>Margin (only you see this)</span><b>₱{{ margin|floatformat:2|intcomma }}</b></div>{% if q.sale_id %}<div><span>Sold on</span><b><a href="/sales/{{ q.sale_id }}/">SI {{ q.si_no|stringformat:'06d' }}</a></b></div>{% endif %}</div>
+<div class="scroll-x"><table class="list">
+  <tr><th>Item</th><th style="text-align:right">Pieces</th><th style="text-align:right">Price each</th><th style="text-align:right">Amount</th><th style="text-align:right">Cost each</th></tr>
+  {% for ln in q.lines %}<tr><td>{{ ln.description }}</td><td class="num">{{ ln.qty|floatformat:"-2" }}</td><td class="num">{{ ln.price|floatformat:2|intcomma }}</td><td class="num">{{ ln.amount|floatformat:2|intcomma }}</td>
+    <td class="num hint">{{ ln.cost|floatformat:2|intcomma }}</td></tr>{% endfor %}
+  <tr class="tot"><td colspan="3">Total</td><td class="num">{{ q.total|floatformat:2|intcomma }}</td><td></td></tr>
+</table></div>
+{% if q.note %}<p class="note">{{ q.note }}</p>{% endif %}{% if q.cancel_reason %}<p class="note">Cancelled: {{ q.cancel_reason }}</p>{% endif %}
+<div class="actions">
+  {% if q.state == 'WAITING' and not view_only %}<a class="btn" href="/sales/?view=new&qt={{ q.id }}"><span class="ms">point_of_sale</span>Make it a sale</a>{% endif %}
+  <a class="btn ghost" href="?print=1" target="_blank"><span class="ms">print</span>Print / PDF for the customer</a>
+  <button class="btn ghost" type="button" data-share-title="Quotation {{ q.no }}" data-share-text="{{ share }}"><span class="ms">share</span>Share (Viber)</button>
+</div>
+<script src="/static/core/share.js?v=1"></script>
+{% if not view_only %}
+{% if q.customer_id %}<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Note a contact about this quotation</summary>
+  <form class="bar" method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="contact">
+    <div class="grow"><label for="c_note">What was said</label><input id="c_note" name="note" placeholder="e.g. will decide after payday" required></div>
+    <div><label for="c_next">Call again on</label><input id="c_next" type="date" name="next_on"></div>
+    <button class="btn small" type="submit">Note it</button></form></details>{% endif %}
+{% if q.state == 'WAITING' or q.state == 'LAPSED' %}<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Cancel this quotation</summary>
+  <form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="action" value="cancel">
+    <input name="reason" placeholder="why, e.g. bought elsewhere" required style="width:280px"> <button class="btn small danger" type="submit">Cancel the quotation</button></form></details>{% endif %}
+{% endif %}
+{% endblock %}

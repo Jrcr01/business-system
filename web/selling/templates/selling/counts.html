@@ -2,13 +2,14 @@
 {% block title %}Stock counts{% endblock %}
 {% block content %}
 <h2><span class="ms" style="font-size:28px">fact_check</span> Stock counts</h2>
-<p class="note">Count a part of the stock at a time: one type, one brand, or the items not counted lately. Selling goes on while you count.
+<p class="note">Count a part of the stock at a time: one type, one brand, one size (rim, as the notebook's tabs), or the items not counted lately. Selling goes on while you count.
   The person counting does not see what the system expects. Stock changes only when the System admin approves a difference.</p>
 
 <div class="grp" style="margin-top:0">Start a count</div>
 <form class="bar" method="post">{% csrf_token %}<input type="hidden" name="action" value="start">
   <div><label for="type">Type</label><select id="type" name="type"><option value="">All types</option>{% for k, label in types %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></div>
   <div><label for="brand">Brand</label><select id="brand" name="brand"><option value="">All brands</option>{% for b in brands %}<option>{{ b }}</option>{% endfor %}</select></div>
+  <div><label for="rim">Size</label><select id="rim" name="rim"><option value="">All sizes</option>{% for r in rims %}<option value="{{ r }}">Rim {{ r }}</option>{% endfor %}</select></div>
   <div class="grow"><label for="q">Or only items with these words</label><input id="q" type="text" name="q" placeholder="e.g. 16 or 205/55"></div>
   <div><label class="inline"><input type="checkbox" name="uncounted" value="1"> Only items not counted in 90 days</label></div>
   <div><label for="counted_by">Counted by</label><input id="counted_by" type="text" name="counted_by" placeholder="the employee's name"></div>
