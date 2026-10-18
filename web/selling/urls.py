@@ -7,6 +7,7 @@ urlpatterns = [
     path("stock/labels/", stock.labels, name="stock_labels"),
     path("stock/items.json", stock.picker_items, name="stock_items"),
     path("stock/learn/", stock.learn, name="stock_learn"),
+    path("stock/add-item/", stock.add_item, name="stock_add_item"),
     path("stock/<int:item_id>/", stock.stock_item, name="stock_item"),
     path("stock-counts/", counts.counts, name="stock_counts"),
     path("stock-counts/<int:count_id>/", counts.count, name="stock_count"),

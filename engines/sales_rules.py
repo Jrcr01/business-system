@@ -148,7 +148,16 @@ def register_booklet(start, end, holder: str = "") -> tuple[bool, str]:
                      (code, start, end, _text(holder) or None, "WAITING" if busy else "IN_USE"))
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'SI_BOOKLET_REGISTERED', 'si_booklets', NULL, ?)",
                      (f"{code}: {start:06d}–{end:06d}" + (f", held by {_text(holder)}" if _text(holder) else ""),))
-    return True, f"{code} registered: {start:06d} to {end:06d}." + (" It waits until the booklet in use is finished." if busy else " It is the booklet in use.")
+        # sales typed before their booklet was registered (owner, 2026-10-18: "let him enter sales invoice manually then if sales booklet eventually entered
+        # then add it under the sequence"): they now sit in this booklet, so their "not in any booklet" notes are closed and its gaps are checked
+        typed = [int(r[0]) for r in conn.execute("SELECT si_no FROM sales WHERE si_no BETWEEN ? AND ? ORDER BY si_no", (start, end))]
+        for n in typed:
+            conn.execute("UPDATE review_flags SET reviewed_by = acting_user(), reviewed_at = CURRENT_TIMESTAMP WHERE kind = 'SI_SKIPPED' AND reviewed_at IS NULL "
+                         "AND detail = ?", (f"{si_text(n)} is not in any registered booklet. Register the booklet, or check the number.",))
+        if typed:
+            _flag_numbers(conn, typed[-1])
+    return True, f"{code} registered: {start:06d} to {end:06d}." + (f" {len(typed)} sale(s) already typed with these numbers are now in it." if typed else "") + (
+        " It waits until the booklet in use is finished." if busy else " It is the booklet in use.")
 
 
 def use_booklet(booklet_id: int) -> tuple[bool, str]:
@@ -187,7 +196,16 @@ def booklets() -> list[dict]:
 def next_si_no() -> int | None:
     """The number to offer on the next sale: the lowest unused one of the booklet in use (a skipped number comes first, so it is not forgotten)."""
     b = next((x for x in booklets() if x["status"] == "IN_USE"), None)
-    return b["next"] if b else None
+    if b:
+        return b["next"]
+    # no booklet registered yet (owner, 2026-10-18: "just add the next one then let him change if he saw wrong"): the last number typed, plus one
+    with get_conn() as conn:
+        last = conn.execute("SELECT MAX(si_no) FROM sales").fetchone()[0]
+    return int(last) + 1 if last else None
+
+
+def booklet_in_use() -> bool:
+    return any(x["status"] == "IN_USE" for x in booklets())
 
 
 def skipped() -> list[int]:
@@ -315,8 +333,29 @@ def _clean_lines(conn, lines: list[dict], need_price: bool) -> tuple[list[dict] 
                 return None, f"{it[0]}: '{raw}' is not a price."
             if price < 0:
                 return None, f"{it[0]}: the price cannot be negative."
-        out.append({"item_id": item_id, "name": it[0], "qty": qty, "price": price, "cost": float(it[1] or 0)})
+        est, problem = _cost_from_margin(it[0], price, ln.get("margin"), float(it[1] or 0))
+        if problem:
+            return None, problem
+        out.append({"item_id": item_id, "name": it[0], "qty": qty, "price": price, "cost": float(it[1] or 0), "est_cost": est})
     return out, ""
+
+
+def _cost_from_margin(name: str, price: float | None, margin, cost: float) -> tuple[float | None, str]:
+    """An item with no cost yet (owner, 2026-10-18: "let my brother add margin or profit then work back until we have the actual cost"; "profit only no %"):
+    the profit per piece typed on its line gives the cost this sale takes (price - profit). Ignored when the item already has a cost."""
+    text = str(margin or "").replace(",", "").replace("₱", "").strip()
+    if not text or cost > 0 or price is None:
+        return None, ""
+    from engines.settings_registry import stock_not_counted
+    if not stock_not_counted():                                 # temporary: only until the opening count (owner, 2026-10-18: "this is temporary only")
+        return None, ""
+    try:
+        est = price - float(text)
+    except ValueError:
+        return None, f"{name}: '{margin}' is not a profit. Type the pesos per piece, e.g. 500."
+    if est < 0 or est > price:
+        return None, f"{name}: a profit of ₱{margin} does not fit a price of ₱{price:,.2f}."
+    return round(est, 2), ""
 
 
 def _clean_services(services: list[dict]) -> tuple[list[dict] | None, str]:
@@ -374,6 +413,12 @@ def save_sale(si_no, sale_date, customer_id: int | None, customer_name: str, lin
             (n, str(day), customer_id, _text(customer_name) or None, total, 1 if day < manila_today() else 0, _text(below_cost_reason) or None, 1 if no_stock_out else 0)).fetchone()[0]
         cost_total, below = 0.0, []
         for ln in clean:
+            if ln.get("est_cost") is not None:                    # no cost yet: the one worked back from the profit typed, until a delivery gives the real one
+                conn.execute("UPDATE items SET avg_cost = ? WHERE id = ? AND COALESCE(avg_cost, 0) = 0 AND COALESCE(next_cost, 0) = 0", (ln["est_cost"], ln["item_id"]))
+                ln["cost"] = ln["est_cost"]
+                from engines.review_flags import flag
+                flag(conn, "COST_FROM_MARGIN", "items", int(ln["item_id"]), f"{ln['name']}: cost ₱{ln['est_cost']:,.2f} worked back from the profit typed on {si_text(n)}. "
+                                                                          "Replaced by the real cost when a delivery is recorded.")
             cost = ln["cost"] if no_stock_out else stock_out(conn, ln["item_id"], ln["qty"], "sales", sale_id, day, note=f"sold on {si_text(n)}")
             cost_total += ln["qty"] * cost
             conn.execute("INSERT INTO sale_lines (sale_id, item_id, description, qty, unit_price, amount, unit_cost) VALUES (?, ?, ?, ?, ?, ?, ?)",

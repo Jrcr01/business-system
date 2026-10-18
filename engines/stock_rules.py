@@ -320,3 +320,37 @@ def take_in(item_id: int, qty, cost, note: str) -> tuple[bool, str]:
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'STOCK_TAKEN_IN', 'items', ?, ?)",
                      (int(item_id), f"{n:g} x {row[0]} taken in at {c:,.2f} each: {note}"))
     return True, f"{n:g} × {row[0]} taken in at ₱{c:,.2f} each."
+
+
+# ---- a product added at the counter (owner, 2026-10-18: "let my brother add for products not listed in prices") ----
+
+COUNTER_KINDS = ("Tires", "Battery", "Mags", "Rims")
+
+
+def add_counter_item(kind: str, brand: str, size: str, pattern: str = "") -> tuple[bool, str, dict | None]:
+    """A product not in the item list yet, made while recording a sale: a real item with its code, noted on the Review list so its price list and cost
+    are filled in later. An item with the same fields is found, not made twice. Returns (ok, message, the picker row)."""
+    from engines.permissions import require
+    from engines.product_catalog import get_or_create_product
+    from engines.review_flags import flag
+    allowed, why = require("sales.use")
+    if not allowed:
+        return False, why, None
+    from engines.settings_registry import stock_not_counted
+    if not stock_not_counted():                                 # temporary: only until the opening count (owner, 2026-10-18: "this is temporary only")
+        return False, "Adding items at the counter ended with the opening count. Add it on Price lists.", None
+    kind, brand, size, pattern = (kind or "").strip(), " ".join((brand or "").split()), " ".join((size or "").split()), " ".join((pattern or "").split())
+    if kind not in COUNTER_KINDS:
+        return False, "Pick the kind: tires, battery, mags or rims.", None
+    if not brand or not size:
+        return False, "Type the brand and the " + ("model" if kind == "Battery" else "size") + ".", None
+    extra = {"pattern": pattern} if kind == "Tires" and pattern else ({"model": pattern} if kind in ("Mags",) and pattern else {})
+    item_id, name, created = get_or_create_product(kind, brand, size_model=size, **extra)
+    if not item_id:
+        return False, "That item could not be made. Check the brand and the size.", None
+    if created:
+        with write_tx() as conn:
+            flag(conn, "ITEM_ADDED_AT_COUNTER", "items", int(item_id), f"{name}: added while recording a sale. Add it to a price list; its cost is worked back from "
+                                                                     "the profit typed until a delivery gives the real one.")
+    row = next((r for r in picker_items() if r["id"] == int(item_id)), None)
+    return True, (f"{name} added." if created else f"{name} was already in the list."), row

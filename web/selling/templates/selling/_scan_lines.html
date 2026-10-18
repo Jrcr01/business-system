@@ -2,7 +2,7 @@
    is not chosen yet, so the box takes whatever a scanner types, and a Camera button uses the phone). One piece per scan. Sits inside a form; on submit the
    lines go as ln_item_<n> / ln_qty_<n> / ln_price_<n>. Needs: scan_mode = "sale" (price each, profit), "borrow" (the cost they came at) or "lend" (our cost,
    not typed). Optional: scan_lines = lines to start with [{id, qty, price}] (a release being invoiced).{% endcomment %}
-<div class="scanlines" id="scanlines" data-mode="{{ scan_mode }}">
+<div class="scanlines" id="scanlines" data-mode="{{ scan_mode }}" data-uncounted="{% if stock_uncounted %}1{% endif %}" data-phonesale="{% if phone_sale %}1{% endif %}">
   <div class="scanbox pk-combo"><span class="ms">barcode_scanner</span>
     <input type="text" id="sl_q" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="sl_list"
            placeholder="Scan an item, or click here and type: 2055516 westlake">
@@ -15,6 +15,17 @@
       Type the item's size or brand in the box above and choose it: you answer once, and after that this barcode is that item.</p>
     <button class="btn small ghost" type="button" id="sl_skip">Never mind</button>
   </div>
+  {% if stock_uncounted and scan_mode == "sale" or stock_uncounted and phone_sale %}<div id="sl_new" class="later-box" hidden>{# temporary: only until the opening count (owner, 2026-10-18) #}
+    <p><b>New item</b>: not in the list yet. It is added to the items and goes on this sale; Checks and review reminds you to put it on a price list.</p>
+    <div class="bar" style="margin:6px 0">
+      <div><label for="sn_kind">Kind</label><select id="sn_kind"><option>Tires</option><option value="Battery">Batteries</option><option>Mags</option><option>Rims</option></select></div>
+      <div><label for="sn_brand">Brand</label><input id="sn_brand" type="text" autocomplete="off"></div>
+      <div><label for="sn_size" id="sn_size_l">Size</label><input id="sn_size" type="text" autocomplete="off"></div>
+      <div><label for="sn_pattern">Pattern / model (optional)</label><input id="sn_pattern" type="text" autocomplete="off"></div>
+    </div>
+    <button class="btn small" type="button" id="sn_go"><span class="ms">add</span>Add and put on this sale</button>
+    <button class="btn small ghost" type="button" id="sn_cancel">Cancel</button> <span class="hint" id="sn_msg"></span>
+  </div>{% endif %}
   <video id="sl_video" playsinline hidden style="width:100%;max-width:420px;border-radius:8px;margin:6px 0"></video>
   <div class="scroll-x"><table class="list" id="sl_table" style="display:none"><thead><tr>
     <th>Item</th><th style="text-align:right">On hand</th><th>Oldest DOT</th><th>Qty</th>
@@ -36,7 +47,11 @@
   var table = document.getElementById("sl_table"), learn = document.getElementById("sl_learn"), cam = document.getElementById("sl_cam"), video = document.getElementById("sl_video");
   var peso = function (n) { return n.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
   var num = function (t) { var n = parseFloat(String(t).replace(/,/g, "")); return isNaN(n) ? 0 : n; };
-  var csrf = function () { var m = document.cookie.match(/csrftoken=([^;]+)/); return m ? m[1] : ""; };
+  var csrf = function () {                                      /* the form's own token first: the cookie's name differs on the sandbox and the server */
+    var f = box.closest("form"), t = f && f.querySelector("[name=csrfmiddlewaretoken]");
+    if (t && t.value) return t.value;
+    var m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/); return m ? m[1] : "";
+  };
   function say(text, bad) { msg.textContent = text; msg.style.color = bad ? "var(--fg-b3261e)" : ""; }
   function beep() {                                             /* heard at a noisy bay: a short blip on every accepted scan */
     try { var AC = window.AudioContext || window.webkitAudioContext; box._ac = box._ac || new AC(); var o = box._ac.createOscillator(), g = box._ac.createGain();
@@ -47,17 +62,34 @@
   function add(it, qty, price) {
     var ln = lines.filter(function (l) { return l.it.id === it.id; })[0];
     if (ln) ln.qty += qty || 1;
-    else lines.push({it: it, qty: qty || 1, price: price != null ? price : (mode === "sale" ? "" : it.cost)});
+    else {
+      var fixed = mode === "out" && !!box.dataset.phonesale && !!box.dataset.uncounted && !(it.cost > 0);   /* the phone sale: no cost yet, so its own price and profit */
+      lines.push({it: it, qty: qty || 1, price: price != null ? price : (mode === "sale" || fixed ? "" : it.cost), fixed: fixed});
+    }
     say("✓ " + it.name + " added.", false); msg.style.color = "var(--fg-0b6e4f)"; beep(); draw(); changed();
   }
   function changed() { box.dispatchEvent(new CustomEvent("lines", {detail: {lines: lines, total: total(), profit: profit()}})); }
   function total() { return lines.reduce(function (s, l) { return s + l.qty * num(mode === "lend" ? l.it.cost : l.price); }, 0); }
-  function profit() { return lines.reduce(function (s, l) { return s + l.qty * (num(l.price) - l.it.cost); }, 0); }
+  function costOf(l) {                                          /* no cost yet: price less the profit per piece typed (owner, 2026-10-18: "profit only no %") */
+    if (l.it.cost > 0 || !l.margin) return l.it.cost;
+    var c = num(l.price) - num(l.margin);
+    return c >= 0 ? c : 0;
+  }
+  function profit() { return lines.reduce(function (s, l) { return s + l.qty * (num(l.price) - costOf(l)); }, 0); }
   function setOpen(on) { open = on; list.hidden = !on; q.setAttribute("aria-expanded", on ? "true" : "false"); if (on) drawList(); }
   function drawList() {
     var found = items.filter(match); shown = found.slice(0, 60); hi = Math.min(hi, Math.max(shown.length - 1, 0));
     list.innerHTML = "";
-    if (!shown.length) { var e = document.createElement("div"); e.className = "pk-none"; e.textContent = "Nothing matches. Try fewer words."; list.appendChild(e); return; }
+    if (!shown.length) {
+      var e = document.createElement("div"); e.className = "pk-none"; e.textContent = "Nothing matches. Try fewer words."; list.appendChild(e);
+      if (mode === "sale" && document.getElementById("sl_new")) {
+        var a = document.createElement("div"); a.className = "pk-opt hi"; a.style.color = "var(--fg-0b4f8a)"; a.style.fontWeight = "600";
+        a.textContent = "+ Add “" + q.value.trim() + "” as a new item";
+        a.addEventListener("mousedown", function (ev) { ev.preventDefault(); newItem(q.value.trim()); });
+        list.appendChild(a);
+      }
+      return;
+    }
     shown.forEach(function (it, k) {
       var o = document.createElement("div"); o.className = "pk-opt" + (k === hi ? " hi" : "");
       var n = document.createElement("span"); n.className = "n"; n.textContent = it.name; o.appendChild(n);
@@ -95,18 +127,35 @@
       var tq = document.createElement("td"), qi = document.createElement("input"); qi.className = "inline-input"; qi.style.width = "64px"; qi.inputMode = "decimal"; qi.value = l.qty;
       qi.setAttribute("aria-label", "Qty of " + l.it.name); tq.appendChild(qi); tr.appendChild(tq);
       var pi = null, amt, cost, prof;
-      if (mode === "out") { }                                   /* Scan out: the movement only, no money (owner, 2026-10-11) */
+      var est = null;
+      if (mode === "out" && l.fixed) {                          /* the phone sale, an item with no cost yet (owner, 2026-10-18): price and profit each */
+        var tf = document.createElement("td"); pi = document.createElement("input"); pi.className = "inline-input"; pi.style.width = "96px"; pi.inputMode = "decimal";
+        pi.value = l.price; pi.placeholder = "price each ₱"; pi.setAttribute("aria-label", "Price each of " + l.it.name); tf.appendChild(pi);
+        var fm = document.createElement("input"); fm.className = "inline-input"; fm.style.width = "96px"; fm.style.display = "block"; fm.style.marginTop = "4px"; fm.inputMode = "decimal";
+        fm.value = l.margin || ""; fm.placeholder = "profit each ₱"; fm.setAttribute("aria-label", "Profit per piece on " + l.it.name + ", in pesos");
+        fm.addEventListener("input", function () { l.margin = fm.value; recalc(); }); tf.appendChild(fm);
+        est = document.createElement("div"); est.className = "hint"; tf.appendChild(est); tr.appendChild(tf);
+      }
+      else if (mode === "out") { }                              /* Scan out: the movement only, no money (owner, 2026-10-11) */
       else if (mode === "lend") { cell(tr, peso(l.it.cost), true); amt = cell(tr, "", true); }
       else {
         var tp = document.createElement("td"); pi = document.createElement("input"); pi.className = "inline-input"; pi.style.width = "110px"; pi.inputMode = "decimal"; pi.value = l.price;
         pi.setAttribute("aria-label", (mode === "sale" ? "Price each of " : "Cost each of ") + l.it.name); pi.placeholder = mode === "sale" ? "agreed price" : "their cost";
-        tp.appendChild(pi); tr.appendChild(tp); amt = cell(tr, "", true);
+        tp.appendChild(pi);
+        if (mode === "sale" && !(l.it.cost > 0) && box.dataset.uncounted) {                  /* no cost yet: the profit he knows works the cost back */
+          var mi = document.createElement("input"); mi.className = "inline-input"; mi.style.width = "110px"; mi.style.display = "block"; mi.style.marginTop = "4px";
+          mi.placeholder = "profit each ₱"; mi.inputMode = "decimal"; mi.value = l.margin || ""; mi.setAttribute("aria-label", "Profit per piece on " + l.it.name + ", in pesos");
+          mi.addEventListener("input", function () { l.margin = mi.value; recalc(); }); tp.appendChild(mi);
+        }
+        tr.appendChild(tp); amt = cell(tr, "", true);
         if (mode === "sale") { cost = cell(tr, peso(l.it.cost), true); prof = cell(tr, "", true); }
       }
       function recalc() {
         var price = mode === "lend" ? l.it.cost : num(l.price);
         if (amt) amt.textContent = peso(l.qty * price);
-        if (prof) { var p = l.qty * (price - l.it.cost); prof.textContent = l.price === "" ? "" : peso(p); prof.className = "num " + (p < 0 ? "neg" : "pos"); }
+        if (est) est.textContent = l.margin ? "cost " + peso(costOf(l)) + " (est.)" : "";
+        if (cost) cost.textContent = peso(costOf(l)) + (l.it.cost > 0 || !l.margin ? "" : " (est.)");
+        if (prof) { var p = l.qty * (price - costOf(l)); prof.textContent = l.price === "" ? "" : peso(p); prof.className = "num " + (p < 0 ? "neg" : "pos"); }
         oh.className = "num" + (mode !== "borrow" && l.qty > l.it.on_hand ? " neg" : "");
         var st = document.getElementById("sl_total"); if (st) st.textContent = peso(total());
         var sp = document.getElementById("sl_profit"); if (sp) { sp.textContent = peso(profit()); sp.className = profit() < 0 ? "neg" : "pos"; }
@@ -167,10 +216,35 @@
       }).catch(function () { liveFailed = true; say("Tap Camera again: it opens the phone's camera app. Take a photo of the barcode.", true); });
     });
   }
-  box.closest("form").addEventListener("submit", function () {
+  var nb = document.getElementById("sl_new");
+  function newItem(text) {                                      /* a product not in the list (owner, 2026-10-18) */
+    if (!nb) return;
+    setOpen(false); var w = text.split(/\s+/);
+    document.getElementById("sn_brand").value = w[0] || ""; document.getElementById("sn_size").value = w.slice(1).join(" ");
+    document.getElementById("sn_pattern").value = ""; document.getElementById("sn_msg").textContent = ""; nb.hidden = false; document.getElementById("sn_brand").focus();
+  }
+  if (nb) {
+    document.getElementById("sn_kind").addEventListener("change", function () { document.getElementById("sn_size_l").textContent = this.value === "Battery" ? "Model" : "Size"; });
+    document.getElementById("sn_cancel").addEventListener("click", function () { nb.hidden = true; q.focus(); });
+    document.getElementById("sn_go").addEventListener("click", function () {
+      var body = new URLSearchParams({kind: document.getElementById("sn_kind").value, brand: document.getElementById("sn_brand").value,
+                                      size: document.getElementById("sn_size").value, pattern: document.getElementById("sn_pattern").value});
+      fetch("/stock/add-item/", {method: "POST", headers: {"X-CSRFToken": csrf()}, body: body}).then(function (r) { return r.json(); }).then(function (d) {
+        document.getElementById("sn_msg").textContent = d.msg || "";
+        if (!d.ok || !d.item) return;
+        if (!byId[d.item.id]) { items.push(d.item); byId[d.item.id] = d.item; }
+        nb.hidden = true; q.value = ""; add(byId[d.item.id]);
+      }).catch(function () { document.getElementById("sn_msg").textContent = "Could not reach the system. Try again."; });
+    });
+  }
+  box.closest("form").addEventListener("submit", function (ev) {
+    var even = mode === "sale" || box.dataset.phonesale ? lines.filter(function (l) { return !(l.it.cost > 0) && String(l.margin || "").trim() !== "" && num(l.margin) === 0; }) : [];
+    if (even.length && !confirm("Profit 0 on " + even.map(function (l) { return l.it.name; }).join(", ") + ": sold at breakeven only?")) {
+      ev.preventDefault(); ev.stopImmediatePropagation(); return;   /* owner, 2026-10-18: "if 0 margin then confirm if only breakeven" */
+    }
     var h = document.getElementById("sl_hidden"); h.innerHTML = "";
     lines.forEach(function (l, k) {
-      [["ln_item_" + k, l.it.id], ["ln_qty_" + k, l.qty], ["ln_price_" + k, mode === "lend" ? "" : l.price]].forEach(function (pair) {
+      [["ln_item_" + k, l.it.id], ["ln_qty_" + k, l.qty], ["ln_price_" + k, mode === "lend" || mode === "out" && !l.fixed ? "" : l.price], ["ln_margin_" + k, l.margin || ""]].forEach(function (pair) {
         var i = document.createElement("input"); i.type = "hidden"; i.name = pair[0]; i.value = pair[1]; h.appendChild(i);
       });
     });

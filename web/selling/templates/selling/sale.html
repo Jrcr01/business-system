@@ -10,7 +10,7 @@
 <p class="note">Type each invoice from the booklet, one after another{% if not scan_on %} — after closing, or in an idle moment{% endif %}; saving one offers the next number.
   {% if scan_on %}Goods scanned out during the day are invoiced from <a href="/sales/">their slips</a> instead, so the stock is not taken twice; an
   invoice typed here without a slip is noted on the Review list.{% endif %}</p>
-{% if no_booklet %}<div class="warnbox"><b>No invoice booklet is in use.</b> <a href="/si-booklets/">Register the booklet</a> so the next number is offered and skipped numbers are seen.
+{% if no_booklet %}<div class="warnbox"><b>No invoice booklet is in use.</b> The number offered is the last one typed plus one: change it if the paper says otherwise. <a href="/si-booklets/">Register the booklet</a> later and these sales fall into its sequence.
   You can still type a number.</div>{% endif %}
 {% if skipped %}<div class="warnbox"><b>{{ skipped|length }} number{{ skipped|length|pluralize }} skipped:</b> {% for n in skipped %}{{ n|stringformat:"06d" }}{% if not forloop.last %}, {% endif %}{% endfor %}.
   The first one is offered below. If a leaf was spoiled, <a href="/si-booklets/">cancel it with a reason</a>.</div>{% endif %}
@@ -56,7 +56,7 @@
     e.detail.lines.forEach(function (l) {
       var price = num(l.price);
       if (l.price !== "" && price < l.it.cost) { isBelow = true; notes.push(l.it.name + ": below cost by ₱" + peso((l.it.cost - price) * l.qty) + "."); }
-      if (l.qty > l.it.on_hand) notes.push(l.it.name + ": the system shows " + l.it.on_hand + " on hand; stock will read " + (l.it.on_hand - l.qty) + " until it is counted or received.");
+      if (l.qty > l.it.on_hand && !{{ stock_uncounted|yesno:"true,false" }}) notes.push(l.it.name + ": the system shows " + l.it.on_hand + " on hand; stock will read " + (l.it.on_hand - l.qty) + " until it is counted or received.");
     });
     list.innerHTML = ""; notes.forEach(function (t) { var d = document.createElement("div"); d.textContent = "· " + t; list.appendChild(d); });
     warn.hidden = !notes.length; below.hidden = !isBelow;

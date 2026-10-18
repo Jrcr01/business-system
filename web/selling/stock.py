@@ -163,3 +163,14 @@ def learn(request):
         item_id = 0
     ok, msg = learn_barcode(request.POST.get("barcode"), item_id)
     return JsonResponse({"ok": ok, "msg": msg})
+
+
+def add_item(request):
+    """A product not in the list, added while recording a sale (owner, 2026-10-18: "let my brother add for products not listed in prices")."""
+    from engines.permissions import can
+    if request.method != "POST" or not _any_stock_page(request) or not can(request.slicks_user["role"], "sales.use"):
+        return JsonResponse({"ok": False, "msg": "Not allowed."}, status=403)
+    from engines.stock_rules import add_counter_item
+    p = request.POST
+    ok, msg, row = add_counter_item(p.get("kind", ""), p.get("brand", ""), p.get("size", ""), p.get("pattern", ""))
+    return JsonResponse({"ok": ok, "msg": msg, "item": row})

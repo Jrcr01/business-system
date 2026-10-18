@@ -136,6 +136,10 @@ NUMBERS = [
      "Owner, 2026-10-13: 8 AM. The morning hour for every card reminder."),
     ("notify_second_hour", "Notifications", "The second due-date reminder is sent at (hour of the day, Manila)", 14, 12, 20, 0, "o'clock",
      "Owner, 2026-10-13: 2 PM. Only the due-today reminder is repeated, and only if the card is still not marked paid."),
+    ("stock_not_counted", "Stock", "Stock not counted yet (1 = yes, 0 = counted)", 1, 0, 1, 0, "",
+     "1 (owner, 2026-10-18: \"reconcile later. Important for now the system can be used\"): sales are recorded and still take the stock, but no "
+     "\"below zero\" review flags are raised and the stock pages say \"not counted yet\" instead of a minus figure. 0 once the opening count is finished: "
+     "below zero is flagged again."),
     ("stock_old_years", "Stock", "A tire this old (by its DOT) is old stock", 3, 1, 15, 0, "years",
      "Tires at or above this age show as Old stock, to be sold first. The age comes from the DOT week and year typed when the tires are received."),
     ("affiliate_open_days", "Stock", "Flag tires lent or borrowed and still open after", 30, 1, 365, 0, "days",
@@ -400,6 +404,11 @@ def idle_minutes() -> int:
 def authenticator_on() -> bool:
     """Is the Google Authenticator code asked at sign-in (owner, 2026-10-12)? On unless the System admin switched it off in Settings."""
     return int_value("signin_authenticator") == 1
+
+
+def stock_not_counted() -> bool:
+    """Before the opening count (owner, 2026-10-18): stock figures are not reliable yet, so below zero is not flagged and is shown as "not counted yet"."""
+    return int_value("stock_not_counted") == 1
 
 
 def sales_scan_on() -> bool:

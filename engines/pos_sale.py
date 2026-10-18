@@ -78,7 +78,9 @@ def record(si_no, sale_date, customer_id, customer_name: str, lines: list[dict],
         ok, msg = sr.invoice_release(int(release_id), si_no, sale_date, {ln["line_id"]: ln["price"] for ln in priced}, _with_rounding(svc, priced, rec - svc_total), pay,
                                      below_cost_reason)
         return ok, msg, int(release_id) if ok else None
-    clean = [{"item_id": int(ln["item_id"]), "qty": _num(ln.get("qty"))} for ln in lines if str(ln.get("item_id", "")).isdigit() and _num(ln.get("qty")) > 0]
+    # an item with no cost yet carries its own price and profit (owner, 2026-10-18, until the opening count); the rest share what the receipt leaves
+    clean = [{"item_id": int(ln["item_id"]), "qty": _num(ln.get("qty")), "own": _num(ln.get("price")) if str(ln.get("price") or "").strip() else None,
+              "margin": ln.get("margin", "")} for ln in lines if str(ln.get("item_id", "")).isdigit() and _num(ln.get("qty")) > 0]
     extra = [{"item_id": int(s["item_id"]), "qty": _num(s.get("qty")), "cost": _num(s.get("cost"))} for s in (surplus or [])
              if str(s.get("item_id", "")).isdigit() and _num(s.get("qty")) > 0]
     if not clean and not extra:
@@ -106,9 +108,18 @@ def record(si_no, sale_date, customer_id, customer_name: str, lines: list[dict],
         else:
             clean.append({"item_id": s["item_id"], "qty": s["qty"]})
         costs[s["item_id"]] = s["cost"]
-    priced = spread([{**ln, "cost": costs.get(ln["item_id"], 0.0)} for ln in clean], rec, svc_total)
-    ok, msg, sale_id = sr.save_sale(si_no, sale_date, customer_id, customer_name, [{"item_id": ln["item_id"], "qty": ln["qty"], "price": ln["price"]} for ln in priced],
-                                    _with_rounding(svc, priced, rec - svc_total), pay, below_cost_reason)
+    own = [ln for ln in clean if ln.get("own") is not None]
+    own_total = round(sum(ln["qty"] * ln["own"] for ln in own), 2)
+    rest = [ln for ln in clean if ln.get("own") is None]
+    if own_total > rec - svc_total + 0.005:
+        return False, f"The items priced one by one (₱{own_total:,.2f}) are more than the amount received less services (₱{rec - svc_total:,.2f}).", None
+    if not rest and abs(rec - svc_total - own_total) > 0.005:
+        return False, f"The amount received (₱{rec:,.2f}) is not the items priced (₱{own_total:,.2f}) plus services (₱{svc_total:,.2f}).", None
+    priced_rest = spread([{**ln, "cost": costs.get(ln["item_id"], 0.0)} for ln in rest], rec, svc_total + own_total)
+    priced = [{**ln, "price": f"{ln['own']:.2f}"} for ln in own] + priced_rest
+    ok, msg, sale_id = sr.save_sale(si_no, sale_date, customer_id, customer_name,
+                                    [{"item_id": ln["item_id"], "qty": ln["qty"], "price": ln["price"], "margin": ln.get("margin", "")} for ln in priced],
+                                    _with_rounding(svc, priced_rest, rec - svc_total - own_total), pay, below_cost_reason)
     if not ok and before:
         _undo_take_ins(before, msg)                              # the surplus never came in: no ghost stock, and a retry does not double it
     return ok, msg, sale_id

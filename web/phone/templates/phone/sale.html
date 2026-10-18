@@ -12,7 +12,7 @@ Scan what was sold, type the amount received; profit shows at once. A slip of th
   {% elif slips %}<label>From a slip? <span class="hint">(goods already scanned out, invoice not yet recorded)</span></label>
     {% for s in slips %}<div class="ph-card" style="background:var(--bg-f7f9fc)"><div class="kv"><span><b>{{ s.release_no }}</b> · {{ s.pcs|floatformat:"-2" }} pcs{% if s.customer != "Walk-in" %} · {{ s.customer }}{% endif %}{% if s.old %} · <span class="pill warn">{{ s.day|dmy }}</span>{% endif %}</span>
       <a class="btn small" href="/phone/sale/?slip={{ s.sale_id }}">Use it</a></div><span class="hint">{{ s.items }}</span></div>{% endfor %}{% endif %}
-  <div style="margin-top:10px">{% include "selling/_scan_lines.html" %}</div>
+  <div style="margin-top:10px">{% include "selling/_scan_lines.html" with phone_sale=True %}</div>
   {% if surplus_items %}<details class="manual"{% for s in surplus_rows %}{% if s.qty %} open{% endif %}{% endfor %}><summary class="hint" style="cursor:pointer"><span class="ms">recycling</span> Surplus or trade-in sold (not in stock): state its cost</summary>
     {% for s in surplus_rows %}<div class="ph-row" style="margin-top:6px"><select class="ph-field sp-item" style="flex:1 1 130px" name="sp_item_{{ s.k }}" aria-label="Surplus item {{ forloop.counter }}"><option value="">—</option>{% for it in surplus_items %}<option value="{{ it.id }}"{% if it.id|stringformat:"s" == s.item_id %} selected{% endif %}>{{ it.name }}</option>{% endfor %}</select>
       <input class="ph-field sp-qty" style="width:64px;text-align:center" type="text" inputmode="decimal" name="sp_qty_{{ s.k }}" value="{{ s.qty }}" placeholder="qty" aria-label="Surplus qty {{ forloop.counter }}">

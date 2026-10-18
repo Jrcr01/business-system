@@ -4,7 +4,7 @@
 <p class="note"><a href="/stock/">← Items and stock</a></p>
 <h2>{{ it.code }} · {{ it.name }} <span class="pill">{{ type }}</span>
   {% if it.negative %}<span class="pill warn">Below zero</span>{% elif it.low %}<span class="pill warn">Low</span>{% endif %}{% if it.old %} <span class="pill warn">Old stock</span>{% endif %}</h2>
-<div class="facts"><div><span>On hand</span><b{% if it.negative %} class="neg"{% endif %}>{{ it.on_hand|floatformat:"-2" }}</b></div>
+<div class="facts"><div><span>On hand</span><b{% if it.negative and not stock_uncounted %} class="neg"{% endif %}>{% if it.negative and stock_uncounted %}<span class="pill warn">not counted yet</span>{% else %}{{ it.on_hand|floatformat:"-2" }}{% endif %}</b></div>
   <div><span>Next sale costs</span><b>₱{{ it.next_cost|floatformat:2|intcomma }}</b></div><div><span>Average of what is left</span><b>₱{{ it.avg_cost|floatformat:2|intcomma }}</b></div>
   <div><span>Value</span><b>₱{{ it.value|floatformat:2|intcomma }}</b></div>
   <div><span>Oldest DOT</span><b>{{ it.dot|default:"—" }}</b></div><div><span>Low at</span><b>{{ it.reorder_level }}</b></div>

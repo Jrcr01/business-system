@@ -29,7 +29,7 @@ def _lines(p) -> list[dict]:
     for key in p:
         if key.startswith("ln_item_"):
             n = key.removeprefix("ln_item_")
-            out.append({"item_id": p.get(key), "qty": p.get(f"ln_qty_{n}"), "price": p.get(f"ln_price_{n}", "")})
+            out.append({"item_id": p.get(key), "qty": p.get(f"ln_qty_{n}"), "price": p.get(f"ln_price_{n}", ""), "margin": p.get(f"ln_margin_{n}", "")})
     return out
 
 
@@ -139,7 +139,7 @@ def _sale_ctx(request, p, start: str) -> dict:
     return {"page_id": "sales", "si_no": (p.get("si_no") if p else (f"{nxt:06d}" if nxt else "")), "today": manila_today(), "sale_date": p.get("sale_date") if p else manila_today().isoformat(),
             "customer": p.get("customer", "") if p else "", "names": [c["name"] for c in sr.customers()], "scan_lines": json.loads(start), "pays": _pay_ctx(p), "methods": list(sr.METHODS.items()),
             "services": [{"k": k, **s} for k, s in enumerate(_services(p) if p else [{"description": "", "amount": ""}] * 4)], "below_reason": p.get("below_reason", "") if p else "",
-            "no_booklet": nxt is None, "skipped": sr.skipped(), "open_releases": len(sr.open_releases()),
+            "no_booklet": not sr.booklet_in_use(), "skipped": sr.skipped(), "open_releases": len(sr.open_releases()),
             "scan_on": __import__("engines.settings_registry", fromlist=["sales_scan_on"]).sales_scan_on()}
 
 

@@ -24,11 +24,12 @@ def test_laptop_only_pages_are_hidden_on_a_phone_and_say_so_when_opened(web, db)
 
 def test_look_only_pages_show_but_refuse_changes_on_a_phone(web, db):
     web = _owner(web)
-    page = web.get("/purchase-orders/", HTTP_USER_AGENT=PHONE_UA).content.decode()
-    assert "Looking only on the phone." in page and 'href="/phone/in/"' in page and 'class="view-only"' in page
-    r = web.post("/purchase-orders/", {"action": "anything"}, HTTP_USER_AGENT=PHONE_UA, follow=True)
+    page = web.get("/price-lists/", HTTP_USER_AGENT=PHONE_UA).content.decode()
+    assert "Looking only on the phone." in page and 'href="/phone/prices/"' in page and 'class="view-only"' in page
+    r = web.post("/price-lists/", {"action": "anything"}, HTTP_USER_AGENT=PHONE_UA, follow=True)
     assert "is for looking. Do this on the laptop." in r.content.decode()
-    assert "Looking only on the phone." not in web.get("/purchase-orders/", HTTP_USER_AGENT=LAPTOP_UA).content.decode()
+    assert "Looking only on the phone." not in web.get("/price-lists/", HTTP_USER_AGENT=LAPTOP_UA).content.decode()
+    assert "Looking only on the phone." not in web.get("/purchase-orders/", HTTP_USER_AGENT=PHONE_UA).content.decode()   # POs: as on the laptop
     assert "Looking only on the phone." not in web.get("/expenses/", HTTP_USER_AGENT=PHONE_UA).content.decode()        # as now on the phone
 
 

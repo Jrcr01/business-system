@@ -26,7 +26,7 @@
   <div class="ph-card"><b class="t">{{ item.name }}</b><span class="hint">{{ item.code }}</span>
     <button class="btn small ghost" type="button" style="float:right" data-share-title="Stock" data-share-text="{{ item.name }}: {{ item.on_hand|floatformat:'-2' }} in stock{% if item.dot %} (DOT {{ item.dot }}){% endif %} — Slick's Tire Supply"><span class="ms">share</span>Share</button>
     <script src="/static/core/share.js?v=1"></script>
-    <div class="kv"><span>On hand</span><b class="n{% if item.negative %} neg{% endif %}">{{ item.on_hand|floatformat:"-2"|intcomma }}</b></div>
+    <div class="kv"><span>On hand</span><b class="n{% if item.negative and not stock_uncounted %} neg{% endif %}">{% if item.negative and stock_uncounted %}not counted yet{% else %}{{ item.on_hand|floatformat:"-2"|intcomma }}{% endif %}</b></div>
     <div class="kv"><span>Oldest DOT</span><b>{% if item.dot %}{{ item.dot }}{% if item.old %} <span class="pill warn">old stock</span>{% endif %}{% else %}—{% endif %}</b></div>
     <div class="kv"><span>Low at</span><b>{{ item.reorder_level }}{% if item.low %} <span class="pill warn">low</span>{% endif %}</b></div>
     <div class="kv"><span>Last in</span><b>{% if item.last_in %}{{ item.last_in|dmy }}{% else %}—{% endif %}</b></div>
@@ -49,7 +49,7 @@
 {% elif rows %}
   <p class="hint">{{ rows|length }} item{{ rows|length|pluralize }}{% if show %} {{ show|default:"" }}{% endif %}. Tap one.</p>
   {% for r in rows %}<div class="ph-card"><a class="t" href="/phone/stock/?id={{ r.id }}">{{ r.name }}</a>
-    <div class="kv"><span>{{ r.code }}</span><b{% if r.negative %} class="neg"{% endif %}>{{ r.on_hand|floatformat:"-2"|intcomma }} on hand{% if r.dot %} · DOT {{ r.dot }}{% endif %}</b></div></div>{% endfor %}
+    <div class="kv"><span>{{ r.code }}</span><b{% if r.negative and not stock_uncounted %} class="neg"{% endif %}>{% if r.negative and stock_uncounted %}not counted yet{% else %}{{ r.on_hand|floatformat:"-2"|intcomma }} on hand{% endif %}{% if r.dot %} · DOT {{ r.dot }}{% endif %}</b></div></div>{% endfor %}
 {% elif q %}
   <p class="note">Nothing matches "{{ q }}". A barcode the system does not know yet is taught on the item: find the item by its size, then "Teach a barcode".</p>
 {% elif show %}

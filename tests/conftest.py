@@ -188,6 +188,15 @@ def _po_request_rule(request, monkeypatch):
         monkeypatch.setattr(po_rules, "REQUEST_FIRST", False)
 
 
+@pytest.fixture(autouse=True)
+def _stock_counted(request, monkeypatch):
+    """Owner, 2026-10-18: "Stock not counted yet" is on until the opening count (settings_registry.stock_not_counted). The stock tests were written for
+    counted stock, so the switch is off for them; test_stock_not_counted.py runs with it on, as the system does now."""
+    if not request.module.__name__.endswith(("test_stock_not_counted", "test_counter_items")):
+        import engines.settings_registry as sreg
+        monkeypatch.setattr(sreg, "stock_not_counted", lambda: False)
+
+
 @pytest.fixture
 def web(web_setup, db):
     """A browser for the Django site on this test's fresh database."""

@@ -9,9 +9,9 @@ touched here.
 The phone is told apart by what its browser says (an iPad by its touch screen, core.views._ua): it stops slips and a found phone; it is not a lock --
 each person's access and the phone approval remain the protection."""
 
-PHONE = {
+PHONE = {     # purchase orders: as on the laptop (owner, 2026-10-18: "make PO available on phone")
     "settings": "laptop", "booklets": "laptop", "si-booklets": "laptop", "creditors": "laptop",
-    "price-lists": "look", "order-statements": "look", "purchase-orders": "look", "bank-cash": "look", "lenders": "look", "bank-loans": "look",
+    "price-lists": "look", "order-statements": "look", "bank-cash": "look", "lenders": "look", "bank-loans": "look",
     "credit-cards": "look", "stock-counts": "look", "reports": "look", "analytics": "look", "income-statement": "look",
 }
 

@@ -66,6 +66,9 @@ def _flag_negative(conn, item_id: int, on_hand: float, what: str) -> None:
     """Stock below zero is allowed (a sale is never refused) and goes on the Review list: something was not received, or not counted."""
     if on_hand >= -1e-9:
         return
+    from engines.settings_registry import stock_not_counted
+    if stock_not_counted():                                     # before the opening count: not a warning yet (owner, 2026-10-18)
+        return
     from engines.review_flags import flag
     name = conn.execute("SELECT name FROM items WHERE id = ?", (int(item_id),)).fetchone()[0]
     flag(conn, "STOCK_NEGATIVE", "items", int(item_id), f"{name}: on hand reads {on_hand:g} after {what}. Count it, or receive what came.")
