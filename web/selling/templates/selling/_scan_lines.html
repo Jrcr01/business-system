@@ -82,7 +82,7 @@
     list.innerHTML = "";
     if (!shown.length) {
       var e = document.createElement("div"); e.className = "pk-none"; e.textContent = "Nothing matches. Try fewer words."; list.appendChild(e);
-      if (mode === "sale" && document.getElementById("sl_new")) {
+      if (document.getElementById("sl_new")) {                 /* the computer sale, and the phone sale (mode "out" there) */
         var a = document.createElement("div"); a.className = "pk-opt hi"; a.style.color = "var(--fg-0b4f8a)"; a.style.fontWeight = "600";
         a.textContent = "+ Add “" + q.value.trim() + "” as a new item";
         a.addEventListener("mousedown", function (ev) { ev.preventDefault(); newItem(q.value.trim()); });

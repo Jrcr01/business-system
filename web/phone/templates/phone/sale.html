@@ -53,7 +53,7 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("ps_total").textContent = peso(rec);
     var notes = [], below = rec > 0 && goods < all - 0.005;
     if (below) notes.push("Below cost by ₱" + peso(all - goods) + ".");
-    lines.forEach(function (l) { if (l.qty > l.it.on_hand) notes.push(l.it.name + ": the system shows " + l.it.on_hand + " on hand."); });
+    lines.forEach(function (l) { if (l.qty > l.it.on_hand && !{{ stock_uncounted|yesno:"true,false" }}) notes.push(l.it.name + ": the system shows " + l.it.on_hand + " on hand."); });
     document.getElementById("ps_warn").hidden = !notes.length; document.getElementById("ps_warn_list").innerHTML = notes.map(function (n) { return "<div>" + n + "</div>"; }).join("");
     document.getElementById("ps_below").hidden = !below;
   }
