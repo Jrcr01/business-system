@@ -9,11 +9,13 @@ from datetime import date, timedelta
 
 from django.contrib import messages
 from django.shortcuts import redirect, render
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 from buying.views import _date
 from masters.views import page_needed
 
 
+@xframe_options_sameorigin                                      # the pick-a-date panel of a payment statement's checks (owner, 2026-10-19); our pages only
 @page_needed("calendar")
 def payables_calendar(request):
     from engines import calendar_marks as cm
@@ -78,7 +80,7 @@ def payables_calendar(request):
                           "ref": r.reference, "amount": float(r.amount)})
     prev_m = (first - timedelta(days=1)).replace(day=1)
     next_m = (first + timedelta(days=32)).replace(day=1)
-    return render(request, "payables/calendar.html", {
+    return render(request, "payables/calendar.html", {"pick_mode": request.GET.get("pick") == "1", 
         "page_id": "calendar", "first": first, "cells": cells, "pick": pick, "pick_mark": marks.get(pick), "day_rows": day_rows,
         "day_total": sum(r["amount"] for r in day_rows), "prev": prev_m.strftime("%Y-%m"), "next": next_m.strftime("%Y-%m"), "m": first.strftime("%Y-%m"),
         "this_m": today.strftime("%Y-%m"), "kinds": list(cm.KINDS.items()), "may_mark": can(request.slicks_user["role"], "calendar.mark"),

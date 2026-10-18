@@ -396,7 +396,8 @@ def day(request):
         s["amount"] = round(s["amount"] + float(r["amount"]), 2)
         s["profit"] = round(s["profit"] + float(r["profit"] or 0), 2)
         s["items"].append(f"{r['qty']:g} × {r['item']}")
-    return render(request, "phone/day.html", _ctx(request, "Sales today", d=d, sheet=sheet, sales=list(by_sale.values()), prev=d - timedelta(days=1),
+    from engines.yesterday_push import summary
+    return render(request, "phone/day.html", _ctx(request, "Sales today", d=d, sheet=sheet, bought=summary(d)["purchases"], sales=list(by_sale.values()), prev=d - timedelta(days=1),
                                                    nxt=d + timedelta(days=1) if d < manila_today() else None, slips=[s for s in sr.open_releases() if str(s["day"])[:10] == d.isoformat()]))
 
 

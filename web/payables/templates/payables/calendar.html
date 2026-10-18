@@ -7,17 +7,17 @@
   {% if cap_ceiling or cap_target %}<br>Daily limit: the line under each day is everything planned to go out (open orders and card reserves included) ·
   <span class="cap-key near">above ₱{{ cap_target|floatformat:0|intcomma }}</span> · <span class="cap-key over">above ₱{{ cap_ceiling|floatformat:0|intcomma }}</span>{% endif %}</p>
 <div class="cal-head">
-  <a class="btn small ghost" href="?m={{ prev }}" aria-label="Month before"><span class="ms">chevron_left</span></a>
+  <a class="btn small ghost" href="?m={{ prev }}{% if pick_mode %}&amp;pick=1{% endif %}" aria-label="Month before"><span class="ms">chevron_left</span></a>
   <b>{{ first|date:"F Y" }}</b>
-  <a class="btn small ghost" href="?m={{ next }}" aria-label="Month after"><span class="ms">chevron_right</span></a>
-  {% if m != this_m %}<a class="btn small ghost" href="/calendar/">This month</a>{% endif %}
+  <a class="btn small ghost" href="?m={{ next }}{% if pick_mode %}&amp;pick=1{% endif %}" aria-label="Month after"><span class="ms">chevron_right</span></a>
+  {% if m != this_m %}<a class="btn small ghost" href="/calendar/{% if pick_mode %}?pick=1{% endif %}">This month</a>{% endif %}
   <span class="hint" style="margin-left:auto">Month total ₱{{ month_total|floatformat:2|intcomma }}</span>
 </div>
 <div class="cal">
   <div class="dn">Mon</div><div class="dn">Tue</div><div class="dn">Wed</div><div class="dn">Thu</div><div class="dn">Fri</div><div class="dn">Sat</div><div class="dn">Sun</div>
   {% for w in cells %}{% for c in w %}
   <a class="cell{% if c.out %} out{% endif %}{% if c.off %} off{% endif %}{% if c.n and c.state == 'Paid' %} paid{% elif c.n %} due{% endif %}{% if c.today %} today{% endif %}{% if c.pick %} pick{% endif %}"
-     href="?m={{ m }}&day={{ c.d|date:'Y-m-d' }}#day">
+     href="?m={{ m }}&day={{ c.d|date:'Y-m-d' }}{% if pick_mode %}&amp;pick=1{% endif %}#day">
     <span class="dd">{{ c.d|date:"d" }}</span>{% if c.mark %}<span class="mk" title="{{ c.mark.label }}">{% if c.mark.kind == "holiday" %}holiday{% elif c.mark.kind == "custom" %}no checks{% else %}note{% endif %}</span>{% endif %}
     {% if c.n %}<b>{{ c.total|pw }}</b><span class="cnt">{% if c.due_n %}{{ c.due_n }} to pay{% endif %}{% if c.due_n and c.paid_n %} · {% endif %}{% if c.paid_n %}{{ c.paid_n }} paid{% endif %}</span>{% endif %}
     {% if c.plan and not c.out %}<span class="plan lvl-{{ c.lvl }}" title="Planned out (with open orders and card reserves)">plan {{ c.plan|pw }}</span>{% endif %}
@@ -25,6 +25,12 @@
   </a>{% endfor %}{% endfor %}
 </div>
 
+{% if pick_mode %}<div class="warnbox" style="margin:8px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap" id="pick_bar">
+  <span>Click a day to see what falls due on it, then</span>
+  <button class="btn" type="button" id="pick_use" data-day="{{ pick|date:'Y-m-d' }}"><span class="ms">event_available</span>Use {{ pick|date:"m/d/Y" }} for the check</button></div>
+<script>document.getElementById("pick_use").addEventListener("click", function () {     /* owner, 2026-10-19: back to the payment statement with this date */
+  if (window.parent !== window) window.parent.postMessage({slicksPickDate: this.dataset.day}, location.origin);
+});</script>{% endif %}
 <div class="grp" id="day">{{ pick|date:"l" }} {{ pick|date:"m/d/Y" }}{% if day_rows %} · ₱{{ day_total|floatformat:2|intcomma }} · {{ day_rows|length }} item{{ day_rows|length|pluralize }}{% endif %}
   {% if pick_mark %}<span class="pill warn">{% if pick_mark.kind == "holiday" %}Holiday{% elif pick_mark.kind == "custom" %}No-check day{% else %}Note{% endif %}{% if pick_mark.label %}: {{ pick_mark.label }}{% endif %}</span>{% endif %}</div>
 {% if pick_in %}<p class="note">Cash in this day: <b class="pos">₱{{ pick_in.total|floatformat:2|intcomma }}</b>

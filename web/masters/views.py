@@ -312,6 +312,9 @@ def settings_notifications(request):
             ok, msg = mail_out.save_config(p.get("provider", ""), p.get("sender", ""), p.get("key", ""))
         elif what == "mail_pref":
             ok, msg = morning_email.set_pref(p.get("email", ""), p.get("receives") == "1")
+        elif what == "yesterday_pref":
+            from engines import yesterday_push
+            ok, msg = yesterday_push.set_pref(p.get("email", ""), p.get("receives") == "1")
         elif what == "mail_test":
             from engines.clock import manila_today
             me = request.slicks_user
@@ -326,6 +329,7 @@ def settings_notifications(request):
     kinds = [(sr._meta(k)["label"].split(" (")[0].split(": ", 1)[-1].capitalize(), sr.int_value(k) == 1, k) for k in ("notify_card_statement", "notify_card_due", "notify_card_fee")]
     return render(request, "masters/settings_notifications.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/notifications/",
                                                                    "people": cr.people(), "holders": holders, "missing": cr.missing(), "kinds": kinds,
-                                                                   "mail": mail_out.config(), "mail_on": morning_email.on(), "mail_people": morning_email.people(),
+                                                                   "mail": mail_out.config(), "mail_on": morning_email.on(), "mail_people": morning_email.people(), "yesterday_people": __import__("engines.yesterday_push", fromlist=["people"]).people(),
+                                                                   "work_end": sr.int_value("work_end_hour"),
                                                                    "mail_hour": sr.int_value("email_morning_hour"), "providers": list(mail_out.PROVIDERS.items()),
                                                                    "hour": sr.int_value("notify_hour"), "second": sr.int_value("notify_second_hour")})

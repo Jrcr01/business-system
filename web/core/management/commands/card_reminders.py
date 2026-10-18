@@ -14,6 +14,11 @@ class Command(BaseCommand):
         from engines.card_reminders import run
         with acting_as("system@slicks", "admin"):
             self.stdout.write(run(slot=opts["slot"]))
+            try:                                                 # the Yesterday notification rides on the same hourly timer (owner, 2026-10-19)
+                from engines.yesterday_push import run as yesterday
+                self.stdout.write(yesterday())
+            except Exception as e:                               # noqa: BLE001 -- never take the card reminders down with it
+                self.stdout.write(f"Yesterday: {e}")
             try:                                                 # open loans: next month's interest row before it is due (owner, 2026-10-14)
                 from engines.open_loans import ensure_interest
                 self.stdout.write(f"{ensure_interest()} open-loan interest month(s) added.")

@@ -223,3 +223,28 @@
   update();
 })();
 </script>
+{# owner, 2026-10-19: "i have to go back and forth between PS and Calendar" -- the payables calendar in a floating panel; "Use this date" fills the box #}
+<dialog id="cal_pick_dlg" style="width:min(980px,96vw);height:min(760px,92vh);padding:0;border:0;border-radius:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--bd-e3e7ed)"><b>Pick the check date</b>
+    <button class="btn small ghost" type="button" id="cal_pick_close">Close</button></div>
+  <iframe id="cal_pick_frame" title="Payables calendar" style="width:100%;height:calc(100% - 50px);border:0"></iframe></dialog>
+<script>(function () {
+  var dlg = document.getElementById("cal_pick_dlg"), fr = document.getElementById("cal_pick_frame"), target = null;
+  if (!dlg || !dlg.showModal) return;
+  document.querySelectorAll('input[type="date"]').forEach(function (inp) {
+    if (inp.name === "released_date") return;                  /* a release date is not a pay day */
+    var b = document.createElement("button"); b.type = "button"; b.className = "btn small ghost"; b.style.marginLeft = "4px";
+    b.innerHTML = '<span class="ms">calendar_month</span>Calendar'; b.setAttribute("aria-label", "Pick the date on the payables calendar");
+    b.addEventListener("click", function () {
+      target = inp; var v = inp.value || "", m = v ? v.slice(0, 7) : "";
+      fr.src = "/calendar/?pick=1" + (m ? "&m=" + m + "&day=" + v : ""); dlg.showModal();
+    });
+    inp.insertAdjacentElement("afterend", b);
+  });
+  window.addEventListener("message", function (e) {
+    if (e.origin !== location.origin || !e.data || !e.data.slicksPickDate || !target) return;
+    target.value = e.data.slicksPickDate; target.dispatchEvent(new Event("input", {bubbles: true})); target.dispatchEvent(new Event("change", {bubbles: true}));
+    dlg.close(); target.focus();
+  });
+  document.getElementById("cal_pick_close").addEventListener("click", function () { dlg.close(); });
+})();</script>

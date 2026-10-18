@@ -10,6 +10,8 @@
 <div class="kv" style="border-top:2px solid var(--ink);margin-top:8px;padding-top:8px"><b>{{ sheet.invoices }} invoice{{ sheet.invoices|pluralize }} · {{ sheet.pieces|floatformat:"-2" }} pcs</b><b>₱{{ sheet.sales|floatformat:2|intcomma }}</b></div>
 <div class="kv"><span>Profit</span><b class="{% if sheet.profit < 0 %}neg{% else %}pos{% endif %}">₱{{ sheet.profit|floatformat:2|intcomma }}</b></div>
 {% for m, amt in sheet.money.items %}{% if amt and m != "CHECK_TODAY" and m != "CHECK_LATER" %}<div class="kv"><span>{{ m|lower|capfirst }}</span><span>{{ amt|floatformat:2|intcomma }}</span></div>{% endif %}{% endfor %}
+{% if bought %}<div class="ph-card" style="margin-top:12px"><b>Purchases received</b>
+  {% for b in bought %}<div class="kv"><span>{{ b.doc }} · {{ b.supplier }}</span><b>{{ b.amount|floatformat:2|intcomma }}</b></div>{% endfor %}</div>{% endif %}
 <p style="margin-top:14px"><a class="btn main" href="/phone/sale/"><span class="ms">receipt_long</span>Record a sale</a></p>
 <script src="/static/core/share.js?v=1"></script>
 {% endblock %}

@@ -134,6 +134,9 @@ NUMBERS = [
      "Sent on the 1st of the month before the card's annual-fee month, so there is time to ask the bank for a waiver."),
     ("notify_hour", "Notifications", "Reminders are sent at (hour of the day, Manila)", 8, 5, 12, 0, "o'clock",
      "Owner, 2026-10-13: 8 AM. The morning hour for every card reminder."),
+    ("work_end_hour", "Notifications", "Working hours end at (the reminder to type yesterday's sales, if still none)", 18, 12, 23, 0, "o'clock",
+     "Owner, 2026-10-19: 'not 2 pm but after working hours'. The morning Yesterday notification goes to the System admin and the owners; when yesterday "
+     "has no sale recorded it asks to type them as soon as possible, and at this hour one more reminder is sent if there is still none."),
     ("notify_second_hour", "Notifications", "The second due-date reminder is sent at (hour of the day, Manila)", 14, 12, 20, 0, "o'clock",
      "Owner, 2026-10-13: 2 PM. Only the due-today reminder is repeated, and only if the card is still not marked paid."),
     ("stock_not_counted", "Stock", "Stock not counted yet (1 = yes, 0 = counted)", 1, 0, 1, 0, "",
