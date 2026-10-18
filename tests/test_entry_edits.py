@@ -71,3 +71,24 @@ def test_edit_a_delivery_undoes_it_and_opens_receive_filled_in(web, db):
     assert "Correcting DR 77" in page and 'id="redo_data"' in page
     ch = changes()
     assert ch and ch[0]["kind"] == "DELIVERY_EDITED" and "DR 77" in ch[0]["before"] and ch[0]["why"] == "qty was 3"
+
+
+def test_a_check_paid_in_cash_is_done_and_loans_and_cards_do_not_wait_for_the_bank(web, db):
+    """Owner, 2026-10-19: "we only use one bank which is metrobank. no waiting for loans and credit card. but for checks, there are checks that paid in cash"."""
+    from engines.clock import manila_today
+    from tests.test_web_batch_checks import _checks, _park
+    from tests.test_web_d3a import _add_inv, _new_batch
+    from conftest import make_creditor
+    _admin(web)
+    cid = make_creditor(db, "CSS Autoparts Inc.", terms="30")
+    sid = _new_batch(web, cid)
+    _add_inv(web, sid, doc="110744", gross="6,000")
+    today = manila_today()
+    _park(web, sid, (str(today), "6,000"))
+    chk = _checks(sid)[0][0]
+    web.post(f"/order-statements/{sid}/", {"action": "chk_hand", f"num_{chk}": "7001"})
+    page = web.get("/checks/").content.decode()
+    assert f'name="how_check_{chk}"' in page and "paid in cash" in page
+    web.post("/checks/", {"action": "clear_many", "on": str(today), f"tick_check_{chk}": "1", f"how_check_{chk}": "CASH"})
+    assert fetchone(db, "SELECT settled_outside_at IS NOT NULL FROM checks_issued WHERE check_id = ?", (chk,))[0] == 1     # done, not waiting
+    assert "7001" not in web.get("/checks/?show=ticked").content.decode()

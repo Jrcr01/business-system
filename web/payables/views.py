@@ -462,7 +462,7 @@ def statement_pdf(request, sid: int, kind: str):
 KIND_COLORS = {"Supplier checks": "#16305B", "Lender checks": "#4C78A8", "Bank loans": "#C26A00", "Credit cards": "#9FB3D1", "Purchase orders": "#2E7D32"}
 
 
-DAILY_SHOWS = [("due", "Today + overdue"), ("week", "Next 7 days"), ("ticked", "Ticked, waiting for the bank"), ("all", "All")]
+DAILY_SHOWS = [("due", "Today + overdue"), ("week", "Next 7 days"), ("ticked", "Checks waiting for the bank"), ("paid", "Paid lately"), ("all", "All")]
 
 
 def _daily(df, show: str, today, by: str = "bank") -> dict:
@@ -475,14 +475,23 @@ def _daily(df, show: str, today, by: str = "bank") -> dict:
     if df.empty:
         return {"days": [], "shows": DAILY_SHOWS, "show": show, "by": by, "counts": {k: 0 for k, _ in DAILY_SHOWS}, "n_overdue": 0, "total_due": 0.0}
     df = df.assign(group=df["pay_day"] if by == "bank" else df["day"])
+    if "kind" not in df.columns:
+        df = df.assign(kind="check")
     open_ = df[df["ticked"].isna()]
     week = (today + timedelta(days=7)).isoformat()
-    sets = {"due": open_[open_["group"] <= today.isoformat()], "week": open_[open_["group"] <= week], "ticked": df[df["ticked"].notna()], "all": df}
+    # only a CHECK waits for the bank once ticked: loans and cards are paid when ticked (owner, 2026-10-19: "we only use one bank which is metrobank. no
+    # waiting for loans and credit card"); the ones ticked lately stay under "Paid lately" so a slip can be undone
+    ticked = df[df["ticked"].notna()]
+    done_long_ago = (ticked["kind"] != "check") & (ticked["ticked"].astype(str).str[:10] < (today - timedelta(days=7)).isoformat())
+    df = df.drop(ticked[done_long_ago].index)                   # a loan or card paid over a week ago is done: off the list
+    ticked = ticked[~done_long_ago]
+    sets = {"due": open_[open_["group"] <= today.isoformat()], "week": open_[open_["group"] <= week], "ticked": ticked[ticked["kind"] == "check"],
+            "paid": ticked[ticked["kind"] != "check"], "all": df}
     rows = sets[show].astype(object).where(sets[show].notna(), None)       # no NaN reaching the page (a NaN "ticked" would read as ticked)
     days = []
     for day, part in rows.groupby("group", sort=True):
         items = part.to_dict("records")
-        days.append({"day": day, "overdue": day < today.isoformat() and show != "ticked", "today": day == today.isoformat(), "items": items,
+        days.append({"day": day, "overdue": day < today.isoformat() and show not in ("ticked", "paid"), "today": day == today.isoformat(), "items": items,
                      "total": float(sum(float(x or 0) for x in part["amount"])), "n_open": sum(1 for x in part["ticked"] if x is None)})
     due = sets["due"]
     return {"days": days, "shows": DAILY_SHOWS, "show": show, "by": by, "counts": {k: len(x) for k, x in sets.items()},
@@ -522,10 +531,15 @@ def checks(request):
                 fn = {"check": clearing.mark_cleared, "loan": clearing.mark_loan_cleared, "card": clearing.pay_card, "oloan": "oloan"}.get(kind)
                 if fn is None:
                     continue
-                how = request.POST.get(f"how_{kind}_{item}", "CASH")
+                how = request.POST.get(f"how_{kind}_{item}", "BANK" if kind == "check" else "CASH")
                 if kind == "oloan":                                 # an open loan's interest month, paid in cash or by transfer (owner, 2026-10-14)
                     from engines.open_loans import mark_paid
                     one_ok, one_msg = mark_paid(int(item), how, on, note)
+                elif kind == "check" and how in ("CASH", "TRANSFER") and not _early_lender_check(int(item), on):
+                    # a check paid in cash or by transfer instead (owner, 2026-10-19): settled here, not waiting for the bank; take the check back
+                    from engines.settled_outside_bank import settle_outside_bank
+                    one_ok, one_msg = settle_outside_bank(int(item), "Paid by transfer" if how == "TRANSFER" else "Paid in cash", on or today_(),
+                                                          ((note or "").strip() + " · " if (note or "").strip() else "") + "take the check back")
                 elif kind == "check" and _early_lender_check(int(item), on):
                     # a lender check paid before its date: the bank would refuse the check, so the lender was paid in cash or by transfer and the
                     # check is taken back (owner, 2026-10-14: "allow loans to be paid early")

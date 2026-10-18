@@ -48,7 +48,8 @@ def test_the_checklist_shows_every_track_and_ticks_many_at_once(web, db):
     assert fetchone(db, "SELECT cleared_at, cleared_note FROM bank_loan_installments WHERE installment_id = ?", (iid,)) == (str(TODAY), "online banking")
     assert fetchone(db, "SELECT status FROM cc_statements WHERE cc_statement_id = ?", (csid,))[0] == "Paid"
     ticked = web.get("/checks/?show=ticked").content.decode()
-    assert "0004471" in ticked and "L-77" in ticked
+    assert "0004471" in ticked and "L-77" not in ticked                       # only a check waits for the bank (owner, 2026-10-19)
+    assert "L-77" in web.get("/checks/?show=paid").content.decode()           # a loan is paid when ticked: under Paid lately
     web.post("/checks/", {"action": "unclear", "check_id": cid})
     web.post("/checks/", {"action": "unclear_loan", "item_id": iid})
     assert fetchone(db, "SELECT manual_cleared_at FROM checks_issued WHERE check_id = ?", (cid,))[0] is None
@@ -90,7 +91,7 @@ def test_a_card_can_be_paid_in_part_and_each_payment_is_on_its_statement(web, db
     assert fetchone(db, "SELECT payment_date, amount FROM cc_payments WHERE cc_statement_id = ?", (csid,)) == (str(TODAY - timedelta(days=1)), 1000.0)
     page = web.get("/checks/").content.decode()
     assert 'name="amt_card_%d"' % csid not in page                       # paid in part: done here, the other 2,000 carries to the next statement
-    assert "Gold - 1234" in web.get("/checks/?show=ticked").content.decode()
+    assert "Gold - 1234" in web.get("/checks/?show=paid").content.decode()
     pay_id = fetchone(db, "SELECT MAX(payment_id) FROM cc_payments")[0]
     web.post("/checks/", {"action": "unpay_card", "item_id": pay_id})
     assert fetchone(db, "SELECT status, amount_paid FROM cc_statements WHERE cc_statement_id = ?", (csid,)) == ("Unpaid", 0.0)   # taken back: owed again

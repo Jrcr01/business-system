@@ -14,7 +14,7 @@
 <div class="facts">
   <div><span>Due today and overdue</span><b>{{ counts.due }} item{{ counts.due|pluralize }} · ₱{{ total_due|floatformat:2|intcomma }}</b></div>
   <div><span>Overdue (before today)</span><b>{{ n_overdue }}</b></div>
-  <div><span>Ticked, waiting for the bank</span><b>{{ counts.ticked }}</b></div>
+  <div><span>Checks waiting for the bank</span><b>{{ counts.ticked }}</b></div>
 </div>
 <p class="hint" style="margin:0 0 6px">Group by:
   <a class="chip{% if by != 'date' %} on{% endif %}" href="?show={{ show }}" title="A Saturday, a Sunday or a marked day off counts on the next banking day">Banking day</a>
@@ -53,7 +53,7 @@
 </dialog>
 <form method="post" id="dp-form">{% csrf_token %}<input type="hidden" name="action" value="clear_many"><input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="by" value="{{ by }}">
 <div class="scroll-x"><table class="list dp cards">
-  <tr><th style="width:34px">{% if may_tick and show != "ticked" %}<input type="checkbox" id="dp-all" aria-label="Tick every item shown that is due">{% endif %}</th>
+  <tr><th style="width:34px">{% if may_tick and show != "ticked" and show != "paid" %}<input type="checkbox" id="dp-all" aria-label="Tick every item shown that is due">{% endif %}</th>
       <th>Pay to</th><th style="text-align:right">Amount</th><th>Date</th><th>Check / reference</th><th></th><th></th></tr>
   {% for d in days %}
   <tr class="dp-day{% if d.overdue %} overdue{% elif d.today %} today{% endif %}"><td colspan="6">
@@ -75,11 +75,14 @@
         {% elif not r.due %}<span class="hint">{% if r.early %}not due yet · can be paid early{% else %}not due yet{% endif %}</span>{% endif %}
         {% if not r.ticked and may_tick and r.kind == "oloan" or not r.ticked and may_tick and r.early and r.kind == "check" %}
           <input type="hidden" class="dp-how" name="how_{{ r.kind }}_{{ r.item_id }}" value="CASH" data-who="{{ r.payee }}" data-ref="{{ r.ref }}" data-amt="{{ r.amount }}"
-                 data-check="{% if r.kind == "check" %}1{% else %}0{% endif %}">{% endif %}</td>
+                 data-check="{% if r.kind == "check" %}1{% else %}0{% endif %}">
+        {% elif not r.ticked and may_tick and r.kind == "check" %}{# owner, 2026-10-19: a check can be paid in cash or by transfer instead: then it is done, not waiting for the bank #}
+          <select class="inline-input" name="how_check_{{ r.item_id }}" style="width:auto;margin-left:6px" aria-label="How {{ r.ref }} was paid">
+            <option value="BANK">by the bank</option><option value="CASH">paid in cash</option><option value="TRANSFER">by transfer</option></select>{% endif %}</td>
   </tr>{% endfor %}
   {% endfor %}
 </table></div>
-{% if may_tick and show != "ticked" %}
+{% if may_tick and show != "ticked" and show != "paid" %}
 <div class="dp-bar">
   <b id="dp-sum">0 ticked · ₱0.00</b>
   <label for="dp-on">Paid on</label><input id="dp-on" type="date" name="on" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}">
@@ -183,7 +186,7 @@
   update();
 })();
 </script>
-{% else %}<p class="note">{% if show == "ticked" %}Nothing ticked is waiting for the bank.{% else %}Nothing to pay here.{% endif %}</p>{% endif %}
+{% else %}<p class="note">{% if show == "ticked" %}No check is waiting for the bank.{% elif show == "paid" %}Nothing paid in the last 7 days.{% else %}Nothing to pay here.{% endif %}</p>{% endif %}
 
 {% else %}
 <div class="grp" style="margin-top:0">The cut-off: once, at go-live</div>
