@@ -27,10 +27,10 @@ def test_the_family_home_shows_the_daily_six_first_and_folds_the_rest(web, db):
     _admin(web)
     owner = _sign_in_new("owner@slicks.test", "owner")
     page = owner.get("/").content.decode()
-    assert "Show everything" in page and 'class="home-more"' in page
-    head = page.split("Show everything")[0]
+    assert 'class="home-more"' not in page                                                          # no fold since 2026-10-19
+    head = page.split('id="g-buy"')[0]
     assert "Record a sale" in head and "Sales today" in head and "New order" in head
-    assert 'class="home-more"' in web.get("/").content.decode()                                    # the admin too, since My home learns (2026-10-19)
+    assert 'class="home-more"' not in web.get("/").content.decode()
 
 
 def test_a_home_figure_is_kept_briefly(db, monkeypatch):

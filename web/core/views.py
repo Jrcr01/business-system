@@ -798,7 +798,8 @@ def home(request):
     from engines.common import get_conn
     with get_conn() as conn:
         seen = (conn.execute("SELECT whats_new_seen FROM app_users WHERE user_id = ?", (int(user["user_id"]),)).fetchone() or [None])[0]
-    return render(request, "core/home.html", {"rows": rows, "page_id": "home", "fold": len(rows) > 1, "notice": get_setting(NOTICE_KEY, "") or "", "whats_new": unseen(seen)})
+    # "Show everything" removed (owner, 2026-10-19): every section shows, My home first
+    return render(request, "core/home.html", {"rows": rows, "page_id": "home", "fold": False, "notice": get_setting(NOTICE_KEY, "") or "", "whats_new": unseen(seen)})
 
 
 @require_POST
