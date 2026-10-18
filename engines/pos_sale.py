@@ -52,7 +52,12 @@ def costs_of(item_ids: list[int]) -> dict[int, float]:
         return {}
     marks = ",".join("?" for _ in item_ids)
     with get_conn() as conn:
-        return {int(r[0]): float(r[1] or 0) for r in conn.execute(f"SELECT id, COALESCE(NULLIF(next_cost, 0), avg_cost) FROM items WHERE id IN ({marks})", [int(i) for i in item_ids])}
+        got = {int(r[0]): float(r[1] or 0) for r in conn.execute(f"SELECT id, COALESCE(NULLIF(next_cost, 0), avg_cost) FROM items WHERE id IN ({marks})", [int(i) for i in item_ids])}
+    missing = [i for i, c in got.items() if c <= 0]
+    if missing:                                                  # never delivered: the price list's net (owner, 2026-10-18)
+        from engines.list_cost import list_costs
+        got.update(list_costs(missing))
+    return got
 
 
 def record(si_no, sale_date, customer_id, customer_name: str, lines: list[dict], receipt, services: list[dict], payment: dict,

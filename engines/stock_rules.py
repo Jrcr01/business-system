@@ -260,8 +260,11 @@ def picker_items() -> list[dict]:
         codes: dict[int, list[str]] = {}
         for b, iid in conn.execute("SELECT barcode, item_id FROM item_barcodes"):
             codes.setdefault(int(iid), []).append(b)
+    from engines.list_cost import list_costs
+    listed = list_costs()                                        # never delivered: the price list's net is its cost (owner, 2026-10-18)
     out = []
     for iid, code, name, on_hand, cost, dot, unit in rows:
+        cost = float(cost or 0) or listed.get(int(iid), 0.0)
         text = f"{code} {name}".lower()
         out.append({"id": int(iid), "code": code, "name": name, "on_hand": float(on_hand or 0), "cost": float(cost or 0), "dot": dot_text(dot) if float(on_hand or 0) > 0 else "",
                     "unit": unit or "", "find": text + " " + re.sub(r"[^a-z0-9]", "", text) + " " + re.sub(r"\D", "", name),

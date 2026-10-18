@@ -25,7 +25,11 @@ def last_cost(conn, item_id: int) -> float:
     if row and float(row[0]) > 0:
         return float(row[0])
     row = conn.execute("SELECT COALESCE(avg_cost, 0), COALESCE(next_cost, 0) FROM items WHERE id = ?", (int(item_id),)).fetchone()
-    return float(row[0] or row[1] or 0) if row else 0.0
+    got = float(row[0] or row[1] or 0) if row else 0.0
+    if got <= 0:                                                 # never delivered: the price list's net (owner, 2026-10-18)
+        from engines.list_cost import list_cost
+        got = list_cost(int(item_id))
+    return got
 
 
 def refresh(conn, item_id: int) -> float:

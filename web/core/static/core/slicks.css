@@ -220,13 +220,13 @@ a.rdoc:hover { border-color: var(--bd-0b4f8a); box-shadow: 0 2px 8px rgba(16,24,
 .kpi:hover { border-color: var(--bd-b9c6d8); }
 .kpi span { font-size: .82rem; color: var(--muted); } .kpi b { font-size: 1.6rem; font-weight: 500; }
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; }
-.chart { background: var(--bg-ffffff); border: 1px solid var(--bd-e3e7ed); border-radius: 12px; padding: 12px 14px; }
+.chart { min-width: 0; background: var(--bg-ffffff); border: 1px solid var(--bd-e3e7ed); border-radius: 12px; padding: 12px 14px; }
 .chart .ct { font-weight: 600; margin-bottom: 8px; color: var(--fg-1f2937); }
 .hbar { display: grid; grid-template-columns: 170px 1fr 120px; align-items: center; gap: 8px; font-size: .85rem; margin: 5px 0; }
 .hbar .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hbar .track { background: var(--bg-eef1f5); border-radius: 3px; height: 14px; overflow: hidden; } .hbar .fill { display: block; height: 100%; background: var(--blue); border-radius: 3px; }
 .hbar .v { text-align: right; font-variant-numeric: tabular-nums; }
-@media (max-width: 600px) { .charts { grid-template-columns: 1fr; } .hbar { grid-template-columns: 110px 1fr 90px; } }
+@media (max-width: 600px) { .charts { grid-template-columns: minmax(0, 1fr); } .hbar { grid-template-columns: 110px 1fr 90px; } }
 
 /* ---- Daily payables checklist (owner, 2026-10-09) ---- */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }

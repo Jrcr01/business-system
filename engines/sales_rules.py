@@ -333,6 +333,9 @@ def _clean_lines(conn, lines: list[dict], need_price: bool) -> tuple[list[dict] 
                 return None, f"{it[0]}: '{raw}' is not a price."
             if price < 0:
                 return None, f"{it[0]}: the price cannot be negative."
+        if not float(it[1] or 0):                               # never delivered: the price list's net (owner, 2026-10-18)
+            from engines.list_cost import list_cost
+            it = (it[0], list_cost(item_id))
         est, problem = _cost_from_margin(it[0], price, ln.get("margin"), float(it[1] or 0))
         if problem:
             return None, problem

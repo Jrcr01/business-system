@@ -106,3 +106,25 @@ def test_the_phone_sale_prices_each_item_and_a_lower_amount_received_is_a_discou
                                     [{"item_id": a, "qty": 2, "price": "2600", "margin": ""}], "5000", [], {"method": "CASH"})
     assert ok, msg                                                                                     # 5,200 typed over to 5,000: a discount
     assert sqlite3.connect(db).execute("SELECT total FROM sales WHERE sale_id = ?", (sid2,)).fetchone()[0] == 5000.0
+
+
+def test_an_item_never_delivered_takes_its_price_list_net_as_cost(web, db):
+    """Owner, 2026-10-18: "if you can detect the cost from pricelist then use it"."""
+    import sqlite3
+    from conftest import make_creditor
+    from engines.clock import manila_today
+    from engines.list_cost import list_cost
+    from engines.sales_rules import save_sale
+    from engines.stock_rules import picker_items
+    from tests.test_web_stock import _item
+    _admin(web)
+    a, name = _item("Westlake", "215/70R15", "RP36")
+    cid = make_creditor(db, "Westlake Supplier", terms="30")
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO supplier_price_list (creditor_id, item_name, unit_price, effective_date, item_id) VALUES (?, ?, 3000, '2026-01-01', ?)", (cid, name, a))
+        conn.execute("INSERT INTO supplier_discounts (creditor_id, brand, chain, effective_date) VALUES (?, '', '10', '2026-01-01')", (cid,))
+    assert list_cost(a) == 2700.0                                                                    # 3,000 less 10%
+    assert next(r for r in picker_items() if r["id"] == a)["cost"] == 2700.0                        # no profit box: the cost is known
+    ok, msg, sid = save_sale(6001, manila_today(), None, "Walk-in", [{"item_id": a, "qty": 2, "price": 3400}], [], [{"method": "CASH", "amount": 6800}])
+    assert ok, msg
+    assert fetchone(db, "SELECT unit_cost FROM sale_lines WHERE sale_id = ?", (sid,))[0] == 2700.0
