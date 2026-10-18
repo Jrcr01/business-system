@@ -64,6 +64,19 @@ def open_count() -> int:
         return int(conn.execute("SELECT COUNT(*) FROM review_flags WHERE reviewed_at IS NULL").fetchone()[0])
 
 
+# Sign-in notices (owner, 2026-10-19, review item 5): kept apart from the data to check, and closed by themselves after a week
+SIGNIN_KINDS = ("NEW_DEVICE_SIGN_IN", "PHONE_SIGN_IN_REFUSED", "AUTHENTICATOR_SET_UP", "PASSWORD_REFUSED", "PASSWORD_RESET", "PASSWORD_CHANGED")
+SIGNIN_DAYS = 7
+
+
+def close_old_signins() -> int:
+    """Sign-in notices older than a week are closed (marked reviewed by "system: after 7 days"). Returns how many."""
+    marks = ",".join("?" for _ in SIGNIN_KINDS)
+    with write_tx() as conn:
+        return conn.execute(f"""UPDATE review_flags SET reviewed_by = 'system: closed after {SIGNIN_DAYS} days', reviewed_at = CURRENT_TIMESTAMP
+                                WHERE reviewed_at IS NULL AND kind IN ({marks}) AND raised_at < datetime('now', '-{SIGNIN_DAYS} days')""", SIGNIN_KINDS).rowcount
+
+
 def acknowledge(flag_id: int) -> tuple[bool, str]:
     ok, why = require_permission("review.use")
     if not ok:

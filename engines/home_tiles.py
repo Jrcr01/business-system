@@ -83,7 +83,7 @@ def panels_enabled() -> bool:
 GROUPS: list[Group] = [                              # in the order the money moves (2026-10-03); a new module adds its row with register_group(..., before="buy")
     Group("buy", "Buy", "Prices and orders, before the invoice"),
     Group("stock", "Stock", "What is on hand; counts and lending"),          # the revenue cycle, stage A (owner, 2026-10-11)
-    Group("sell", "Sell", "Scan out by day, the invoices after close, customers"),
+    Group("sell", "Sell", "Each day's sales from the booklet, customers"),       # wording without scanning (owner, 2026-10-19, review item 12)
     Group("pay", "Pay suppliers", "Invoice to check to bank"),
     Group("bank", "Bank", "The bank statement is the truth"),
     Group("other", "Other payables", "Loans and cards"),
@@ -116,14 +116,32 @@ def peso_short(amount: float) -> str:
     return f"{sign}₱{a / 1_000_000:.2f}M"
 
 
+# Home opens in under a second (owner, 2026-10-19, review item 9: ~4 s on live): a figure is kept and reused while nothing was saved since, and at most
+# KEEP_SECONDS after it was worked out even if something was (the next open after that is fresh). Per person, per database. 0 = never kept (tests).
+KEEP_SECONDS = 60
+_KEPT: dict = {}
+
+
 def evaluate(tile: Tile) -> dict:
     if tile.figure is None:
         return {"figure": "", "unit": tile.hint, "level": "none"}
+    import time
+    from engines import common
+    from engines.acting_user import acting_email
+    from engines.settings_store import _stamp
+    key = (common.DB_PATH, tile.tid, (acting_email() or "").lower())
+    now, stamp = time.monotonic(), _stamp(common.DB_PATH)
+    hit = _KEPT.get(key)
+    if KEEP_SECONDS and hit and (hit[0] == stamp or now - hit[1] < KEEP_SECONDS):
+        return hit[2]
     try:
         figure, unit, level = tile.figure()
-        return {"figure": str(figure), "unit": unit, "level": level if level in LEVELS else "none"}
+        out = {"figure": str(figure), "unit": unit, "level": level if level in LEVELS else "none"}
     except Exception:                                # a missing table or a bad row must not take the whole Home page down
         return {"figure": "—", "unit": "", "level": "none"}
+    if KEEP_SECONDS:
+        _KEPT[key] = (stamp, now, out)
+    return out
 
 
 def _tile_allowed(tile: Tile) -> bool:
@@ -321,7 +339,7 @@ def _to_record():
     if open_n:
         return str(open_n), "slip(s) to invoice", "alert"
     nxt = next_si_no()
-    return (f"{nxt:06d}", "the next SI no.", "none") if nxt else ("—", "no booklet in use", "warn")
+    return (f"{nxt:06d}", "the next SI no.", "none") if nxt else ("—", "type the first SI no.", "none")
 
 
 def _sales_today():
@@ -549,7 +567,7 @@ for _t in (
     Tile("affiliates", "stock", "Affiliates", _affiliates, needs="inventory.use"),
     Tile("quotations", "sell", "Quotations", _quotations, needs="sales.use"),
     Tile("sales", "sell", "Scan out", _scan_out, key="scan-out", icon=":material/barcode_scanner:", state=(("sales_view", "scan"),), needs="sales.use", when=_scan_on),
-    Tile("sales", "sell", "Record the day's invoices", _to_record, needs="sales.use"),
+    Tile("sales", "sell", "Record a sale", _to_record, needs="sales.use"),
     Tile("sales", "sell", "Sales today", _sales_today, key="sales-today", icon=":material/today:", state=(("sales_view", "day"),), needs="sales.use"),
     Tile("collect", "sell", "Collect payments", _receivables, needs="collect.use"),
     Tile("follow-ups", "sell", "Follow-ups", _follow_ups, needs="sales.use"),

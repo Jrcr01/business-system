@@ -75,6 +75,30 @@ def invoice_warnings(creditor_id: int, rows: list) -> list[str]:
             if hit:
                 out.append(f"Invoice {doc_ref}: this supplier already has invoice {hit[0]} for {_php(gross)} on the same date"
                            + (f" (payment statement {hit[1]})." if hit[1] else "."))
+            out += _odd_date_or_amount(conn, creditor_id, doc_ref, inv_date, gross)
+    return out
+
+
+ODD_OLD_DAYS, ODD_TIMES = 90, 3
+
+
+def _odd_date_or_amount(conn, creditor_id: int, doc_ref, inv_date, gross) -> list[str]:
+    """A wrong year or an extra zero (owner, 2026-10-19, review item 3): a date after today or over 90 days back, or an amount over 3x this supplier's
+    largest invoice so far. Asked once more, never refused."""
+    from datetime import date as _date
+    from engines.clock import manila_today
+    out, today = [], manila_today()
+    try:
+        d = inv_date if isinstance(inv_date, _date) else _date.fromisoformat(str(inv_date)[:10])
+    except ValueError:
+        d = None
+    if d and d > today:
+        out.append(f"Invoice {doc_ref} is dated {d:%m/%d/%Y}, after today. A typo in the date?")
+    elif d and (today - d).days > ODD_OLD_DAYS:
+        out.append(f"Invoice {doc_ref} is dated {d:%m/%d/%Y}, more than {ODD_OLD_DAYS} days ago. A typo in the year?")
+    top = conn.execute("SELECT MAX(gross_amount), COUNT(*) FROM invoices WHERE creditor_id = ? AND status != 'Cancelled'", (creditor_id,)).fetchone()
+    if top and top[1] >= 3 and top[0] and float(gross) > ODD_TIMES * float(top[0]):
+        out.append(f"Invoice {doc_ref} is {_php(gross)}, over {ODD_TIMES}x this supplier's largest invoice so far ({_php(top[0])}). An extra zero?")
     return out
 
 

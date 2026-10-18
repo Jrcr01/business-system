@@ -92,3 +92,18 @@ def test_a_check_paid_in_cash_is_done_and_loans_and_cards_do_not_wait_for_the_ba
     web.post("/checks/", {"action": "clear_many", "on": str(today), f"tick_check_{chk}": "1", f"how_check_{chk}": "CASH"})
     assert fetchone(db, "SELECT settled_outside_at IS NOT NULL FROM checks_issued WHERE check_id = ?", (chk,))[0] == 1     # done, not waiting
     assert "7001" not in web.get("/checks/?show=ticked").content.decode()
+def test_sign_in_notices_have_their_own_tab_and_close_after_a_week(web, db):
+    """Owner, 2026-10-19, review item 5: 22 of 38 open review notes on live were sign-ins."""
+    from engines.review_flags import close_old_signins
+    _admin(web)
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO review_flags (kind, ref_type, detail, raised_at) VALUES ('NEW_DEVICE_SIGN_IN', 'app_users', 'zzdevice-recent', datetime('now', '-1 day'))")
+        conn.execute("INSERT INTO review_flags (kind, ref_type, detail, raised_at) VALUES ('NEW_DEVICE_SIGN_IN', 'app_users', 'zzdevice-old', datetime('now', '-9 days'))")
+        conn.execute("INSERT INTO review_flags (kind, ref_type, detail) VALUES ('SALE_BELOW_COST', 'sales', 'SI 1 below cost')")
+    page = web.get("/review/").content.decode()
+    assert "SI 1 below cost" in page
+    assert "zzdevice-recent" not in page
+    assert "Sign-ins (" in page
+    assert fetchone(db, "SELECT reviewed_by FROM review_flags WHERE detail = 'zzdevice-old'")[0].startswith("system")      # the old one closed by itself
+    assert "zzdevice-recent" in web.get("/review/?tab=signins").content.decode()
+    assert close_old_signins() == 0

@@ -69,7 +69,7 @@ def test_flags_never_block(db):
     today = manila_today()
     ok, _, cust = save_customer(None, "RJM Trucking", "FLEET")
     assert ok
-    ok, msg, sid = save_sale(4503, today - timedelta(days=1), cust, "", [{"item_id": a, "qty": 2, "price": 2500}], [], [{"method": "CHARGE", "amount": 5000}], "loyal customer")
+    ok, msg, sid = save_sale(4503, today - timedelta(days=3), cust, "", [{"item_id": a, "qty": 2, "price": 2500}], [], [{"method": "CHARGE", "amount": 5000}], "loyal customer")
     assert ok, msg                                                                         # below cost, above stock, no credit, late, a skipped number: all saved
     assert _n(db, "SELECT on_hand FROM items WHERE id = ?", (a,)) == -1
     assert "loyal customer" in _n(db, "SELECT detail FROM review_flags WHERE kind = 'SALE_BELOW_COST'")

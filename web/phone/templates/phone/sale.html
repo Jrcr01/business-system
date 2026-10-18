@@ -97,4 +97,5 @@ document.addEventListener("DOMContentLoaded", function () {
   function check() { var n = parseInt(el.value, 10); note.textContent = base && n && Math.abs(n - base) > 20 ? "This number is far from the next one (" + el.defaultValue + "). Check the booklet." : ""; }
   el.addEventListener("input", check);
 })();</script>
+{% include "selling/_did_you_mean.html" %}
 {% endblock %}

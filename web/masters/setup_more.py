@@ -163,7 +163,7 @@ def checks_review(request):
                     conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, new_values) VALUES (acting_user(), 'REVIEW_NOTE', 'review_flags', ?)",
                                  (f"{', '.join(ticked)}: {note}",))
             messages.success(request, f"{done} line(s) marked reviewed." if done else "Tick the lines you looked into.")
-            return redirect("/review/")
+            return redirect("/review/" + ("?tab=signins" if p.get("tab") == "signins" else ""))
         if what == "seen":                                         # Changed today: the owner looked at a correction (2026-10-19)
             from engines.entry_changes import mark_seen
             ok, msg = mark_seen(int(p.get("change_id") or 0))
@@ -179,7 +179,10 @@ def checks_review(request):
             return redirect("/review/?tab=dups" + ("&all=1" if what == "restore" else ""))
         return redirect("/review/")
     tab = request.GET.get("tab", "review")
-    flags = rf.open_flags().to_dict("records")
+    rf.close_old_signins()
+    every = rf.open_flags().to_dict("records")
+    signins = [f for f in every if f["kind"] in rf.SIGNIN_KINDS]
+    flags = signins if tab == "signins" else [f for f in every if f["kind"] not in rf.SIGNIN_KINDS]
     names = {r["email"].lower(): r["name"] for r in _rows("SELECT lower(email) AS email, name FROM app_users")}
     ref = {r["flag_id"]: r for r in _rows("SELECT flag_id, ref_type, ref_id FROM review_flags WHERE reviewed_at IS NULL")}
     for f in flags:
@@ -207,5 +210,5 @@ def checks_review(request):
     return render(request, "masters/checks_review.html", {
         "changes": day_changes, "cday": cday, "cprev": cday - _td(days=1), "cnext": cday + _td(days=1) if cday < manila_today() else None, "n_unseen": unseen_count(),
         "page_id": "review", "tab": tab, "flags": flags, "health": health, "dups": dup_rows, "may_health": may_health,
-        "n_flags": len(flags), "n_health": len([h for h in health if not h["fine"]]), "n_dups": len([d for d in dup_rows if not d.get("dismissed")]),
+        "n_flags": len(every) - len(signins), "n_signins": len(signins), "n_health": len([h for h in health if not h["fine"]]), "n_dups": len([d for d in dup_rows if not d.get("dismissed")]),
         "show_fine": request.GET.get("fine") == "1", "show_all": request.GET.get("all") == "1"})

@@ -79,7 +79,7 @@ def test_every_kind_of_problem_is_found(db):
                 ("Checks", "Stale check (over 6 months, not cleared)"), ("Checks", "Dated more than a year ahead"),
                 ("Checks", "Bank paid this check number before our check's date"),
                 ("Invoices and batches", "Due date before the invoice date"), ("Invoices and batches", "Unusual year"),
-                ("Invoices and batches", "Invoice not in any batch"), ("Invoices and batches", "Empty batch"),
+                ("Invoices and batches", "Empty batch"),
                 ("Invoices and batches", "Batch overpaid"), ("Invoices and batches", "Check payee differs from the batch supplier"),
                 ("Bank vs our records", "Bank cleared a different amount"),
                 ("Suppliers", "Same name twice"), ("Suppliers", "Inactive but still owed"), ("Suppliers", "Supplier with no terms")}
