@@ -57,7 +57,22 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("ps_warn").hidden = !notes.length; document.getElementById("ps_warn_list").innerHTML = notes.map(function (n) { return "<div>" + n + "</div>"; }).join("");
     document.getElementById("ps_below").hidden = !below;
   }
-  box.addEventListener("lines", function (e) { lines = e.detail.lines; cost = 0; lines.forEach(function (l) { cost += l.qty * (l.it.cost || 0); }); redo(); });
+  box.addEventListener("lines", function (e) {
+    lines = e.detail.lines; cost = 0;
+    lines.forEach(function (l) {                                /* no cost yet: price less the profit typed (est.) */
+      var c = l.it.cost || (String(l.margin || "").trim() !== "" ? Math.max(num(l.price) - num(l.margin), 0) : 0); cost += l.qty * c;
+    });
+    autofill(); redo();
+  });
+  function autofill() {                                         /* every item priced: the amount received adds itself up, until it is typed over (answer B) */
+    if (receipt.dataset.typed || !lines.length) return;
+    var all = lines.every(function (l) { return String(l.price || "").trim() !== "" && num(l.price) > 0; });
+    if (!all) return;
+    var t = lines.reduce(function (s, l) { return s + l.qty * num(l.price); }, 0) + svc();
+    receipt.value = t.toFixed(2);
+  }
+  receipt.addEventListener("input", function () { receipt.dataset.typed = receipt.value.trim() ? "1" : ""; redo(); });
+  document.querySelectorAll(".svc-a").forEach(function (i) { i.addEventListener("input", function () { autofill(); redo(); }); });
   receipt.addEventListener("input", redo); document.querySelectorAll(".svc-a, .sp-qty, .sp-cost").forEach(function (i) { i.addEventListener("input", redo); });
   si.addEventListener("input", function () { document.getElementById("ps_si").textContent = si.value; });
   var methods = document.getElementById("ps_methods");

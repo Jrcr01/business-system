@@ -47,6 +47,8 @@ body { background: var(--bg-f3f4f6); }
 .ph-main #sl_table td:nth-child(2)::before { content: "on hand "; color: var(--muted); font-size: .85rem; }
 .ph-main #sl_table td:nth-child(3)::before { content: "DOT "; color: var(--muted); font-size: .85rem; }
 .ph-main #sl_table td:nth-child(4) { margin-left: auto; }
+.ph-main #sl_table td.ph-money-cell { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
+.ph-main #sl_table td .ph-money { flex: 1 1 120px; min-width: 0; height: 44px; font-size: 1.1rem; text-align: right; padding: 0 10px; border-radius: 10px; border: 1px solid var(--bd-b9c6d8); background: transparent; color: inherit; }
 .ph-main #sl_table td .inline-input { width: 56px !important; height: 44px; text-align: center; font-size: 1.1rem; border-radius: 0; border: 0; border-left: 1px solid var(--bd-b9c6d8); border-right: 1px solid var(--bd-b9c6d8); }
 .ph-main #sl_table td:last-child .btn { padding: 8px 10px; }
 .ph-main .later-box { padding: 12px; }

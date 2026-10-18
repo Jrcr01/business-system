@@ -111,15 +111,26 @@ def record(si_no, sale_date, customer_id, customer_name: str, lines: list[dict],
     own = [ln for ln in clean if ln.get("own") is not None]
     own_total = round(sum(ln["qty"] * ln["own"] for ln in own), 2)
     rest = [ln for ln in clean if ln.get("own") is None]
-    if own_total > rec - svc_total + 0.005:
+    if rest and own_total > rec - svc_total + 0.005:
         return False, f"The items priced one by one (₱{own_total:,.2f}) are more than the amount received less services (₱{rec - svc_total:,.2f}).", None
-    if not rest and abs(rec - svc_total - own_total) > 0.005:
-        return False, f"The amount received (₱{rec:,.2f}) is not the items priced (₱{own_total:,.2f}) plus services (₱{svc_total:,.2f}).", None
+    if not rest and own_total > 0 and abs(rec - svc_total - own_total) > 0.005:
+        # every item priced, and the amount received typed over (a discount on the whole receipt, answer B): the prices follow it in proportion, each
+        # cost worked back from a profit stays the same peso figure
+        f = (rec - svc_total) / own_total
+        for ln in own:
+            old = ln["own"]
+            ln["own"] = int(old * f * 100) / 100
+            if str(ln.get("margin") or "").strip():
+                try:
+                    ln["margin"] = f"{ln['own'] - (old - float(str(ln['margin']).replace(',', ''))):.2f}"
+                except ValueError:
+                    pass
+        own_total = round(sum(ln["qty"] * ln["own"] for ln in own), 2)
     priced_rest = spread([{**ln, "cost": costs.get(ln["item_id"], 0.0)} for ln in rest], rec, svc_total + own_total)
     priced = [{**ln, "price": f"{ln['own']:.2f}"} for ln in own] + priced_rest
     ok, msg, sale_id = sr.save_sale(si_no, sale_date, customer_id, customer_name,
                                     [{"item_id": ln["item_id"], "qty": ln["qty"], "price": ln["price"], "margin": ln.get("margin", "")} for ln in priced],
-                                    _with_rounding(svc, priced_rest, rec - svc_total - own_total), pay, below_cost_reason)
+                                    _with_rounding(svc, priced_rest if rest else priced, (rec - svc_total - own_total) if rest else rec - svc_total), pay, below_cost_reason)
     if not ok and before:
         _undo_take_ins(before, msg)                              # the surplus never came in: no ghost stock, and a retry does not double it
     return ok, msg, sale_id

@@ -63,7 +63,7 @@
     var ln = lines.filter(function (l) { return l.it.id === it.id; })[0];
     if (ln) ln.qty += qty || 1;
     else {
-      var fixed = mode === "out" && !!box.dataset.phonesale && !!box.dataset.uncounted && !(it.cost > 0);   /* the phone sale: no cost yet, so its own price and profit */
+      var fixed = mode === "out" && !!box.dataset.phonesale;       /* the phone sale: a price each may be typed (owner, 2026-10-18: "instead of total we edit per item", answer B) */
       lines.push({it: it, qty: qty || 1, price: price != null ? price : (mode === "sale" || fixed ? "" : it.cost), fixed: fixed});
     }
     say("✓ " + it.name + " added.", false); msg.style.color = "var(--fg-0b6e4f)"; beep(); draw(); changed();
@@ -122,18 +122,21 @@
   function draw() {
     rows.innerHTML = "";
     lines.forEach(function (l, k) {
+      if (l.fixed === undefined) l.fixed = mode === "out" && !!box.dataset.phonesale;     /* lines kept from before, or from a slip: the price box too */
       var tr = document.createElement("tr");
       cell(tr, l.it.name); var oh = cell(tr, l.it.on_hand, true); cell(tr, l.it.dot || "—");
       var tq = document.createElement("td"), qi = document.createElement("input"); qi.className = "inline-input"; qi.style.width = "64px"; qi.inputMode = "decimal"; qi.value = l.qty;
       qi.setAttribute("aria-label", "Qty of " + l.it.name); tq.appendChild(qi); tr.appendChild(tq);
       var pi = null, amt, cost, prof;
       var est = null;
-      if (mode === "out" && l.fixed) {                          /* the phone sale, an item with no cost yet (owner, 2026-10-18): price and profit each */
-        var tf = document.createElement("td"); pi = document.createElement("input"); pi.className = "inline-input"; pi.style.width = "96px"; pi.inputMode = "decimal";
+      if (mode === "out" && l.fixed) {                          /* the phone sale: price each; profit each only for an item with no cost yet (owner, 2026-10-18) */
+        var tf = document.createElement("td"); tf.className = "ph-money-cell"; pi = document.createElement("input"); pi.className = "ph-money"; pi.inputMode = "decimal";
         pi.value = l.price; pi.placeholder = "price each ₱"; pi.setAttribute("aria-label", "Price each of " + l.it.name); tf.appendChild(pi);
-        var fm = document.createElement("input"); fm.className = "inline-input"; fm.style.width = "96px"; fm.style.display = "block"; fm.style.marginTop = "4px"; fm.inputMode = "decimal";
-        fm.value = l.margin || ""; fm.placeholder = "profit each ₱"; fm.setAttribute("aria-label", "Profit per piece on " + l.it.name + ", in pesos");
-        fm.addEventListener("input", function () { l.margin = fm.value; recalc(); }); tf.appendChild(fm);
+        if (!(l.it.cost > 0) && box.dataset.uncounted) {
+          var fm = document.createElement("input"); fm.className = "ph-money"; fm.inputMode = "decimal";
+          fm.value = l.margin || ""; fm.placeholder = "profit each ₱"; fm.setAttribute("aria-label", "Profit per piece on " + l.it.name + ", in pesos");
+          fm.addEventListener("input", function () { l.margin = fm.value; recalc(); }); tf.appendChild(fm);
+        }
         est = document.createElement("div"); est.className = "hint"; tf.appendChild(est); tr.appendChild(tf);
       }
       else if (mode === "out") { }                              /* Scan out: the movement only, no money (owner, 2026-10-11) */

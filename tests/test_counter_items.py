@@ -74,7 +74,8 @@ def test_the_phone_sale_takes_an_own_price_and_profit_for_an_item_with_no_cost(w
     rows = {r[0]: (r[1], r[2]) for r in __import__("sqlite3").connect(db).execute("SELECT item_id, unit_price, unit_cost FROM sale_lines WHERE sale_id = ?", (sid,))}
     assert rows[new["id"]] == (3450.0, 3000.0)                       # its own price; cost worked back from the profit
     assert rows[a][0] == 2500.0                                      # the rest of the receipt: (18,800 - 13,800) / 2
-    bad = pos_sale.record(9002, manila_today().isoformat(), None, "Walk-in", [{"item_id": new["id"], "qty": 1, "price": "3450", "margin": "450"}], "3000", [], {"method": "CASH"})
+    bad = pos_sale.record(9002, manila_today().isoformat(), None, "Walk-in", [{"item_id": new["id"], "qty": 1, "price": "3450", "margin": "450"},
+                                                                          {"item_id": a, "qty": 1, "price": "", "margin": ""}], "3000", [], {"method": "CASH"})
     assert not bad[0] and "more than the amount received" in bad[1]
     from tests.test_phone import _on
     from tests.test_phone_approval import PHONE_UA
@@ -83,3 +84,25 @@ def test_the_phone_sale_takes_an_own_price_and_profit_for_an_item_with_no_cost(w
     page = r.content.decode()
     assert r.status_code == 200, r.redirect_chain
     assert 'data-phonesale="1"' in page and 'id="sl_new"' in page
+
+
+def test_the_phone_sale_prices_each_item_and_a_lower_amount_received_is_a_discount(web, db):
+    from engines import pos_sale
+    from engines.clock import manila_today
+    from tests.test_web_stock import _item, _stock
+    _admin(web)
+    a, _ = _item("Sunny", "185/55R16", "NP226")
+    b, _ = _item("Westlake", "205/55R16", "RP26")
+    _stock(a, 4, 2000.0)
+    _stock(b, 4, 2500.0)
+    ok, msg, sid = pos_sale.record(9101, manila_today().isoformat(), None, "Walk-in",
+                                   [{"item_id": a, "qty": 2, "price": "2600", "margin": ""}, {"item_id": b, "qty": 1, "price": "3000", "margin": ""}],
+                                   "8200", [], {"method": "CASH"})
+    assert ok, msg
+    import sqlite3
+    rows = dict(sqlite3.connect(db).execute("SELECT item_id, unit_price FROM sale_lines WHERE sale_id = ? AND item_id IS NOT NULL", (sid,)).fetchall())
+    assert rows == {a: 2600.0, b: 3000.0}                                                              # each at the price typed
+    ok, msg, sid2 = pos_sale.record(9102, manila_today().isoformat(), None, "Walk-in",
+                                    [{"item_id": a, "qty": 2, "price": "2600", "margin": ""}], "5000", [], {"method": "CASH"})
+    assert ok, msg                                                                                     # 5,200 typed over to 5,000: a discount
+    assert sqlite3.connect(db).execute("SELECT total FROM sales WHERE sale_id = ?", (sid2,)).fetchone()[0] == 5000.0

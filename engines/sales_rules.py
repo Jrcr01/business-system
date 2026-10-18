@@ -353,8 +353,8 @@ def _cost_from_margin(name: str, price: float | None, margin, cost: float) -> tu
         est = price - float(text)
     except ValueError:
         return None, f"{name}: '{margin}' is not a profit. Type the pesos per piece, e.g. 500."
-    if est < 0 or est > price:
-        return None, f"{name}: a profit of ₱{margin} does not fit a price of ₱{price:,.2f}."
+    if est < 0:
+        return None, f"{name}: a profit of ₱{margin} is more than the price of ₱{price:,.2f}."
     return round(est, 2), ""
 
 
