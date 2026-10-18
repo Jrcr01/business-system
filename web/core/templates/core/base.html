@@ -19,6 +19,8 @@
 <script src="{% static 'core/sort.js' %}?v=2" defer></script>
 </head>
 <body>
+<script>if (window.self !== window.top) { document.documentElement.classList.add("in-panel"); }</script>
+<style>html.in-panel .topbar, html.in-panel .page-notice { display: none !important; } html.in-panel main { padding-top: 8px !important; }</style>
 {% if me %}
 <nav class="topbar" aria-label="Menu">
   <a class="logo" href="/" title="Home"><img src="{% static 'assets/slicks_logo.jpg' %}" alt="Slick's"></a>
