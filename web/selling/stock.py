@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from masters.views import page_needed
 
 SHOWS = [("", "All"), ("tire", "Tires"), ("battery", "Battery"), ("mags", "Mags"), ("rims", "Rims"), ("low", "Low stock"), ("negative", "Below zero"),
@@ -55,6 +56,7 @@ def stock(request):
                                                   "label_sizes": [(k, v[0]) for k, v in SIZES.items()], "label_size": request.session.get("label_size", DEFAULT_SIZE)})
 
 
+@xframe_options_sameorigin                                      # shown in Record a sale's floating panel (owner, 2026-10-19); our own pages only
 @page_needed("stock")
 def stock_item(request, item_id: int):
     from engines import stock_rules as sr
@@ -70,6 +72,20 @@ def stock_item(request, item_id: int):
             ok, msg = sr.adjust(item_id, request.POST.get("counted"), request.POST.get("reason", ""))
         elif what == "barcode":
             ok, msg = sr.learn_barcode(request.POST.get("barcode"), item_id)
+        elif what == "edit":                                     # owner, 2026-10-19: "no option for edit?" -- the item's details corrected
+            from engines.product_catalog import edit_product, edit_fields
+            p = request.POST
+            f = edit_fields(item_id) or {"fields": []}
+            ok, msg = edit_product(item_id, p.get("brand", ""), {x["key"]: p.get(f"f_{x['key']}", "") for x in f["fields"]}, p.get("remark", ""), p.get("unit", ""),
+                                   p.get("why", ""), rename_prices=p.get("rename_prices") == "1")
+            if not ok and msg.startswith("LISTED:"):
+                request.session["item_edit_typed"] = dict(p.items())
+                _say(request, False, f"This item is on {msg[7:]} price-list line(s). Tick \"Rename it on the price lists too\" and save again.")
+                return redirect(f"/stock/{item_id}/?edit=1")
+            if not ok:
+                request.session["item_edit_typed"] = dict(p.items())
+                _say(request, False, msg)
+                return redirect(f"/stock/{item_id}/?edit=1")
         else:
             ok, msg = False, "Unknown action."
         _say(request, ok, msg)
@@ -82,7 +98,17 @@ def stock_item(request, item_id: int):
         from engines.common import write_tx
         with write_tx() as conn:
             sync(conn, int(item_id))
-    return render(request, "selling/stock_item.html", {"page_id": "stock", "it": it, "ledger": sr.ledger(item_id), "batches": batches(item_id), "barcodes": barcodes,
+    editing = None
+    if request.GET.get("edit") == "1":
+        from engines.product_catalog import edit_fields
+        editing = edit_fields(item_id)
+        typed = request.session.pop("item_edit_typed", None)
+        if editing and typed:                                     # what was typed comes back after a refusal
+            editing.update(brand=typed.get("brand", editing["brand"]), remark=typed.get("remark", editing["remark"]), unit=typed.get("unit", editing["unit"]))
+            for fld in editing["fields"]:
+                fld["value"] = typed.get(f"f_{fld['key']}", fld["value"])
+    from engines.entry_changes import changes
+    return render(request, "selling/stock_item.html", {"page_id": "stock", "it": it, "editing": editing, "changes": changes(ref_type="items", ref_id=item_id), "ledger": sr.ledger(item_id), "batches": batches(item_id), "barcodes": barcodes,
                                                        "may_adjust": _can(request, "inventory.approve"), "sizes": [(k, v[0]) for k, v in SIZES.items()],
                                                        "size": request.session.get("label_size", DEFAULT_SIZE), "type": sr.CATEGORY_LABEL.get(it["category"], it["category"])})
 

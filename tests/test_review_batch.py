@@ -41,3 +41,23 @@ def test_a_home_figure_is_kept_briefly(db, monkeypatch):
     ht.evaluate(t)
     ht.evaluate(t)
     assert len(calls) == 1
+
+
+def test_an_item_is_corrected_and_its_sales_take_the_new_name(web, db):
+    """Owner, 2026-10-19: "no option for edit?" -- and "a link when needs a change from record the sales", in a floating panel."""
+    from engines.clock import manila_today
+    from engines.entry_changes import changes
+    from engines.sales_rules import save_sale
+    from engines.stock_rules import add_counter_item
+    _admin(web)
+    ok, msg, it = add_counter_item("Mags", "Rota Blak", "17", "")
+    assert ok, msg
+    assert save_sale(9301, manila_today(), None, "Walk-in", [{"item_id": it["id"], "qty": 1, "price": 12000, "margin": "2000"}], [], [{"method": "CASH", "amount": 12000}])[0]
+    page = web.get(f"/stock/{it['id']}/?edit=1")
+    assert page.status_code == 200 and "Edit this item" in page.content.decode() and page.get("X-Frame-Options") == "SAMEORIGIN"
+    r = web.post(f"/stock/{it['id']}/", {"action": "edit", "brand": "Rota", "f_model": "", "f_size": "17", "unit": "set", "why": "brand misspelt"}, follow=True)
+    assert "is now Rota 17" in r.content.decode()
+    assert fetchone(db, "SELECT name, unit FROM items WHERE id = ?", (it["id"],)) == ("Rota 17", "set")
+    assert fetchone(db, "SELECT description FROM sale_lines WHERE item_id = ?", (it["id"],))[0] == "Rota 17"
+    assert changes()[-1]["kind"] == "ITEM_EDITED" and "Rota Blak" in changes()[-1]["before"]
+    assert "edit item" in web.get("/sales/?view=new").content.decode() or 'id="sl_edit_dlg"' in web.get("/sales/?view=new").content.decode()

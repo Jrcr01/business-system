@@ -9,6 +9,25 @@
   <div><span>Value</span><b>₱{{ it.value|floatformat:2|intcomma }}</b></div>
   <div><span>Oldest DOT</span><b>{{ it.dot|default:"—" }}</b></div><div><span>Low at</span><b>{{ it.reorder_level }}</b></div>
   <div><span>Last counted</span><b>{{ it.last_counted_at|default:"never"|dmy }}</b></div></div>
+{% if editing %}
+<form method="post" class="later-box" style="margin:10px 0">{% csrf_token %}<input type="hidden" name="action" value="edit">
+  <p><b>Edit this item</b> ({{ editing.category }}). The name follows what you type; past sales and orders take the new name. On hand and cost don't change here.</p>
+  <div class="formgrid">
+    <div><label for="e_brand">Brand</label><input id="e_brand" type="text" name="brand" value="{{ editing.brand }}" required></div>
+    {% for f in editing.fields %}<div><label for="e_{{ f.key }}">{{ f.label }}</label>
+      {% if f.choices %}<select id="e_{{ f.key }}" name="f_{{ f.key }}"><option value=""></option>{% for c in f.choices %}<option{% if c == f.value %} selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+      {% else %}<input id="e_{{ f.key }}" type="text" name="f_{{ f.key }}" value="{{ f.value }}" placeholder="{{ f.note }}">{% endif %}</div>{% endfor %}
+    <div><label for="e_remark">Remark (optional)</label><input id="e_remark" type="text" name="remark" value="{{ editing.remark }}"></div>
+    <div><label for="e_unit">Unit</label><input id="e_unit" type="text" name="unit" value="{{ editing.unit }}" list="e_units" placeholder="piece or set"><datalist id="e_units"><option value="piece"><option value="set"></datalist></div>
+  </div>
+  {% if editing.listed %}<label style="display:flex;gap:6px;margin-top:8px"><input type="checkbox" name="rename_prices" value="1"> Rename it on the price lists too ({{ editing.listed }} line{{ editing.listed|pluralize }}): prices go by name</label>{% endif %}
+  <label for="e_why" style="margin-top:8px">Why (optional)</label><input id="e_why" type="text" name="why" style="width:100%;max-width:520px" placeholder="e.g. brand misspelt at the counter">
+  <div class="actions" style="margin-top:8px"><button class="btn" type="submit"><span class="ms">save</span>Save the change</button><a class="btn ghost" href="/stock/{{ it.id }}/">Cancel</a></div>
+</form>
+{% else %}<div class="actions" style="margin:8px 0"><a class="btn small" href="/stock/{{ it.id }}/?edit=1"><span class="ms">edit</span>Edit this item</a></div>{% endif %}
+{% if changes %}<h3>Changes to this item</h3><div class="scroll-x"><table class="list"><tr><th>When</th><th>Who</th><th>Before</th><th>After</th></tr>
+  {% for c in changes %}<tr><td>{{ c.at|dmy }}</td><td>{{ c.by }}</td><td class="hint">{{ c.before }}</td><td>{{ c.after }}{% if c.why %}<div class="hint">Why: {{ c.why }}</div>{% endif %}</td></tr>{% endfor %}
+</table></div>{% endif %}
 
 {% if batches %}<div class="grp">Cost batches (FIFO: the oldest leaves first)</div>
 <div class="scroll-x"><table class="list">

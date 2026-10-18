@@ -529,3 +529,66 @@ def supplier_prices(product_id: int | None = None, category: str | None = None, 
     df["net_price"] = [net_price(r.list_price, r.chain) for r in df.itertuples()]
     df["cheapest"] = df["net_price"].eq(df.groupby("product_id")["net_price"].transform("min")) & (df.groupby("product_id")["net_price"].transform("count") > 1)
     return df.sort_values(["product", "net_price"]).reset_index(drop=True)[cols]
+
+
+def edit_product(item_id: int, brand: str, values: dict, remark: str = "", unit: str = "", why: str = "", rename_prices: bool = False) -> tuple[bool, str]:
+    """An item's details corrected (owner, 2026-10-19: "no option for edit?"): brand, the kind's fields, the remark and the unit. The name and the key
+    follow; past sales, order lines and price-list rows linked to the item take the new name. Refused when another item already has these details.
+    When the item is on a supplier's price list the change waits for rename_prices=True (prices go by name: the page asks first). Logged on Changed today."""
+    from engines.entry_changes import log
+    from engines.permissions import require
+    allowed, whyno = require("sales.use")
+    if not allowed:
+        return False, whyno
+    with write_tx() as c:
+        row = c.execute("SELECT id, code, category, brand, size_model, remark, specs, name, unit FROM items WHERE id = ?", (int(item_id),)).fetchone()
+        if not row:
+            return False, "Item not found."
+        category = label_of(row[2])
+        if category not in CATEGORY_FIELDS:
+            return False, "This kind of item can't be edited here."
+        brand, remark = _clean(brand), _clean(remark)
+        if not brand:
+            return False, "Type the brand."
+        sp = normalise_specs(category, {k: _clean(v) for k, v in (values or {}).items()})
+        headline = sp[HEADLINE[category]]
+        if not headline:
+            return False, f"Type the {next(f['label'] for f in CATEGORY_FIELDS[category] if f['key'] == HEADLINE[category]).lower()}."
+        key = product_key(category, brand, remark, **sp)
+        name = standard_name(category, brand, **sp) + (f" {remark}" if remark else "")
+        clash = c.execute("SELECT code, name FROM items WHERE key = ? AND id != ?", (key, int(item_id))).fetchone()
+        if clash:
+            return False, f"{clash[0]} {clash[1]} already has these details. Use that item instead, or tell them apart with a remark."
+        if c.execute("SELECT 1 FROM items WHERE lower(name) = ? AND id != ?", (name.lower(), int(item_id))).fetchone():
+            name = f"{name} [{row[1]}]"
+        listed = c.execute("SELECT COUNT(*) FROM supplier_price_list WHERE item_id = ?", (int(item_id),)).fetchone()[0]
+        if listed and name != row[7] and not rename_prices:
+            return False, f"LISTED:{listed}"
+        other = {k: v for k, v in sp.items() if v and k != HEADLINE[category]}
+        before = f"{row[1]} {row[7]}" + (f" · unit {row[8]}" if row[8] else "")
+        c.execute("UPDATE items SET brand = ?, size_model = ?, remark = ?, key = ?, specs = ?, name = ?, unit = ? WHERE id = ?",
+                  (brand, headline, remark, key, json.dumps(other, sort_keys=True), name, _clean(unit) or None, int(item_id)))
+        c.execute("UPDATE sale_lines SET description = ? WHERE item_id = ?", (name, int(item_id)))
+        c.execute("UPDATE purchase_order_lines SET item_name = ? WHERE item_id = ?", (name, int(item_id)))
+        c.execute("UPDATE supplier_price_list SET item_name = ? WHERE item_id = ?", (name, int(item_id)))
+        after = f"{row[1]} {name}" + (f" · unit {_clean(unit)}" if _clean(unit) else "")
+        if after == before:
+            return False, "Nothing was changed."
+        log(c, "ITEM_EDITED", "items", int(item_id), f"{row[1]}", before, after, why)
+        c.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'INV_ITEM_EDITED', 'items', ?, ?)",
+                  (int(item_id), f"was: {before} | now: {after}"))
+    return True, f"{row[1]} is now {name}."
+
+
+def edit_fields(item_id: int) -> dict | None:
+    """What the edit form shows: the kind, its fields with the item's values, the brand, remark and unit."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT id, code, category, brand, size_model, remark, specs, name, unit FROM items WHERE id = ?", (int(item_id),)).fetchone()
+        listed = conn.execute("SELECT COUNT(*) FROM supplier_price_list WHERE item_id = ?", (int(item_id),)).fetchone()[0] if row else 0
+    if not row or label_of(row[2]) not in CATEGORY_FIELDS:
+        return None
+    category = label_of(row[2])
+    vals = values_of({"category": row[2], "size_model": row[4], "specs": row[6]})
+    return {"category": category, "brand": row[3] or "", "remark": row[5] or "", "unit": row[8] or "", "listed": listed,
+            "fields": [{"key": f["key"], "label": f["label"], "value": vals.get(f["key"], ""), "choices": f.get("choices"), "note": f.get("note", "")}
+                       for f in CATEGORY_FIELDS[category]]}

@@ -199,7 +199,7 @@ def _home_fresh(monkeypatch):
 def _stock_counted(request, monkeypatch):
     """Owner, 2026-10-18: "Stock not counted yet" is on until the opening count (settings_registry.stock_not_counted). The stock tests were written for
     counted stock, so the switch is off for them; test_stock_not_counted.py runs with it on, as the system does now."""
-    if not request.module.__name__.endswith(("test_stock_not_counted", "test_counter_items")):
+    if not request.module.__name__.endswith(("test_stock_not_counted", "test_counter_items", "test_review_batch")):
         import engines.settings_registry as sreg
         monkeypatch.setattr(sreg, "stock_not_counted", lambda: False)
         monkeypatch.setattr(sreg, "stock_out_on_phone", lambda: True)          # the phone tests were written with Stock out shown

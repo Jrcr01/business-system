@@ -206,7 +206,7 @@ def checks_review(request):
     day_changes = changes(cday)
     for c in day_changes:
         c["who"] = names.get(str(c.get("by") or "").lower(), c.get("by") or "")
-        c["url"] = f"/sales/{c['ref_id']}/" if c["ref_type"] == "sales" else (f"/purchase-orders/{c['ref_id']}/" if c["ref_type"] == "purchase_orders" else "")
+        c["url"] = {"sales": f"/sales/{c['ref_id']}/", "purchase_orders": f"/purchase-orders/{c['ref_id']}/", "items": f"/stock/{c['ref_id']}/"}.get(c["ref_type"], "")
     return render(request, "masters/checks_review.html", {
         "changes": day_changes, "cday": cday, "cprev": cday - _td(days=1), "cnext": cday + _td(days=1) if cday < manila_today() else None, "n_unseen": unseen_count(),
         "page_id": "review", "tab": tab, "flags": flags, "health": health, "dups": dup_rows, "may_health": may_health,

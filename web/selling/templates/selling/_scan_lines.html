@@ -27,6 +27,10 @@
     <button class="btn small" type="button" id="sn_go"><span class="ms">add</span>Add and put on this sale</button>
     <button class="btn small ghost" type="button" id="sn_cancel">Cancel</button> <span class="hint" id="sn_msg"></span>
   </div>{% endif %}
+  {% if scan_mode == "sale" or phone_sale %}<dialog id="sl_edit_dlg" style="width:min(760px,96vw);height:min(640px,90vh);padding:0;border:0;border-radius:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--bd-e3e7ed)"><b>Edit the item</b>
+      <button class="btn small ghost" type="button" id="sl_edit_close">Close</button></div>
+    <iframe id="sl_edit_frame" title="Edit the item" style="width:100%;height:calc(100% - 50px);border:0"></iframe></dialog>{% endif %}
   <video id="sl_video" playsinline hidden style="width:100%;max-width:420px;border-radius:8px;margin:6px 0"></video>
   <div class="scroll-x"><table class="list" id="sl_table" style="display:none"><thead><tr>
     <th>Item</th><th style="text-align:right">On hand</th><th>Oldest DOT</th><th>Qty</th>
@@ -125,7 +129,11 @@
     lines.forEach(function (l, k) {
       if (l.fixed === undefined) l.fixed = mode === "out" && !!box.dataset.phonesale;     /* lines kept from before, or from a slip: the price box too */
       var tr = document.createElement("tr");
-      cell(tr, l.it.name); var oh = cell(tr, l.it.on_hand, true); cell(tr, l.it.dot || "—");
+      var nm = cell(tr, l.it.name); var oh = cell(tr, l.it.on_hand, true); cell(tr, l.it.dot || "—");
+      if (document.getElementById("sl_edit_dlg")) {              /* owner, 2026-10-19: fix the item from here, in a floating panel, without leaving the sale */
+        var ed = document.createElement("a"); ed.href = "#"; ed.className = "hint"; ed.style.marginLeft = "6px"; ed.textContent = "edit item";
+        ed.addEventListener("click", function (ev) { ev.preventDefault(); editItem(l.it.id); }); nm.appendChild(document.createTextNode(" ")); nm.appendChild(ed);
+      }
       var tq = document.createElement("td"), qi = document.createElement("input"); qi.className = "inline-input"; qi.style.width = "64px"; qi.inputMode = "decimal"; qi.value = l.qty;
       qi.setAttribute("aria-label", "Qty of " + l.it.name); tq.appendChild(qi); tr.appendChild(tq);
       var pi = null, amt, cost, prof;
@@ -220,6 +228,22 @@
       }).catch(function () { liveFailed = true; say("Tap Camera again: it opens the phone's camera app. Take a photo of the barcode.", true); });
     });
   }
+  var edlg = document.getElementById("sl_edit_dlg"), efr = document.getElementById("sl_edit_frame");
+  function editItem(id) {
+    if (!edlg) return;
+    efr.onload = function () {                                  /* back on the item page without ?edit=1 = saved: refresh the names and close */
+      var url = ""; try { url = efr.contentWindow.location.href; } catch (e) { }
+      if (url && url.indexOf("edit=1") < 0) {
+        fetch("/stock/items.json").then(function (r) { return r.json(); }).then(function (d) {
+          (d.items || []).forEach(function (it) { if (byId[it.id]) { Object.assign(byId[it.id], it); } });
+          lines.forEach(function (l) { if (byId[l.it.id]) l.it = byId[l.it.id]; });
+          draw(); changed(); edlg.close();
+        });
+      }
+    };
+    efr.src = "/stock/" + id + "/?edit=1"; edlg.showModal();
+  }
+  if (edlg) document.getElementById("sl_edit_close").addEventListener("click", function () { edlg.close(); });
   var nb = document.getElementById("sl_new");
   function newItem(text) {                                      /* a product not in the list (owner, 2026-10-18) */
     if (!nb) return;
