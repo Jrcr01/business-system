@@ -904,6 +904,10 @@ def search(request):
         g["total"] -= len(g["rows"]) - len(kept)
         g["rows"] = kept
     groups = [g for g in groups if g["rows"]]
+    if request.GET.get("format") == "json":                     # search as you type (owner, 2026-10-19): the first hits for the box's drop-down
+        from core.templatetags.slicks import usdates
+        hits = [{"group": g["title"], "label": usdates(r["label"]), "href": r["href"]} for g in groups for r in g["rows"]][:10]
+        return JsonResponse({"q": q, "hits": hits, "more": sum(g["total"] for g in groups) > len(hits)})
     return render(request, "core/search.html", {"page_id": "home", "q": q, "groups": groups, "total": sum(g["total"] for g in groups)})
 
 

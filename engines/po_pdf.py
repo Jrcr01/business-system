@@ -8,7 +8,7 @@ from datetime import date
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
-from engines.pdf_tail import keep_tail
+from engines.pdf_tail import continued_canvas, keep_tail
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
@@ -133,5 +133,5 @@ def build_po_pdf(po_id: int, request: bool = False) -> bytes | None:
     sign.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 8.5), ("TEXTCOLOR", (0, 0), (-1, 0), GREY), ("LINEABOVE", (0, 0), (-1, 0), 0.6, colors.black),
                               ("LEFTPADDING", (0, 0), (-1, -1), 2)]))
     story.append(sign)
-    doc.build(story)
+    doc.build(story, canvasmaker=continued_canvas(doc.pagesize[0] - doc.rightMargin, max(doc.bottomMargin - 22, 18)))
     return buf.getvalue()

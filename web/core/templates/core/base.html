@@ -35,7 +35,9 @@
   {% endfor %}
   <span class="tb-gap"></span>
   {% if may_search %}<form class="tb-search" method="get" action="/search/" role="search">
-    <span class="ms">search</span><input type="search" name="q" value="{{ search_q }}" placeholder="Search a check, invoice, name or amount" aria-label="Search everything" minlength="2">
+    <span class="ms">search</span><input type="search" name="q" value="{{ search_q }}" placeholder="Search a check, invoice, name or amount" aria-label="Search everything" minlength="2"
+      autocomplete="off" id="tb_q" role="combobox" aria-expanded="false" aria-controls="tb_hits">
+    <div id="tb_hits" class="tb-hits" role="listbox" hidden></div>
   </form>{% endif %}
   {% if is_sandbox %}<span class="tb-tag">SANDBOX</span>{% endif %}
   <div class="tb-sec tb-user">
@@ -210,6 +212,43 @@ if (window.matchMedia("(hover: none)").matches) {
   document.querySelectorAll(".tb-menu a[data-card]").forEach(function (a) {
     a.addEventListener("click", function () { try { var f = new FormData(); f.append("card", a.dataset.card); f.append("csrfmiddlewaretoken", csrf); navigator.sendBeacon("/home/click/", f); } catch (x) { } });
   });
+})();</script>
+<style>.tb-search{position:relative}.tb-hits{position:absolute;top:100%;left:0;right:0;min-width:320px;max-height:70vh;overflow:auto;background:var(--bg-ffffff, #fff);
+color:var(--fg-1f2937, #1f2937);border:1px solid var(--bd-e3e7ed, #e3e7ed);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:50;margin-top:4px;text-align:left}
+.tb-hits .g{font-size:11px;color:#888;padding:6px 10px 2px}.tb-hits a{display:block;padding:7px 10px;font-size:13px;color:inherit;text-decoration:none}
+.tb-hits a.hi,.tb-hits a:hover{background:var(--bg-f1f5fa, #f1f5fa)}.tb-hits .none{padding:8px 10px;font-size:13px;color:#888}</style>
+<script>(function () {                                         /* search as you type (owner, 2026-10-19: "i want is search as i type if possible") */
+  var q = document.getElementById("tb_q"), box = document.getElementById("tb_hits"); if (!q || !box) return;
+  var timer = null, last = "", links = [], hi = -1;
+  function close() { box.hidden = true; q.setAttribute("aria-expanded", "false"); hi = -1; }
+  function show(d) {
+    box.innerHTML = ""; links = []; hi = -1;
+    if (!d.hits.length) { var n = document.createElement("div"); n.className = "none"; n.textContent = "Nothing found for \u201c" + d.q + "\u201d."; box.appendChild(n); }
+    var group = "";
+    d.hits.forEach(function (h) {
+      if (h.group !== group) { group = h.group; var g = document.createElement("div"); g.className = "g"; g.textContent = group; box.appendChild(g); }
+      var a = document.createElement("a"); a.href = h.href; a.textContent = h.label; a.setAttribute("role", "option"); box.appendChild(a); links.push(a);
+    });
+    if (d.more) { var m = document.createElement("a"); m.href = "/search/?q=" + encodeURIComponent(d.q); m.textContent = "See all results \u2192"; m.style.fontWeight = "600"; box.appendChild(m); links.push(m); }
+    box.hidden = false; q.setAttribute("aria-expanded", "true");
+  }
+  q.addEventListener("input", function () {
+    var v = q.value.trim(); clearTimeout(timer);
+    if (v.length < 2) { close(); return; }
+    timer = setTimeout(function () {
+      last = v;
+      fetch("/search/?format=json&q=" + encodeURIComponent(v), {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) { if (d.q === last) show(d); }).catch(close);
+    }, 250);
+  });
+  q.addEventListener("keydown", function (e) {
+    if (box.hidden || !links.length) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault(); if (hi >= 0) links[hi].classList.remove("hi");
+      hi = (hi + (e.key === "ArrowDown" ? 1 : -1) + links.length) % links.length; links[hi].classList.add("hi"); links[hi].scrollIntoView({block: "nearest"});
+    } else if (e.key === "Enter" && hi >= 0) { e.preventDefault(); location.href = links[hi].href; }
+    else if (e.key === "Escape") { close(); }
+  });
+  document.addEventListener("click", function (e) { if (!e.target.closest(".tb-search")) close(); });
 })();</script>
 </body>
 </html>

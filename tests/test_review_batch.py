@@ -76,3 +76,14 @@ def test_purchasing_counts_a_delivery_on_its_received_date(web, db):
     october = _purchasing(date(2026, 10, 19), date(2026, 10, 1), date(2026, 10, 31))
     september = _purchasing(date(2026, 10, 19), date(2026, 9, 1), date(2026, 9, 30))
     assert october["cards"][0][1] == 5700.0 and september["cards"][0][1] == 0.0                     # SI-9 dated 9/28, received 10/02: October
+
+
+def test_search_answers_as_you_type_and_the_box_keeps_no_history(web, db):
+    """Owner, 2026-10-19: "how to remove this?" (the browser's old searches) and "i want is search as i type if possible"."""
+    import json
+    _admin(web)
+    make_creditor(db, "CSS Autoparts Inc.", terms="30")
+    d = json.loads(web.get("/search/?format=json&q=css").content)
+    assert d["q"] == "css" and any("CSS Autoparts" in h["label"] for h in d["hits"])
+    home = web.get("/").content.decode()
+    assert 'id="tb_q"' in home and 'autocomplete="off"' in home and 'id="tb_hits"' in home

@@ -9,7 +9,8 @@
 {% if not pool %}<p class="note">No payment statements in that period: pick a wider one above.</p>{% else %}
 <form method="get" action="/order-statements/print-many/" target="_blank">
   <input type="hidden" name="go" value="1"><input type="hidden" name="scope" value="{{ scope }}">
-  <div class="scroll-x"><table class="list"><tr><th>Print</th><th>Payment statement</th><th>Supplier</th><th>Status</th><th>Net</th></tr>
+  <div class="scroll-x"><table class="list"><tr><th><label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="pm_all" checked aria-label="Select all or none"> Print</label>
+      <div class="hint" style="font-weight:400"><a href="#" data-pm="all">All</a> · <a href="#" data-pm="none">None</a></div></th><th>Payment statement</th><th>Supplier</th><th>Status</th><th>Net</th></tr>
     {% for r in pool %}<tr><td><input type="checkbox" name="ids" value="{{ r.statement_id }}" checked aria-label="Print {{ r.statement_ref }}"></td>
       <td>{% if r.statement_ref|slice:":6" == "DRAFT-" %}Draft · {{ r.created_at|dmy }}{% else %}{{ r.statement_ref }}{% endif %}</td><td>{{ r.creditor_name }}</td><td>{{ r.stage }}</td>
       <td class="num">{{ r.net_total|floatformat:2|intcomma }}</td></tr>{% endfor %}</table></div>
@@ -24,4 +25,11 @@
   <div class="actions"><button class="btn" type="submit"><span class="ms">picture_as_pdf</span>Make one PDF</button></div>
 </form>
 {% endif %}
+<script>(function () {                                         /* select all / none (owner, 2026-10-19) */
+  var boxes = function () { return document.querySelectorAll('input[type="checkbox"][name="ids"]'); }, all = document.getElementById("pm_all");
+  function set(on) { boxes().forEach(function (b) { b.checked = on; }); if (all) all.checked = on; }
+  if (all) all.addEventListener("change", function () { set(all.checked); });
+  document.querySelectorAll("[data-pm]").forEach(function (a) { a.addEventListener("click", function (e) { e.preventDefault(); set(a.dataset.pm === "all"); }); });
+  document.addEventListener("change", function (e) { if (e.target.name === "ids" && all) all.checked = [].every.call(boxes(), function (b) { return b.checked; }); });
+})();</script>
 {% endblock %}

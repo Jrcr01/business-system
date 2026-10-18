@@ -4,7 +4,7 @@ from xml.sax.saxutils import escape
 from datetime import datetime
 
 from reportlab.lib import colors
-from engines.pdf_tail import keep_tail
+from engines.pdf_tail import CopyStart, continued_canvas, keep_tail
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch, mm
@@ -439,7 +439,7 @@ def _footer(canvas, doc) -> None:
     canvas.setFont("Helvetica", 7.5)
     canvas.setFillColor(GREY)
     canvas.drawString(LEFT_MARGIN, BOTTOM_MARGIN - 22, "Slick's Tire Supply · Metrobank Account 1 · Branch 399")
-    canvas.drawRightString(LETTER[0] - RIGHT_MARGIN, BOTTOM_MARGIN - 22, f"Page {doc.page}")
+    # "Page i of n · continued on the next page" is written by the canvas (engines/pdf_tail.continued_canvas), per copy
     canvas.restoreState()
 
 
@@ -476,8 +476,9 @@ def generate_batch_statement_pdf(statement_id: int, include_full_history: bool =
         for i, label in enumerate(labels):
             if i > 0:
                 story.append(PageBreak())
+            story.append(CopyStart())
             _build_copy(story, data, label, styles, show_payment_application, pad)
-        doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+        doc.build(story, onFirstPage=_footer, onLaterPages=_footer, canvasmaker=continued_canvas(LETTER[0] - RIGHT_MARGIN, BOTTOM_MARGIN - 22))
         return buffer.getvalue(), doc.page
 
     # A statement that overflows a page by just a row or two used to leave a page holding almost nothing (2026-09-27). So: build at the normal
@@ -551,7 +552,7 @@ def generate_bulk_summary_pdf(rows: list[dict], scope_label: str, statement_type
         ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("LINEABOVE", (0, -1), (-1, -1), 1, ACCENT), ("BACKGROUND", (0, -1), (-1, -1), ACCENT_LIGHT),
     ]))
     story.append(table)
-    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer, canvasmaker=continued_canvas(LETTER[0] - RIGHT_MARGIN, BOTTOM_MARGIN - 22))
     return buffer.getvalue()
 
 
