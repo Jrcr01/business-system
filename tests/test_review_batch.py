@@ -1,5 +1,5 @@
 """The 10/19 review (owner: "controls for error ... as well as easiness of using the system"): odd supplier invoices asked again, an order quantity far
-above normal noted, the cash count at closing, the family's short Home, Home figures kept briefly."""
+above normal noted, the family's short Home, Home figures kept briefly."""
 import sqlite3
 
 from conftest import fetchone, make_creditor
@@ -21,26 +21,6 @@ def test_odd_invoice_warnings(db):
     assert any("after today" in w for w in invoice_warnings(cid, [("SI-9", today + timedelta(days=5), 14000)]))
     assert any("typo in the year" in w for w in invoice_warnings(cid, [("SI-9", today - timedelta(days=120), 14000)]))
     assert any("extra zero" in w for w in invoice_warnings(cid, [("SI-9", today, 150000)]))
-
-
-def test_the_cash_count_compares_the_drawer_with_the_cash_sales(web, db):
-    from engines.cash_count import get_count, save_count
-    from engines.clock import manila_today
-    from engines.sales_rules import save_sale
-    from tests.test_web_stock import _item, _stock
-    _admin(web)
-    a, _ = _item("Sunny", "185/55R16", "NP226")
-    _stock(a, 5, 2000.0)
-    assert save_sale(9201, manila_today(), None, "Walk-in", [{"item_id": a, "qty": 1, "price": 2600}], [], [{"method": "CASH", "amount": 2600}])[0]
-    ok, msg = save_count(manila_today(), "3,600", "1,000")
-    assert ok and "matches" in msg and get_count(manila_today())["diff"] == 0
-    ok, msg = save_count(manila_today(), "3,000", "1,000", "")
-    assert ok and "short" in msg and get_count(manila_today())["diff"] == -600
-    assert fetchone(db, "SELECT COUNT(*) FROM review_flags WHERE kind = 'CASH_COUNT_DIFF'")[0] == 1
-    from tests.test_phone import _on
-    from tests.test_phone_approval import PHONE_UA
-    _on()
-    assert "Cash count at closing" in web.get("/phone/day/", HTTP_USER_AGENT=PHONE_UA, follow=True).content.decode()
 
 
 def test_the_family_home_shows_the_daily_six_first_and_folds_the_rest(web, db):

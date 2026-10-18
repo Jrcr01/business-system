@@ -8,7 +8,6 @@ NOTES = [
         "Every correction keeps the old and the new figures. They show on Checks and review, Changed today.",
         "While typing, a note appears (never a block) for a price far above cost, more than 20 pieces, an invoice number far from the next, or a customer name close to one on the list (\"Did you mean ...?\").",
         "Supplier invoices dated after today, more than 90 days back, or over 3x the supplier's largest invoice are asked once more before saving.",
-        "Sales today on the phone: at closing, type the cash in the drawer. The system compares it with the cash sales recorded for the day.",
         "Home: the six cards of the daily work come first; \"Show everything\" opens the rest.",
     ]),
     ("2026-10-13a", "10/11/2026", "New: Stock and Sell", [
