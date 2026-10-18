@@ -35,7 +35,7 @@ def test_the_family_home_shows_the_daily_six_first_and_folds_the_rest(web, db):
 
 def test_a_home_figure_is_kept_briefly(db, monkeypatch):
     import engines.home_tiles as ht
-    monkeypatch.setattr(ht, "KEEP_SECONDS", 60)
+    monkeypatch.setenv("SLICKS_HOME_KEEP", "60")
     calls = []
     t = ht.Tile("sales", "sell", "Test", lambda: (calls.append(1) or "1", "x", "none"), key="zz-test")
     ht.evaluate(t)

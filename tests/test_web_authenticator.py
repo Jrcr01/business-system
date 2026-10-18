@@ -202,7 +202,7 @@ def test_every_sign_in_is_kept_and_a_new_device_goes_on_the_review_list(web):
     page = web.get(f"/settings/users/{uid}/").content.decode()
     assert "Signed in: password and code" in page and "Not signed in: wrong code" in page and "new device" in page
     assert "Safari on iPhone" in page and "Baliuag, PH" in page and "203.0.113.7" in page
-    assert "Signed in on a device not used before" in web.get("/review/").content.decode()
+    assert "Signed in on a device not used before" in web.get("/review/?tab=signins").content.decode()
 
 
 def test_the_code_can_be_switched_off_and_then_cloudflare_stands_in(web, monkeypatch):

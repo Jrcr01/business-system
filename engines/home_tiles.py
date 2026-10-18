@@ -132,14 +132,16 @@ def evaluate(tile: Tile) -> dict:
     key = (common.DB_PATH, tile.tid, (acting_email() or "").lower())
     now, stamp = time.monotonic(), _stamp(common.DB_PATH)
     hit = _KEPT.get(key)
-    if KEEP_SECONDS and hit and (hit[0] == stamp or now - hit[1] < KEEP_SECONDS):
+    import os
+    keep = KEEP_SECONDS if os.environ.get("SLICKS_HOME_KEEP", "") == "" else int(os.environ["SLICKS_HOME_KEEP"])
+    if keep and hit and (hit[0] == stamp or now - hit[1] < keep):
         return hit[2]
     try:
         figure, unit, level = tile.figure()
         out = {"figure": str(figure), "unit": unit, "level": level if level in LEVELS else "none"}
     except Exception:                                # a missing table or a bad row must not take the whole Home page down
         return {"figure": "—", "unit": "", "level": "none"}
-    if KEEP_SECONDS:
+    if keep:
         _KEPT[key] = (stamp, now, out)
     return out
 

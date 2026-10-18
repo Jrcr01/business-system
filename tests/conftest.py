@@ -190,9 +190,9 @@ def _po_request_rule(request, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _home_fresh(monkeypatch):
-    """Home's figures are kept up to a minute on the server (engines/home_tiles.KEEP_SECONDS); a test reads them fresh every time."""
-    import engines.home_tiles as ht
-    monkeypatch.setattr(ht, "KEEP_SECONDS", 0)
+    """Home's figures are kept up to a minute on the server (engines/home_tiles.KEEP_SECONDS); a test reads them fresh every time. An environment
+    switch, so nothing is imported before the test's own database is set."""
+    monkeypatch.setenv("SLICKS_HOME_KEEP", "0")
 
 
 @pytest.fixture(autouse=True)
@@ -203,6 +203,8 @@ def _stock_counted(request, monkeypatch):
         import engines.settings_registry as sreg
         monkeypatch.setattr(sreg, "stock_not_counted", lambda: False)
         monkeypatch.setattr(sreg, "stock_out_on_phone", lambda: True)          # the phone tests were written with Stock out shown
+    if not request.module.__name__.endswith("test_review_batch"):
+        monkeypatch.setenv("SLICKS_ODD_CHECKS", "0")                            # invoices with fixed and future dates in the older tests
 
 
 @pytest.fixture

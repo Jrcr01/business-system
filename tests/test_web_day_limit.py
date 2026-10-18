@@ -16,10 +16,8 @@ def _db():
 
 def _bank_day(days_ahead: int) -> date:
     from engines.clock import manila_today
-    d = manila_today() + timedelta(days=days_ahead)
-    while d.weekday() >= 5:
-        d += timedelta(days=1)
-    return d
+    from engines.reports_service import next_banking_day
+    return next_banking_day(manila_today() + timedelta(days=days_ahead))      # a weekend and a holiday (11/30 Bonifacio Day) move to the next banking day
 
 
 def _check_on(db, cid, day: date, amount: float):

@@ -71,10 +71,13 @@ SIGNIN_DAYS = 7
 
 def close_old_signins() -> int:
     """Sign-in notices older than a week are closed (marked reviewed by "system: after 7 days"). Returns how many."""
+    from datetime import timedelta
+    from engines.clock import manila_now
+    cutoff = (manila_now() - timedelta(hours=8, days=SIGNIN_DAYS)).strftime("%Y-%m-%d %H:%M:%S")     # raised_at is stored in UTC
     marks = ",".join("?" for _ in SIGNIN_KINDS)
     with write_tx() as conn:
         return conn.execute(f"""UPDATE review_flags SET reviewed_by = 'system: closed after {SIGNIN_DAYS} days', reviewed_at = CURRENT_TIMESTAMP
-                                WHERE reviewed_at IS NULL AND kind IN ({marks}) AND raised_at < datetime('now', '-{SIGNIN_DAYS} days')""", SIGNIN_KINDS).rowcount
+                                WHERE reviewed_at IS NULL AND kind IN ({marks}) AND raised_at < ?""", (*SIGNIN_KINDS, cutoff)).rowcount
 
 
 def acknowledge(flag_id: int) -> tuple[bool, str]:

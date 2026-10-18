@@ -80,6 +80,7 @@ def invoice_warnings(creditor_id: int, rows: list) -> list[str]:
 
 
 ODD_OLD_DAYS, ODD_TIMES = 90, 3
+ODD_CHECKS = True                                    # off in the tests written before 10/19 (their invoices carry fixed and future dates)
 
 
 def _odd_date_or_amount(conn, creditor_id: int, doc_ref, inv_date, gross) -> list[str]:
@@ -88,6 +89,9 @@ def _odd_date_or_amount(conn, creditor_id: int, doc_ref, inv_date, gross) -> lis
     from datetime import date as _date
     from engines.clock import manila_today
     out, today = [], manila_today()
+    import os
+    if not ODD_CHECKS or os.environ.get("SLICKS_ODD_CHECKS") == "0":
+        return out
     try:
         d = inv_date if isinstance(inv_date, _date) else _date.fromisoformat(str(inv_date)[:10])
     except ValueError:

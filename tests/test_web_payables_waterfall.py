@@ -86,9 +86,8 @@ def test_the_day_check_counts_sis_without_a_check_and_open_pos_even_with_the_for
     from engines.price_list_service import add_price
     cid = make_creditor(db, "Acme Tires", terms="30")
     add_price(cid, "Tire", "pc", 100, date(2026, 9, 1))
-    day = manila_today() + timedelta(days=40)
-    while day.weekday() >= 5:
-        day += timedelta(days=1)
+    from engines.reports_service import next_banking_day
+    day = next_banking_day(manila_today() + timedelta(days=40))       # not a weekend nor a holiday (11/30 Bonifacio Day)
     with sqlite3.connect(db) as conn:
         conn.execute("""INSERT INTO invoices (creditor_id, doc_ref, invoice_date, due_date, gross_amount, amount, status)
                         VALUES (?, 'SI-9', ?, ?, 7000, 7000, 'Unpaid')""", (cid, manila_today().isoformat(), day.isoformat()))
