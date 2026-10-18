@@ -61,3 +61,18 @@ def test_an_item_is_corrected_and_its_sales_take_the_new_name(web, db):
     assert fetchone(db, "SELECT description FROM sale_lines WHERE item_id = ?", (it["id"],))[0] == "Rota 17"
     assert changes()[-1]["kind"] == "ITEM_EDITED" and "Rota Blak" in changes()[-1]["before"]
     assert "edit item" in web.get("/sales/?view=new").content.decode() or 'id="sl_edit_dlg"' in web.get("/sales/?view=new").content.decode()
+
+
+def test_purchasing_counts_a_delivery_on_its_received_date(web, db):
+    """Owner, 2026-10-19: "basically should be the received date"."""
+    from datetime import date
+    from payables.analytics import _purchasing
+    cid = make_creditor(db, "New Century", terms="30")
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO invoices (invoice_id, creditor_id, doc_ref, invoice_date, due_date, gross_amount, amount, status) VALUES (901, ?, 'SI-9', '2026-09-28', '2026-10-28', 5000, 5000, 'Unpaid')", (cid,))
+        conn.execute("INSERT INTO purchase_orders (po_id, po_no, creditor_id, order_date, status) VALUES (77, 'PO-0077', ?, '2026-09-20', 'RECEIVED')", (cid,))
+        conn.execute("INSERT INTO po_receipts (po_id, received_date, invoice_id, actual_amount) VALUES (77, '2026-10-02', 901, 5000)")
+        conn.execute("INSERT INTO invoices (creditor_id, doc_ref, invoice_date, due_date, gross_amount, amount, status) VALUES (?, 'SI-10', '2026-10-05', '2026-11-04', 700, 700, 'Unpaid')", (cid,))
+    october = _purchasing(date(2026, 10, 19), date(2026, 10, 1), date(2026, 10, 31))
+    september = _purchasing(date(2026, 10, 19), date(2026, 9, 1), date(2026, 9, 30))
+    assert october["cards"][0][1] == 5700.0 and september["cards"][0][1] == 0.0                     # SI-9 dated 9/28, received 10/02: October

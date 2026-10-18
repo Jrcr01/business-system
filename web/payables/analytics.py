@@ -181,16 +181,19 @@ def _bank(today, start, end) -> dict:
 def _purchasing(today, start, end) -> dict:
     a, b = str(start), str(end)
     open_po = _rows("SELECT COUNT(*), COALESCE(SUM((SELECT SUM(est_amount) FROM purchase_order_lines l WHERE l.po_id = p.po_id)), 0) FROM purchase_orders p WHERE status IN ('ORDERED', 'PARTIAL')")[0]
-    spend = _rows("SELECT COALESCE(SUM(amount), 0) FROM invoices WHERE status != 'Cancelled' AND invoice_date BETWEEN ? AND ?", (a, b))[0][0]
+    # by the RECEIVED date (owner, 2026-10-19: "basically should be the received date"): a delivery against an order counts on the day it came in;
+    # an invoice typed on its own on the date typed there (the date received)
+    got = "COALESCE((SELECT MIN(r.received_date) FROM po_receipts r WHERE r.invoice_id = i.invoice_id), i.invoice_date)"
+    spend = _rows(f"SELECT COALESCE(SUM(i.amount), 0) FROM invoices i WHERE i.status != 'Cancelled' AND {got} BETWEEN ? AND ?", (a, b))[0][0]
     loose = _rows("SELECT COUNT(*), COALESCE(SUM(COALESCE(actual_amount, est_amount)), 0) FROM po_receipts WHERE invoice_id IS NULL")[0]
     by_sup = _rows("""SELECT c.creditor_name, SUM(i.amount) FROM invoices i JOIN creditors c ON c.creditor_id = i.creditor_id
-                      WHERE i.status != 'Cancelled' AND i.invoice_date BETWEEN ? AND ? GROUP BY 1 ORDER BY 2 DESC LIMIT 10""", (a, b))
-    by_brand = _rows("""SELECT COALESCE(NULLIF(it.brand, ''), '(no brand)'), SUM(COALESCE(l.actual_amount, l.est_amount)) FROM purchase_order_lines l
-                        JOIN purchase_orders p ON p.po_id = l.po_id LEFT JOIN items it ON it.id = l.item_id
-                        WHERE p.status != 'CANCELLED' AND p.status != 'DRAFT' AND p.order_date BETWEEN ? AND ? GROUP BY 1 ORDER BY 2 DESC LIMIT 10""", (a, b))
-    return {"cards": [("Spend in the period (invoices)", float(spend), "peso", "/order-statements/"),
+                      WHERE i.status != 'Cancelled' AND {got} BETWEEN ? AND ? GROUP BY 1 ORDER BY 2 DESC LIMIT 10""".replace("{got}", got), (a, b))
+    by_brand = _rows("""SELECT COALESCE(NULLIF(it.brand, ''), '(no brand)'), SUM(x.amount) FROM po_receipt_lines x JOIN po_receipts r ON r.receipt_id = x.receipt_id
+                        JOIN purchase_order_lines l ON l.line_id = x.line_id LEFT JOIN items it ON it.id = l.item_id
+                        WHERE r.received_date BETWEEN ? AND ? GROUP BY 1 ORDER BY 2 DESC LIMIT 10""", (a, b))
+    return {"cards": [("Spend in the period (by received date)", float(spend), "peso", "/order-statements/"),
                       ("Open purchase orders", open_po[0], "count", "/purchase-orders/"),
                       ("Open orders' value", float(open_po[1]), "peso", "/purchase-orders/"),
                       ("Received, not invoiced", loose[0], "count", "/purchase-orders/?mode=match")],
-            "chart_a": ("Spend by supplier in the period", _bars([(n, float(v)) for n, v in by_sup])),
-            "chart_b": ("Ordered by brand in the period", _bars([(n, float(v or 0)) for n, v in by_brand]))}
+            "chart_a": ("Spend by supplier, by received date", _bars([(n, float(v)) for n, v in by_sup])),
+            "chart_b": ("Received by brand (deliveries against orders), by received date", _bars([(n, float(v or 0)) for n, v in by_brand]))}
