@@ -7,7 +7,7 @@
   {% if more %}Booklets, spoiled checks and the rest are still in the <a href="{{ more }}">old screens</a>.{% endif %}</p>
 <nav class="tabs">
   <a href="?show=due"{% if tab != "cutoff" %} class="on"{% endif %}>Checklist</a>
-  {% if is_admin %}<a href="?tab=cutoff"{% if tab == "cutoff" %} class="on"{% endif %}>Cut-off (once){% if not cutoff_done %} <span class="pill warn">to do</span>{% endif %}</a>{% endif %}
+  {% if is_admin and not cutoff_done %}<a href="?tab=cutoff"{% if tab == "cutoff" %} class="on"{% endif %}>Cut-off (once) <span class="pill warn">to do</span></a>{% endif %}{# retired once done (owner, 2026-10-19) #}
 </nav>
 
 {% if tab != "cutoff" %}
