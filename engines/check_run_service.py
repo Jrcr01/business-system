@@ -11,6 +11,7 @@ from datetime import datetime
 
 import pandas as pd
 from reportlab.lib import colors
+from engines.pdf_tail import keep_tail
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -279,7 +280,7 @@ def generate_check_run_summary_pdf(check_ids: list[int]) -> bytes:
             ("RIGHTPADDING", (0, 0), (-1, -1), 5),
             ("ALIGN", (5, 0), (5, -1), "RIGHT"),
         ]
-        table = Table(data, colWidths=col_widths, repeatRows=1)
+        table = keep_tail(Table(data, colWidths=col_widths, repeatRows=1))
         table.setStyle(TableStyle(cmds))
         story.append(table)
 

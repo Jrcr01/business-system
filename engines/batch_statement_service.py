@@ -4,6 +4,7 @@ from xml.sax.saxutils import escape
 from datetime import datetime
 
 from reportlab.lib import colors
+from engines.pdf_tail import keep_tail
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch, mm
@@ -342,7 +343,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
                          ("Covered by check" if for_supplier and str(i["display_status"]).startswith("Check issued") else i["display_status"]), Paragraph(escape(str(i.get("check_nos") or "")), wrap_style)])
     if len(inv_rows) == 1:
         inv_rows.append(["—", "—", "—", "—", "—", "—", "—"])
-    inv_table = Table(inv_rows, colWidths=[CONTENT_WIDTH * w for w in (0.14, 0.11, 0.11, 0.12, 0.12, 0.23, 0.17)], repeatRows=1)
+    inv_table = keep_tail(Table(inv_rows, colWidths=[CONTENT_WIDTH * w for w in (0.14, 0.11, 0.11, 0.12, 0.12, 0.23, 0.17)], repeatRows=1))
     inv_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (3, 1), (4, -1), "RIGHT")]))
     story.append(inv_table)
 
@@ -351,7 +352,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
         memo_rows = [["Memo Ref", "Date", "Amount (PHP)", "Reason"]]
         for m in data["memos"]:
             memo_rows.append([m["memo_ref"], us_date(m["memo_date"]), _money(m["amount"]), m["reason"] or ""])
-        memo_table = Table(memo_rows, colWidths=[CONTENT_WIDTH * w for w in (0.2, 0.17, 0.18, 0.45)], repeatRows=1)
+        memo_table = keep_tail(Table(memo_rows, colWidths=[CONTENT_WIDTH * w for w in (0.2, 0.17, 0.18, 0.45)], repeatRows=1))
         memo_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (2, 1), (2, -1), "RIGHT")]))
         story.append(memo_table)
 
@@ -385,7 +386,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     if live:                                                   # the checks add up to what is to be paid, in plain sight
         chk_rows.append([f"Total checks ({len(live)})", "", _money(sum(float(c["amount"] or 0) for c in live)), ""])
         extra = [("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("LINEABOVE", (0, -1), (-1, -1), 1, ACCENT), ("BACKGROUND", (0, -1), (-1, -1), colors.white)]
-    chk_table = Table(chk_rows, colWidths=[CONTENT_WIDTH * w for w in (0.3, 0.23, 0.22, 0.25)], repeatRows=1)
+    chk_table = keep_tail(Table(chk_rows, colWidths=[CONTENT_WIDTH * w for w in (0.3, 0.23, 0.22, 0.25)], repeatRows=1))
     chk_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (2, 1), (2, -1), "RIGHT")] + extra))
     story.append(chk_table)
 
@@ -404,7 +405,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
             led_rows.append([r["invoice"], r["check_number"], us_date(r["check_date"], "—"), _money(r["amount"]), _money(r["balance"])])
         if len(led_rows) == 1:
             led_rows.append(["—", "—", "—", "—", "—"])
-        led_table = Table(led_rows, colWidths=[CONTENT_WIDTH * w for w in (0.26, 0.22, 0.16, 0.18, 0.18)], repeatRows=1)
+        led_table = keep_tail(Table(led_rows, colWidths=[CONTENT_WIDTH * w for w in (0.26, 0.22, 0.16, 0.18, 0.18)], repeatRows=1))
         led_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (3, 1), (4, -1), "RIGHT")]))
         story.append(led_table)
         story.append(Spacer(1, 4))
@@ -543,7 +544,7 @@ def generate_bulk_summary_pdf(rows: list[dict], scope_label: str, statement_type
     table_rows.append(["", "TOTAL", "", "", str(sum(r["invoices"] for r in rows)), _money(sum(r["net_total"] for r in rows)),
                        str(sum(r["checks"] for r in rows)), _money(sum(r["checks_total"] for r in rows))])
     widths = [CONTENT_WIDTH * w for w in (0.05, 0.15, 0.27, 0.09, 0.06, 0.14, 0.08, 0.16)]
-    table = Table(table_rows, colWidths=widths, repeatRows=1)
+    table = keep_tail(Table(table_rows, colWidths=widths, repeatRows=1))
     table.setStyle(TableStyle(_section_style(4) + [
         ("ALIGN", (4, 1), (4, -1), "RIGHT"), ("ALIGN", (5, 1), (5, -1), "RIGHT"), ("ALIGN", (6, 1), (6, -1), "RIGHT"), ("ALIGN", (7, 1), (7, -1), "RIGHT"),
         ("ALIGN", (0, 1), (0, -1), "RIGHT"),

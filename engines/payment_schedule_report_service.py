@@ -9,6 +9,7 @@ from datetime import date, datetime
 from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.lib import colors
+from engines.pdf_tail import keep_tail
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -78,7 +79,7 @@ def _week_summary(df, styles) -> list:
     for monday, r in by.iterrows():
         rows.append([f"{monday:%m/%d} to {monday + timedelta(days=6):%m/%d/%Y}", int(r["count"]), f"{float(r['sum']):,.2f}"])
     rows.append(["Total", int(by["count"].sum()), f"{float(by['sum'].sum()):,.2f}"])
-    t = Table(rows, colWidths=[CONTENT_WIDTH * w for w in (0.4, 0.2, 0.4)], repeatRows=1)
+    t = keep_tail(Table(rows, colWidths=[CONTENT_WIDTH * w for w in (0.4, 0.2, 0.4)], repeatRows=1))
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), ACCENT), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                            ("FONTSIZE", (0, 0), (-1, -1), 9), ("GRID", (0, 0), (-1, -1), 0.5, BORDER), ("ALIGN", (1, 0), (2, -1), "RIGHT"),
                            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
@@ -202,7 +203,7 @@ def _build_due_date_schedule_pdf(title: str, subtitle: str, df, ref_label: str) 
             ("ALIGN", (3, row), (3, row), "RIGHT"),
         ]
 
-        table = Table(data, colWidths=col_widths, repeatRows=1)
+        table = keep_tail(Table(data, colWidths=col_widths, repeatRows=1))
         table.setStyle(TableStyle(cmds))
         story.append(table)
 

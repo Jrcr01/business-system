@@ -92,9 +92,12 @@ def statements(request):
     from engines.statement_rules import unbatched_invoices
     if g.get("view") == "invoices":                             # the menu's Invoices entry (a shortcut of this page: the same rights)
         return redirect("/order-statements/invoices/")
+    if g.get("view") == "parked":                               # the menu's Parked checks entry (owner, 2026-10-18)
+        return redirect("/order-statements/parked/")
+    from payables.parked import parked_count
     waiting = unbatched_invoices()
     return render(request, "payables/statements.html", {"page_id": "order-statements", "rows": out, "q": search, "sup": sup, "stage": stage, "created": created,
-                                                        "suppliers": suppliers, "stages": STAGES, "createds": CREATED, "waiting_n": len(waiting), "waiting_total": float(waiting["amount"].sum()) if len(waiting) else 0.0})
+                                                        "suppliers": suppliers, "stages": STAGES, "createds": CREATED, "parked_n": parked_count(), "waiting_n": len(waiting), "waiting_total": float(waiting["amount"].sum()) if len(waiting) else 0.0})
 
 
 @page_needed("order-statements")

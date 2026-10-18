@@ -9,6 +9,7 @@ import sqlite3
 from datetime import date, datetime
 
 from reportlab.lib import colors
+from engines.pdf_tail import keep_tail
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -179,7 +180,7 @@ def generate_bank_loan_pdf(bank_loan_id: int) -> bytes | None:
         sched_rows.append([r["installment_no"], _us(r["due_date"]), _money(r["amount"]), "Paid" if r.get("paid") else "Pending"])
     if len(sched_rows) == 1:
         sched_rows.append(["—", "—", "—", "—"])
-    sched_table = Table(sched_rows, colWidths=[CONTENT_WIDTH * w for w in (0.12, 0.3, 0.33, 0.25)], repeatRows=1)
+    sched_table = keep_tail(Table(sched_rows, colWidths=[CONTENT_WIDTH * w for w in (0.12, 0.3, 0.33, 0.25)], repeatRows=1))
     sched_table.setStyle(TableStyle(SECTION_TABLE_STYLE + [("ALIGN", (2, 1), (2, -1), "RIGHT")]))
     story.append(sched_table)
 

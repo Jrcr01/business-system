@@ -8,6 +8,7 @@ from datetime import date
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
+from engines.pdf_tail import keep_tail
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
@@ -112,7 +113,7 @@ def build_po_pdf(po_id: int, request: bool = False) -> bytes | None:
             rows.append([str(i), Paragraph(escape(str(ln.item_name)), cell), ln.unit or "", _qty(ln.qty), f"{ln.est_unit_price:,.2f}", f"{ln.est_amount:,.2f}"])
         rows.append(["", "", "", "", Paragraph("<b>TOTAL</b>", cell), Paragraph(f"<b>{po['total']:,.2f}</b>", cell)])
         widths = [0.35 * inch, width - 0.35 * inch - 3.9 * inch, 0.6 * inch, 0.7 * inch, 1.15 * inch, 1.45 * inch]
-    table = Table(rows, colWidths=widths, repeatRows=1)
+    table = keep_tail(Table(rows, colWidths=widths, repeatRows=1))
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), ACCENT), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 9), ("GRID", (0, 0), (-1, -2), 0.5, BORDER), ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, ACCENT_LIGHT]),

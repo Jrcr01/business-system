@@ -23,7 +23,8 @@ def _phone_menu(request, bar: list[dict]) -> list[dict]:
     from core.phone_rules import kind
     out = []
     for sec in bar:
-        items = [dict(it, look=kind(it["page"]) == "look") for it in sec["items"] if kind(it["page"]) != "laptop"]
+        role = (getattr(request, "slicks_user", None) or {}).get("role")
+        items = [dict(it, look=kind(it["page"], role) == "look") for it in sec["items"] if kind(it["page"], role) != "laptop"]
         if items:
             out.append(dict(sec, items=items))
     return out
@@ -751,7 +752,7 @@ def home(request):
     from core.phone_rules import kind
     phone = _on_a_phone(request)
     if phone:                                                   # a phone or an iPad: laptop-only pages left out of Home (owner, 2026-10-17: "hidden")
-        mine = [p for p in mine if kind(p) != "laptop"]
+        mine = [p for p in mine if kind(p, user["role"]) != "laptop"]
     titles = {g.key: g for g in GROUPS}
     rows, by_id = [], {}
     from engines.permissions import analytics_tabs
@@ -764,12 +765,12 @@ def home(request):
             v = evaluate(t)
             icon = (t.icon or "").removeprefix(":material/").removesuffix(":") or PAGES[t.page_id].icon
             card = {"title": t.title, "icon": icon, "url": _tile_url(t), "figure": v["figure"], "unit": v["unit"], "level": v["level"],
-                    "later": t.page_id not in BUILT, "tid": t.tid, "look": phone and kind(t.page_id) == "look"}
+                    "later": t.page_id not in BUILT, "tid": t.tid, "look": phone and kind(t.page_id, user["role"]) == "look"}
             cards.append(card)
             by_id.setdefault(t.tid, card)
         rows.append({"key": key, "title": titles[key].title, "hint": titles[key].hint, "tiles": cards})
     creates = [{"title": title, "icon": icon, "url": url, "create": True, "group": g} for g, title, icon, url, pid, needs in CREATE_CARDS
-               if pid in mine and pid in BUILT and (needs is None or can(user["role"], needs)) and not (phone and kind(pid) and not url.startswith("/order-statements/invoices/"))]
+               if pid in mine and pid in BUILT and (needs is None or can(user["role"], needs)) and not (phone and kind(pid, user["role"]) and not url.startswith("/order-statements/invoices/"))]
     # on a phone the "New ..." cards of look-only pages are laptop work -- except Record an invoice (owner, 2026-10-17: add and edit on the phone)
     for r in rows:
         r["tiles"] = _in_order(r["key"], r["tiles"] + [c for c in creates if c["group"] == r["key"]])

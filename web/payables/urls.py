@@ -1,6 +1,6 @@
 from django.urls import path
 
-from payables import public, expenses, other_income, income_statement_view, analytics, bank, bankloans, booklets, bulk, calendar, cards, invoices, lenders, views
+from payables import parked, public, expenses, other_income, income_statement_view, analytics, bank, bankloans, booklets, bulk, calendar, cards, invoices, lenders, views
 
 urlpatterns = [
     path("order-statements/", views.statements, name="statements"),
@@ -13,6 +13,7 @@ urlpatterns = [
     path("order-statements/soa/", bulk.soa, name="soa"),
     path("order-statements/soa/snip/<str:token>/page/<int:page>.jpg", bulk.soa_snip_page, name="soa_snip_page"),
     path("order-statements/soa/snip/<str:token>/read/", bulk.soa_snip_read, name="soa_snip_read"),
+    path("order-statements/parked/", parked.parked, name="parked_checks"),
     path("order-statements/check/", bulk.statement_check, name="statement_check"),
     path("order-statements/check/<int:check_id>/", bulk.statement_check_saved, name="statement_check_saved"),
     path("order-statements/<int:sid>/", views.statement, name="statement"),

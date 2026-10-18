@@ -31,7 +31,7 @@ def page_needed(page_id: str, action: str | None = None, phone_actions: tuple = 
             request.view_only = page_id not in doable_pages(role)
             from core.phone_rules import LAPTOP_WHY, PHONE_INSTEAD, kind
             from core.views import _on_a_phone
-            rule = kind(page_id) if _on_a_phone(request) else None      # a phone or an iPad (owner, 2026-10-17)
+            rule = kind(page_id, role) if _on_a_phone(request) else None      # a phone or an iPad (owner, 2026-10-17)
             if rule == "laptop":
                 return render(request, "core/laptop_only.html", {"page": PAGES[page_id], "why": LAPTOP_WHY.get(page_id, "")})
             if rule == "look" and phone_actions:                   # a look-only page that still takes these steps on a phone (2026-10-17: invoices)

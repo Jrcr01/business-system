@@ -1,0 +1,54 @@
+{% extends "core/base.html" %}{% load humanize %}
+{% block title %}Parked checks{% endblock %}
+{% block content %}
+<h2><span class="ms" style="font-size:28px">print</span> Parked checks</h2>
+<p class="note">Every parked check of every payment statement and loan, waiting to be written. Tick them and make <b>one</b> Chrysanth run file: one import in
+  Chrysanth. Each check becomes Written, the same as from its own payment statement, and its remark keeps the run number.</p>
+<form class="bar" method="get" action="/order-statements/parked/">
+  <div><label for="upto">Check dates up to</label><input id="upto" type="date" name="upto" value="{{ upto }}" onchange="this.form.submit()"></div>
+  <div><label for="bank">Bank</label><select id="bank" name="bank" onchange="this.form.submit()"><option value="">All banks</option>
+    {% for b in banks %}<option value="{{ b.bank_account_id }}"{% if b.bank_account_id|stringformat:"s" == bank %} selected{% endif %}>{{ b.bank_name }}</option>{% endfor %}</select></div>
+  {% if upto or bank %}<a class="btn small ghost" href="/order-statements/parked/">Show all</a>{% endif %}
+</form>
+{% if groups %}
+<form method="post" id="pk-form">{% csrf_token %}<input type="hidden" name="back" value="{{ back }}">
+<p class="hint"><span class="pill warn">{{ n }} parked · ₱{{ total|floatformat:2|intcomma }}</span>
+  {% if may_write %} · Tick: <a href="#" data-pick="all">all</a> · <a href="#" data-pick="none">none</a>{% endif %}</p>
+<div class="scroll-x"><table class="list">
+  <tr><th></th><th>Check date</th><th>Payee</th><th>For</th><th style="text-align:right">Amount</th></tr>
+  {% for g in groups %}
+  <tr><td colspan="5" style="background:var(--bg-f1f5fa);font-weight:600">{{ g.payee }} · {% if g.link %}<a href="{{ g.link }}">{{ g.for }}</a>{% else %}{{ g.for }}{% endif %}</td></tr>
+  {% for c in g.rows %}<tr>
+    <td>{% if may_write %}<input type="checkbox" name="tick_{{ c.check_id }}" value="1" data-amt="{{ c.amount }}" aria-label="Tick this check">{% endif %}</td>
+    <td>{{ c.check_date|dmy }}</td><td>{{ c.payee }}</td><td>{{ c.for }}{% if c.bank_name %} <span class="hint">· {{ c.bank_name }}</span>{% endif %}</td>
+    <td style="text-align:right">{{ c.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}
+  {% endfor %}
+</table></div>
+{% if may_write %}
+<div class="actions" style="margin-top:12px;align-items:center">
+  <span id="pk-sum">Ticked: 0 checks</span>
+  <button class="btn" type="submit" onclick="return confirm('Make one Chrysanth run file for the ticked parked checks? They become Written.');"><span class="ms">print</span>Write with Chrysanth (one run file)</button>
+</div>
+<p class="hint">After the download, reload this page: the written checks leave the list.</p>
+{% else %}<p class="hint">Writing checks is switched off for you.</p>{% endif %}
+</form>
+{% else %}
+<p class="hint">No parked checks{% if upto or bank %} for this filter{% endif %}.</p>
+{% endif %}
+<script>
+(function () {
+  var f = document.getElementById("pk-form"); if (!f) return;
+  var boxes = f.querySelectorAll('input[type=checkbox][name^="tick_"]'), out = document.getElementById("pk-sum");
+  function sum() {
+    var n = 0, t = 0;
+    boxes.forEach(function (b) { if (b.checked) { n++; t += parseFloat(b.dataset.amt || "0"); } });
+    if (out) out.textContent = "Ticked: " + n + " check" + (n === 1 ? "" : "s") + " · ₱" + t.toLocaleString("en-PH", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+  f.addEventListener("change", sum);
+  f.querySelectorAll("[data-pick]").forEach(function (a) {
+    a.addEventListener("click", function (e) { e.preventDefault(); var on = a.dataset.pick === "all"; boxes.forEach(function (b) { b.checked = on; }); sum(); });
+  });
+  sum();
+})();
+</script>
+{% endblock %}

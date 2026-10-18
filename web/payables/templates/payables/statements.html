@@ -5,6 +5,7 @@
 <p class="note">Each holds the invoices of one supplier being paid together, their credit memos, and the checks that pay them. A payment statement starts on
   <a href="/order-statements/invoices/">Invoices</a>: tick what you are paying and make the checks. Click a number to open one.</p>
 <div class="actions" style="margin-bottom:12px">
+  <a class="btn small{% if not parked_n %} ghost{% endif %}" href="/order-statements/parked/"><span class="ms">print</span>{% if parked_n %}Parked checks ({{ parked_n }}) · write with Chrysanth{% else %}No parked checks{% endif %}</a>
   <a class="btn small ghost" href="/order-statements/print-many/"><span class="ms">picture_as_pdf</span>Print many payment statements</a>
   <a class="btn small ghost" href="/order-statements/import-many/"><span class="ms">upload_file</span>Many payment statements from Excel</a>
   <a class="btn small ghost" href="/order-statements/check/"><span class="ms">fact_check</span>Supplier statement check</a>

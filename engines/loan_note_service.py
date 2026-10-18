@@ -9,6 +9,7 @@ import sqlite3
 from datetime import datetime
 
 from reportlab.lib import colors
+from engines.pdf_tail import keep_tail
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -180,7 +181,7 @@ def _build(note, sheet, difference, pad: float) -> tuple[bytes, int]:
         sched_rows.append([f"{r['date']:%m/%d/%Y}", _money(r["principal"]) if r["principal"] else "-", _money(r["interest"]) if r["interest"] else "-", _money(r["balance"])])
     if len(sched_rows) == 1:
         sched_rows.append(["—", "—", "—", "—"])
-    sched_table = Table(sched_rows, colWidths=[CONTENT_WIDTH * w for w in (0.22, 0.26, 0.24, 0.28)], repeatRows=1)
+    sched_table = keep_tail(Table(sched_rows, colWidths=[CONTENT_WIDTH * w for w in (0.22, 0.26, 0.24, 0.28)], repeatRows=1))
     sched_table.setStyle(TableStyle(SECTION_TABLE_STYLE + tight + [("ALIGN", (1, 1), (3, -1), "RIGHT"), ("ALIGN", (0, 0), (0, -1), "CENTER")]))
     story.append(sched_table)
 
@@ -190,7 +191,7 @@ def _build(note, sheet, difference, pad: float) -> tuple[bytes, int]:
         chk_rows.append([p["no"], f"{p['date']:%m/%d/%Y}", p["check_number"] or "Pending", _money(p["amount"])])
     if len(chk_rows) == 1:
         chk_rows.append(["—", "—", "—", "—"])
-    chk_table = Table(chk_rows, colWidths=[CONTENT_WIDTH * w for w in (0.12, 0.25, 0.35, 0.28)], repeatRows=1)
+    chk_table = keep_tail(Table(chk_rows, colWidths=[CONTENT_WIDTH * w for w in (0.12, 0.25, 0.35, 0.28)], repeatRows=1))
     chk_table.setStyle(TableStyle(SECTION_TABLE_STYLE + tight + [("ALIGN", (3, 1), (3, -1), "RIGHT"), ("ALIGN", (0, 0), (1, -1), "CENTER")]))
     story.append(chk_table)
 

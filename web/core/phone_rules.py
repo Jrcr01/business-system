@@ -1,5 +1,5 @@
-"""What a phone or an iPad may do with each laptop page (owner, 2026-10-17; mock-up docs/mockups/ai_phone_limits.html). Everyone alike, the System
-admin too. A laptop with a narrow window is still a laptop. The phone pages (/phone/...) and approving a sign-in are not laptop pages and are not
+"""What a phone or an iPad may do with each laptop page (owner, 2026-10-17; mock-up docs/mockups/ai_phone_limits.html). Everyone alike, except the
+System admin, who has every function on a phone or an iPad as on the laptop (owner, 2026-10-18: "make available for system admin all functions"). A laptop with a narrow window is still a laptop. The phone pages (/phone/...) and approving a sign-in are not laptop pages and are not
 touched here.
 
   "laptop" -- done on the laptop only: left out of the phone's menu and Home; opened from a link, the page says so.
@@ -25,5 +25,7 @@ LAPTOP_WHY = {"settings": "People, access, switches and sign-in can change who m
               "creditors": "A supplier's name and terms feed every payable."}
 
 
-def kind(page_id: str) -> str | None:
+def kind(page_id: str, role: str | None = None) -> str | None:
+    if role == "admin":
+        return None
     return PHONE.get(page_id)

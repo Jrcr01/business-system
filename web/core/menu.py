@@ -56,7 +56,7 @@ MENU: dict[str, list] = {
     "Stock": ["stock", "stock-counts", "affiliates"],
     "Sell": ["quotations", ("Scan out", "barcode_scanner", "sales", "view=scan", "sales.use"), ("Record the day's invoices", "receipt_long", "sales", "", "sales.use"),
              ("Sales today", "today", "sales", "view=day", "sales.use"), "collect", ("Checks to deposit", "price_check", "collect", "view=checks", "collect.use"), "follow-ups", "customers", "si-booklets"],
-    "Pay suppliers": [("Invoices", "receipt_long", "order-statements", "view=invoices", "invoice.enter"), "order-statements", "calendar", "checks"],     # Payment run, Release checks and Add data removed (owner, 2026-10-09): its work is in the batch and Daily payables
+    "Pay suppliers": [("Invoices", "receipt_long", "order-statements", "view=invoices", "invoice.enter"), "order-statements", ("Parked checks", "print", "order-statements", "view=parked", "check.issue"), "calendar", "checks"],     # Payment run, Release checks and Add data removed (owner, 2026-10-09): its work is in the batch and Daily payables
     "Bank": ["bank-cash", "booklets", "expenses", "other-income"],     # the Check-date planner dropped with /more/ (owner, 2026-10-09)
     "Other payables": ["lenders", "bank-loans", "credit-cards"],
     "Records": ["reports", "income-statement"],
