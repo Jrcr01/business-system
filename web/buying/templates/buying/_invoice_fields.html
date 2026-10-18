@@ -2,7 +2,7 @@
   <div><label for="doc{{ k }}">SI no.</label><input id="doc{{ k }}" type="text" name="doc" value="{{ came_with|default:'' }}" placeholder="if there is one"></div>
   <div><label for="dr{{ k }}">DR no. <span class="hint">(SI or DR: at least one)</span></label><input id="dr{{ k }}" type="text" name="dr" placeholder="{% if k == '_m' %}blank = the DR the goods came with{% else %}if there is one{% endif %}">
     {% if k == "_m" %}<div class="hint">Left blank, the delivery receipt recorded when the goods were received is used.</div>{% endif %}</div>
-  <div><label for="inv_date{{ k }}">Document date</label><input id="inv_date{{ k }}" type="date" name="inv_date" value="{{ today|date:'Y-m-d' }}">
+  <div><label for="inv_date{{ k }}">Date received</label><input id="inv_date{{ k }}" type="date" name="inv_date" value="{{ today|date:'Y-m-d' }}">
     <div class="hint">The date on the SI or DR. The due date is worked out from it and the supplier's terms.</div></div>
   <div><label for="override{{ k }}">Total on the document, if it differs</label><input id="override{{ k }}" type="text" inputmode="decimal" name="override" placeholder="as ticked">
     <div class="hint">Only when its total is not quantity × price (freight, rounding).</div></div>

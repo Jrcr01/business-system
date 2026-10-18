@@ -337,7 +337,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
 
     _add_section(story, "Invoices", styles)
     wrap_style = ParagraphStyle("CheckNos", parent=styles["Normal"], fontSize=8.5, leading=10)      # two checks on one invoice wrap inside the column (owner, 2026-10-14: they ran off the table)
-    inv_rows = [["SI / DR no.", "Invoice Date", "Due Date", "Gross (PHP)", "Net (PHP)", "Status", "Check"]]
+    inv_rows = [["SI / DR no.", "Date Received", "Due Date", "Gross (PHP)", "Net (PHP)", "Status", "Check"]]
     for i in data["invoices"]:
         inv_rows.append([Paragraph(escape(_ref_text(i)), wrap_style), us_date(i["invoice_date"]), us_date(i["due_date"]), _money(i["gross_amount"]), _money(i["amount"]),
                          ("Covered by check" if for_supplier and str(i["display_status"]).startswith("Check issued") else i["display_status"]), Paragraph(escape(str(i.get("check_nos") or "")), wrap_style)])
