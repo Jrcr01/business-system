@@ -164,6 +164,11 @@ def checks_review(request):
                                  (f"{', '.join(ticked)}: {note}",))
             messages.success(request, f"{done} line(s) marked reviewed." if done else "Tick the lines you looked into.")
             return redirect("/review/")
+        if what == "seen":                                         # Changed today: the owner looked at a correction (2026-10-19)
+            from engines.entry_changes import mark_seen
+            ok, msg = mark_seen(int(p.get("change_id") or 0))
+            (messages.success if ok else messages.error)(request, msg)
+            return redirect("/review/?tab=changes" + (f"&d={p.get('d')}" if p.get("d") else ""))
         if what in ("fine", "again") and may_health:
             (dh.mark_fine(ticked, note) if what == "fine" else dh.show_again(ticked))
             messages.success(request, f"{len(ticked)} finding(s) " + ("marked fine." if what == "fine" else "shown again."))
@@ -188,7 +193,19 @@ def checks_review(request):
     health = dh.findings(include_fine=request.GET.get("fine") == "1") if may_health else []
     dups = scan_possible_duplicates(include_dismissed=request.GET.get("all") == "1") if may_health else None
     dup_rows = [] if dups is None or dups.empty else dups.astype(object).where(dups.notna(), None).to_dict("records")
+    from engines.entry_changes import changes, unseen_count
+    from engines.clock import manila_today
+    from datetime import date as _date, timedelta as _td
+    try:
+        cday = _date.fromisoformat(request.GET.get("d", ""))
+    except ValueError:
+        cday = manila_today()
+    day_changes = changes(cday)
+    for c in day_changes:
+        c["who"] = names.get(str(c.get("by") or "").lower(), c.get("by") or "")
+        c["url"] = f"/sales/{c['ref_id']}/" if c["ref_type"] == "sales" else (f"/purchase-orders/{c['ref_id']}/" if c["ref_type"] == "purchase_orders" else "")
     return render(request, "masters/checks_review.html", {
+        "changes": day_changes, "cday": cday, "cprev": cday - _td(days=1), "cnext": cday + _td(days=1) if cday < manila_today() else None, "n_unseen": unseen_count(),
         "page_id": "review", "tab": tab, "flags": flags, "health": health, "dups": dup_rows, "may_health": may_health,
         "n_flags": len(flags), "n_health": len([h for h in health if not h["fine"]]), "n_dups": len([d for d in dup_rows if not d.get("dismissed")]),
         "show_fine": request.GET.get("fine") == "1", "show_all": request.GET.get("all") == "1"})

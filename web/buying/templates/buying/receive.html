@@ -61,6 +61,16 @@
 
 {% if coming %}
 <div class="grp">Goods still to come</div>
+{% if redo %}<div class="warnbox"><b>Correcting {{ redo.doc|default:"a delivery" }}.</b> It was: {{ redo.text }}. The figures are filled in below: change what was wrong, then Record what arrived.</div>
+{{ redo|json_script:"redo_data" }}
+<script>document.addEventListener("DOMContentLoaded", function () {
+  var r = JSON.parse(document.getElementById("redo_data").textContent), f = document.getElementById("form_r"); if (!f) return;
+  Object.keys(r.lines).forEach(function (id) { var q = f.querySelector('[name="qty_' + id + '"]'), p = f.querySelector('[name="price_' + id + '"]');
+    if (q) q.value = r.lines[id].qty; if (p) p.value = r.lines[id].price.toFixed(2); });
+  var set = function (n, v) { var el = f.querySelector('[name="' + n + '"]'); if (el && v) el.value = v; };
+  set("doc", r.si); set("dr", r.dr); set("inv_date", r.date);
+  f.dispatchEvent(new Event("input", {bubbles: true}));
+});</script>{% endif %}
 <form method="post" id="form_r">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="po" value="{{ pre }}"><input type="hidden" name="action" value="arrive">
   <div class="scroll-x"><table class="list">
     <tr><th>Arrived</th><th>PO</th><th>Item</th><th>Unit</th><th>Still to come</th><th>Qty arrived</th>{% if revenue_on %}<th title="The tire's DOT week and year, e.g. 2425 = week 24 of 2025. Leave empty when unknown.">DOT</th>{% endif %}<th>Estimated price</th><th>Actual price</th></tr>

@@ -378,6 +378,32 @@ def _clean_services(services: list[dict]) -> tuple[list[dict] | None, str]:
     return out, ""
 
 
+def _write_body(conn, sale_id: int, n: int, day, clean: list[dict], svc: list[dict], pays: list[dict], no_stock_out: bool) -> tuple[float, list[str]]:
+    """The sale's lines, its stock out and its payments (a new sale, or an edited one). Returns (cost total, below-cost notes)."""
+    from engines.stock_ledger import stock_out
+    cost_total, below = 0.0, []
+    for ln in clean:
+        if ln.get("est_cost") is not None:                    # no cost yet: the one worked back from the profit typed, until a delivery gives the real one
+            conn.execute("UPDATE items SET avg_cost = ? WHERE id = ? AND COALESCE(avg_cost, 0) = 0 AND COALESCE(next_cost, 0) = 0", (ln["est_cost"], ln["item_id"]))
+            ln["cost"] = ln["est_cost"]
+            from engines.review_flags import flag
+            flag(conn, "COST_FROM_MARGIN", "items", int(ln["item_id"]), f"{ln['name']}: cost ₱{ln['est_cost']:,.2f} worked back from the profit typed on {si_text(n)}. "
+                                                                      "Replaced by the real cost when a delivery is recorded.")
+        cost = ln["cost"] if no_stock_out else stock_out(conn, ln["item_id"], ln["qty"], "sales", sale_id, day, note=f"sold on {si_text(n)}")
+        cost_total += ln["qty"] * cost
+        conn.execute("INSERT INTO sale_lines (sale_id, item_id, description, qty, unit_price, amount, unit_cost) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                     (sale_id, ln["item_id"], ln["name"], ln["qty"], ln["price"], round(ln["qty"] * ln["price"], 2), cost))
+        if ln["price"] < cost - EPS and not no_stock_out:
+            below.append(f"{ln['name']} sold at ₱{ln['price']:,.2f}, cost ₱{cost:,.2f} (₱{(cost - ln['price']) * ln['qty']:,.2f} below)")
+    for s in svc:
+        conn.execute("INSERT INTO sale_lines (sale_id, item_id, description, qty, unit_price, amount, unit_cost) VALUES (?, NULL, ?, 1, ?, ?, 0)",
+                     (sale_id, s["description"], s["amount"], s["amount"]))
+    for p in pays:
+        conn.execute("INSERT INTO sale_payments (sale_id, method, amount, bank, check_no, check_date, reference) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                     (sale_id, p["method"], p["amount"], p["bank"], p["check_no"], str(p["check_date"]) if p["check_date"] else None, p["reference"]))
+    return cost_total, below
+
+
 def save_sale(si_no, sale_date, customer_id: int | None, customer_name: str, lines: list[dict], services: list[dict], payments: list[dict],
               below_cost_reason: str = "", no_stock_out: bool = False) -> tuple[bool, str, int | None]:
     """The counter sale. lines: [{'item_id', 'qty', 'price'}]; services: [{'description', 'amount'}] (sold, never stocked); payments: [{'method',
@@ -414,26 +440,7 @@ def save_sale(si_no, sale_date, customer_id: int | None, customer_name: str, lin
             """INSERT INTO sales (si_no, sale_date, customer_id, customer_name, status, total, typed_late, below_cost_reason, no_stock_out, created_by)
                VALUES (?, ?, ?, ?, 'SAVED', ?, ?, ?, ?, acting_user()) RETURNING sale_id""",
             (n, str(day), customer_id, _text(customer_name) or None, total, 1 if day < manila_today() else 0, _text(below_cost_reason) or None, 1 if no_stock_out else 0)).fetchone()[0]
-        cost_total, below = 0.0, []
-        for ln in clean:
-            if ln.get("est_cost") is not None:                    # no cost yet: the one worked back from the profit typed, until a delivery gives the real one
-                conn.execute("UPDATE items SET avg_cost = ? WHERE id = ? AND COALESCE(avg_cost, 0) = 0 AND COALESCE(next_cost, 0) = 0", (ln["est_cost"], ln["item_id"]))
-                ln["cost"] = ln["est_cost"]
-                from engines.review_flags import flag
-                flag(conn, "COST_FROM_MARGIN", "items", int(ln["item_id"]), f"{ln['name']}: cost ₱{ln['est_cost']:,.2f} worked back from the profit typed on {si_text(n)}. "
-                                                                          "Replaced by the real cost when a delivery is recorded.")
-            cost = ln["cost"] if no_stock_out else stock_out(conn, ln["item_id"], ln["qty"], "sales", sale_id, day, note=f"sold on {si_text(n)}")
-            cost_total += ln["qty"] * cost
-            conn.execute("INSERT INTO sale_lines (sale_id, item_id, description, qty, unit_price, amount, unit_cost) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                         (sale_id, ln["item_id"], ln["name"], ln["qty"], ln["price"], round(ln["qty"] * ln["price"], 2), cost))
-            if ln["price"] < cost - EPS and not no_stock_out:
-                below.append(f"{ln['name']} sold at ₱{ln['price']:,.2f}, cost ₱{cost:,.2f} (₱{(cost - ln['price']) * ln['qty']:,.2f} below)")
-        for s in svc:
-            conn.execute("INSERT INTO sale_lines (sale_id, item_id, description, qty, unit_price, amount, unit_cost) VALUES (?, NULL, ?, 1, ?, ?, 0)",
-                         (sale_id, s["description"], s["amount"], s["amount"]))
-        for p in pays:
-            conn.execute("INSERT INTO sale_payments (sale_id, method, amount, bank, check_no, check_date, reference) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                         (sale_id, p["method"], p["amount"], p["bank"], p["check_no"], str(p["check_date"]) if p["check_date"] else None, p["reference"]))
+        cost_total, below = _write_body(conn, sale_id, n, day, clean, svc, pays, no_stock_out)
         conn.execute("UPDATE sales SET cost_total = ? WHERE sale_id = ?", (round(cost_total, 2), sale_id))
         from engines.settings_registry import sales_scan_on
         if clean and not no_stock_out and sales_scan_on():
@@ -581,6 +588,88 @@ def void_sale(sale_id: int, reason: str) -> tuple[bool, str]:
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'SALE_VOIDED', 'sales', ?, ?)", (int(sale_id), note))
         flag(conn, "SALE_VOIDED", "sales", int(sale_id), note)
     return True, f"{si_text(head[1])} is voided" + (f": {', '.join(said)} back in stock." if said else ".")
+
+
+def _sale_text(conn, sale_id: int) -> str:
+    """A saved sale in plain words, for the before / after of an edit."""
+    h = conn.execute("SELECT si_no, sale_date, COALESCE(NULLIF(customer_name, ''), (SELECT customer_name FROM customers c WHERE c.customer_id = s.customer_id), 'Walk-in'), total "
+                     "FROM sales s WHERE sale_id = ?", (sale_id,)).fetchone()
+    lines = conn.execute("SELECT description, qty, unit_price FROM sale_lines WHERE sale_id = ? ORDER BY line_id", (sale_id,)).fetchall()
+    pays = conn.execute("SELECT method, amount FROM sale_payments WHERE sale_id = ? ORDER BY payment_id", (sale_id,)).fetchall()
+    return (f"{si_text(h[0])} · {str(h[1])[:10]} · {h[2]} · " + "; ".join(f"{float(q):g} x {d} @ {float(u):,.2f}" for d, q, u in lines)
+            + f" · total {float(h[3]):,.2f} · " + ", ".join(f"{m.lower()} {float(a):,.2f}" for m, a in pays))
+
+
+def edit_sale(sale_id: int, si_no, sale_date, customer_id: int | None, customer_name: str, lines: list[dict], services: list[dict], payments: list[dict],
+              why: str = "", below_cost_reason: str = "") -> tuple[bool, str]:
+    try:
+        return _edit_sale(sale_id, si_no, sale_date, customer_id, customer_name, lines, services, payments, why, below_cost_reason)
+    except _NoChange:
+        return False, "Nothing was changed."
+
+
+def _edit_sale(sale_id: int, si_no, sale_date, customer_id: int | None, customer_name: str, lines: list[dict], services: list[dict], payments: list[dict],
+              why: str = "", below_cost_reason: str = "") -> tuple[bool, str]:
+    """A saved sale corrected in place (owner, 2026-10-19: "make all things for now editable since my brother is adapting the system"): its stock goes
+    back and out again as typed, its lines and payments are replaced, and the before / after is kept for the owner's Changed today list. Refused once
+    an item came back or a payment was collected on it (then: void, or a return)."""
+    allowed, whyno = require_permission("sales.use")
+    if not allowed:
+        return False, whyno
+    day = _as_date(sale_date)
+    if day is None:
+        return False, "Pick the date of the sale."
+    if day > manila_today():
+        return False, "The sale's date cannot be after today."
+    from engines.entry_changes import log
+    with write_tx() as conn:
+        head = conn.execute("SELECT status, si_no, no_stock_out FROM sales WHERE sale_id = ?", (int(sale_id),)).fetchone()
+        if not head or head[0] != "SAVED":
+            return False, "Only a saved invoice can be edited."
+        if conn.execute("SELECT 1 FROM sale_returns WHERE sale_id = ? LIMIT 1", (int(sale_id),)).fetchone():
+            return False, "An item already came back on this invoice: void it and type it again, or record another return."
+        if conn.execute("SELECT 1 FROM collection_lines WHERE sale_id = ? LIMIT 1", (int(sale_id),)).fetchone():
+            return False, "A payment was already collected on this invoice: void it and type it again instead."
+        n, problem = _check_si(conn, si_no, int(sale_id))
+        if n is None:
+            return False, problem
+        if customer_id is not None and not conn.execute("SELECT 1 FROM customers WHERE customer_id = ? AND is_active = 1", (int(customer_id),)).fetchone():
+            return False, "Customer not found."
+        clean, problem = _clean_lines(conn, lines, True)
+        if clean is None:
+            return False, problem
+        svc, problem = _clean_services(services)
+        if svc is None:
+            return False, problem
+        if not clean and not svc:
+            return False, "Keep at least one item or service. To drop the whole invoice, void it."
+        total = round(sum(round(ln["qty"] * ln["price"], 2) for ln in clean) + sum(x["amount"] for x in svc), 2)
+        pays, problem = _clean_payments(payments, total, customer_id is not None)
+        if pays is None:
+            return False, problem
+        before = _sale_text(conn, int(sale_id))
+        no_stock_out = bool(head[2])
+        if not no_stock_out:
+            _put_back(conn, int(sale_id), f"{si_text(head[1])} edited")
+        conn.execute("DELETE FROM sale_lines WHERE sale_id = ?", (int(sale_id),))
+        conn.execute("DELETE FROM sale_payments WHERE sale_id = ?", (int(sale_id),))
+        conn.execute("""UPDATE sales SET si_no = ?, sale_date = ?, customer_id = ?, customer_name = ?, total = ?, typed_late = ?, below_cost_reason = COALESCE(?, below_cost_reason)
+                        WHERE sale_id = ?""", (n, str(day), customer_id, _text(customer_name) or None, total, 1 if day < manila_today() else 0, _text(below_cost_reason) or None, int(sale_id)))
+        cost_total, below = _write_body(conn, int(sale_id), n, day, clean, svc, pays, no_stock_out)
+        conn.execute("UPDATE sales SET cost_total = ? WHERE sale_id = ?", (round(cost_total, 2), int(sale_id)))
+        after = _sale_text(conn, int(sale_id))
+        if after == before:
+            raise _NoChange()
+        log(conn, "SALE_EDITED", "sales", int(sale_id), si_text(n), before, after, why)
+        conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'SALE_EDITED', 'sales', ?, ?)",
+                     (int(sale_id), f"was: {before} | now: {after}" + (f" | why: {_text(why)}" if _text(why) else "")))
+        if n != head[1]:
+            _flag_numbers(conn, n)
+    return True, f"{si_text(n)} corrected: ₱{total:,.2f}." + (f" {len(below)} line(s) below cost: noted for review." if below else "")
+
+
+class _NoChange(Exception):
+    pass
 
 
 def return_item(sale_id: int, line_id: int, qty, reason: str) -> tuple[bool, str]:

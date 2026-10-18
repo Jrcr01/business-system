@@ -132,6 +132,24 @@ def _po_or_404(po_id: int) -> dict:
     return po
 
 
+def _delivery_snapshot(receipt_id: int) -> dict | None:
+    """A delivery's figures before it is undone to be corrected: its lines by order line, its document and date, and the same in words."""
+    from engines.common import get_conn
+    with get_conn() as conn:
+        r = conn.execute("""SELECT r.received_date, r.supplier_invoice_no, i.doc_ref, i.dr_no, i.invoice_date FROM po_receipts r LEFT JOIN invoices i ON i.invoice_id = r.invoice_id
+                            WHERE r.receipt_id = ?""", (receipt_id,)).fetchone()
+        if not r:
+            return None
+        lines = conn.execute("""SELECT x.line_id, x.qty, x.unit_price, l.item_name FROM po_receipt_lines x JOIN purchase_order_lines l ON l.line_id = x.line_id
+                                WHERE x.receipt_id = ? ORDER BY x.receipt_line_id""", (receipt_id,)).fetchall()
+    doc = r[2] or r[1] or ""
+    si = "" if str(doc).upper().startswith("DR ") else doc
+    dr = r[3] or (str(doc)[3:] if str(doc).upper().startswith("DR ") else "")
+    day = str(r[4] or r[0] or "")[:10]
+    text = f"{doc or 'no document'} · {day} · " + "; ".join(f"{float(q):g} x {n} @ {float(p):,.2f}" for _, q, p, n in lines)
+    return {"doc": doc, "si": si, "dr": dr, "date": day, "lines": {str(a): {"qty": float(b), "price": float(c)} for a, b, c, _ in lines}, "text": text}
+
+
 @page_needed("purchase-orders")
 def order(request, po_id: int):
     from engines.permissions import hide_check_details
@@ -150,6 +168,20 @@ def order(request, po_id: int):
         elif what == "undo_delivery":                            # a delivery recorded wrongly: back to "still to come" (owner, 2026-10-11)
             from engines.po_rules import undo_receipt
             ok, msg = undo_receipt(int(request.POST.get("receipt_id") or 0), request.POST.get("reason", ""))
+        elif what == "edit_delivery":                            # owner, 2026-10-19: correct a delivery = undo it, then record it again, filled in
+            redo = _delivery_snapshot(int(request.POST.get("receipt_id") or 0))
+            why = " ".join(request.POST.get("why", "").split())
+            from engines.po_rules import undo_receipt
+            ok, msg = undo_receipt(int(request.POST.get("receipt_id") or 0), "to correct it" + (f": {why}" if why else ""))
+            if ok and redo:
+                from engines.common import write_tx
+                from engines.entry_changes import log
+                with write_tx() as conn:
+                    log(conn, "DELIVERY_EDITED", "purchase_orders", po_id, f"{redo['doc'] or 'delivery'} ({h['po_no']})", redo["text"],
+                        "undone to be recorded again (see the delivery recorded next)", why)
+                request.session["redo_delivery"] = {**redo, "po_id": po_id}
+                _say(request, True, f"{redo['doc'] or 'The delivery'} is undone. Correct what was wrong below and record it again.")
+                return redirect(f"/purchase-orders/receive/?s={h['creditor_id']}&po={po_id}")
         elif what == "add_si":                                   # the SI came later for goods that came on a DR: the same payable
             from engines.po_rules import add_si_to_receipt
             ok, msg = add_si_to_receipt(int(request.POST.get("receipt_id") or 0), request.POST.get("si", ""))
@@ -711,14 +743,19 @@ def receive(request):
         pending = [r for r in pending if r["po_id"] == int(pre)]
     else:
         pre = ""
+    redo = request.session.get("redo_delivery") if request.method == "GET" else None
+    if redo and str(redo.get("po_id")) != str(pre):
+        redo = None
+    elif redo:
+        request.session.pop("redo_delivery", None)
     for ln in coming:
-        ln["checked"] = bool(pre)
+        ln["checked"] = bool(pre) and (not redo or str(ln["line_id"]) in redo["lines"])
     for ln in waiting:
         ln["checked"] = bool(pre)
     return render(request, "buying/receive.html", {"page_id": "purchase-orders", **_head(request), "suppliers": suppliers, "cid": cid, "coming": coming, "waiting": waiting,
                                                    "pending": pending, "may_goods": may_goods, "may_inv": may_inv, "today": manila_today(),
                                                    "may_batch": _can(request, "invoice.enter"), "batches": _batches(cid) if _can(request, "invoice.enter") else [],
-                                                   "orders": orders_, "pre": pre, "pre_batch": pre_batch, "came_with": "", "ask": ask, "many": many_drs()})
+                                                   "orders": orders_, "pre": pre, "pre_batch": pre_batch, "came_with": "", "ask": ask, "many": many_drs(), "redo": redo})
 
 
 @page_needed("purchase-orders")

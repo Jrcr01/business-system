@@ -169,9 +169,48 @@ def sale(request, sale_id: int):
         return redirect(f"/sales/{sale_id}/")
     nxt = sr.next_si_no()
     offered = str(s.get("si_hint") or "") or (f"{nxt:06d}" if nxt else "")      # the number typed at the scan comes first (owner, 2026-10-11)
-    return render(request, "selling/sale_page.html", {"page_id": "sales", "s": s, "pays": _pay_ctx(), "methods": list(sr.METHODS.items()), "today": manila_today(),
+    from engines.entry_changes import changes
+    return render(request, "selling/sale_page.html", {"page_id": "sales", "s": s, "changes": changes(ref_type="sales", ref_id=sale_id),
+                                                      "may_edit": s["status"] == "SAVED" and not s["returns"], "pays": _pay_ctx(), "methods": list(sr.METHODS.items()), "today": manila_today(),
                                                       "si_no": offered, "services": [{"k": k, "description": "", "amount": ""} for k in range(4)],
                                                       "items": [ln for ln in s["lines"] if not ln["service"]]})
+
+
+@page_needed("sales")
+def sale_edit(request, sale_id: int):
+    """A saved sale corrected in place (owner, 2026-10-19: "make all things for now editable since my brother is adapting the system"): the same form,
+    filled in; the before / after goes to the owner's Changed today list (engines/entry_changes.py)."""
+    from engines import sales_rules as sr
+    s = sr.get_sale(sale_id)
+    if not s or s["status"] != "SAVED":
+        _say(request, False, "Only a saved invoice can be edited.")
+        return redirect(f"/sales/{sale_id}/")
+    if request.method == "POST":
+        p = request.POST
+        cust_id, name = _customer(p)
+        ok, msg = sr.edit_sale(sale_id, p.get("si_no"), p.get("sale_date"), cust_id, name, _lines(p), _services(p), _payments(p), p.get("why", ""), p.get("below_reason", ""))
+        _say(request, ok, msg)
+        if ok:
+            return redirect(f"/sales/{sale_id}/")
+        start = json.dumps([{"id": int(ln["item_id"]), "qty": float(ln["qty"] or 0), "price": ln["price"]} for ln in _lines(p) if str(ln["item_id"]).isdigit()])
+        return render(request, "selling/sale.html", {**_sale_ctx(request, p, start), "editing": s})
+    items = [ln for ln in s["lines"] if not ln["service"]]
+    svcs = [ln for ln in s["lines"] if ln["service"]][:4]
+    p = {"si_no": f"{int(s['si_no']):06d}" if s["si_no"] else "", "sale_date": str(s["sale_date"])[:10], "customer": "" if s["customer"] == "Walk-in" else s["customer"],
+         "below_reason": s.get("below_cost_reason") or ""}
+    for k, ln in enumerate(svcs):
+        p[f"svc_desc_{k}"], p[f"svc_amt_{k}"] = ln["description"], f"{ln['unit_price']:.2f}"
+    for k, pay in enumerate(s["payments"][:PAY_ROWS]):
+        p.update({f"pay_method_{k}": pay["method"], f"pay_amount_{k}": f"{pay['amount']:.2f}", f"pay_bank_{k}": pay["bank"], f"pay_no_{k}": pay["check_no"],
+                  f"pay_date_{k}": str(pay["check_date"] or "")[:10], f"pay_ref_{k}": pay["reference"]})
+    start = json.dumps([{"id": int(ln["item_id"]), "qty": ln["qty"], "price": f"{ln['unit_price']:.2f}"} for ln in items])
+    return render(request, "selling/sale.html", {**_sale_ctx(request, _Form(p), start), "editing": s})
+
+
+class _Form(dict):
+    """A saved sale's figures, read by the form helpers the way they read a posted form."""
+    def get(self, key, default=None):
+        return super().get(key, default if default is not None else "")
 
 
 @page_needed("customers")

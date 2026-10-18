@@ -11,6 +11,11 @@
   {% if s.returned %}<div><span>Returned</span><b class="neg">−₱{{ s.returned|floatformat:2|intcomma }}</b></div><div><span>Net</span><b>₱{{ s.net|floatformat:2|intcomma }}</b></div>{% endif %}
   {% if s.status == "SAVED" %}<div><span>Profit</span><b class="{% if s.profit < 0 %}neg{% else %}pos{% endif %}">₱{{ s.profit|floatformat:2|intcomma }}</b></div>{% endif %}
   <div><span>Typed by</span><b>{{ s.created_by }}</b></div></div>
+{% if may_edit %}<div class="actions" style="margin:8px 0"><a class="btn" href="/sales/{{ s.sale_id }}/edit/"><span class="ms">edit</span>Edit this sale</a></div>{% endif %}
+{% if changes %}<h3>Changes to this sale</h3>
+<div class="scroll-x"><table class="list"><tr><th>When</th><th>Who</th><th>Before</th><th>After</th></tr>
+  {% for c in changes %}<tr><td>{{ c.at|dmy }}</td><td>{{ c.by }}</td><td class="hint">{{ c.before }}</td><td>{{ c.after }}{% if c.why %}<div class="hint">Why: {{ c.why }}</div>{% endif %}</td></tr>{% endfor %}
+</table></div>{% endif %}
 
 {% if s.status == "RELEASED" %}
 <p class="note">These goods left before their invoice. They are already out of stock. Write the invoice from the booklet, then type its number, the prices and how it was paid.</p>

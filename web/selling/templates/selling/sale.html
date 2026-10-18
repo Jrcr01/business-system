@@ -1,18 +1,20 @@
 {% extends "core/base.html" %}
 {% block title %}Type an invoice{% endblock %}
 {% block content %}
-<h2><span class="ms" style="font-size:28px">receipt_long</span> Record the sales</h2>
-<div class="actions" style="margin-bottom:10px">
+{% if editing %}<h2><span class="ms" style="font-size:28px">edit</span> Editing {{ editing.ref }}</h2>
+<p class="note"><a href="/sales/{{ editing.sale_id }}/">← Back to {{ editing.ref }}</a> · Correct what was typed wrong and save. The stock and the payment follow the change; the old figures are kept.</p>
+{% else %}<h2><span class="ms" style="font-size:28px">receipt_long</span> Record the sales</h2>{% endif %}
+<div class="actions" style="margin-bottom:10px"{% if editing %} hidden{% endif %}>
   {% if open_releases %}<a class="btn small ghost" href="/sales/"><span class="ms">receipt_long</span>The day's slips ({{ open_releases }})</a>{% endif %}
   {% if scan_on %}<a class="btn small ghost" href="/sales/?view=scan"><span class="ms">barcode_scanner</span>Scan out</a>{% endif %}
   <a class="btn small ghost" href="/sales/?view=day"><span class="ms">today</span>Sales today</a>
 </div>
-<p class="note">Type each invoice from the booklet, one after another{% if not scan_on %} — after closing, or in an idle moment{% endif %}; saving one offers the next number.
+<p class="note"{% if editing %} hidden{% endif %}>Type each invoice from the booklet, one after another{% if not scan_on %} — after closing, or in an idle moment{% endif %}; saving one offers the next number.
   {% if scan_on %}Goods scanned out during the day are invoiced from <a href="/sales/">their slips</a> instead, so the stock is not taken twice; an
   invoice typed here without a slip is noted on the Review list.{% endif %}</p>
-{% if no_booklet %}<div class="warnbox"><b>No invoice booklet is in use.</b> The number offered is the last one typed plus one: change it if the paper says otherwise. <a href="/si-booklets/">Register the booklet</a> later and these sales fall into its sequence.
+{% if no_booklet and not editing %}<div class="warnbox"><b>No invoice booklet is in use.</b> The number offered is the last one typed plus one: change it if the paper says otherwise. <a href="/si-booklets/">Register the booklet</a> later and these sales fall into its sequence.
   You can still type a number.</div>{% endif %}
-{% if skipped %}<div class="warnbox"><b>{{ skipped|length }} number{{ skipped|length|pluralize }} skipped:</b> {% for n in skipped %}{{ n|stringformat:"06d" }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+{% if skipped and not editing %}<div class="warnbox"><b>{{ skipped|length }} number{{ skipped|length|pluralize }} skipped:</b> {% for n in skipped %}{{ n|stringformat:"06d" }}{% if not forloop.last %}, {% endif %}{% endfor %}.
   The first one is offered below. If a leaf was spoiled, <a href="/si-booklets/">cancel it with a reason</a>.</div>{% endif %}
 <form method="post" id="sale_form">{% csrf_token %}{% if qt %}<input type="hidden" name="qt" value="{{ qt.id }}"><p class="note">From quotation <a href="/quotations/{{ qt.id }}/">{{ qt.no }}</a> for {{ qt.customer }}: saving this invoice marks it sold.</p>{% endif %}
   <div class="formgrid">
@@ -35,8 +37,11 @@
   {% include "selling/_pay_rows.html" %}
   {% if sale_scan_on %}<label for="note">For a release only: a note (optional)</label><input id="note" type="text" name="note" style="width:100%;max-width:520px" placeholder="e.g. to be installed first">{% endif %}
   <div class="actions">
-    <button class="btn" type="submit" name="action" value="save"><span class="ms">save</span>Save the sale</button>
-    {% if sale_scan_on %}<button class="btn ghost" type="submit" name="action" value="release" formnovalidate onclick="return confirm('Release these goods now and write the invoice later today?');"><span class="ms">local_shipping</span>Release now, invoice later</button>{% endif %}{# owner, 2026-10-19: entries after the fact, not on the spot #}
+    {% if editing %}<div style="flex-basis:100%"><label for="why">Why (optional)</label><input id="why" type="text" name="why" style="width:100%;max-width:520px" placeholder="e.g. typed wrong price"></div>
+    <button class="btn" type="submit" name="action" value="save"><span class="ms">save</span>Save the change</button>
+    <a class="btn ghost" href="/sales/{{ editing.sale_id }}/">Cancel</a>
+    {% else %}<button class="btn" type="submit" name="action" value="save"><span class="ms">save</span>Save the sale</button>{% endif %}
+    {% if sale_scan_on and not editing %}<button class="btn ghost" type="submit" name="action" value="release" formnovalidate onclick="return confirm('Release these goods now and write the invoice later today?');"><span class="ms">local_shipping</span>Release now, invoice later</button>{% endif %}{# owner, 2026-10-19: entries after the fact, not on the spot #}
   </div>
 </form>
 <p class="hint">Saving takes the stock out the same minute and records how it was paid. Nothing is refused for being below cost, above stock or on charge: it is saved and noted for review.
@@ -56,6 +61,8 @@
     e.detail.lines.forEach(function (l) {
       var price = num(l.price);
       if (l.price !== "" && price < l.it.cost) { isBelow = true; notes.push(l.it.name + ": below cost by ₱" + peso((l.it.cost - price) * l.qty) + "."); }
+      if (l.price !== "" && l.it.cost > 0 && price > l.it.cost * 2.5) notes.push(l.it.name + ": ₱" + peso(price) + " is far above its cost (₱" + peso(l.it.cost) + "). Check the price.");
+      if (l.qty > 20) notes.push(l.it.name + ": qty " + l.qty + " looks high for one sale. Check the quantity.");   /* owner, 2026-10-19: controls for error */
       if (l.qty > l.it.on_hand && !{{ stock_uncounted|yesno:"true,false" }}) notes.push(l.it.name + ": the system shows " + l.it.on_hand + " on hand; stock will read " + (l.it.on_hand - l.qty) + " until it is counted or received.");
     });
     list.innerHTML = ""; notes.forEach(function (t) { var d = document.createElement("div"); d.textContent = "· " + t; list.appendChild(d); });
@@ -65,4 +72,11 @@
   total();
 })();
 </script>
-{% endblock %}
+{% if not editing %}<script>(function () {                                      /* owner, 2026-10-19: a number far from the last one is noted, never refused */
+  var el = document.getElementById("si_no"); if (!el) return;
+  var base = parseInt(el.defaultValue, 10), note = document.createElement("div"); note.className = "hint"; note.style.color = "var(--fg-b26a00)";
+  el.parentNode.appendChild(note);
+  function check() { var n = parseInt(el.value, 10); note.textContent = base && n && Math.abs(n - base) > 20 ? "This number is far from the next one (" + el.defaultValue + "). Check the booklet." : ""; }
+  el.addEventListener("input", check);
+})();</script>
+{% endif %}{% endblock %}

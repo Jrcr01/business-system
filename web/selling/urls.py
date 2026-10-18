@@ -15,6 +15,7 @@ urlpatterns = [
     path("affiliates/<int:customer_id>/", sales.affiliate, name="affiliate"),
     path("sales/", sales.sales, name="sales"),
     path("sales/<int:sale_id>/", sales.sale, name="sale"),
+    path("sales/<int:sale_id>/edit/", sales.sale_edit, name="sale_edit"),
     path("customers/", sales.customers, name="customers"),
     path("customers/<int:customer_id>/", quotes.customer_page, name="customer_page"),
     path("quotations/", quotes.quotations, name="quotations"),

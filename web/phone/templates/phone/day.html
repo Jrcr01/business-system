@@ -3,8 +3,7 @@
 <div class="ph-row" style="justify-content:space-between"><a class="btn small ghost" href="/phone/day/?d={{ prev|date:'Y-m-d' }}"><span class="ms">chevron_left</span>{{ prev|date:"m/d" }}</a>
   <b>{{ d|date:"l m/d/Y" }}</b>{% if nxt %}<a class="btn small ghost" href="/phone/day/?d={{ nxt|date:'Y-m-d' }}">{{ nxt|date:"m/d" }}<span class="ms">chevron_right</span></a>{% else %}<span></span>{% endif %}</div>
 {% for s in sales %}<div class="ph-card"><div class="kv"><span><b><a href="/sales/{{ s.sale_id }}/" style="color:inherit;text-decoration:none">SI {{ s.ref }}</a></b>{% if s.customer %} · {{ s.customer }}{% endif %}</span><b>{{ s.amount|floatformat:2|intcomma }}</b></div>
-  <span class="hint">{{ s.items|join:", " }} · profit <span class="{% if s.profit < 0 %}neg{% else %}pos{% endif %}">{{ s.profit|floatformat:2|intcomma }}</span></span>
-  <div style="margin-top:4px"><button class="btn small ghost" type="button" data-share-title="Your purchase" data-share-text="Slick's Tire Supply · SI {{ s.ref }}{% if s.customer %} · {{ s.customer }}{% endif %} · ₱{{ s.amount|floatformat:2|intcomma }} · {{ s.items|join:', ' }}. Thank you!"><span class="ms">share</span>Share with the customer</button></div></div>
+  <span class="hint">{{ s.items|join:", " }} · profit <span class="{% if s.profit < 0 %}neg{% else %}pos{% endif %}">{{ s.profit|floatformat:2|intcomma }}</span></span></div>
 {% empty %}<p class="note">No invoice recorded for this day yet.</p>{% endfor %}
 {% for r in slips %}<div class="ph-card" style="border-color:var(--bd-f1d38a)"><div class="kv"><span><b>{{ r.release_no }}</b> <span class="pill warn">no invoice yet</span></span><span></span></div>
   <span class="hint">{{ r.items }}{% if r.customer != "Walk-in" %} · {{ r.customer }}{% endif %} · <a href="/phone/sale/?slip={{ r.sale_id }}">record it</a></span></div>{% endfor %}

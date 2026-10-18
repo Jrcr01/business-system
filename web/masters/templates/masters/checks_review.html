@@ -5,11 +5,22 @@
 <p class="note">What the system flagged for a person to look at, the data checks, and entries that look made twice. Nothing here blocks the work: look, then tick it.</p>
 <nav class="tabs">
   <a href="?tab=review"{% if tab == "review" %} class="on"{% endif %}>Review list ({{ n_flags }})</a>
+  <a href="?tab=changes"{% if tab == "changes" %} class="on"{% endif %}>Changed today{% if n_unseen %} ({{ n_unseen }} not seen){% endif %}</a>
   {% if may_health %}<a href="?tab=data"{% if tab == "data" %} class="on"{% endif %}>Data checks ({{ n_health }})</a>
   <a href="?tab=dups"{% if tab == "dups" %} class="on"{% endif %}>Possible duplicates ({{ n_dups }})</a>{% endif %}
 </nav>
 
-{% if tab == "data" and may_health %}
+{% if tab == "changes" %}
+<p class="note">Every correction to a saved sale or delivery, old and new side by side (owner, 2026-10-19: controls for error). Tick Seen once it looks right.</p>
+<div class="actions" style="align-items:center"><a class="btn small ghost" href="?tab=changes&d={{ cprev|date:'Y-m-d' }}">← {{ cprev|date:"m/d" }}</a>
+  <b>{{ cday|date:"l m/d/Y" }}</b>{% if cnext %}<a class="btn small ghost" href="?tab=changes&d={{ cnext|date:'Y-m-d' }}">{{ cnext|date:"m/d" }} →</a>{% endif %}</div>
+{% if changes %}<div class="scroll-x"><table class="list">
+  <tr><th>Time</th><th>Who</th><th>Record</th><th>Before</th><th>After</th><th></th></tr>
+  {% for c in changes %}<tr><td>{{ c.at|slice:"11:16" }}</td><td>{{ c.who }}</td><td>{% if c.url %}<a href="{{ c.url }}">{{ c.ref_text }}</a>{% else %}{{ c.ref_text }}{% endif %}</td>
+    <td class="hint">{{ c.before }}</td><td>{{ c.after }}{% if c.why %}<div class="hint">Why: {{ c.why }}</div>{% endif %}</td>
+    <td>{% if c.seen_by %}<span class="pill">Seen</span>{% else %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="seen"><input type="hidden" name="change_id" value="{{ c.id }}"><input type="hidden" name="d" value="{{ cday|date:'Y-m-d' }}"><button class="btn small ghost" type="submit">Seen</button></form>{% endif %}</td></tr>{% endfor %}
+</table></div>{% else %}<p class="hint">No corrections on this day.</p>{% endif %}
+{% elif tab == "data" and may_health %}
 <form method="post">{% csrf_token %}
 <p class="hint">{% if show_fine %}<a href="?tab=data">Hide the ones marked fine</a>{% else %}<a href="?tab=data&fine=1">Show the ones marked fine too</a>{% endif %}</p>
 <div class="scroll-x"><table class="list"><tr><th></th><th>Area</th><th>Check</th><th>Details</th><th>Pay to</th><th style="text-align:right">Amount</th></tr>
