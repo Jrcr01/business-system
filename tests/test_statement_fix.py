@@ -113,3 +113,18 @@ def test_a_statement_whose_checks_all_cleared_reads_paid_and_a_numbered_check_co
     assert bulk_summary_rows([sid])[0]["stage"] == "Paid"
     assert ">Paid</span>" in web.get("/order-statements/").content.decode()
     assert ">Paid</span>" in web.get(f"/order-statements/{sid}/").content.decode()
+
+
+def test_a_check_pays_the_invoice_of_its_own_amount_and_a_credit_fills_the_check_it_lowered():
+    """Owner, 2026-10-18, PS 0036: "why partly covered? dr 10668?" -- one check per DR, the DR 10818 check lowered by the tire credits; the last
+    invoice recorded must not take the credits' shortfall."""
+    from engines.batch_statement_service import _invoice_display_status, _spread_checks
+    inv = lambda i, doc, amt, due: {"invoice_id": i, "doc_ref": doc, "amount": amt, "due_date": due, "status": "Unpaid"}
+    chk = lambda i, no, amt, d: {"check_id": i, "check_number": no, "amount": amt, "check_date": d, "cleared": 0}
+    rows = [inv(395, "DR 71179", 60700, "2026-12-04"), inv(397, "DR 10818", 144446, "2026-12-12"), inv(405, "DR 10668", 71394, "2026-11-18")]
+    checks = [chk(1, "688", 71394, "2026-11-18"), chk(2, "693", 60700, "2026-12-04"), chk(3, "695", 124146, "2026-12-12")]
+    cover = {}
+    _spread_checks(rows, cover, checks, {}, 20300)
+    assert cover[405]["check_nos"] == "688" and cover[395]["check_nos"] == "693" and cover[397]["check_nos"] == "695"
+    assert all(abs(cover[r["invoice_id"]]["covered"] - r["amount"]) < 0.01 for r in rows)
+    assert not any("Partly" in _invoice_display_status(r, cover[r["invoice_id"]]) for r in rows)

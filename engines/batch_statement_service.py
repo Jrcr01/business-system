@@ -165,7 +165,7 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
     allocations_by_check: dict[int, list] = {}
     for r in alloc_rows:
         allocations_by_check.setdefault(r["check_id"], []).append((r["doc_ref"], r["amount"]))
-    _spread_checks(invoice_rows, cover, active_checks, allocations_by_check)
+    _spread_checks(invoice_rows, cover, active_checks, allocations_by_check, float(stmt["credit_memo_total"] or 0))
     invoices = [dict(r, display_status=_invoice_display_status(r, cover.get(r["invoice_id"])), check_nos=(cover.get(r["invoice_id"]) or {}).get("check_nos", ""))
                 for r in invoice_rows]
 
@@ -184,7 +184,7 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
     return {"statement": stmt, "invoices": invoices, "memos": memos, "checks": checks, "payment_ledger": payment_ledger}
 
 
-def _spread_checks(invoice_rows, cover: dict, active_checks, allocations_by_check: dict) -> None:
+def _spread_checks(invoice_rows, cover: dict, active_checks, allocations_by_check: dict, credit_total: float = 0) -> None:
     """A check parked against the whole statement has no per-invoice rows; for the printout it is spread over the invoices it pays, oldest first
     (owner, 2026-10-14: an issued check must not leave its invoices reading "Unpaid"). Fills `cover` for the invoices it reaches, and gives every
     covered invoice its check numbers. Only what is printed: the stored rows are untouched."""
@@ -198,23 +198,51 @@ def _spread_checks(invoice_rows, cover: dict, active_checks, allocations_by_chec
             by_doc.setdefault(doc_ref, []).append(chk["check_number"] or "Pending")
     free = [[chk, float(chk["amount"] or 0) - sum(float(a) for _, a in allocations_by_check.get(chk["check_id"], []))] for chk in active_checks]
     free = [f for f in free if f[1] > 0.005]
+    nos_by_inv = {}
+
+    def _need(inv):
+        return float(inv["amount"] or 0) - float((cover.get(inv["invoice_id"]) or {}).get("covered") or 0)
+
+    def _take(inv, chk, take):
+        c = cover.setdefault(inv["invoice_id"], {"invoice_id": inv["invoice_id"], "covered": 0.0, "cleared": 0.0, "last_check_date": None})
+        c["covered"] = float(c["covered"] or 0) + take
+        c["cleared"] = float(c["cleared"] or 0) + (take if chk["cleared"] else 0)
+        c["last_check_date"] = max(str(c["last_check_date"] or ""), str(chk["check_date"] or "")) or None
+        nos = nos_by_inv.setdefault(inv["invoice_id"], list(by_doc.get(inv["doc_ref"], [])))
+        if (chk["check_number"] or "Pending") not in nos:
+            nos.append(chk["check_number"] or "Pending")
+
+    live = [inv for inv in invoice_rows if inv["status"] != "Cancelled"]
+    # A check written for one invoice's exact amount pays that invoice (owner, 2026-10-18, PS 0036: one check per DR, so DR 10668 must not read
+    # "Partly covered" just because it was recorded last); the same due date wins a tie.
+    for f in list(free):
+        chk, left = f
+        same = [inv for inv in live if abs(_need(inv) - left) <= 0.005]
+        if same:
+            inv = min(same, key=lambda i: (str(i["due_date"] or "") != str(chk["check_date"] or ""), str(i["due_date"] or ""), i["invoice_id"]))
+            _take(inv, chk, left)
+            free.remove(f)
+    for inv in sorted(live, key=lambda i: (str(i["due_date"] or ""), i["invoice_id"])):      # the rest, oldest due first
+        need = _need(inv)
+        while need > 0.005 and free:
+            chk, left = free[0]
+            take = min(need, left)
+            _take(inv, chk, take)
+            need, free[0][1] = need - take, left - take
+            if free[0][1] <= 0.005:
+                free.pop(0)
+    # Credit memos pay what the checks leave: a check lowered by a credit is not a shortfall.
+    credits = float(credit_total or 0)
+    for inv in sorted(live, key=lambda i: (str(i["due_date"] or ""), i["invoice_id"])):
+        need = _need(inv)
+        if credits > 0.005 and need > 0.005 and inv["invoice_id"] in cover:
+            take, c = min(need, credits), cover[inv["invoice_id"]]
+            if float(c["cleared"] or 0) >= float(c["covered"] or 0) - 0.005:      # its check cleared: the credit is settled with it
+                c["cleared"] = float(c["cleared"] or 0) + take
+            c["covered"] = float(c["covered"] or 0) + take
+            credits -= take
     for inv in invoice_rows:
-        nos = list(by_doc.get(inv["doc_ref"], []))
-        if inv["status"] != "Cancelled":
-            c = cover.get(inv["invoice_id"])
-            need = float(inv["amount"] or 0) - float((c or {}).get("covered") or 0)
-            while need > 0.005 and free:
-                chk, left = free[0]
-                take = min(need, left)
-                c = cover.setdefault(inv["invoice_id"], {"invoice_id": inv["invoice_id"], "covered": 0.0, "cleared": 0.0, "last_check_date": None})
-                c["covered"] = float(c["covered"] or 0) + take
-                c["cleared"] = float(c["cleared"] or 0) + (take if chk["cleared"] else 0)
-                c["last_check_date"] = max(str(c["last_check_date"] or ""), str(chk["check_date"] or "")) or None
-                if (chk["check_number"] or "Pending") not in nos:
-                    nos.append(chk["check_number"] or "Pending")
-                need, free[0][1] = need - take, left - take
-                if free[0][1] <= 0.005:
-                    free.pop(0)
+        nos = nos_by_inv.get(inv["invoice_id"]) or list(by_doc.get(inv["doc_ref"], []))
         if nos and inv["invoice_id"] in cover:
             cover[inv["invoice_id"]]["check_nos"] = ", ".join(nos)
 
