@@ -1,0 +1,25 @@
+{# "Did you mean …?" for a customer name typed close to one on the list (owner, 2026-10-19, review item 2): a typo would quietly become a walk-in note #}
+<script>(function () {
+  var el = document.getElementById("customer"), dl = document.getElementById("cust_names"); if (!el || !dl) return;
+  var names = [].map.call(dl.options, function (o) { return o.value; });
+  var box = document.createElement("div"); box.className = "hint"; box.style.color = "var(--fg-b26a00)"; el.parentNode.appendChild(box);
+  function dist(a, b) {                                         /* letters to change, add or drop to turn a into b */
+    var m = [], i, j; for (i = 0; i <= b.length; i++) m[i] = [i];
+    for (j = 0; j <= a.length; j++) m[0][j] = j;
+    for (i = 1; i <= b.length; i++) for (j = 1; j <= a.length; j++)
+      m[i][j] = Math.min(m[i - 1][j - 1] + (b[i - 1] === a[j - 1] ? 0 : 1), m[i][j - 1] + 1, m[i - 1][j] + 1);
+    return m[b.length][a.length];
+  }
+  function check() {
+    box.textContent = "";
+    var v = el.value.trim().toLowerCase(); if (v.length < 3 || /^walk/.test(v)) return;
+    if (names.some(function (n) { return n.toLowerCase() === v; })) return;
+    var best = null, bd = 99;
+    names.forEach(function (n) { var d = dist(v, n.toLowerCase()); if (d < bd) { bd = d; best = n; } });
+    if (!best || bd > Math.max(2, Math.floor(best.length / 5))) return;
+    box.appendChild(document.createTextNode("Not on the Customers list. Did you mean "));
+    var a = document.createElement("a"); a.href = "#"; a.textContent = best; a.addEventListener("click", function (e) { e.preventDefault(); el.value = best; box.textContent = ""; });
+    box.appendChild(a); box.appendChild(document.createTextNode("? Otherwise it is saved as a walk-in name."));
+  }
+  el.addEventListener("change", check); el.addEventListener("blur", check);
+})();</script>

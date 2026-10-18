@@ -11,6 +11,7 @@
 </div>{% endif %}
 {% if notice and not page_notice %}<div class="notice"><span class="ms">campaign</span> {{ notice }}</div>{% endif %}
 {% for r in rows %}
+{% if fold and forloop.counter == 2 %}<details class="home-more"><summary class="home-sec" style="cursor:pointer">Show everything</summary>{% endif %}
 <div class="home-sec" id="g-{{ r.key }}">{{ r.title }}{% if r.hint %}<span>{{ r.hint }}</span>{% endif %}</div>
 <div class="grid">
   {% for t in r.tiles %}
@@ -22,6 +23,11 @@
   </a>
   {% endfor %}
 </div>
+{% if fold and forloop.last %}</details>{% endif %}
 {% endfor %}
 </div>
+{% if fold %}<script>(function () {                          /* a menu link to a section (/#g-sell) opens "Show everything" first */
+  function open_() { var el = location.hash && document.querySelector(location.hash); var d = el && el.closest("details.home-more"); if (d) { d.open = true; el.scrollIntoView(); } }
+  open_(); window.addEventListener("hashchange", open_);
+})();</script>{% endif %}
 {% endblock %}

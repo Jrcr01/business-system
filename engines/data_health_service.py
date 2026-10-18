@@ -168,9 +168,8 @@ def _invoices_and_batches(conn, today: date, out: list) -> None:
             _f(out, g, "Unusual year", f"odd_year|{r['invoice_id']}", f"{ref}: " + ", ".join(odd) + " — a typo in the year?", r["amount"], who, tgt)
         if (r["amount"] or 0) <= 0:
             _f(out, g, "Zero or negative invoice", f"zero_inv|{r['invoice_id']}", f"{ref} is for PHP {r['amount'] or 0:,.2f}.", r["amount"], who, tgt)
-        if not r["statement_id"] and not r["paid_via_card_id"]:
-            _f(out, g, "Invoice not in any batch", f"no_batch|{r['invoice_id']}", f"{ref} dated {inv} belongs to no batch, so it is never paid.",
-               r["amount"], who, tgt)
+        # "Invoice not in any batch" retired (owner, 2026-10-19, review item 6): since 10/13 invoices are recorded on their own and wait on Invoices
+        # until they are paid, so 130 of 150 findings on live were this -- Daily payables already shows what is due
     for b in conn.execute("""SELECT os.statement_id, os.statement_ref, os.creditor_id, cr.creditor_name,
                                     (SELECT COUNT(*) FROM invoices i WHERE i.statement_id = os.statement_id) AS n_inv,
                                     (SELECT COUNT(*) FROM checks_issued k WHERE k.statement_id = os.statement_id) AS n_chk

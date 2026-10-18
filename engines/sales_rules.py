@@ -282,6 +282,9 @@ def _clean_payments(payments: list[dict], total: float, named: bool) -> tuple[li
     return out, ""
 
 
+LATE_DAYS = 3
+
+
 def _after_save(conn, sale_id: int, si_no: int, sale_date: date, customer_id, below: list[str], reason: str, charged: float) -> None:
     from engines.review_flags import flag
     who = conn.execute("SELECT COALESCE(c.customer_name, NULLIF(s.customer_name, ''), 'Walk-in'), COALESCE(c.credit_allowed, 0) FROM sales s LEFT JOIN customers c ON c.customer_id = s.customer_id WHERE s.sale_id = ?",
@@ -290,7 +293,7 @@ def _after_save(conn, sale_id: int, si_no: int, sale_date: date, customer_id, be
         flag(conn, "SALE_BELOW_COST", "sales", sale_id, f"{si_text(si_no)} · {who[0]}: " + "; ".join(below) + (f". Why: {reason}" if reason else ". No reason given."))
     if charged > EPS and not who[1]:
         flag(conn, "SALE_NO_CREDIT", "sales", sale_id, f"{si_text(si_no)}: ₱{charged:,.2f} charged to {who[0]}, who is not marked \"credit allowed\".")
-    if sale_date < manila_today():
+    if (manila_today() - sale_date).days >= LATE_DAYS:            # sales are recorded after the fact (owner, 2026-10-19): only 3+ days late is a note
         flag(conn, "SALE_TYPED_LATE", "sales", sale_id, f"{si_text(si_no)} dated {sale_date:%m/%d/%Y} was typed on {manila_today():%m/%d/%Y}.")
     _flag_numbers(conn, si_no)
 

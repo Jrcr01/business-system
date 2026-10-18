@@ -379,16 +379,22 @@ def sale(request):
                                                     surplus_items=surplus_items() if not rel else [], **ctx))
 
 
-@phone_page("sale")
+@phone_page("sale", write=True)
 def day(request):
-    """Sales today, phone-sized: what was invoiced, and the slips still waiting for their invoice."""
+    """Sales today, phone-sized: what was invoiced, and the slips still waiting for their invoice; the cash count at closing (2026-10-19)."""
     from datetime import date, timedelta
+    from engines import cash_count as cc
     from engines import sales_rules as sr
     from engines.clock import manila_today
+    src = request.POST if request.method == "POST" else request.GET
     try:
-        d = date.fromisoformat(request.GET.get("d", ""))
+        d = date.fromisoformat(src.get("d", ""))
     except ValueError:
         d = manila_today()
+    if request.method == "POST" and request.POST.get("action") == "count":
+        ok, msg = cc.save_count(d, request.POST.get("counted"), request.POST.get("fund"), request.POST.get("note", ""))
+        _say(request, ok, msg)
+        return redirect(f"/phone/day/?d={d.isoformat()}")
     sheet = sr.day_sheet(d)
     by_sale: dict = {}
     for r in sheet["rows"]:
@@ -396,7 +402,7 @@ def day(request):
         s["amount"] = round(s["amount"] + float(r["amount"]), 2)
         s["profit"] = round(s["profit"] + float(r["profit"] or 0), 2)
         s["items"].append(f"{r['qty']:g} × {r['item']}")
-    return render(request, "phone/day.html", _ctx(request, "Sales today", d=d, sheet=sheet, sales=list(by_sale.values()), prev=d - timedelta(days=1),
+    return render(request, "phone/day.html", _ctx(request, "Sales today", d=d, sheet=sheet, count=cc.get_count(d), fund=cc.last_fund(), sales=list(by_sale.values()), prev=d - timedelta(days=1),
                                                    nxt=d + timedelta(days=1) if d < manila_today() else None, slips=[s for s in sr.open_releases() if str(s["day"])[:10] == d.isoformat()]))
 
 

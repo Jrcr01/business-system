@@ -5,6 +5,7 @@
 <p class="note">What the system flagged for a person to look at, the data checks, and entries that look made twice. Nothing here blocks the work: look, then tick it.</p>
 <nav class="tabs">
   <a href="?tab=review"{% if tab == "review" %} class="on"{% endif %}>Review list ({{ n_flags }})</a>
+  <a href="?tab=signins"{% if tab == "signins" %} class="on"{% endif %}>Sign-ins ({{ n_signins }})</a>
   <a href="?tab=changes"{% if tab == "changes" %} class="on"{% endif %}>Changed today{% if n_unseen %} ({{ n_unseen }} not seen){% endif %}</a>
   {% if may_health %}<a href="?tab=data"{% if tab == "data" %} class="on"{% endif %}>Data checks ({{ n_health }})</a>
   <a href="?tab=dups"{% if tab == "dups" %} class="on"{% endif %}>Possible duplicates ({{ n_dups }})</a>{% endif %}
@@ -35,7 +36,7 @@
 
 {% elif tab == "dups" and may_health %}
 <form method="post">{% csrf_token %}
-<p class="hint">{% if show_all %}<a href="?tab=dups">Hide the ones set aside</a>{% else %}<a href="?tab=dups&all=1">Show the ones set aside too</a>{% endif %}</p>
+<p class="hint">{% if show_all %}<a href="?tab=dups">Hide the ones set aside</a>{% else %}{% if tab == "signins" %}<p class="note">Sign-in notices: a new device, a refused phone approval, a password change. Kept apart from the data to check; closed by themselves after 7 days.</p>{% endif %}<a href="?tab=dups&all=1">Show the ones set aside too</a>{% endif %}</p>
 <div class="scroll-x"><table class="list"><tr><th></th><th>Kind</th><th>Supplier</th><th>Details</th><th>Where</th><th style="text-align:right">Amount</th></tr>
   {% for d in dups %}<tr{% if d.dismissed %} class="off"{% endif %}><td><input type="checkbox" name="pick_{{ d.dup_key }}" value="1" aria-label="Pick"></td><td>{{ d.kind }}</td><td>{{ d.supplier }}</td>
     <td>{{ d.detail|usdates }}</td><td>{{ d.where_found }}</td><td class="num">{% if d.amount %}{{ d.amount|floatformat:2|intcomma }}{% endif %}</td></tr>
@@ -46,7 +47,7 @@
 </form>
 
 {% else %}
-<form method="post">{% csrf_token %}
+<form method="post">{% csrf_token %}<input type="hidden" name="tab" value="{{ tab }}">
 <div class="scroll-x"><table class="list cards"><tr><th></th><th>Flag</th><th>Details</th><th>Raised</th><th></th></tr>
   {% for f in flags %}<tr><td class="c-k"><input type="checkbox" name="pick_{{ f.flag_id }}" value="1" aria-label="Pick"></td><td class="c-t"><span class="pill warn">{{ f.label }}</span></td>
     <td>{{ f.detail|usdates }}</td><td style="white-space:nowrap" data-l="raised">{{ f.raised_at|dmy }}{% if f.who %} <span class="hint">· {{ f.who }}</span>{% endif %}</td>

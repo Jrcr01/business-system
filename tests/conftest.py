@@ -189,6 +189,13 @@ def _po_request_rule(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _home_fresh(monkeypatch):
+    """Home's figures are kept up to a minute on the server (engines/home_tiles.KEEP_SECONDS); a test reads them fresh every time."""
+    import engines.home_tiles as ht
+    monkeypatch.setattr(ht, "KEEP_SECONDS", 0)
+
+
+@pytest.fixture(autouse=True)
 def _stock_counted(request, monkeypatch):
     """Owner, 2026-10-18: "Stock not counted yet" is on until the opening count (settings_registry.stock_not_counted). The stock tests were written for
     counted stock, so the switch is off for them; test_stock_not_counted.py runs with it on, as the system does now."""

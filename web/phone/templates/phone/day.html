@@ -10,6 +10,16 @@
 <div class="kv" style="border-top:2px solid var(--ink);margin-top:8px;padding-top:8px"><b>{{ sheet.invoices }} invoice{{ sheet.invoices|pluralize }} · {{ sheet.pieces|floatformat:"-2" }} pcs</b><b>₱{{ sheet.sales|floatformat:2|intcomma }}</b></div>
 <div class="kv"><span>Profit</span><b class="{% if sheet.profit < 0 %}neg{% else %}pos{% endif %}">₱{{ sheet.profit|floatformat:2|intcomma }}</b></div>
 {% for m, amt in sheet.money.items %}{% if amt and m != "CHECK_TODAY" and m != "CHECK_LATER" %}<div class="kv"><span>{{ m|lower|capfirst }}</span><span>{{ amt|floatformat:2|intcomma }}</span></div>{% endif %}{% endfor %}
+<div class="ph-card" style="margin-top:12px"><b>Cash count at closing</b>
+  {% if count %}<div class="kv"><span>Cash in the drawer (change fund ₱{{ count.fund|floatformat:2|intcomma }})</span><b>₱{{ count.counted|floatformat:2|intcomma }}</b></div>
+  <div class="kv"><span>Cash sales recorded</span><span>₱{{ count.expected|floatformat:2|intcomma }}</span></div>
+  <div class="kv"><span>Difference</span><b class="{% if count.diff >= 1 or count.diff <= -1 %}neg{% else %}pos{% endif %}">{% if count.diff >= 1 or count.diff <= -1 %}₱{{ count.diff|floatformat:2|intcomma }}{% else %}matches{% endif %}</b></div>{% endif %}
+  <form method="post" style="margin-top:6px">{% csrf_token %}<input type="hidden" name="action" value="count"><input type="hidden" name="d" value="{{ d|date:'Y-m-d' }}">
+    <div class="ph-row"><div style="flex:1"><label>Cash in the drawer</label><input class="ph-field" name="counted" inputmode="decimal" value="{% if count %}{{ count.counted }}{% endif %}" placeholder="0.00" required></div>
+      <div style="flex:1"><label>Change fund kept</label><input class="ph-field" name="fund" inputmode="decimal" value="{% if count %}{{ count.fund }}{% else %}{{ fund }}{% endif %}"></div></div>
+    <label>Note (optional)</label><input class="ph-field" name="note" value="{% if count %}{{ count.note }}{% endif %}">
+    <button class="btn" type="submit" style="margin-top:8px"><span class="ms">payments</span>{% if count %}Correct the count{% else %}Save the count{% endif %}</button></form>
+  <p class="hint">At closing: count the cash. The system compares it with the cash sales recorded for this day. A difference means a sale not recorded yet, or recorded twice.</p></div>
 <p style="margin-top:14px"><a class="btn main" href="/phone/sale/"><span class="ms">receipt_long</span>Record a sale</a></p>
 <script src="/static/core/share.js?v=1"></script>
 {% endblock %}

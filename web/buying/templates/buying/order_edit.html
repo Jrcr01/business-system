@@ -17,7 +17,10 @@
 <div class="facts" style="margin-top:8px"><div><span>Estimated total</span><b>₱{{ total|floatformat:2|intcomma }}</b></div>
   <div><span>Payment falls due</span><b>{% if pay %}{{ pay|date:"D m/d/Y" }}{% else %}needs a delivery date{% endif %}</b></div></div>
 
+<details class="manual"{% if guard.on and guard.over %} open{% endif %}><summary>Check the pay day: what already falls due, day by day</summary>
+{# owner, 2026-10-19, review item 11: the items first; the calendar folded, open by itself when the order is over the daily limit #}
 {% with supplier_name=po.supplier %}{% include "buying/_order_calendar.html" %}{% endwith %}
+</details>
 
 <form method="post" style="margin-top:14px">{% csrf_token %}<input type="hidden" name="stamp" value="{{ stamp }}"><input type="hidden" name="action" value="add_many">
   <input type="hidden" name="order_date" value="{{ h.order_date|slice:':10' }}"><input type="hidden" name="delivery" value="{{ h.expected_delivery_date|default:''|slice:':10' }}">

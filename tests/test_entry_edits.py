@@ -71,3 +71,20 @@ def test_edit_a_delivery_undoes_it_and_opens_receive_filled_in(web, db):
     assert "Correcting DR 77" in page and 'id="redo_data"' in page
     ch = changes()
     assert ch and ch[0]["kind"] == "DELIVERY_EDITED" and "DR 77" in ch[0]["before"] and ch[0]["why"] == "qty was 3"
+
+
+def test_sign_in_notices_have_their_own_tab_and_close_after_a_week(web, db):
+    """Owner, 2026-10-19, review item 5: 22 of 38 open review notes on live were sign-ins."""
+    from engines.review_flags import close_old_signins
+    _admin(web)
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO review_flags (kind, ref_type, detail, raised_at) VALUES ('NEW_DEVICE_SIGN_IN', 'app_users', 'zzdevice-recent', datetime('now', '-1 day'))")
+        conn.execute("INSERT INTO review_flags (kind, ref_type, detail, raised_at) VALUES ('NEW_DEVICE_SIGN_IN', 'app_users', 'zzdevice-old', datetime('now', '-9 days'))")
+        conn.execute("INSERT INTO review_flags (kind, ref_type, detail) VALUES ('SALE_BELOW_COST', 'sales', 'SI 1 below cost')")
+    page = web.get("/review/").content.decode()
+    assert "SI 1 below cost" in page
+    assert "zzdevice-recent" not in page
+    assert "Sign-ins (" in page
+    assert fetchone(db, "SELECT reviewed_by FROM review_flags WHERE detail = 'zzdevice-old'")[0].startswith("system")      # the old one closed by itself
+    assert "zzdevice-recent" in web.get("/review/?tab=signins").content.decode()
+    assert close_old_signins() == 0

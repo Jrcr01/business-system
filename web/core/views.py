@@ -719,6 +719,9 @@ CREATE_CARDS = [
 ]
 MY_HOME = ["purchase-orders", "order-statements", "checks", "calendar", "review"]     # the everyday cards, first row
 MY_HOME_CREATE = ["New order", "Record an invoice"]
+# the family's Home (owner, 2026-10-19, review item 10): the six of the daily work first; everything else folded under "Show everything"
+FAMILY_HOME = ["sales", "sales-today", "receive-goods", "order-statements"]
+FAMILY_HOME_CREATE = ["New order", "Record an invoice"]
 
 # The order of the cards in each row (owner, 2026-10-11: "organize the tiles have a logical sequence"): left to right in the order the work is done.
 # A card that STARTS something ("New order", "Import ...") sits just before the page it lands on. Named by a tile's id (its key, else its page id) or
@@ -726,6 +729,7 @@ MY_HOME_CREATE = ["New order", "Record an invoice"]
 # Buy -> Stock -> Sell -> Pay suppliers -> Bank -> Other payables -> Records -> Analytics -> Set-up (engines/home_tiles.GROUPS).
 ROW_ORDER = {
     "mine": ["New order", "purchase-orders", "Record an invoice", "order-statements", "calendar", "checks", "review"],
+    "family": ["sales", "sales-today", "New order", "receive-goods", "Record an invoice", "order-statements"],
     "buy": ["Import a price list", "price-lists", "New order", "purchase-orders", "receive-goods"],
     "stock": ["stock", "stock-counts", "affiliates"],
     "sell": ["quotations", "scan-out", "sales", "sales-today", "collect", "follow-ups", "customers", "si-booklets"],   # a quote comes before the sale (stage C, 2026-10-17)
@@ -776,7 +780,11 @@ def home(request):
     # on a phone the "New ..." cards of look-only pages are laptop work -- except Record an invoice (owner, 2026-10-17: add and edit on the phone)
     for r in rows:
         r["tiles"] = _in_order(r["key"], r["tiles"] + [c for c in creates if c["group"] == r["key"]])
-    top = _in_order("mine", [by_id[k] for k in MY_HOME if k in by_id] + [c for c in creates if c["title"] in MY_HOME_CREATE])
+    family = user["role"] != "admin"
+    if family:
+        top = _in_order("family", [by_id[k] for k in FAMILY_HOME if k in by_id] + [c for c in creates if c["title"] in FAMILY_HOME_CREATE])
+    else:
+        top = _in_order("mine", [by_id[k] for k in MY_HOME if k in by_id] + [c for c in creates if c["title"] in MY_HOME_CREATE])
     if top:
         rows.insert(0, {"key": "mine", "title": "My home", "hint": "", "tiles": top})
     from engines.settings_registry import NOTICE_KEY
@@ -785,7 +793,7 @@ def home(request):
     from engines.common import get_conn
     with get_conn() as conn:
         seen = (conn.execute("SELECT whats_new_seen FROM app_users WHERE user_id = ?", (int(user["user_id"]),)).fetchone() or [None])[0]
-    return render(request, "core/home.html", {"rows": rows, "page_id": "home", "notice": get_setting(NOTICE_KEY, "") or "", "whats_new": unseen(seen)})
+    return render(request, "core/home.html", {"rows": rows, "page_id": "home", "fold": family and len(rows) > 1, "notice": get_setting(NOTICE_KEY, "") or "", "whats_new": unseen(seen)})
 
 
 @require_POST

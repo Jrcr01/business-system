@@ -39,6 +39,19 @@ def _say(request, ok: bool, msg: str) -> None:
     (messages.success if ok else messages.error)(request, msg)
 
 
+def _qty_notes(request, po_id: int) -> None:
+    """A quantity far above normal (owner, 2026-10-19, review item 4: "40" typed for "4"): over 3x the most ever ordered of that item, with at least two
+    orders before it. A note on the page, never a block."""
+    from engines.common import get_conn
+    with get_conn() as conn:
+        rows = conn.execute("""SELECT l.item_name, l.qty, (SELECT MAX(o.qty) FROM purchase_order_lines o WHERE o.po_id != l.po_id AND lower(o.item_name) = lower(l.item_name)),
+                                      (SELECT COUNT(*) FROM purchase_order_lines o WHERE o.po_id != l.po_id AND lower(o.item_name) = lower(l.item_name))
+                               FROM purchase_order_lines l WHERE l.po_id = ?""", (int(po_id),)).fetchall()
+    for name, qty, most, n in rows:
+        if n >= 2 and most and float(qty) > 3 * float(most):
+            messages.warning(request, f"{name}: {float(qty):g} is far above the most ever ordered ({float(most):g}). Check the quantity.")
+
+
 def _cannot_fall_due(request, cid: int, day, order_day) -> None:
     """A plain note, not an error (owner, 2026-10-12: "yes change it to a plainer note"): the day clicked cannot be this order's pay day -- too early
     (before the order date plus the supplier's terms) or not a bank day. The list under the calendar still shows the day clicked."""
@@ -360,6 +373,7 @@ def order_new(request):
         ok, msg, po_id = save_po(None, cid, order_day, delivery, lines, p.get("notes", ""))
         if ok:
             _say(request, True, "Draft saved.")
+            _qty_notes(request, po_id)
             return redirect(f"/purchase-orders/{po_id}/edit/")
         _say(request, False, "Search for an item and give it a quantity first." if msg == "Add at least one item." else msg)
     ctx = {"page_id": "purchase-orders", **_head(request), "suppliers": suppliers, "cid": cid, "order_day": order_day, "delivery": delivery, "names": _names(cid), "v": p,
@@ -464,6 +478,7 @@ def order_edit(request, po_id: int):
         if not ok:
             _say(request, False, msg)
             return redirect(f"/purchase-orders/{po_id}/edit/")
+        _qty_notes(request, po_id)
         if what == "request":
             if h["status"] != "DRAFT" or is_request(h):
                 _say(request, False, "Only a draft not sent yet is sent to the supplier.")
