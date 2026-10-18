@@ -94,3 +94,22 @@ def test_which_check_pays_which_invoice_is_rebuilt_when_the_statement_tracks_it(
         _rebuild_allocations(cur, sid, True)
         got = cur.execute("SELECT invoice_id, ROUND(SUM(amount), 2) FROM invoice_check_allocations GROUP BY invoice_id ORDER BY invoice_id").fetchall()
     assert got == [(ids[0], 6000.0), (ids[1], 3000.0)]
+
+
+def test_a_statement_whose_checks_all_cleared_reads_paid_and_a_numbered_check_counts_as_printed(web, db):
+    """Owner, 2026-10-18: "if all checks are cleared make it paid than issued"; "why not balance?" -- a numbered check is printed even when its
+    Chrysanth run was never marked printed, so the bulk summary and the printout count it."""
+    from engines.batch_statement_service import bulk_summary_rows
+    _admin(web)
+    sid = _two(web, db)
+    _park(web, sid, ("2026-11-01", "6,000"), ("2026-12-01", "4,000"))
+    a, b = [c[0] for c in _checks(sid)]
+    web.post(f"/order-statements/{sid}/", {"action": "chk_hand", f"num_{a}": "7001", f"num_{b}": "7002"})
+    row = bulk_summary_rows([sid], include_unprinted_checks=False)[0]
+    assert row["checks"] == 2 and row["checks_total"] == 10000.0                                       # numbered = printed
+    assert row["stage"] != "Paid"
+    with sqlite3.connect(_db()) as conn:
+        conn.execute("UPDATE checks_issued SET bank_cleared_date = '2026-12-02' WHERE statement_id = ?", (sid,))
+    assert bulk_summary_rows([sid])[0]["stage"] == "Paid"
+    assert ">Paid</span>" in web.get("/order-statements/").content.decode()
+    assert ">Paid</span>" in web.get(f"/order-statements/{sid}/").content.decode()

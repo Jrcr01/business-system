@@ -28,7 +28,7 @@
     <td class="c-t"><a href="/order-statements/{{ r.statement_id }}/">{% if r.is_draft %}Draft · {{ r.created_at|dmy }}{% else %}{{ r.statement_ref }}{% endif %}</a></td>
     <td>{{ r.creditor_name }}</td>
     <td data-l="kind">{% if r.n_invoices == 1 %}<span class="pill">Single</span>{% elif r.n_invoices > 1 %}<span class="pill">Batch · {{ r.n_invoices }}</span>{% else %}<span class="hint">—</span>{% endif %}</td>
-    <td><span class="pill{% if r.stage == 'Draft' or r.stage == 'Cancelled' %} off{% elif r.stage == 'Parked' %} warn{% endif %}">{{ r.stage }}</span></td>
+    <td><span class="pill{% if r.stage == 'Draft' or r.stage == 'Cancelled' %} off{% elif r.stage == 'Parked' %} warn{% elif r.stage == 'Paid' %} ok{% endif %}">{{ r.stage }}</span></td>
     <td class="num" data-l="gross">{{ r.total_amount|floatformat:2|intcomma }}</td><td class="num" data-l="memos">{% if r.credit_memo_total %}{{ r.credit_memo_total|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
     <td class="num c-big">{{ r.net_total|floatformat:2|intcomma }}</td><td class="num" data-l="outstanding">{{ r.outstanding|floatformat:2|intcomma }}</td><td data-l="changed">{{ r.last_modified|dmy }}</td>
     <td class="c-r">{% if r.is_locked and r.stage != "Cancelled" %}<span class="pill">Locked</span>{% endif %}{% if r.needs_reprint %} <span class="pill warn">Needs reprint</span>{% endif %}</td></tr>{% endfor %}

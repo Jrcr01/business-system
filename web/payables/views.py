@@ -18,13 +18,17 @@ from masters.views import page_needed
 from engines.common import get_conn  # the one-step invoice edit (2026-10-18)
 
 CREATED = [("all", "All time"), ("today", "Today"), ("7", "Last 7 days"), ("30", "Last 30 days")]
-STAGES = ["Draft", "Parked", "Issued", "Cancelled"]
+STAGES = ["Draft", "Parked", "Issued", "Paid", "Cancelled"]
 BATCHES_SQL = """SELECT os.statement_id, os.statement_ref, os.creditor_id, c.creditor_name, c.terms, os.total_amount, v.credit_memo_total, v.net_total,
        v.net_total - COALESCE((SELECT SUM(amount) FROM checks_issued WHERE statement_id = os.statement_id AND status = 'Active'
                                 AND (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)), 0) AS outstanding,
        (SELECT COUNT(*) FROM invoices i WHERE i.statement_id = os.statement_id AND i.status != 'Cancelled') AS n_invoices,
        os.status, os.is_locked, os.needs_reprint, datetime(os.created_at, '+8 hours') AS created_at, {modified} AS last_modified,
        CASE WHEN os.status = 'Cancelled' THEN 'Cancelled'
+            -- owner, 2026-10-18: "if all checks are cleared make it paid than issued" -- the checks cover the net and every one of them has cleared
+            WHEN EXISTS (SELECT 1 FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active')
+                 AND NOT EXISTS (SELECT 1 FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' AND NOT (k.bank_cleared_date IS NOT NULL OR k.manual_cleared_at IS NOT NULL OR k.settled_outside_at IS NOT NULL))
+                 AND v.net_total - COALESCE((SELECT SUM(amount) FROM checks_issued WHERE statement_id = os.statement_id AND status = 'Active'), 0) <= 0.005 THEN 'Paid'
             WHEN EXISTS (SELECT 1 FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' AND k.printed_at IS NOT NULL) THEN 'Issued'
             WHEN EXISTS (SELECT 1 FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active') THEN 'Parked'
             ELSE 'Draft' END AS stage

@@ -3,7 +3,7 @@
 {% block content %}
 <p class="note"><a href="/order-statements/">← Payment statements</a></p>
 <h2>{% if b.statement_ref|slice:":6" == "DRAFT-" %}Draft payment{% else %}{{ b.statement_ref }}{% endif %} · {{ b.creditor_name }}
-  <span class="pill{% if b.stage == 'Draft' or b.stage == 'Cancelled' %} off{% elif b.stage == 'Parked' %} warn{% endif %}">{{ b.stage }}</span>
+  <span class="pill{% if b.stage == 'Draft' or b.stage == 'Cancelled' %} off{% elif b.stage == 'Parked' %} warn{% elif b.stage == 'Paid' %} ok{% endif %}">{{ b.stage }}</span>
   {% if b.n_invoices == 1 %}<span class="pill">Single payment</span>{% elif b.n_invoices > 1 %}<span class="pill">Batch payment · {{ b.n_invoices }} invoices</span>{% endif %}
   {% if not cancelled %}<span class="pill{% if not locked %} off{% endif %}">{% if locked %}Locked{% else %}Unlocked{% endif %}</span>{% endif %}
   {% if b.needs_reprint %}<span class="pill warn">Needs reprint</span>{% endif %}</h2>

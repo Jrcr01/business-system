@@ -56,8 +56,20 @@ def _printed_sql(alias: str) -> str:
     history > Mark as printed) -- or it was printed the old in-app way (no run, printed_at set). A check that is only parked, or exported in a
     run not marked printed yet (e.g. RUN 005), is NOT printed."""
     a = alias
+    # owner, 2026-10-18 ("why not balance?"): a check with its real number IS printed -- the number means the paper check exists, even when its
+    # Chrysanth run was never marked printed (runs 9, 10, 13 on live left whole statements reading "Unpaid" and the bulk summary short)
     return (f"((({a}.print_batch_id IS NOT NULL) AND EXISTS (SELECT 1 FROM check_print_batches _b WHERE _b.print_batch_id = {a}.print_batch_id AND _b.printed_confirmed_at IS NOT NULL))"
-            f" OR ({a}.print_batch_id IS NULL AND {a}.printed_at IS NOT NULL))")
+            f" OR ({a}.print_batch_id IS NULL AND {a}.printed_at IS NOT NULL) OR COALESCE(TRIM({a}.check_number), '') != '')")
+
+
+def _ref_text(i, thermal: bool = False) -> str:
+    """The SI / DR cell: the reference, and the DR number only when the reference does not already carry it ("DR 71179 (DR 71179)", 2026-10-18).
+    The page prints "SI-55 (DR 12)", the thermal strip "SI-55 / DR 12"."""
+    ref = str(i["doc_ref"] or "")
+    dr = str((i.get("dr_no") if hasattr(i, "get") else i["dr_no"]) or "").strip()
+    if not dr or dr.lower() in ref.lower():
+        return ref
+    return f"{ref} / DR {dr}" if thermal else f"{ref} (DR {dr})"
 
 
 def _invoice_display_status(inv, cover) -> str:
@@ -95,9 +107,11 @@ def _fetch_batch_data(statement_id: int, include_full_history: bool, include_unp
             return None
         # The status printed in the header follows the same rule as the order statement browser: Draft = no checks, Parked = checks parked but none
         # printed yet, Issued = at least one check already exported / printed (2026-09-27).
-        printed, active = cur.execute(
-            "SELECT COALESCE(SUM(printed_at IS NOT NULL), 0), COUNT(*) FROM checks_issued WHERE statement_id = ? AND status = 'Active'", (statement_id,)).fetchone()
-        stage = "Cancelled" if stmt["status"] == "Cancelled" else "Issued" if printed else "Parked" if active else "Draft"
+        printed, active, uncleared, paid = cur.execute(
+            "SELECT COALESCE(SUM(printed_at IS NOT NULL), 0), COUNT(*), COALESCE(SUM(NOT (bank_cleared_date IS NOT NULL OR manual_cleared_at IS NOT NULL OR settled_outside_at IS NOT NULL)), 0), COALESCE(SUM(amount), 0) "
+            "FROM checks_issued WHERE statement_id = ? AND status = 'Active'", (statement_id,)).fetchone()
+        all_cleared = active and not uncleared and float(stmt["net_total"] or 0) - float(paid or 0) <= 0.005      # Paid (owner, 2026-10-18)
+        stage = "Cancelled" if stmt["status"] == "Cancelled" else "Paid" if all_cleared else "Issued" if printed else "Parked" if active else "Draft"
         stmt = dict(stmt, status=stage)
         invoice_rows = cur.execute(
             """SELECT invoice_id, doc_ref, dr_no, invoice_date, due_date, gross_amount, amount, status
@@ -296,7 +310,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     wrap_style = ParagraphStyle("CheckNos", parent=styles["Normal"], fontSize=8.5, leading=10)      # two checks on one invoice wrap inside the column (owner, 2026-10-14: they ran off the table)
     inv_rows = [["SI / DR no.", "Invoice Date", "Due Date", "Gross (PHP)", "Net (PHP)", "Status", "Check"]]
     for i in data["invoices"]:
-        inv_rows.append([i["doc_ref"] + (f" (DR {i['dr_no']})" if i.get("dr_no") else ""), us_date(i["invoice_date"]), us_date(i["due_date"]), _money(i["gross_amount"]), _money(i["amount"]),
+        inv_rows.append([Paragraph(escape(_ref_text(i)), wrap_style), us_date(i["invoice_date"]), us_date(i["due_date"]), _money(i["gross_amount"]), _money(i["amount"]),
                          ("Covered by check" if for_supplier and str(i["display_status"]).startswith("Check issued") else i["display_status"]), Paragraph(escape(str(i.get("check_nos") or "")), wrap_style)])
     if len(inv_rows) == 1:
         inv_rows.append(["—", "—", "—", "—", "—", "—", "—"])
@@ -462,7 +476,10 @@ def bulk_summary_rows(statement_ids: list[int], include_unprinted_checks: bool =
                        (SELECT COUNT(*) FROM invoices i WHERE i.statement_id = os.statement_id AND i.status != 'Cancelled'),
                        (SELECT COUNT(*) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' {unprinted_filter}),
                        (SELECT COALESCE(SUM(k.amount), 0) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' {unprinted_filter}),
-                       (SELECT COUNT(*) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' AND k.printed_at IS NOT NULL)
+                       (SELECT COUNT(*) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active' AND k.printed_at IS NOT NULL),
+                       (SELECT COUNT(*) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active'
+                        AND NOT (k.bank_cleared_date IS NOT NULL OR k.manual_cleared_at IS NOT NULL OR k.settled_outside_at IS NOT NULL)),
+                       (SELECT COALESCE(SUM(k.amount), 0) FROM checks_issued k WHERE k.statement_id = os.statement_id AND k.status = 'Active')
                 FROM order_statements os JOIN creditors cr ON cr.creditor_id = os.creditor_id JOIN v_batch_net_totals v ON v.statement_id = os.statement_id
                 WHERE os.statement_id IN ({marks})""",
             [int(x) for x in statement_ids],
@@ -473,7 +490,8 @@ def bulk_summary_rows(statement_ids: list[int], include_unprinted_checks: bool =
         r = by_id.get(int(sid))
         if not r:
             continue
-        stage = "Cancelled" if r[3] == "Cancelled" else "Issued" if r[8] else "Parked" if r[6] else "Draft"
+        paid = r[6] and not r[9] and float(r[4] or 0) - float(r[10] or 0) <= 0.005          # every check cleared and they cover the net (2026-10-18)
+        stage = "Cancelled" if r[3] == "Cancelled" else "Paid" if paid else "Issued" if r[8] else "Parked" if r[6] else "Draft"
         out.append({"statement_id": r[0], "ref": r[1], "supplier": r[2], "stage": stage, "net_total": float(r[4] or 0), "invoices": int(r[5]),
                     "checks": int(r[6]), "checks_total": float(r[7] or 0)})
     return out
@@ -611,7 +629,7 @@ def _thermal_lines(data: dict) -> list[dict]:
     for i in data["invoices"]:
         if i["status"] == "Cancelled":
             continue
-        row(i["doc_ref"] + (f" / DR {i['dr_no']}" if i.get("dr_no") else ""), us_date(i["invoice_date"]), _money(i["amount"]))
+        row(_ref_text(i, thermal=True), us_date(i["invoice_date"]), _money(i["amount"]))
     row("Total", "", _money(stmt["total_amount"]), bold=True)
     add_divider()
 
