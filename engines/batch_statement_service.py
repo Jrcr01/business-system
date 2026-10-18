@@ -347,13 +347,7 @@ def _build_copy(story: list, data: dict, copy_label: str, styles, show_payment_a
     chk_table.setStyle(TableStyle(_section_style(pad) + [("ALIGN", (2, 1), (2, -1), "RIGHT")] + extra))
     story.append(chk_table)
 
-    if for_supplier and data.get("qr_url"):                    # owner, 2026-10-14: the supplier scans it and sees this statement, with what has cleared
-        story.append(Spacer(1, 12))
-        qr = Table([[_qr_drawing(data["qr_url"], QR_PAGE_PT), Paragraph(
-            f"<b>{QR_WORDS[0]}</b><br/>{QR_WORDS[1]}, any time. It opens this statement only.",
-            ParagraphStyle("QrNote", parent=styles["Normal"], fontSize=8.5, leading=11.5, textColor=GREY))]], colWidths=[QR_PAGE_PT + 10, CONTENT_WIDTH - QR_PAGE_PT - 10])
-        qr.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
-        story.append(qr)
+    # no QR on the short bond copy (owner, 2026-10-18: "no qr for shortbond paper"): it prints on the thermal strip only
     if not for_supplier:                                       # the copy we keep is signed (owner, 2026-10-14)
         story.append(Spacer(1, 14))
         sign = Table([[f"Prepared by: {_prepared_by()}", "Checked by: ______________________"]], colWidths=[CONTENT_WIDTH * 0.5] * 2)

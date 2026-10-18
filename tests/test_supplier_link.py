@@ -47,7 +47,7 @@ def test_printing_makes_the_link_and_a_supplier_opens_it_without_signing_in(web,
     assert strip.status_code == 200 and "Scan to see the full statement" in _text(strip.content)
     token = _token(sid)
     assert token and len(token) == 32
-    assert "Scan to see the full statement" in _text(web.get(f"/order-statements/{sid}/a4.pdf?copies=supplier").content)
+    assert "Scan to see" not in _text(web.get(f"/order-statements/{sid}/a4.pdf?copies=supplier").content)     # owner, 2026-10-18: no QR on short bond
     assert "Scan to see" not in _text(web.get(f"/order-statements/{sid}/a4.pdf?copies=filing").content)      # the copy we keep carries none
     assert _token(sid) == token                                                                                 # one code per statement, kept
     supplier = Client()                                                                                         # nobody signed in
