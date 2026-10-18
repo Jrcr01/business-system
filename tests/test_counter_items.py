@@ -128,3 +128,23 @@ def test_an_item_never_delivered_takes_its_price_list_net_as_cost(web, db):
     ok, msg, sid = save_sale(6001, manila_today(), None, "Walk-in", [{"item_id": a, "qty": 2, "price": 3400}], [], [{"method": "CASH", "amount": 6800}])
     assert ok, msg
     assert fetchone(db, "SELECT unit_cost FROM sale_lines WHERE sale_id = ?", (sid,))[0] == 2700.0
+
+
+def test_recording_a_sale_has_no_scanning_while_sales_do_not_start_from_a_scan(web, db):
+    """Owner, 2026-10-19: "disable scan on record sales for now" -- tied to Settings → Sales start from a scan (off)."""
+    from tests.test_phone import _on
+    from tests.test_phone_approval import PHONE_UA
+    _admin(web)
+    _on()
+    for page in (web.get("/sales/?view=new").content.decode(), web.get("/phone/sale/", HTTP_USER_AGENT=PHONE_UA, follow=True).content.decode()):
+        assert 'data-noscan="1"' in page and "Type a size, brand or pattern" in page and "Scan an item" not in page
+
+
+def test_no_release_now_and_no_phone_stock_out_while_sales_are_recorded_after_the_fact(web, db):
+    """Owner, 2026-10-19: "and release now, invoice later. all entries should be post transaction meaning not on the spot"."""
+    from tests.test_phone import _on
+    from tests.test_phone_approval import PHONE_UA
+    _admin(web)
+    _on()
+    assert "Release now, invoice later" not in web.get("/sales/?view=new").content.decode()
+    assert 'href="/phone/out/"' not in web.get("/phone/", HTTP_USER_AGENT=PHONE_UA, follow=True).content.decode()

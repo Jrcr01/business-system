@@ -2,10 +2,11 @@
    is not chosen yet, so the box takes whatever a scanner types, and a Camera button uses the phone). One piece per scan. Sits inside a form; on submit the
    lines go as ln_item_<n> / ln_qty_<n> / ln_price_<n>. Needs: scan_mode = "sale" (price each, profit), "borrow" (the cost they came at) or "lend" (our cost,
    not typed). Optional: scan_lines = lines to start with [{id, qty, price}] (a release being invoiced).{% endcomment %}
-<div class="scanlines" id="scanlines" data-mode="{{ scan_mode }}" data-uncounted="{% if stock_uncounted %}1{% endif %}" data-phonesale="{% if phone_sale %}1{% endif %}">
-  <div class="scanbox pk-combo"><span class="ms">barcode_scanner</span>
+<div class="scanlines" id="scanlines" data-mode="{{ scan_mode }}" data-noscan="{% if scan_mode == 'sale' and not sale_scan_on or phone_sale and not sale_scan_on %}1{% endif %}" data-uncounted="{% if stock_uncounted %}1{% endif %}" data-phonesale="{% if phone_sale %}1{% endif %}">
+  {# recording a sale, while "Sales start from a scan" is off (owner, 2026-10-19: "disable scan on record sales for now"): typing only #}
+  <div class="scanbox pk-combo">{% if scan_mode == 'sale' and not sale_scan_on or phone_sale and not sale_scan_on %}<span class="ms">search</span>{% else %}<span class="ms">barcode_scanner</span>{% endif %}
     <input type="text" id="sl_q" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="sl_list"
-           placeholder="Scan an item, or click here and type: 2055516 westlake">
+           placeholder="{% if scan_mode == 'sale' and not sale_scan_on or phone_sale and not sale_scan_on %}Type a size, brand or pattern: 2055516 westlake{% else %}Scan an item, or click here and type: 2055516 westlake{% endif %}">
     <button class="btn small ghost" type="button" id="sl_cam" hidden><span class="ms">photo_camera</span>Camera</button>
     <div class="pk-drop" id="sl_list" role="listbox" hidden></div>
   </div>
@@ -186,7 +187,7 @@
     else if (e.key === "Enter") { e.preventDefault(); scanned(q.value); }
   });
   document.getElementById("sl_skip").addEventListener("click", function () { pending = ""; learn.hidden = true; say("", false); });
-  if (window.slicksBarcode && slicksBarcode.ok()) {                             /* iPhone / iPad too, through ZXing (2026-10-17) */                 /* the phone's camera, where the browser can read barcodes */
+  if (window.slicksBarcode && slicksBarcode.ok() && !box.dataset.noscan) {                             /* iPhone / iPad too, through ZXing (2026-10-17) */                 /* the phone's camera, where the browser can read barcodes */
     cam.hidden = false;
     var stream = null, timer = null, liveFailed = false;
     function liveAllowed() { try { return !document.featurePolicy || document.featurePolicy.allowsFeature("camera"); } catch (e) { return true; } }
@@ -254,7 +255,7 @@
   });
   fetch("/stock/items.json").then(function (r) { return r.json(); }).then(function (d) {
     items = d.items || []; items.forEach(function (it) { byId[it.id] = it; });
-    say(items.length ? "Scan, or type a size, a brand or a pattern (" + items.length + " items)." : "There are no items yet. Add them on Price lists.", !items.length);
+    say(items.length ? (box.dataset.noscan ? "Type a size, a brand or a pattern (" : "Scan, or type a size, a brand or a pattern (") + items.length + " items)." : "There are no items yet. Add them on Price lists.", !items.length);
     var start = JSON.parse(document.getElementById("sl_start").textContent || "[]");
     (Array.isArray(start) ? start : []).forEach(function (s) { if (byId[s.id]) lines.push({it: byId[s.id], qty: s.qty, price: s.price != null ? s.price : ""}); });
     draw(); changed();

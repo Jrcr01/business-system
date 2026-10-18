@@ -406,6 +406,12 @@ def authenticator_on() -> bool:
     return int_value("signin_authenticator") == 1
 
 
+def stock_out_on_phone() -> bool:
+    """The phone's Stock out (the slip, goods out now) shows only when sales start from a scan (owner, 2026-10-19: "all entries should be post transaction
+    meaning not on the spot")."""
+    return sales_scan_on()
+
+
 def stock_not_counted() -> bool:
     """Before the opening count (owner, 2026-10-18): stock figures are not reliable yet, so below zero is not flagged and is shown as "not counted yet"."""
     return int_value("stock_not_counted") == 1

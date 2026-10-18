@@ -33,10 +33,10 @@
     <div id="below_wrap" hidden style="margin-top:6px"><label for="below_reason">Why below cost?</label><input id="below_reason" type="text" name="below_reason" value="{{ below_reason }}" placeholder="e.g. loyal customer, old stock" style="width:100%;max-width:520px"></div></div>
   <div class="grp">How it is paid</div>
   {% include "selling/_pay_rows.html" %}
-  <label for="note">For a release only: a note (optional)</label><input id="note" type="text" name="note" style="width:100%;max-width:520px" placeholder="e.g. to be installed first">
+  {% if sale_scan_on %}<label for="note">For a release only: a note (optional)</label><input id="note" type="text" name="note" style="width:100%;max-width:520px" placeholder="e.g. to be installed first">{% endif %}
   <div class="actions">
     <button class="btn" type="submit" name="action" value="save"><span class="ms">save</span>Save the sale</button>
-    <button class="btn ghost" type="submit" name="action" value="release" formnovalidate onclick="return confirm('Release these goods now and write the invoice later today?');"><span class="ms">local_shipping</span>Release now, invoice later</button>
+    {% if sale_scan_on %}<button class="btn ghost" type="submit" name="action" value="release" formnovalidate onclick="return confirm('Release these goods now and write the invoice later today?');"><span class="ms">local_shipping</span>Release now, invoice later</button>{% endif %}{# owner, 2026-10-19: entries after the fact, not on the spot #}
   </div>
 </form>
 <p class="hint">Saving takes the stock out the same minute and records how it was paid. Nothing is refused for being below cost, above stock or on charge: it is saved and noted for review.

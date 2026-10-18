@@ -25,9 +25,11 @@ def _mine(request) -> dict:
     from engines.permissions import hidden_for, may_receive
     role = request.slicks_user["role"]
     see, do = pages_for(role), doable_pages(role)
+    from engines.settings_registry import stock_out_on_phone
+    on_the_spot = stock_out_on_phone()     # Stock out = the slip, goods out now: hidden while sales are recorded after the fact (owner, 2026-10-19)
     # Stock in goes by the receiving switch alone (the Scanner may receive without seeing Purchase orders), unless that page is hidden from the person
     return {"prices": "price-lists" in see, "stock": "stock" in see, "stock_do": "stock" in do,
-            "in": may_receive(role)[0] and "purchase-orders" not in hidden_for(acting_email()), "out": "sales" in see and "sales" in do,
+            "in": may_receive(role)[0] and "purchase-orders" not in hidden_for(acting_email()), "out": "sales" in see and "sales" in do and on_the_spot,
             "sale": "sales" in see and "sales" in do and role != "scanner",       # the family records the sale; the staff phone only moves stock (2026-10-12)
             "sale_do": "sales" in do and role != "scanner",
             "count": "stock-counts" in see, "count_do": "stock-counts" in do}
