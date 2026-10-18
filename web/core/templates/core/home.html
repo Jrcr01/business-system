@@ -15,7 +15,8 @@
 <div class="home-sec" id="g-{{ r.key }}">{{ r.title }}{% if r.hint %}<span>{{ r.hint }}</span>{% endif %}</div>
 <div class="grid">
   {% for t in r.tiles %}
-  <a class="tile {{ t.level }}{% if t.create %} create{% endif %}{% if t.figure|length > 4 %} long{% endif %}" href="{{ t.url }}">
+  <a class="tile {{ t.level }}{% if t.create %} create{% endif %}{% if t.figure|length > 4 %} long{% endif %}{% if t.pinned %} pinned{% endif %}" href="{{ t.url }}" data-card="{{ t.key }}">
+    <button type="button" class="pin{% if t.pinned %} on{% endif %}" data-card="{{ t.key }}" title="{% if t.pinned %}Pinned to My home: click to unpin{% else %}Pin to My home{% endif %}" aria-label="{% if t.pinned %}Unpin from{% else %}Pin to{% endif %} My home"><span class="ms">push_pin</span></button>
     {% if t.later %}<span class="later" title="This screen is still in the Streamlit system">later</span>{% endif %}
     <div class="t">{{ t.title }}{% if t.look %} <span class="ph-look">look</span>{% endif %}</div>
     <div class="b"><span class="u">{% if not t.create %}{{ t.unit }}{% endif %}</span>
@@ -26,6 +27,25 @@
 {% if fold and forloop.last %}</details>{% endif %}
 {% endfor %}
 </div>
+<style>.tile .pin{position:absolute;top:6px;right:6px;border:0;background:transparent;color:var(--fg-9aa5b1, #9aa5b1);opacity:0;cursor:pointer;padding:2px;line-height:1}
+.tile:hover .pin,.tile .pin.on,.tile .pin:focus{opacity:1}.tile .pin.on{color:var(--fg-b26a00, #b26a00)}.tile.pinned{border-color:var(--fg-b26a00, #b26a00)}
+@media (hover:none){.tile .pin{opacity:.6}}.tile{position:relative}</style>
+<script>(function () {                                         /* My home learns (owner, 2026-10-19): count the card opened; the pin keeps a card in My home */
+  var csrf = "{{ csrf_token }}";
+  document.querySelectorAll(".home a.tile[data-card]").forEach(function (a) {
+    a.addEventListener("click", function (e) {
+      if (e.target.closest(".pin")) return;
+      try { var f = new FormData(); f.append("card", a.dataset.card); f.append("csrfmiddlewaretoken", csrf); navigator.sendBeacon("/home/click/", f); } catch (x) { }
+    });
+  });
+  document.querySelectorAll(".home .pin").forEach(function (b) {
+    b.addEventListener("click", function (e) {
+      e.preventDefault(); e.stopPropagation();
+      var f = new FormData(); f.append("card", b.dataset.card);
+      fetch("/home/pin/", {method: "POST", headers: {"X-CSRFToken": csrf}, body: f}).then(function () { location.reload(); });
+    });
+  });
+})();</script>
 {% if fold %}<script>(function () {                          /* a menu link to a section (/#g-sell) opens "Show everything" first */
   function open_() { var el = location.hash && document.querySelector(location.hash); var d = el && el.closest("details.home-more"); if (d) { d.open = true; el.scrollIntoView(); } }
   open_(); window.addEventListener("hashchange", open_);

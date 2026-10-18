@@ -29,7 +29,7 @@
   <div class="tb-sec">
     <a class="tb-label" href="{{ sec.url }}" title="{{ sec.title }}: its tiles on Home">{{ sec.title }} &#9662;</a>
     <div class="tb-menu">
-      {% for it in sec.items %}<a href="{{ it.url }}"><span class="ms">{{ it.icon }}</span>{{ it.label }}{% if it.look %} <span class="ph-look">look</span>{% endif %}</a>{% endfor %}
+      {% for it in sec.items %}<a href="{{ it.url }}" data-card="{{ it.page }}"><span class="ms">{{ it.icon }}</span>{{ it.label }}{% if it.look %} <span class="ph-look">look</span>{% endif %}</a>{% endfor %}
     </div>
   </div>
   {% endfor %}
@@ -205,5 +205,11 @@ if (window.matchMedia("(hover: none)").matches) {
 })();
 </script>
 {% endif %}
+<script>(function () {                                         /* a menu entry opened: counted for My home (owner, 2026-10-19) */
+  var csrf = "{{ csrf_token }}";
+  document.querySelectorAll(".tb-menu a[data-card]").forEach(function (a) {
+    a.addEventListener("click", function () { try { var f = new FormData(); f.append("card", a.dataset.card); f.append("csrfmiddlewaretoken", csrf); navigator.sendBeacon("/home/click/", f); } catch (x) { } });
+  });
+})();</script>
 </body>
 </html>

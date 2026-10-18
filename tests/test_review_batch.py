@@ -30,7 +30,7 @@ def test_the_family_home_shows_the_daily_six_first_and_folds_the_rest(web, db):
     assert "Show everything" in page and 'class="home-more"' in page
     head = page.split("Show everything")[0]
     assert "Record a sale" in head and "Sales today" in head and "New order" in head
-    assert 'class="home-more"' not in web.get("/").content.decode()                                # the System admin keeps the full Home
+    assert 'class="home-more"' in web.get("/").content.decode()                                    # the admin too, since My home learns (2026-10-19)
 
 
 def test_a_home_figure_is_kept_briefly(db, monkeypatch):

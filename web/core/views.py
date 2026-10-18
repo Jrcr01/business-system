@@ -770,21 +770,26 @@ def home(request):
                 continue
             v = evaluate(t)
             icon = (t.icon or "").removeprefix(":material/").removesuffix(":") or PAGES[t.page_id].icon
-            card = {"title": t.title, "icon": icon, "url": _tile_url(t), "figure": v["figure"], "unit": v["unit"], "level": v["level"],
+            card = {"key": t.tid, "page": t.page_id, "main": t.tid == t.page_id,
+                    "title": t.title, "icon": icon, "url": _tile_url(t), "figure": v["figure"], "unit": v["unit"], "level": v["level"],
                     "later": t.page_id not in BUILT, "tid": t.tid, "look": phone and kind(t.page_id, user["role"]) == "look"}
             cards.append(card)
             by_id.setdefault(t.tid, card)
         rows.append({"key": key, "title": titles[key].title, "hint": titles[key].hint, "tiles": cards})
-    creates = [{"title": title, "icon": icon, "url": url, "create": True, "group": g} for g, title, icon, url, pid, needs in CREATE_CARDS
+    creates = [{"key": title, "page": pid, "main": False, "title": title, "icon": icon, "url": url, "create": True, "group": g} for g, title, icon, url, pid, needs in CREATE_CARDS
                if pid in mine and pid in BUILT and (needs is None or can(user["role"], needs)) and not (phone and kind(pid, user["role"]) and not url.startswith("/order-statements/invoices/"))]
     # on a phone the "New ..." cards of look-only pages are laptop work -- except Record an invoice (owner, 2026-10-17: add and edit on the phone)
     for r in rows:
         r["tiles"] = _in_order(r["key"], r["tiles"] + [c for c in creates if c["group"] == r["key"]])
     family = user["role"] != "admin"
-    if family:
-        top = _in_order("family", [by_id[k] for k in FAMILY_HOME if k in by_id] + [c for c in creates if c["title"] in FAMILY_HOME_CREATE])
-    else:
-        top = _in_order("mine", [by_id[k] for k in MY_HOME if k in by_id] + [c for c in creates if c["title"] in MY_HOME_CREATE])
+    # My home learns what each person opens most, with pins (owner, 2026-10-19: "auto learn with pinning, admin too"); the basics until there are enough clicks
+    from engines.home_learns import my_home
+    every = list(by_id.values()) + creates
+    basics = (FAMILY_HOME + FAMILY_HOME_CREATE) if family else (MY_HOME + MY_HOME_CREATE)
+    picked = my_home(user["email"], every, basics)
+    from engines.home_learns import ENOUGH, ranked
+    learned = sum(ranked(user["email"]).values()) >= ENOUGH
+    top = picked if learned else [c for c in picked if c.get("pinned")] + _in_order("family" if family else "mine", [c for c in picked if not c.get("pinned")])
     if top:
         rows.insert(0, {"key": "mine", "title": "My home", "hint": "", "tiles": top})
     from engines.settings_registry import NOTICE_KEY
@@ -793,7 +798,23 @@ def home(request):
     from engines.common import get_conn
     with get_conn() as conn:
         seen = (conn.execute("SELECT whats_new_seen FROM app_users WHERE user_id = ?", (int(user["user_id"]),)).fetchone() or [None])[0]
-    return render(request, "core/home.html", {"rows": rows, "page_id": "home", "fold": family and len(rows) > 1, "notice": get_setting(NOTICE_KEY, "") or "", "whats_new": unseen(seen)})
+    return render(request, "core/home.html", {"rows": rows, "page_id": "home", "fold": len(rows) > 1, "notice": get_setting(NOTICE_KEY, "") or "", "whats_new": unseen(seen)})
+
+
+@require_POST
+def home_click(request):
+    """A Home card or a menu entry was opened (sent by the page as it leaves): counted for My home (engines/home_learns.py)."""
+    from engines.home_learns import count
+    count(request.slicks_user["email"], request.POST.get("card", ""))
+    return HttpResponse(status=204)
+
+
+@require_POST
+def home_pin(request):
+    """The pin on a Home card: it stays in My home whatever the counts say, until unpinned."""
+    from engines.home_learns import toggle_pin
+    on = toggle_pin(request.slicks_user["email"], request.POST.get("card", ""))
+    return JsonResponse({"pinned": on})
 
 
 @require_POST

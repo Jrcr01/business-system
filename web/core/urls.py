@@ -31,6 +31,8 @@ urlpatterns = [
     path("theme/", views.theme, name="theme"),
     path("notifications/", views.notifications, name="notifications"),
     path("whats-new/seen/", views.whats_new_seen, name="whats_new_seen"),
+    path("home/click/", views.home_click, name="home_click"),
+    path("home/pin/", views.home_pin, name="home_pin"),
     path("related/<str:kind>/<int:doc_id>/", views.related, name="related"),
     path("<slug:page_id>/", views.page, name="page"),
 ]
