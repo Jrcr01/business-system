@@ -168,27 +168,33 @@
   </script>
 
 {% elif tab == "catalog" %}
-  <p class="note">The catalog holds each product once, whichever supplier sells it, under our own item code (SKU). Two suppliers' prices for the same product are compared here.</p>
+  <p class="note">Each product once, whichever supplier sells it, under our own item code (SKU), at its lowest cost; click it to see every supplier's price.</p>
   <div class="seg">{% for c in categories %}<a href="/price-lists/?s={{ cid }}&amp;tab=catalog&amp;cat={{ c }}"{% if c == cat %} class="on"{% endif %}>{{ c }}</a>{% endfor %}</div>
-  <div class="grp">Prices side by side: each product at its lowest cost</div>
-  <p class="hint"><a href="/price-lists/?s={{ cid }}&amp;tab=catalog&amp;cat={{ cat }}{% if not one_too %}&amp;all=1{% endif %}">{% if one_too %}Only products with two or more suppliers{% else %}Also show products with only one supplier{% endif %}</a></p>
-  {% if side %}
+  <div class="grp">Products and their prices</div>
+  <p class="hint">Show: {% for key, label in shows %}{% if not forloop.first %} · {% endif %}{% if key == show %}<b>{{ label }}</b>{% else %}<a href="/price-lists/?s={{ cid }}&amp;tab=catalog&amp;cat={{ cat }}&amp;show={{ key }}">{{ label }}</a>{% endif %}{% endfor %}</p>
+  {% if products %}
   <p><input type="search" id="cat_q" placeholder="Search: 195R15, MRF, ZLX …" autocomplete="off" style="max-width:320px" aria-label="Search the catalog"></p>
-  <div class="scroll-x"><table class="list" id="cat_side"><thead><tr><th>Product / supplier</th><th style="text-align:right">List</th><th>Discount</th><th style="text-align:right">Net (cost)</th><th>Since</th></tr></thead>
-    {% for t in side %}<tbody class="cat-t{% if t.rows|length < 2 %} shut{% endif %}" data-find="{{ t.product|lower }} {{ t.sku|lower }}">
-      <tr class="cat-head" tabindex="0" style="cursor:pointer;background:var(--bg-fafbfc, #fafbfc)"><td style="font-weight:600"><span class="cat-arrow" aria-hidden="true"></span>{{ t.product }} <span class="hint">{{ t.sku }}</span></td><td></td><td></td>
-        <td class="num" style="font-weight:600">₱{{ t.low|floatformat:2|intcomma }}</td><td class="hint">{{ t.rows|length }} supplier{{ t.rows|length|pluralize }}</td></tr>
-      {% for r in t.rows %}<tr class="cat-sup"><td style="padding-left:30px">{{ r.supplier }}</td><td class="num">{{ r.list_price|floatformat:2|intcomma }}</td><td>{{ r.discount|default:"none" }}</td>
-        <td class="num">{{ r.net_price|floatformat:2|intcomma }}{% if r.cheapest %} <span class="pill">lowest</span>{% endif %}</td><td>{{ r.effective_date|dmy }}</td></tr>{% endfor %}
+  <div class="scroll-x"><table class="list" id="cat_side"><thead><tr><th>Product / supplier</th>{% for f in fields %}<th>{{ f.label }}</th>{% endfor %}<th style="text-align:right">List</th><th>Discount</th>
+    <th style="text-align:right">Net (cost)</th><th>Since</th>{% if writer %}<th></th>{% endif %}</tr></thead>
+    {% for p in products %}<tbody class="cat-t{% if p.rows|length < 2 %} shut{% endif %}" data-find="{{ p.name|lower }} {{ p.sku|lower }}">
+      <tr class="cat-head"{% if p.rows %} tabindex="0" style="cursor:pointer"{% endif %}><td style="font-weight:600{% if not p.is_active %};color:#888{% endif %}"><span class="{% if p.rows %}cat-arrow{% else %}cat-none{% endif %}" aria-hidden="true"></span>{{ p.name }} <span class="hint">{{ p.sku }}</span></td>
+        {% for v in p.spec_values %}<td>{{ v|default:"" }}</td>{% endfor %}<td></td><td class="hint">{% if p.rows %}{{ p.rows|length }} supplier{{ p.rows|length|pluralize }}{% endif %}</td>
+        <td class="num">{% if p.low is not None %}<b>₱{{ p.low|floatformat:2|intcomma }}</b>{% elif p.is_active %}<span style="color:#b35900;font-size:12px">no price yet</span>{% else %}—{% endif %}</td><td></td>
+        {% if writer %}<td>{% if not p.is_active %}<span class="pill off">Discontinued</span> {% endif %}<form method="post" style="display:inline"{% if p.is_active %} onsubmit="return confirm('Discontinue {{ p.name|escapejs }}? It is no longer offered on new orders. Its prices and history stay, and it can be brought back.');"{% endif %}>{% csrf_token %}
+          <input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="product_on_off"><input type="hidden" name="cat" value="{{ cat }}">
+          <input type="hidden" name="product_id" value="{{ p.product_id }}"><input type="hidden" name="on" value="{% if p.is_active %}0{% else %}1{% endif %}">
+          <button class="btn small ghost" type="submit">{% if p.is_active %}Discontinue{% else %}Bring back{% endif %}</button></form></td>{% endif %}</tr>
+      {% for r in p.rows %}<tr class="cat-sup"><td style="padding-left:30px">{{ r.supplier }}</td>{% for f in fields %}<td></td>{% endfor %}<td class="num">{{ r.list_price|floatformat:2|intcomma }}</td><td>{{ r.discount|default:"none" }}</td>
+        <td class="num">{{ r.net_price|floatformat:2|intcomma }}{% if r.cheapest %} <span class="pill">lowest</span>{% endif %}</td><td>{{ r.effective_date|dmy }}</td>{% if writer %}<td></td>{% endif %}</tr>{% endfor %}
     </tbody>{% endfor %}
   </table></div>
-  <style>#cat_side tbody.shut .cat-sup{display:none}#cat_side .cat-arrow::before{content:"▾";display:inline-block;width:16px;color:#888}#cat_side tbody.shut .cat-arrow::before{content:"▸"}</style>
+  <style>#cat_side tbody.shut .cat-sup{display:none}#cat_side .cat-arrow::before,#cat_side .cat-none::before{content:"▾";display:inline-block;width:16px;color:#888}#cat_side tbody.shut .cat-arrow::before{content:"▸"}#cat_side .cat-none::before{content:""}#cat_side .cat-head td{border-top:1px solid var(--line, #ddd)}</style>
   <script>
   (function () {                                                 /* click a product to fold or open its suppliers; the box narrows the list as you type */
     var t = document.getElementById("cat_side"), q = document.getElementById("cat_q");
-    t.querySelectorAll(".cat-head").forEach(function (h) {
-      function flip() { h.parentNode.classList.toggle("shut"); }
-      h.addEventListener("click", flip); h.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+    t.querySelectorAll(".cat-head[tabindex]").forEach(function (h) {
+      function flip(e) { if (e.target.closest("form")) return; h.parentNode.classList.toggle("shut"); }
+      h.addEventListener("click", flip); h.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(e); } });
     });
     q.addEventListener("input", function () {
       var words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
@@ -199,20 +205,7 @@
     });
   })();
   </script>
-  {% else %}<p class="note">{% if one_too %}No priced products in this category yet.{% else %}No product has prices from two or more suppliers yet.{% endif %}</p>{% endif %}
-
-  <div class="grp">Products in the catalog</div>
-  <p class="hint"><a href="/price-lists/?s={{ cid }}&amp;tab=catalog&amp;cat={{ cat }}{% if not old %}&amp;old=1{% endif %}">{% if old %}Hide discontinued{% else %}Include discontinued{% endif %}</a></p>
-  {% if products %}
-  <div class="scroll-x"><table class="list"><tr><th>SKU</th><th>Standard name</th><th>Brand</th>{% for f in fields %}<th>{{ f.label }}</th>{% endfor %}<th>Suppliers</th><th>Status</th>{% if writer %}<th></th>{% endif %}</tr>
-    {% for p in products %}<tr><td>{{ p.sku }}</td><td>{{ p.name }}</td><td>{{ p.brand }}</td>{% for v in p.spec_values %}<td>{{ v|default:"" }}</td>{% endfor %}<td class="num">{{ p.suppliers }}</td>
-      <td>{% if p.is_active %}<span class="pill">Active</span>{% else %}<span class="pill off">Discontinued</span>{% endif %}</td>
-      {% if writer %}<td><form method="post"{% if p.is_active %} onsubmit="return confirm('Discontinue {{ p.name|escapejs }}? It is no longer offered on new orders. Its prices and history stay, and it can be brought back.');"{% endif %}>{% csrf_token %}
-        <input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="product_on_off"><input type="hidden" name="cat" value="{{ cat }}">
-        <input type="hidden" name="product_id" value="{{ p.product_id }}"><input type="hidden" name="on" value="{% if p.is_active %}0{% else %}1{% endif %}">
-        <button class="btn small ghost" type="submit">{% if p.is_active %}Discontinue{% else %}Bring back{% endif %}</button></form></td>{% endif %}</tr>{% endfor %}
-  </table></div>
-  {% else %}<p class="note">No products in this category yet.</p>{% endif %}
+  {% else %}<p class="note">{% if show == "multi" %}No product has prices from two or more suppliers yet.{% elif show == "none" %}Every product here has a price.{% elif show == "old" %}Nothing discontinued.{% else %}No products in this category yet.{% endif %}</p>{% endif %}
 
   {% if writer %}
   <div class="grp">Add a product</div>

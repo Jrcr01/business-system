@@ -144,28 +144,28 @@ def _discounts_ctx(request, cid: int) -> dict:
 
 
 def _catalog_ctx(request, cid: int) -> dict:
+    """One list (owner, 2026-10-19): each product once -- its fields, its lowest cost, Discontinue -- with each supplier's price folded under it."""
     from engines import discount_rules as dr
     from engines import product_catalog as pc
     cat = request.GET.get("cat") if request.GET.get("cat") in pc.CATEGORIES else pc.CATEGORIES[0]
-    one_too, old = request.GET.get("all") == "1", request.GET.get("old") == "1"
+    show = request.GET.get("show") if request.GET.get("show") in ("all", "multi", "none", "old") else "all"
     side = pc.supplier_prices(category=cat)
-    if not one_too and not side.empty:
-        side = side[side.groupby("product_id")["supplier"].transform("count") > 1]
-    side_rows = side.assign(discount=side["chain"].map(dr.chain_label)).to_dict("records") if not side.empty else []
-    tires: dict = {}                                             # owner, 2026-10-19: one row per tire at its lowest cost, each supplier's price under it
-    for r in side_rows:
-        t = tires.setdefault(r["product_id"], {"product_id": r["product_id"], "sku": r["sku"], "product": r["product"], "rows": []})
-        t["rows"].append(r)
-    for t in tires.values():
-        t["rows"].sort(key=lambda r: (r["net_price"], r["supplier"]))
-        t["low"] = t["rows"][0]["net_price"]
-    side_rows = sorted(tires.values(), key=lambda t: str(t["product"]).lower())
+    by_item: dict = {}
+    for r in (side.assign(discount=side["chain"].map(dr.chain_label)).to_dict("records") if not side.empty else []):
+        by_item.setdefault(r["product_id"], []).append(r)
     fields = pc.CATEGORY_FIELDS[cat]
-    products = pc.list_products(cat, active_only=not old)
-    prod_rows = pc.spec_columns(products, cat).to_dict("records") if not products.empty else []
-    for p in prod_rows:
-        p["spec_values"] = [p.get(f["key"], "") for f in fields]
-    return {"categories": pc.CATEGORIES, "cat": cat, "one_too": one_too, "old": old, "side": side_rows, "fields": fields, "products": prod_rows, "brands": pc.brands(cat)}
+    products = pc.list_products(cat, active_only=False)
+    rows = []
+    for p in (pc.spec_columns(products, cat).to_dict("records") if not products.empty else []):
+        if bool(p["is_active"]) == (show == "old"):
+            continue
+        prices = sorted(by_item.get(p["product_id"], []), key=lambda r: (r["net_price"], r["supplier"]))
+        if show == "multi" and len(prices) < 2 or show == "none" and prices:
+            continue
+        p.update(spec_values=[p.get(f["key"], "") for f in fields], rows=prices, low=prices[0]["net_price"] if prices else None)
+        rows.append(p)
+    shows = [("all", "All"), ("multi", "2+ suppliers"), ("none", "No price yet"), ("old", "Discontinued")]
+    return {"categories": pc.CATEGORIES, "cat": cat, "show": show, "shows": shows, "fields": fields, "products": rows, "brands": pc.brands(cat)}
 
 
 # --- saving -------------------------------------------------------------------------------------------------------------------------------------------
