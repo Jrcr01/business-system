@@ -141,6 +141,21 @@
   function keep() { try { var d = {card: f.card.value}; KEEP.forEach(function (k) { if (f[k]) d[k] = f[k].value; }); sessionStorage.setItem(DRAFT, JSON.stringify(d)); } catch (e) {} }
   f.addEventListener("input", keep); f.addEventListener("change", keep);
   f.addEventListener("submit", function () { try { sessionStorage.removeItem(DRAFT); } catch (e) {} });
+  /* owner, 2026-10-19: "can i make payment pre-filled in adding SOA, when my family marked it paid. so i will just confirm in the SOA" -- the payments
+     recorded on Daily payables since the earlier statement fill the box; change it only if the SOA shows another figure */
+  var hint = document.createElement("div"); hint.className = "hint"; f.payments.parentNode.appendChild(hint);
+  function prefill() {
+    var o = f.card.options[f.card.selectedIndex], daily = o ? n(o.dataset.daily) || 0 : 0;
+    if (f.payments.value && !f.payments.dataset.prefilled) { hint.textContent = ""; return; }      /* typed by hand: left as typed */
+    if (o && o.dataset.confirmed === "0" && daily > 0) {
+      f.payments.value = daily.toFixed(2); f.payments.dataset.prefilled = "1";
+      hint.textContent = "Filled in from Daily payables (" + peso(daily) + "). Change it if the SOA shows another amount.";
+    } else if (f.payments.dataset.prefilled) { f.payments.value = ""; delete f.payments.dataset.prefilled; hint.textContent = ""; }
+    else { hint.textContent = ""; }
+  }
+  f.payments.addEventListener("input", function () { delete f.payments.dataset.prefilled; hint.textContent = ""; });
+  f.card.addEventListener("change", function () { prefill(); calc(); });
+  prefill();
   f.addEventListener("input", calc); f.addEventListener("change", calc); calc();
 })();
 </script>
