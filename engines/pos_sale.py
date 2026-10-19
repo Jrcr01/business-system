@@ -85,7 +85,7 @@ def record(si_no, sale_date, customer_id, customer_name: str, lines: list[dict],
         return ok, msg, int(release_id) if ok else None
     # an item with no cost yet carries its own price and profit (owner, 2026-10-18, until the opening count); the rest share what the receipt leaves
     clean = [{"item_id": int(ln["item_id"]), "qty": _num(ln.get("qty")), "own": _num(ln.get("price")) if str(ln.get("price") or "").strip() else None,
-              "margin": ln.get("margin", "")} for ln in lines if str(ln.get("item_id", "")).isdigit() and _num(ln.get("qty")) > 0]
+              "margin": ln.get("margin", ""), "typed_cost": ln.get("typed_cost", ""), "cost_changed": ln.get("cost_changed", True)} for ln in lines if str(ln.get("item_id", "")).isdigit() and _num(ln.get("qty")) > 0]
     extra = [{"item_id": int(s["item_id"]), "qty": _num(s.get("qty")), "cost": _num(s.get("cost"))} for s in (surplus or [])
              if str(s.get("item_id", "")).isdigit() and _num(s.get("qty")) > 0]
     if not clean and not extra:
@@ -134,7 +134,8 @@ def record(si_no, sale_date, customer_id, customer_name: str, lines: list[dict],
     priced_rest = spread([{**ln, "cost": costs.get(ln["item_id"], 0.0)} for ln in rest], rec, svc_total + own_total)
     priced = [{**ln, "price": f"{ln['own']:.2f}"} for ln in own] + priced_rest
     ok, msg, sale_id = sr.save_sale(si_no, sale_date, customer_id, customer_name,
-                                    [{"item_id": ln["item_id"], "qty": ln["qty"], "price": ln["price"], "margin": ln.get("margin", "")} for ln in priced],
+                                    [{"item_id": ln["item_id"], "qty": ln["qty"], "price": ln["price"], "margin": ln.get("margin", ""),
+                                      "typed_cost": ln.get("typed_cost", ""), "cost_changed": ln.get("cost_changed", True)} for ln in priced],
                                     _with_rounding(svc, priced_rest if rest else priced, (rec - svc_total - own_total) if rest else rec - svc_total), pay, below_cost_reason)
     if not ok and before:
         _undo_take_ins(before, msg)                              # the surplus never came in: no ghost stock, and a retry does not double it

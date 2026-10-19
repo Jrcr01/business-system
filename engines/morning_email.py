@@ -198,7 +198,7 @@ def render(c: dict, site: str = "") -> tuple[str, str]:
     h2 = 'style="font-size:14px;margin:0 0 7px;color:#0B4F8A"'
     sec = 'style="padding:12px 16px;border-bottom:1px solid #e5e7eb"'
     grey = 'style="color:#4b5563"'
-    html = [f'<div style="font-family:Segoe UI,Arial,sans-serif;color:#1c2733;font-size:15px;max-width:440px;margin:0 auto;border:1px solid #d5dbe3;border-radius:10px;overflow:hidden">',
+    html = [f'<div style="font-family:Segoe UI,Arial,sans-serif;color:#1c2733;font-size:15px;max-width:640px;margin:0 auto;border:1px solid #d5dbe3;border-radius:10px;overflow:hidden">',
             f'<div style="background:#0f2a4a;color:#fff;padding:13px 16px"><b style="font-size:17px;display:block">Good morning, {escape(c["name"])}</b>'
             f'<span style="color:#f5c518;font-size:13px">{c["today"]:%A, %B} {c["today"].day}, {c["today"].year}</span></div>']
     # what the inbox shows beside the subject, before the email is opened: the day in one line, not the greeting run into the date

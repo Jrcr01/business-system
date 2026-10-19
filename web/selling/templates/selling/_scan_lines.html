@@ -75,7 +75,9 @@
   }
   function changed() { box.dispatchEvent(new CustomEvent("lines", {detail: {lines: lines, total: total(), profit: profit()}})); }
   function total() { return lines.reduce(function (s, l) { return s + l.qty * num(mode === "lend" ? l.it.cost : l.price); }, 0); }
-  function costOf(l) {                                          /* no cost yet: price less the profit per piece typed (owner, 2026-10-18: "profit only no %") */
+  function editable(l) { return box.dataset.uncounted && !l.it.po && (mode === "sale" || mode === "out" && l.fixed); }
+  function costOf(l) {                                          /* owner, 2026-10-19: the cost he types, until the item's first PO delivery */
+    if (editable(l) && String(l.cost == null ? "" : l.cost).trim() !== "") return num(l.cost);
     if (l.it.cost > 0 || !l.margin) return l.it.cost;
     var c = num(l.price) - num(l.margin);
     return c >= 0 ? c : 0;
@@ -123,6 +125,16 @@
       pending = code; document.getElementById("sl_code").textContent = code; learn.hidden = false; q.value = ""; q.focus(); say("Which item is " + code + "?", true);
     } else say("Nothing matches “" + code + "”.", true);
   }
+  function costBox(l, cls) {                                    /* starts at the lowest price-list net; he types over it */
+    if (l.cost === undefined || l.cost === null) l.cost = l.it.cost > 0 ? l.it.cost.toFixed(2) : "";
+    if (l.cost0 === undefined) l.cost0 = l.cost;
+    var w = document.createElement("div"), ci = document.createElement("input"); ci.className = cls; ci.inputMode = "decimal"; ci.value = l.cost;
+    if (cls === "inline-input") ci.style.width = "100px";
+    ci.placeholder = "cost each ₱"; ci.setAttribute("aria-label", "Cost each of " + l.it.name);
+    var h = document.createElement("div"); h.className = "hint"; h.textContent = l.it.cost > 0 ? "price list · type over if wrong" : "no cost yet · type it";
+    ci.addEventListener("input", function () { l.cost = ci.value; ci.dispatchEvent(new Event("recalc", {bubbles: true})); });
+    w.appendChild(ci); w.appendChild(h); return w;
+  }
   function cell(tr, text, right) { var td = document.createElement("td"); td.textContent = text; if (right) td.className = "num"; tr.appendChild(td); return td; }
   function draw() {
     rows.innerHTML = "";
@@ -141,11 +153,7 @@
       if (mode === "out" && l.fixed) {                          /* the phone sale: price each; profit each only for an item with no cost yet (owner, 2026-10-18) */
         var tf = document.createElement("td"); tf.className = "ph-money-cell"; pi = document.createElement("input"); pi.className = "ph-money"; pi.inputMode = "decimal";
         pi.value = l.price; pi.placeholder = "price each ₱"; pi.setAttribute("aria-label", "Price each of " + l.it.name); tf.appendChild(pi);
-        if (!(l.it.cost > 0) && box.dataset.uncounted) {
-          var fm = document.createElement("input"); fm.className = "ph-money"; fm.inputMode = "decimal";
-          fm.value = l.margin || ""; fm.placeholder = "profit each ₱"; fm.setAttribute("aria-label", "Profit per piece on " + l.it.name + ", in pesos");
-          fm.addEventListener("input", function () { l.margin = fm.value; recalc(); }); tf.appendChild(fm);
-        }
+        if (editable(l)) tf.appendChild(costBox(l, "ph-money"));
         est = document.createElement("div"); est.className = "hint"; tf.appendChild(est); tr.appendChild(tf);
       }
       else if (mode === "out") { }                              /* Scan out: the movement only, no money (owner, 2026-10-11) */
@@ -154,18 +162,16 @@
         var tp = document.createElement("td"); pi = document.createElement("input"); pi.className = "inline-input"; pi.style.width = "110px"; pi.inputMode = "decimal"; pi.value = l.price;
         pi.setAttribute("aria-label", (mode === "sale" ? "Price each of " : "Cost each of ") + l.it.name); pi.placeholder = mode === "sale" ? "agreed price" : "their cost";
         tp.appendChild(pi);
-        if (mode === "sale" && !(l.it.cost > 0) && box.dataset.uncounted) {                  /* no cost yet: the profit he knows works the cost back */
-          var mi = document.createElement("input"); mi.className = "inline-input"; mi.style.width = "110px"; mi.style.display = "block"; mi.style.marginTop = "4px";
-          mi.placeholder = "profit each ₱"; mi.inputMode = "decimal"; mi.value = l.margin || ""; mi.setAttribute("aria-label", "Profit per piece on " + l.it.name + ", in pesos");
-          mi.addEventListener("input", function () { l.margin = mi.value; recalc(); }); tp.appendChild(mi);
-        }
         tr.appendChild(tp); amt = cell(tr, "", true);
-        if (mode === "sale") { cost = cell(tr, peso(l.it.cost), true); prof = cell(tr, "", true); }
+        if (mode === "sale" && editable(l)) {                  /* owner, 2026-10-19: cost typed over the price list's, until a PO delivery */
+          var tc = document.createElement("td"); tc.className = "num"; tc.appendChild(costBox(l, "inline-input")); tr.appendChild(tc); prof = cell(tr, "", true);
+        }
+        else if (mode === "sale") { cost = cell(tr, peso(l.it.cost), true); prof = cell(tr, "", true); }
       }
       function recalc() {
         var price = mode === "lend" ? l.it.cost : num(l.price);
         if (amt) amt.textContent = peso(l.qty * price);
-        if (est) est.textContent = l.margin ? "cost " + peso(costOf(l)) + " (est.)" : "";
+        if (est) est.textContent = editable(l) && l.price !== "" ? "profit " + peso(l.qty * (num(l.price) - costOf(l))) : "";
         if (cost) cost.textContent = peso(costOf(l)) + (l.it.cost > 0 || !l.margin ? "" : " (est.)");
         if (prof) { var p = l.qty * (price - costOf(l)); prof.textContent = l.price === "" ? "" : peso(p); prof.className = "num " + (p < 0 ? "neg" : "pos"); }
         oh.className = "num" + (mode !== "borrow" && l.qty > l.it.on_hand ? " neg" : "");
@@ -176,6 +182,7 @@
       qi.addEventListener("input", function () { var n = num(qi.value); if (n > 0) { l.qty = n; recalc(); } });
       qi.addEventListener("change", function () { if (!(num(qi.value) > 0)) { lines.splice(lines.indexOf(l), 1); draw(); changed(); } });
       if (pi) pi.addEventListener("input", function () { l.price = pi.value; recalc(); });
+      tr.addEventListener("recalc", recalc);
       [qi, pi].forEach(function (el) { if (el) el.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); q.focus(); } }); });
       var tx = document.createElement("td"), x = document.createElement("button"); x.type = "button"; x.className = "btn small ghost"; x.textContent = "Remove";
       x.addEventListener("click", function () { lines.splice(lines.indexOf(l), 1); draw(); changed(); }); tx.appendChild(x); tr.appendChild(tx);
@@ -266,13 +273,14 @@
     });
   }
   box.closest("form").addEventListener("submit", function (ev) {
-    var even = mode === "sale" || box.dataset.phonesale ? lines.filter(function (l) { return !(l.it.cost > 0) && String(l.margin || "").trim() !== "" && num(l.margin) === 0; }) : [];
-    if (even.length && !confirm("Profit 0 on " + even.map(function (l) { return l.it.name; }).join(", ") + ": sold at breakeven only?")) {
+    var even = mode === "sale" || box.dataset.phonesale ? lines.filter(function (l) { return editable(l) && l.price !== "" && String(l.cost || "").trim() !== "" && num(l.cost) >= num(l.price); }) : [];
+    if (even.length && !confirm("Cost is the same as or more than the price on " + even.map(function (l) { return l.it.name; }).join(", ") + ": sold at breakeven or at a loss?")) {
       ev.preventDefault(); ev.stopImmediatePropagation(); return;   /* owner, 2026-10-18: "if 0 margin then confirm if only breakeven" */
     }
     var h = document.getElementById("sl_hidden"); h.innerHTML = "";
     lines.forEach(function (l, k) {
-      [["ln_item_" + k, l.it.id], ["ln_qty_" + k, l.qty], ["ln_price_" + k, mode === "lend" || mode === "out" && !l.fixed ? "" : l.price], ["ln_margin_" + k, l.margin || ""]].forEach(function (pair) {
+      [["ln_item_" + k, l.it.id], ["ln_qty_" + k, l.qty], ["ln_price_" + k, mode === "lend" || mode === "out" && !l.fixed ? "" : l.price], ["ln_margin_" + k, l.margin || ""],
+       ["ln_cost_" + k, editable(l) ? (l.cost || "") : ""], ["ln_costchg_" + k, editable(l) && String(l.cost) !== String(l.cost0) ? "1" : "0"]].forEach(function (pair) {
         var i = document.createElement("input"); i.type = "hidden"; i.name = pair[0]; i.value = pair[1]; h.appendChild(i);
       });
     });
@@ -281,7 +289,8 @@
     items = d.items || []; items.forEach(function (it) { byId[it.id] = it; });
     say(items.length ? (box.dataset.noscan ? "Type a size, a brand or a pattern (" : "Scan, or type a size, a brand or a pattern (") + items.length + " items)." : "There are no items yet. Add them on Price lists.", !items.length);
     var start = JSON.parse(document.getElementById("sl_start").textContent || "[]");
-    (Array.isArray(start) ? start : []).forEach(function (s) { if (byId[s.id]) lines.push({it: byId[s.id], qty: s.qty, price: s.price != null ? s.price : ""}); });
+    (Array.isArray(start) ? start : []).forEach(function (s) { if (byId[s.id]) lines.push({it: byId[s.id], qty: s.qty, price: s.price != null ? s.price : "",
+                                                                                         cost: s.cost ? s.cost : undefined}); });
     draw(); changed();
     box.addEventListener("restore", function (e) {               /* lines kept on the phone after a closed app (2026-10-17): back as they were */
       lines = []; (e.detail || []).forEach(function (s) { if (byId[s.id]) lines.push({it: byId[s.id], qty: s.qty, price: s.price != null ? s.price : ""}); });

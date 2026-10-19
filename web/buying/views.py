@@ -152,6 +152,14 @@ def _catalog_ctx(request, cid: int) -> dict:
     if not one_too and not side.empty:
         side = side[side.groupby("product_id")["supplier"].transform("count") > 1]
     side_rows = side.assign(discount=side["chain"].map(dr.chain_label)).to_dict("records") if not side.empty else []
+    tires: dict = {}                                             # owner, 2026-10-19: one row per tire at its lowest cost, each supplier's price under it
+    for r in side_rows:
+        t = tires.setdefault(r["product_id"], {"product_id": r["product_id"], "sku": r["sku"], "product": r["product"], "rows": []})
+        t["rows"].append(r)
+    for t in tires.values():
+        t["rows"].sort(key=lambda r: (r["net_price"], r["supplier"]))
+        t["low"] = t["rows"][0]["net_price"]
+    side_rows = sorted(tires.values(), key=lambda t: str(t["product"]).lower())
     fields = pc.CATEGORY_FIELDS[cat]
     products = pc.list_products(cat, active_only=not old)
     prod_rows = pc.spec_columns(products, cat).to_dict("records") if not products.empty else []

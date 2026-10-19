@@ -148,3 +148,38 @@ def test_no_release_now_and_no_phone_stock_out_while_sales_are_recorded_after_th
     _on()
     assert "Release now, invoice later" not in web.get("/sales/?view=new").content.decode()
     assert 'href="/phone/out/"' not in web.get("/phone/", HTTP_USER_AGENT=PHONE_UA, follow=True).content.decode()
+
+
+def test_the_cost_typed_on_a_sale_line_carries_forward_until_a_po_delivery(web, db):
+    """Owner, 2026-10-19: "until NO PO is received keep cost editable for now to reflect proper margin. let my brother input it"; lowest list net kept."""
+    import sqlite3
+    from conftest import make_creditor
+    from engines.clock import manila_today
+    from engines.sales_rules import save_sale
+    from engines.stock_rules import picker_items
+    from tests.test_web_stock import _item
+    _admin(web)
+    a, name = _item("Westlake", "215/70R15", "RP36")
+    cid = make_creditor(db, "Westlake Supplier", terms="30")
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO supplier_price_list (creditor_id, item_name, unit_price, effective_date, item_id) VALUES (?, ?, 3000, '2026-01-01', ?)", (cid, name, a))
+    row = next(r for r in picker_items() if r["id"] == a)
+    assert row["cost"] == 3000.0 and row["po"] is False                                             # the box shows, at the list's net
+    pay = [{"method": "CASH", "amount": 6800}]
+    bad = save_sale(6101, manila_today(), None, "Walk-in", [{"item_id": a, "qty": 2, "price": 3400, "typed_cost": "abc"}], [], pay)
+    assert not bad[0] and "not a cost" in bad[1]
+    ok, msg, sid = save_sale(6101, manila_today(), None, "Walk-in", [{"item_id": a, "qty": 2, "price": 3400, "typed_cost": "2,800"}], [], pay)
+    assert ok, msg
+    assert fetchone(db, "SELECT unit_cost FROM sale_lines WHERE sale_id = ?", (sid,))[0] == 2800.0
+    assert fetchone(db, "SELECT COUNT(*) FROM review_flags WHERE kind = 'COST_TYPED'")[0] == 1
+    ok, msg, sid2 = save_sale(6102, manila_today(), None, "Walk-in", [{"item_id": a, "qty": 2, "price": 3400}], [], pay)
+    assert ok and fetchone(db, "SELECT unit_cost FROM sale_lines WHERE sale_id = ?", (sid2,))[0] == 2800.0   # carried forward
+    ok, msg, sid3 = save_sale(6103, manila_today(), None, "Walk-in", [{"item_id": a, "qty": 2, "price": 3400, "typed_cost": "2500", "cost_changed": False}], [], pay)
+    assert ok and fetchone(db, "SELECT unit_cost FROM sale_lines WHERE sale_id = ?", (sid3,))[0] == 2500.0   # that sale's cost only
+    assert fetchone(db, "SELECT avg_cost FROM items WHERE id = ?", (a,))[0] == 2800.0
+    with sqlite3.connect(db) as conn:                                                                # a PO delivery came: its cost rules from then on
+        conn.execute("INSERT INTO stock_layers (item_id, received_on, qty_in, qty_left, unit_cost, ref_type, ref_id) VALUES (?, '2026-10-01', 4, 4, 2900, 'purchase_order_lines', 1)", (a,))
+        conn.execute("UPDATE items SET avg_cost = 2900, next_cost = 2900 WHERE id = ?", (a,))
+    assert next(r for r in picker_items() if r["id"] == a)["po"] is True
+    ok, msg, sid4 = save_sale(6104, manila_today(), None, "Walk-in", [{"item_id": a, "qty": 1, "price": 3400, "typed_cost": "100"}], [], [{"method": "CASH", "amount": 3400}])
+    assert ok and fetchone(db, "SELECT unit_cost FROM sale_lines WHERE sale_id = ?", (sid4,))[0] == 2900.0

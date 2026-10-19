@@ -339,11 +339,38 @@ def _clean_lines(conn, lines: list[dict], need_price: bool) -> tuple[list[dict] 
         if not float(it[1] or 0):                               # never delivered: the price list's net (owner, 2026-10-18)
             from engines.list_cost import list_cost
             it = (it[0], list_cost(item_id))
-        est, problem = _cost_from_margin(it[0], price, ln.get("margin"), float(it[1] or 0))
+        typed, problem = _typed_cost(conn, item_id, it[0], ln.get("typed_cost"))
+        est = None
+        if not problem and typed is None:
+            est, problem = _cost_from_margin(it[0], price, ln.get("margin"), float(it[1] or 0))
         if problem:
             return None, problem
-        out.append({"item_id": item_id, "name": it[0], "qty": qty, "price": price, "cost": float(it[1] or 0), "est_cost": est})
+        out.append({"item_id": item_id, "name": it[0], "qty": qty, "price": price, "cost": float(it[1] or 0), "est_cost": est, "typed_cost": typed,
+                    "cost_changed": ln.get("cost_changed", True)})
     return out, ""
+
+
+def po_delivered(conn, item_id: int) -> bool:
+    """The item has come in on a purchase order: its cost is the delivery's from then on."""
+    return conn.execute("SELECT 1 FROM stock_layers WHERE item_id = ? AND ref_type = 'purchase_order_lines' AND qty_in > 0 LIMIT 1", (int(item_id),)).fetchone() is not None
+
+
+def _typed_cost(conn, item_id: int, name: str, raw) -> tuple[float | None, str]:
+    """The cost typed on a sale line (owner, 2026-10-19: "until NO PO is received keep cost editable for now to reflect proper margin. let my brother
+    input it"): it starts at the lowest price-list net; only until the opening count, and only for an item never received on a PO."""
+    text = str(raw or "").replace(",", "").replace("₱", "").strip()
+    if not text:
+        return None, ""
+    from engines.settings_registry import stock_not_counted
+    if not stock_not_counted() or po_delivered(conn, item_id):
+        return None, ""
+    try:
+        cost = round(float(text), 2)
+    except ValueError:
+        return None, f"{name}: '{raw}' is not a cost. Type the pesos per piece, e.g. 2600."
+    if cost < 0:
+        return None, f"{name}: the cost cannot be below zero."
+    return cost, ""
 
 
 def _cost_from_margin(name: str, price: float | None, margin, cost: float) -> tuple[float | None, str]:
@@ -386,13 +413,23 @@ def _write_body(conn, sale_id: int, n: int, day, clean: list[dict], svc: list[di
     from engines.stock_ledger import stock_out
     cost_total, below = 0.0, []
     for ln in clean:
-        if ln.get("est_cost") is not None:                    # no cost yet: the one worked back from the profit typed, until a delivery gives the real one
+        if ln.get("typed_cost") is not None:                  # the cost typed on the line: this sale's, and the item's for the next sales until a PO delivery
+            if abs(ln["typed_cost"] - ln["cost"]) > 0.005 and ln.get("cost_changed", True):   # an edited sale's untouched cost stays that sale's only
+                conn.execute("UPDATE items SET avg_cost = ?, next_cost = ? WHERE id = ?", (ln["typed_cost"], ln["typed_cost"], ln["item_id"]))
+                from engines.review_flags import flag
+                was = f"₱{ln['cost']:,.2f}" if ln["cost"] > 0 else "none"
+                flag(conn, "COST_TYPED", "items", int(ln["item_id"]), f"{ln['name']}: cost typed ₱{ln['typed_cost']:,.2f} on {si_text(n)} (was {was}). "
+                                                                   "Used for the next sales until a PO delivery gives the real one.")
+            ln["cost"] = ln["typed_cost"]
+        elif ln.get("est_cost") is not None:                    # no cost yet: the one worked back from the profit typed, until a delivery gives the real one
             conn.execute("UPDATE items SET avg_cost = ? WHERE id = ? AND COALESCE(avg_cost, 0) = 0 AND COALESCE(next_cost, 0) = 0", (ln["est_cost"], ln["item_id"]))
             ln["cost"] = ln["est_cost"]
             from engines.review_flags import flag
             flag(conn, "COST_FROM_MARGIN", "items", int(ln["item_id"]), f"{ln['name']}: cost ₱{ln['est_cost']:,.2f} worked back from the profit typed on {si_text(n)}. "
                                                                       "Replaced by the real cost when a delivery is recorded.")
         cost = ln["cost"] if no_stock_out else stock_out(conn, ln["item_id"], ln["qty"], "sales", sale_id, day, note=f"sold on {si_text(n)}")
+        if ln.get("typed_cost") is not None:                  # before the count the stock is not real: the sale keeps the cost he typed
+            cost = ln["typed_cost"]
         cost_total += ln["qty"] * cost
         conn.execute("INSERT INTO sale_lines (sale_id, item_id, description, qty, unit_price, amount, unit_cost) VALUES (?, ?, ?, ?, ?, ?, ?)",
                      (sale_id, ln["item_id"], ln["name"], ln["qty"], ln["price"], round(ln["qty"] * ln["price"], 2), cost))

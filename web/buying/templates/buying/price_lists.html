@@ -170,13 +170,35 @@
 {% elif tab == "catalog" %}
   <p class="note">The catalog holds each product once, whichever supplier sells it, under our own item code (SKU). Two suppliers' prices for the same product are compared here.</p>
   <div class="seg">{% for c in categories %}<a href="/price-lists/?s={{ cid }}&amp;tab=catalog&amp;cat={{ c }}"{% if c == cat %} class="on"{% endif %}>{{ c }}</a>{% endfor %}</div>
-  <div class="grp">Prices side by side</div>
+  <div class="grp">Prices side by side: each product at its lowest cost</div>
   <p class="hint"><a href="/price-lists/?s={{ cid }}&amp;tab=catalog&amp;cat={{ cat }}{% if not one_too %}&amp;all=1{% endif %}">{% if one_too %}Only products with two or more suppliers{% else %}Also show products with only one supplier{% endif %}</a></p>
   {% if side %}
-  <div class="scroll-x"><table class="list"><tr><th>SKU</th><th>Product</th><th>Supplier</th><th>List</th><th>Discount</th><th>Net</th><th>Since</th><th></th></tr>
-    {% for r in side %}<tr><td>{{ r.sku }}</td><td>{{ r.product }}</td><td>{{ r.supplier }}</td><td class="num">{{ r.list_price|floatformat:2|intcomma }}</td><td>{{ r.discount|default:"none" }}</td>
-      <td class="num">{{ r.net_price|floatformat:2|intcomma }}</td><td>{{ r.effective_date|dmy }}</td><td>{% if r.cheapest %}<span class="pill">cheapest</span>{% endif %}</td></tr>{% endfor %}
+  <p><input type="search" id="cat_q" placeholder="Search: 195R15, MRF, ZLX …" autocomplete="off" style="max-width:320px" aria-label="Search the catalog"></p>
+  <div class="scroll-x"><table class="list" id="cat_side"><thead><tr><th>Product / supplier</th><th style="text-align:right">List</th><th>Discount</th><th style="text-align:right">Net (cost)</th><th>Since</th></tr></thead>
+    {% for t in side %}<tbody class="cat-t{% if t.rows|length < 2 %} shut{% endif %}" data-find="{{ t.product|lower }} {{ t.sku|lower }}">
+      <tr class="cat-head" tabindex="0" style="cursor:pointer;background:var(--bg-fafbfc, #fafbfc)"><td style="font-weight:600"><span class="cat-arrow" aria-hidden="true"></span>{{ t.product }} <span class="hint">{{ t.sku }}</span></td><td></td><td></td>
+        <td class="num" style="font-weight:600">₱{{ t.low|floatformat:2|intcomma }}</td><td class="hint">{{ t.rows|length }} supplier{{ t.rows|length|pluralize }}</td></tr>
+      {% for r in t.rows %}<tr class="cat-sup"><td style="padding-left:30px">{{ r.supplier }}</td><td class="num">{{ r.list_price|floatformat:2|intcomma }}</td><td>{{ r.discount|default:"none" }}</td>
+        <td class="num">{{ r.net_price|floatformat:2|intcomma }}{% if r.cheapest %} <span class="pill">lowest</span>{% endif %}</td><td>{{ r.effective_date|dmy }}</td></tr>{% endfor %}
+    </tbody>{% endfor %}
   </table></div>
+  <style>#cat_side tbody.shut .cat-sup{display:none}#cat_side .cat-arrow::before{content:"▾";display:inline-block;width:16px;color:#888}#cat_side tbody.shut .cat-arrow::before{content:"▸"}</style>
+  <script>
+  (function () {                                                 /* click a product to fold or open its suppliers; the box narrows the list as you type */
+    var t = document.getElementById("cat_side"), q = document.getElementById("cat_q");
+    t.querySelectorAll(".cat-head").forEach(function (h) {
+      function flip() { h.parentNode.classList.toggle("shut"); }
+      h.addEventListener("click", flip); h.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+    });
+    q.addEventListener("input", function () {
+      var words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+      t.querySelectorAll("tbody.cat-t").forEach(function (b) {
+        var f = b.dataset.find, f2 = f.replace(/[^a-z0-9]/g, "") + " " + f.replace(/\D/g, "");
+        b.style.display = words.every(function (w) { return f.indexOf(w) >= 0 || f2.indexOf(w.replace(/[^a-z0-9]/g, "")) >= 0; }) ? "" : "none";
+      });
+    });
+  })();
+  </script>
   {% else %}<p class="note">{% if one_too %}No priced products in this category yet.{% else %}No product has prices from two or more suppliers yet.{% endif %}</p>{% endif %}
 
   <div class="grp">Products in the catalog</div>

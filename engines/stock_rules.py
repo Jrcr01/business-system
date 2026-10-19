@@ -257,6 +257,7 @@ def picker_items() -> list[dict]:
     '2055516' finds 205/55R16) and codes (our code and the makers' barcodes: an exact match adds the item at once)."""
     with get_conn() as conn:
         rows = conn.execute("SELECT id, code, name, on_hand, avg_cost, oldest_dot, unit FROM items WHERE is_active = 1 ORDER BY name COLLATE NOCASE").fetchall()
+        on_po = {int(r[0]) for r in conn.execute("SELECT DISTINCT item_id FROM stock_layers WHERE ref_type = 'purchase_order_lines' AND qty_in > 0")}
         codes: dict[int, list[str]] = {}
         for b, iid in conn.execute("SELECT barcode, item_id FROM item_barcodes"):
             codes.setdefault(int(iid), []).append(b)
@@ -266,7 +267,7 @@ def picker_items() -> list[dict]:
     for iid, code, name, on_hand, cost, dot, unit in rows:
         cost = float(cost or 0) or listed.get(int(iid), 0.0)
         text = f"{code} {name}".lower()
-        out.append({"id": int(iid), "code": code, "name": name, "on_hand": float(on_hand or 0), "cost": float(cost or 0), "dot": dot_text(dot) if float(on_hand or 0) > 0 else "",
+        out.append({"id": int(iid), "code": code, "name": name, "on_hand": float(on_hand or 0), "cost": float(cost or 0), "po": int(iid) in on_po, "dot": dot_text(dot) if float(on_hand or 0) > 0 else "",
                     "unit": unit or "", "find": text + " " + re.sub(r"[^a-z0-9]", "", text) + " " + re.sub(r"\D", "", name),
                     "codes": [code.upper()] + codes.get(int(iid), [])})
     return out
@@ -353,7 +354,7 @@ def add_counter_item(kind: str, brand: str, size: str, pattern: str = "") -> tup
         return False, "That item could not be made. Check the brand and the size.", None
     if created:
         with write_tx() as conn:
-            flag(conn, "ITEM_ADDED_AT_COUNTER", "items", int(item_id), f"{name}: added while recording a sale. Add it to a price list; its cost is worked back from "
-                                                                     "the profit typed until a delivery gives the real one.")
+            flag(conn, "ITEM_ADDED_AT_COUNTER", "items", int(item_id), f"{name}: added while recording a sale. Add it to a price list; its cost is the one typed on "
+                                                                     "the sale until a PO delivery gives the real one.")
     row = next((r for r in picker_items() if r["id"] == int(item_id)), None)
     return True, (f"{name} added." if created else f"{name} was already in the list."), row

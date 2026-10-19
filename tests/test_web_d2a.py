@@ -95,7 +95,7 @@ def test_catalog_add_discontinue_and_side_by_side(web, db):
     _price(web, a, name, "5200")
     _price(web, b, name, "5000")
     side = web.get(f"/price-lists/?s={a}&tab=catalog&cat=Battery").content.decode()
-    assert "Supplier A" in side and "Supplier B" in side and "cheapest" in side
+    assert "Supplier A" in side and "Supplier B" in side and "lowest" in side
     web.post("/price-lists/", {"s": a, "action": "product_on_off", "product_id": pid, "cat": "Battery", "on": "0"})
     assert fetchone(_db(), "SELECT is_active FROM items WHERE id = ?", (pid,))[0] == 0
 

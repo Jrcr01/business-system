@@ -29,7 +29,8 @@ def _lines(p) -> list[dict]:
     for key in p:
         if key.startswith("ln_item_"):
             n = key.removeprefix("ln_item_")
-            out.append({"item_id": p.get(key), "qty": p.get(f"ln_qty_{n}"), "price": p.get(f"ln_price_{n}", ""), "margin": p.get(f"ln_margin_{n}", "")})
+            out.append({"item_id": p.get(key), "qty": p.get(f"ln_qty_{n}"), "price": p.get(f"ln_price_{n}", ""), "margin": p.get(f"ln_margin_{n}", ""),
+                        "typed_cost": p.get(f"ln_cost_{n}", ""), "cost_changed": p.get(f"ln_costchg_{n}", "1") == "1"})
     return out
 
 
@@ -192,7 +193,8 @@ def sale_edit(request, sale_id: int):
         _say(request, ok, msg)
         if ok:
             return redirect(f"/sales/{sale_id}/")
-        start = json.dumps([{"id": int(ln["item_id"]), "qty": float(ln["qty"] or 0), "price": ln["price"]} for ln in _lines(p) if str(ln["item_id"]).isdigit()])
+        start = json.dumps([{"id": int(ln["item_id"]), "qty": float(ln["qty"] or 0), "price": ln["price"], "cost": ln["typed_cost"]} for ln in _lines(p)
+                            if str(ln["item_id"]).isdigit()])
         return render(request, "selling/sale.html", {**_sale_ctx(request, p, start), "editing": s})
     items = [ln for ln in s["lines"] if not ln["service"]]
     svcs = [ln for ln in s["lines"] if ln["service"]][:4]
@@ -203,7 +205,7 @@ def sale_edit(request, sale_id: int):
     for k, pay in enumerate(s["payments"][:PAY_ROWS]):
         p.update({f"pay_method_{k}": pay["method"], f"pay_amount_{k}": f"{pay['amount']:.2f}", f"pay_bank_{k}": pay["bank"], f"pay_no_{k}": pay["check_no"],
                   f"pay_date_{k}": str(pay["check_date"] or "")[:10], f"pay_ref_{k}": pay["reference"]})
-    start = json.dumps([{"id": int(ln["item_id"]), "qty": ln["qty"], "price": f"{ln['unit_price']:.2f}"} for ln in items])
+    start = json.dumps([{"id": int(ln["item_id"]), "qty": ln["qty"], "price": f"{ln['unit_price']:.2f}", "cost": f"{ln['unit_cost']:.2f}"} for ln in items])
     return render(request, "selling/sale.html", {**_sale_ctx(request, _Form(p), start), "editing": s})
 
 
