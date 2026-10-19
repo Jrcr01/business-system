@@ -49,9 +49,8 @@ def test_the_price_list_on_the_phone_shows_each_suppliers_net_price(web, db):
     assert [(s["supplier"], s["net"]) for s in rows[0]["suppliers"]] == [("Express Dymans", 4950.0), ("New Century", 5120.0)]      # cheapest first
     assert prices("e") == [] and len(prices("eagle")) == 2
     web.get("/phone/")                                                          # the "saved" notes of the prices added above are shown once, here
-    page = web.get("/phone/prices/?q=eagle+f1").content.decode()
-    assert "4,950.00" in page and "5,120.00" in page and "Eagle Sport" not in page
-    assert "Type a size" in web.get("/phone/prices/").content.decode()
+    page = web.get("/phone/prices/").content.decode()                       # the Catalog: the items at once, no search first (owner, 2026-10-19)
+    assert "Narrow: size, brand or pattern" in page and "Read-only" in page
 
 
 def test_stock_on_the_phone_finds_by_code_searches_and_teaches_a_barcode(web, db):
@@ -202,3 +201,24 @@ def test_the_phone_pages_are_their_own_app_beside_the_whole_site(web, db):
     assert 'href="/phone/manifest.webmanifest"' in web.get("/").content.decode()
     web.post("/logout/")
     assert web.get("/phone/manifest-ops.webmanifest").status_code == 200       # readable before sign-in, like the other one
+
+
+def test_the_phone_catalog_shows_every_item_at_its_lowest_cost(web, db):
+    """Owner, 2026-10-19: "instead of pricelist, better to have catalog. And show items rather than search first"."""
+    import sqlite3
+    from conftest import make_creditor
+    from tests.test_web_stock import _item
+    from tests.test_web_d0 import _admin
+    _admin(web)
+    _on()
+    a, name = _item("Westlake", "215/70R15", "RP36")
+    b, _ = _item("Westlake", "185/65R14", "RP28")
+    x, y = make_creditor(db, "Supplier X", terms="30"), make_creditor(db, "Supplier Y", terms="30")
+    with sqlite3.connect(db) as conn:
+        for cid, price in ((x, 3000), (y, 2800)):
+            conn.execute("INSERT INTO supplier_price_list (creditor_id, item_name, unit_price, effective_date, item_id) VALUES (?, ?, ?, '2026-01-01', ?)", (cid, name, price, a))
+    page = web.get("/phone/prices/").content.decode()
+    assert "₱2,800.00" in page and "Supplier X" in page and "Supplier Y" in page and "2 suppliers" in page
+    assert "185/65R14" in page and "no price yet" in page                                           # an item with no price is listed too
+    assert "185/65R14" not in web.get("/phone/prices/?show=multi").content.decode()
+    assert 'Catalog</a>' in web.get("/phone/").content.decode()

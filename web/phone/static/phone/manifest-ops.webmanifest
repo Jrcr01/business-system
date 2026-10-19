@@ -2,7 +2,7 @@
   "id": "/phone/",
   "name": "Slick's POS",
   "short_name": "Slick's POS",
-  "description": "Price list, stock, stock in and stock out on the phone",
+  "description": "Catalog, stock, stock in and stock out on the phone",
   "start_url": "/phone/",
   "scope": "/phone/",
   "display": "standalone",

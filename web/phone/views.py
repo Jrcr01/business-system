@@ -167,10 +167,27 @@ def manifest(request):
 
 @phone_page("prices")
 def prices(request):
-    from engines.phone_lookup import prices as lookup
-    q = request.GET.get("q", "").strip()
-    rows = lookup(q) if q else []
-    return render(request, "phone/prices.html", _ctx(request, "Price list", q=q, rows=rows, asked=bool(q)))
+    """The Catalog on the phone (owner, 2026-10-19: "instead of pricelist, better to have catalog. And show items rather than search first"): every
+    item of a category at once, A to Z, at its lowest cost; tap one for each supplier's price. Read-only, as the computer's Catalog."""
+    from engines import discount_rules as dr
+    from engines import product_catalog as pc
+    cats = [c for c in pc.CATEGORIES if not pc.list_products(c).empty] or [pc.CATEGORIES[0]]
+    cat = request.GET.get("cat") if request.GET.get("cat") in cats else cats[0]
+    show = request.GET.get("show") if request.GET.get("show") in ("all", "multi", "none") else "all"
+    side = pc.supplier_prices(category=cat)
+    by_item: dict = {}
+    for r in (side.assign(discount=side["chain"].map(dr.chain_label)).to_dict("records") if not side.empty else []):
+        by_item.setdefault(r["product_id"], []).append(r)
+    rows = []
+    products = pc.list_products(cat)
+    for p in (products.to_dict("records") if not products.empty else []):
+        sup = sorted(by_item.get(p["product_id"], []), key=lambda r: (r["net_price"], r["supplier"]))
+        if show == "multi" and len(sup) < 2 or show == "none" and sup:
+            continue
+        rows.append({"name": p["name"], "code": p["sku"], "unit": p.get("unit") or "", "rows": sup, "low": sup[0]["net_price"] if sup else None})
+    rows.sort(key=lambda r: str(r["name"]).lower())
+    shows = [("all", "All"), ("multi", "2+ suppliers"), ("none", "No price yet")]
+    return render(request, "phone/prices.html", _ctx(request, "Catalog", cats=cats, cat=cat, show=show, shows=shows, rows=rows))
 
 
 @phone_page("stock")

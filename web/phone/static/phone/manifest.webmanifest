@@ -30,7 +30,7 @@
     {
       "name": "Slick's POS",
       "short_name": "POS",
-      "description": "Price list, stock, stock in, stock out, record a sale, stock count",
+      "description": "Catalog, stock, stock in, stock out, record a sale, stock count",
       "url": "/phone/",
       "icons": [
         {

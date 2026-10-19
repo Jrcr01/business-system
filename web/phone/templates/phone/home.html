@@ -6,7 +6,7 @@ resumes it; only the POS shortcut carries an address). So the way across is here
 {% include "core/_fingerprint_offer.html" %}
 {% include "core/_phone_setup.html" %}
 {% if mine.stock %}<a class="ph-big" href="/phone/look/"><span class="ms">barcode_scanner</span>Scan barcode</a>{% endif %}
-{% if mine.prices %}<a class="ph-big" href="/phone/prices/"><span class="ms">sell</span>Price list</a>{% endif %}
+{% if mine.prices %}<a class="ph-big" href="/phone/prices/"><span class="ms">sell</span>Catalog</a>{% endif %}
 {% if mine.stock %}<a class="ph-big" href="/phone/stock/"><span class="ms">inventory_2</span>Stock</a>{% endif %}
 {% if mine.in %}<a class="ph-big" href="/phone/in/"><span class="ms">move_to_inbox</span>Stock in{% if waiting %}<span class="pill warn">{{ waiting }} order{{ waiting|pluralize }} waiting</span>{% endif %}</a>{% endif %}
 {% if mine.out %}<a class="ph-big" href="/phone/out/"><span class="ms">outbox</span>Stock out{% if slips %}<span class="pill">{{ slips }} slip{{ slips|pluralize }} today</span>{% endif %}</a>{% endif %}

@@ -17,7 +17,7 @@ PHONE = {     # purchase orders: as on the laptop (owner, 2026-10-18: "make PO a
 
 # where the job is done on the phone instead, when there is a phone page for it
 PHONE_INSTEAD = {"purchase-orders": ("/phone/in/", "Goods came? Stock in"), "stock-counts": ("/phone/count/", "Count on the phone: Stock count"),
-                 "price-lists": ("/phone/prices/", "Looking up a price? Price list")}
+                 "price-lists": ("/phone/prices/", "Looking up a price? Catalog")}
 
 LAPTOP_WHY = {"settings": "People, access, switches and sign-in can change who may do what, so they are kept off phones and iPads.",
               "booklets": "A check number series set wrong affects every check after it.",

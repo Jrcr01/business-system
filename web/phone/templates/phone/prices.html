@@ -1,15 +1,32 @@
 {% extends "phone/base.html" %}{% load humanize slicks %}
 {% block content %}
-{% comment %}Owner, 2026-10-12: the price list on the phone shows supplier cost prices as the laptop page does; read-only here; hidden from the staff phone by the per-person setting.{% endcomment %}
-<form method="get" class="ph-scan"><input type="search" name="q" value="{{ q }}" placeholder="Size, brand or pattern" autofocus autocomplete="off" aria-label="Find an item">
-  <button type="submit" aria-label="Search"><span class="ms">search</span></button></form>
-{% if asked %}
-  {% if rows %}<p class="hint">Prices in force today. {{ rows|length }} item{{ rows|length|pluralize }} found{% if rows|length == 40 %} (the first 40: type more to narrow it){% endif %}.</p>
-  {% for it in rows %}<div class="ph-card"><b class="t">{{ it.name }}</b>{% if it.code %}<span class="hint">{{ it.code }}{% if it.unit %} · {{ it.unit }}{% endif %}</span>{% endif %}
-    {% for s in it.suppliers %}<div class="kv"><span>{{ s.supplier }}</span><b>{{ s.net|floatformat:2|intcomma }}</b></div>
-    <div class="kv" style="padding:0 0 4px 12px"><span class="hint">since {{ s.since|date:"m/d/Y" }}{% if s.chain %} · list {{ s.list|floatformat:2|intcomma }} less {{ s.chain }}{% endif %}</span><span></span></div>{% endfor %}
-  </div>{% endfor %}
-  {% else %}<p class="note">Nothing matches "{{ q }}". Try fewer words, or the size's digits run together (2055516).</p>{% endif %}
-{% else %}<p class="note">Type a size, a brand or a pattern. Each supplier's net price in force today is shown.</p>{% endif %}
-<p class="hint">Read-only here: adding and importing prices stay on the laptop.</p>
+{% comment %}Owner, 2026-10-12: supplier cost prices as on the laptop; read-only here; hidden from the staff phone by the per-person setting.
+Owner, 2026-10-19: the Catalog -- every item shown at once at its lowest cost, each supplier under it.{% endcomment %}
+<div class="ph-seg" style="display:flex;gap:6px;margin-bottom:8px">{% for c in cats %}<a href="?cat={{ c }}&amp;show={{ show }}" style="flex:1;text-align:center;padding:7px 0;border:1px solid var(--line);border-radius:16px;text-decoration:none;{% if c == cat %}background:var(--bg-1f4e8c, #1f4e8c);color:#fff{% else %}color:var(--ink);background:var(--bg-ffffff){% endif %}">{{ c }}</a>{% endfor %}</div>
+<input type="search" id="cg_q" placeholder="Narrow: size, brand or pattern" autocomplete="off" aria-label="Narrow the list" style="width:100%;box-sizing:border-box;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:10px">
+<p class="hint" style="margin:8px 2px">Show: {% for key, label in shows %}{% if not forloop.first %} · {% endif %}{% if key == show %}<b>{{ label }}</b>{% else %}<a href="?cat={{ cat }}&amp;show={{ key }}">{{ label }}</a>{% endif %}{% endfor %} · {{ rows|length }} item{{ rows|length|pluralize }}</p>
+{% for it in rows %}<div class="ph-card cg" data-find="{{ it.name|lower }} {{ it.code|lower }}"{% if it.rows %} data-open="0"{% endif %}>
+  <div class="kv cg-h"{% if it.rows %} role="button" tabindex="0" style="cursor:pointer"{% endif %}><span style="color:var(--ink)"><b class="t" style="font-size:1rem">{% if it.rows %}<span class="cg-a">▸</span> {% endif %}{{ it.name }}</b>
+    <span class="hint">{{ it.code }}{% if it.unit %} · {{ it.unit }}{% endif %}{% if it.rows %} · {{ it.rows|length }} supplier{{ it.rows|length|pluralize }}{% endif %}</span></span>
+    {% if it.low is not None %}<b style="white-space:nowrap">₱{{ it.low|floatformat:2|intcomma }}</b>{% else %}<span style="color:#b35900;font-size:.85rem;font-weight:600;white-space:nowrap">no price yet</span>{% endif %}</div>
+  {% if it.rows %}<div class="cg-s" hidden>{% for s in it.rows %}<div class="kv" style="border-top:1px dashed var(--line);margin-top:6px;padding-top:6px"><span>{{ s.supplier }}{% if s.cheapest %} <span class="pill">lowest</span>{% endif %}</span><b>{{ s.net_price|floatformat:2|intcomma }}</b></div>
+    <div class="hint" style="padding-left:10px">list {{ s.list_price|floatformat:2|intcomma }}{% if s.discount %} {{ s.discount }}{% endif %} · since {{ s.effective_date|dmy }}</div>{% endfor %}</div>{% endif %}
+</div>{% empty %}<p class="note">{% if show == "multi" %}No item here has two or more suppliers yet.{% elif show == "none" %}Every item here has a price.{% else %}No items here yet.{% endif %}</p>{% endfor %}
+<p class="hint">Read-only here: adding and importing prices stay on the computer.</p>
+<script>
+(function () {                                                   /* tap an item for its suppliers; the box narrows the list as you type */
+  document.querySelectorAll(".cg[data-open] .cg-h").forEach(function (h) {
+    function flip() { var c = h.parentNode, s = c.querySelector(".cg-s"), on = s.hidden; s.hidden = !on; c.querySelector(".cg-a").textContent = on ? "▾" : "▸"; }
+    h.addEventListener("click", flip); h.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+  });
+  var q = document.getElementById("cg_q");
+  q.addEventListener("input", function () {
+    var words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+    document.querySelectorAll(".cg").forEach(function (c) {
+      var f = c.dataset.find, f2 = f.replace(/[^a-z0-9]/g, "") + " " + f.replace(/\D/g, "");
+      c.style.display = words.every(function (w) { return f.indexOf(w) >= 0 || f2.indexOf(w.replace(/[^a-z0-9]/g, "")) >= 0; }) ? "" : "none";
+    });
+  });
+})();
+</script>
 {% endblock %}
