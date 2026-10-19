@@ -177,25 +177,25 @@
     <button type="button" class="btn small ghost" id="cat_open">Open all</button> <button type="button" class="btn small ghost" id="cat_fold">Fold all</button></p>
   <div class="scroll-x"><table class="list" id="cat_side"><thead><tr><th>Product / supplier</th>{% for f in fields %}<th>{{ f.label }}</th>{% endfor %}<th style="text-align:right">List</th><th>Discount</th>
     <th style="text-align:right">Net (cost)</th><th>Since</th>{% if writer %}<th></th>{% endif %}</tr></thead>
-    {% for p in products %}<tbody class="cat-t{% if p.rows|length < 2 %} shut{% endif %}" data-find="{{ p.name|lower }} {{ p.sku|lower }}">
-      <tr class="cat-head"{% if p.rows %} tabindex="0" style="cursor:pointer"{% endif %}><td style="font-weight:600{% if not p.is_active %};color:#888{% endif %}"><span class="{% if p.rows %}cat-arrow{% else %}cat-none{% endif %}" aria-hidden="true"></span>{{ p.name }} <span class="hint">{{ p.sku }}</span></td>
-        {% for v in p.spec_values %}<td>{{ v|default:"" }}</td>{% endfor %}<td></td><td class="hint">{% if p.rows %}{{ p.rows|length }} supplier{{ p.rows|length|pluralize }}{% endif %}</td>
-        <td class="num">{% if p.low is not None %}<b>₱{{ p.low|floatformat:2|intcomma }}</b>{% elif p.is_active %}<span style="color:#b35900;font-size:12px">no price yet</span>{% else %}—{% endif %}</td><td></td>
-        {% if writer %}<td>{% if not p.is_active %}<span class="pill off">Discontinued</span> {% endif %}<form method="post" style="display:inline"{% if p.is_active %} onsubmit="return confirm('Discontinue {{ p.name|escapejs }}? It is no longer offered on new orders. Its prices and history stay, and it can be brought back.');"{% endif %}>{% csrf_token %}
-          <input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="product_on_off"><input type="hidden" name="cat" value="{{ cat }}">
-          <input type="hidden" name="product_id" value="{{ p.product_id }}"><input type="hidden" name="on" value="{% if p.is_active %}0{% else %}1{% endif %}">
-          <button class="btn small ghost" type="submit">{% if p.is_active %}Discontinue{% else %}Bring back{% endif %}</button></form></td>{% endif %}</tr>
-      {% for r in p.rows %}<tr class="cat-sup"><td style="padding-left:30px">{{ r.supplier }}</td>{% for f in fields %}<td></td>{% endfor %}<td class="num">{{ r.list_price|floatformat:2|intcomma }}</td><td>{{ r.discount|default:"none" }}</td>
-        <td class="num">{{ r.net_price|floatformat:2|intcomma }}{% if r.cheapest %} <span class="pill">lowest</span>{% endif %}</td><td>{{ r.effective_date|dmy }}</td>{% if writer %}<td></td>{% endif %}</tr>{% endfor %}
-    </tbody>{% endfor %}
+    {{ catalog_rows }}
   </table></div>
+  {% if writer %}<form method="post" id="cat_onoff_form" hidden>{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="action" value="product_on_off">
+    <input type="hidden" name="cat" value="{{ cat }}"><input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="product_id" value=""><input type="hidden" name="on" value=""></form>{% endif %}
   <style>#cat_side tbody.shut .cat-sup{display:none}#cat_side .cat-arrow::before,#cat_side .cat-none::before{content:"▾";display:inline-block;width:16px;color:#888}#cat_side tbody.shut .cat-arrow::before{content:"▸"}#cat_side .cat-none::before{content:""}#cat_side .cat-head td{border-top:1px solid var(--line, #ddd)}</style>
   <script>
   (function () {                                                 /* click a product to fold or open its suppliers; the box narrows the list as you type */
     var t = document.getElementById("cat_side"), q = document.getElementById("cat_q");
     t.querySelectorAll(".cat-head[tabindex]").forEach(function (h) {
-      function flip(e) { if (e.target.closest("form")) return; h.parentNode.classList.toggle("shut"); }
+      function flip(e) { if (e.target.closest("form, button")) return; h.parentNode.classList.toggle("shut"); }
       h.addEventListener("click", flip); h.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(e); } });
+    });
+    var form = document.getElementById("cat_onoff_form");      /* one shared form: the button fills it in (2026-10-19, speed) */
+    t.querySelectorAll(".cat-onoff").forEach(function (b) {
+      b.addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (b.dataset.on === "0" && !confirm("Discontinue " + b.dataset.name + "? It is no longer offered on new orders. Its prices and history stay, and it can be brought back.")) return;
+        form.elements.product_id.value = b.dataset.id; form.elements.on.value = b.dataset.on; form.submit();
+      });
     });
     function all(shut) { t.querySelectorAll("tbody.cat-t").forEach(function (b) { if (b.querySelector(".cat-head[tabindex]")) b.classList.toggle("shut", shut); }); }
     document.getElementById("cat_open").addEventListener("click", function () { all(false); });

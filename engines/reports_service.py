@@ -181,6 +181,12 @@ PAYMENT_SCHEDULE_TRACK_ORDER = {"Lender": 0, "Bank Loan": 1, "Supplier": 2, "Cre
 
 
 def get_payment_schedule_all_tracks() -> pd.DataFrame:
+    """The schedule below, worked out once per page view (engines/request_memo.py); a copy, so a caller may change it."""
+    from engines.request_memo import memo
+    return memo("payment_schedule_all_tracks", _payment_schedule_all_tracks).copy()
+
+
+def _payment_schedule_all_tracks() -> pd.DataFrame:
     """Combined schedule of payments across all 4 AP tracks -- everything still owed, one row
     per obligation, sorted by due date. Each track uses its own already-established "still
     owed" definition (same as get_combined_ap_summary()): Supplier/Lender checks not yet

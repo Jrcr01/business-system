@@ -111,6 +111,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "core.middleware.SignInMiddleware",                    # who is signed in, their page rights, and who every save is recorded as
+    "core.middleware.PageMemoMiddleware",                  # a page that only reads works out repeated figures once (2026-10-19)
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 

@@ -165,7 +165,46 @@ def _catalog_ctx(request, cid: int) -> dict:
         p.update(spec_values=[p.get(f["key"], "") for f in fields], rows=prices, low=prices[0]["net_price"] if prices else None)
         rows.append(p)
     shows = [("all", "All"), ("multi", "2+ suppliers"), ("none", "No price yet"), ("old", "Discontinued")]
-    return {"categories": pc.CATEGORIES, "cat": cat, "show": show, "shows": shows, "fields": fields, "products": rows, "brands": pc.brands(cat)}
+    writer = _writer(request)
+    return {"categories": pc.CATEGORIES, "cat": cat, "show": show, "shows": shows, "fields": fields, "products": rows, "brands": pc.brands(cat),
+            "catalog_rows": _catalog_rows(rows, len(fields), writer)}
+
+
+def _catalog_rows(rows: list[dict], n_fields: int, writer: bool):
+    """The catalog's table body, built here rather than in the template: 879 tires and their suppliers took the template over a second (2026-10-19).
+    Discontinue / Bring back post one shared form (price_lists.html), filled in by the button."""
+    from django.utils.html import escape
+    from django.utils.safestring import mark_safe
+    from core.templatetags.slicks import dmy
+    money = lambda v: f"{float(v):,.2f}"                              # noqa: E731
+    blanks = "<td></td>" * n_fields
+    out = []
+    for p in rows:
+        sup = p["rows"]
+        name, sku = escape(p["name"]), escape(p["sku"])
+        head = [f'<tbody class="cat-t{" shut" if len(sup) < 2 else ""}" data-find="{escape(str(p["name"]).lower())} {escape(str(p["sku"]).lower())}">',
+                f'<tr class="cat-head"{" tabindex=\"0\" style=\"cursor:pointer\"" if sup else ""}><td style="font-weight:600{"" if p["is_active"] else ";color:#888"}">'
+                f'<span class="{"cat-arrow" if sup else "cat-none"}" aria-hidden="true"></span>{name} <span class="hint">{sku}</span></td>',
+                "".join(f"<td>{escape(v) if v not in (None, '') else ''}</td>" for v in p["spec_values"]),
+                f'<td></td><td class="hint">{f"{len(sup)} supplier" + ("s" if len(sup) != 1 else "") if sup else ""}</td>']
+        if p["low"] is not None:
+            head.append(f'<td class="num"><b>₱{money(p["low"])}</b></td><td></td>')
+        elif p["is_active"]:
+            head.append('<td class="num"><span style="color:#b35900;font-size:12px">no price yet</span></td><td></td>')
+        else:
+            head.append('<td class="num">—</td><td></td>')
+        if writer:
+            on = "0" if p["is_active"] else "1"
+            head.append(f'<td>{"" if p["is_active"] else "<span class=\"pill off\">Discontinued</span> "}<button class="btn small ghost cat-onoff" type="button" '
+                        f'data-id="{int(p["product_id"])}" data-on="{on}" data-name="{name}">{"Discontinue" if p["is_active"] else "Bring back"}</button></td>')
+        head.append("</tr>")
+        for r in sup:
+            head.append(f'<tr class="cat-sup"><td style="padding-left:30px">{escape(r["supplier"])}</td>{blanks}<td class="num">{money(r["list_price"])}</td>'
+                        f'<td>{escape(r["discount"]) if r["discount"] else "none"}</td><td class="num">{money(r["net_price"])}{" <span class=\"pill\">lowest</span>" if r["cheapest"] else ""}</td>'
+                        f'<td>{escape(dmy(r["effective_date"]))}</td>{"<td></td>" if writer else ""}</tr>')
+        head.append("</tbody>")
+        out.append("".join(head))
+    return mark_safe("\n".join(out))
 
 
 # --- saving -------------------------------------------------------------------------------------------------------------------------------------------
@@ -273,7 +312,7 @@ def _post(request, cid: int, tab: str):
     if action == "product_on_off":
         ok, msg = pc.set_product_active(int(p.get("product_id", 0)), p.get("on") == "1")
         say(ok, msg)
-        return redirect(_back(cid, "catalog", cat=p.get("cat"), old="1"))
+        return redirect(_back(cid, "catalog", cat=p.get("cat"), show=p.get("show") or "all"))   # back to the same view
     if action == "add_product":
         cat = p.get("cat", "")
         if cat not in pc.CATEGORIES:

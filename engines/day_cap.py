@@ -77,31 +77,46 @@ def card_reserve_rows(start: date, end: date) -> pd.DataFrame:
         end = min(end, far)                                     # no reserves beyond the reach of a new order (owner, 2026-10-15)
         if end < start:
             return pd.DataFrame(columns=COLS)
-    with get_conn() as conn:
-        rows = pd.read_sql_query(
+    with get_conn() as conn:                                     # plain rows and a plain loop: the pandas version took 0.5 s per call (2026-10-19)
+        rows = conn.execute(
             """SELECT cs.card_id, cs.due_date, cs.total_amount_due, cs.new_charges, cs.unpaid_balance_next, cc.statement_day,
                       cc.card_name || ' - ' || cc.card_number_last4 AS card, cr.creditor_name AS bank
                FROM cc_statements cs JOIN credit_cards cc ON cc.card_id = cs.card_id JOIN creditors cr ON cr.creditor_id = cc.creditor_id
-               WHERE cs.status != 'Cancelled' AND COALESCE(cc.is_active, 1) = 1 ORDER BY cs.card_id, cs.due_date""", conn)
+               WHERE cs.status != 'Cancelled' AND COALESCE(cc.is_active, 1) = 1 ORDER BY cs.card_id, cs.due_date""").fetchall()
+    cards: dict = {}
+    for r in rows:
+        cards.setdefault(r[0], []).append(r)
+    nan = float("nan")
     out = []
-    for card_id, g in rows.groupby("card_id"):
-        g = g.assign(carried=g["unpaid_balance_next"].shift(1).fillna(0.0))                 # the unpaid balance the statement before pushed into this one
-        own = g["new_charges"].where(g["new_charges"] > 0.004, (g["total_amount_due"] - g["carried"]).clip(lower=0.0))
-        last3 = g.tail(3)
-        amount = round(float(own.tail(3).mean()), 2)
+    for card_id in sorted(cards):
+        g = cards[card_id]
+        own, carried = [], 0.0
+        for _cid, _due, total, new, unpaid_next, _sd, _card, _bank in g:
+            if new is not None and float(new) > 0.004:
+                own.append(float(new))
+            else:
+                own.append(nan if total is None else max(float(total) - carried, 0.0))    # the unpaid balance the statement before pushed into this one
+            carried = 0.0 if unpaid_next is None else float(unpaid_next)
+        last3 = g[-3:]
+        vals = [v for v in own[-3:] if v == v]
+        amount = round(sum(vals) / len(vals), 2) if vals else nan
         if amount <= 0.004:
             continue
-        dues = [date.fromisoformat(str(x)[:10]) for x in last3["due_date"]]
-        sd = last3["statement_day"].iloc[-1]
-        sd = int(sd) if pd.notna(sd) and int(sd) > 0 else 0
-        label = f"Card reserve (estimate) · {last3['card'].iloc[-1]} · avg of {len(last3)} statement{'s' if len(last3) != 1 else ''}"
+        dues = [date.fromisoformat(str(x[1])[:10]) for x in last3]
+        sd = last3[-1][5]
+        sd = int(sd) if sd is not None and int(sd) > 0 else 0
+        card, bank = last3[-1][6], last3[-1][7]
+        label = f"Card reserve (estimate) · {card} · avg of {len(last3)} statement{'s' if len(last3) != 1 else ''}"
+        newest = max(date.fromisoformat(str(x[1])[:10]) for x in g)
         if sd:
             gap = round(sum((d - statement_date_for(d, sd)).days for d in dues) / len(dues))
-            latest = statement_date_for(max(date.fromisoformat(str(x)[:10]) for x in g["due_date"]), sd)
+            latest = statement_date_for(newest, sd)
             label += f", {gap} days after the statement day ({sd})"
         else:
-            due_day = int(pd.to_datetime(last3["due_date"]).dt.day.mode().max())
-            latest = max(date.fromisoformat(str(x)[:10]) for x in g["due_date"])
+            days = [d.day for d in dues]
+            top = max(days.count(x) for x in days)
+            due_day = max(x for x in days if days.count(x) == top)                # the most usual due day (ties: the later one)
+            latest = newest
         y, m = latest.year, latest.month
         while True:
             m += 1
@@ -114,7 +129,7 @@ def card_reserve_rows(start: date, end: date) -> pd.DataFrame:
             if d > end:
                 break
             if d >= start:
-                out.append((d, last3["bank"].iloc[-1], "Credit cards", label, amount))
+                out.append((d, bank, "Credit cards", label, amount))
     return pd.DataFrame(out, columns=COLS)
 
 

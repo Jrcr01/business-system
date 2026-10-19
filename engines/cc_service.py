@@ -165,16 +165,23 @@ def get_statement_coverage(today: date | None = None) -> pd.DataFrame:
     sd_by_card = dict(zip(cards["card_id"], cards["statement_day"]))
     stmts["stmt_month"] = [statement_month_for(d, None if pd.isna(sd_by_card.get(c)) else sd_by_card.get(c))
                            for c, d in zip(stmts["card_id"], stmts["due_date"])]
+    by_card: dict = {}                                       # one pass over the statements, not one search per card (0.4 s on Home, 2026-10-19)
+    for c, d, amt, m in zip(stmts["card_id"], stmts["due_date"], stmts["total_amount_due"], stmts["stmt_month"]):
+        by_card.setdefault(c, []).append((d, amt, m))
+
+    def _sum(xs):
+        return float(sum(float(a) for _, a, _m in xs if a is not None and a == a))
+
     rows = []
-    for _, cr in cards.iterrows():
-        mine = stmts[stmts["card_id"] == cr["card_id"]]
-        prev, this = mine[mine["stmt_month"] == prev_key], mine[mine["stmt_month"] == this_key]
-        rows.append({**cr.to_dict(),
-                     "prev_month_due": prev["due_date"].max() if not prev.empty else None,
-                     "prev_month_amount": float(prev["total_amount_due"].sum()) if not prev.empty else None,
-                     "this_month_due": this["due_date"].max() if not this.empty else None,
-                     "this_month_amount": float(this["total_amount_due"].sum()) if not this.empty else None,
-                     "last_due_date": mine["due_date"].max() if not mine.empty else None})
+    for cr in cards.to_dict("records"):
+        mine = by_card.get(cr["card_id"], [])
+        prev, this = [x for x in mine if x[2] == prev_key], [x for x in mine if x[2] == this_key]
+        rows.append({**cr,
+                     "prev_month_due": max(x[0] for x in prev) if prev else None,
+                     "prev_month_amount": _sum(prev) if prev else None,
+                     "this_month_due": max(x[0] for x in this) if this else None,
+                     "this_month_amount": _sum(this) if this else None,
+                     "last_due_date": max(x[0] for x in mine) if mine else None})
     df = pd.DataFrame(rows, columns=["card_id", "cardholder", "issuer", "card_name", "card_number_last4", "statement_day", "prev_month_due",
                                      "prev_month_amount", "this_month_due", "this_month_amount", "last_due_date"])
     if df.empty:

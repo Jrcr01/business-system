@@ -28,7 +28,7 @@
 
 <div class="grp" id="settle">Open, to settle</div>
 {% if lines %}
-<form method="post" id="settle_form">{% csrf_token %}<input type="hidden" name="action" value="settle">
+<form method="post" class="keep-view" id="settle_form">{% csrf_token %}<input type="hidden" name="action" value="settle">
   <div class="scroll-x"><table class="list">
     <tr><th></th><th>Document</th><th>Date</th><th></th><th>Item</th><th style="text-align:right">Open</th><th>Qty to settle</th><th style="text-align:right">Cost</th><th style="text-align:right">Value</th><th>Days</th></tr>
     {% for x in lines %}<tr>

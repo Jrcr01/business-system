@@ -34,7 +34,8 @@ def _findings() -> list[dict]:
     flagged_invoice_ids: set[int] = set()
     if not inv.empty:
         inv["norm"] = inv["doc_ref"].map(normalize_doc_ref)
-        for (cid, norm), grp in inv.groupby(["creditor_id", "norm"]):
+        twice = inv[inv.duplicated(["creditor_id", "norm"], keep=False)]           # only the keys seen twice or more (speed, 2026-10-19)
+        for (cid, norm), grp in twice.groupby(["creditor_id", "norm"]):
             if len(grp) < 2:
                 continue
             flagged_invoice_ids.update(grp["invoice_id"])
@@ -44,6 +45,7 @@ def _findings() -> list[dict]:
                 "amount": float(grp["gross_amount"].sum()), "where_found": ", ".join(sorted({str(x) for x in grp["statement_ref"]})), "count": len(grp),
             })
         rest = inv[~inv["invoice_id"].isin(flagged_invoice_ids)]
+        rest = rest[rest.duplicated(["creditor_id", "invoice_date", "gross_amount"], keep=False)]
         for (cid, day, amount), grp in rest.groupby(["creditor_id", "invoice_date", "gross_amount"]):
             if len(grp) < 2:
                 continue
@@ -54,7 +56,7 @@ def _findings() -> list[dict]:
             })
     if not bat.empty:
         bat["total_r"] = bat["total_amount"].round(2)
-        for (cid, total), grp in bat.groupby(["creditor_id", "total_r"]):
+        for (cid, total), grp in bat[bat.duplicated(["creditor_id", "total_r"], keep=False)].groupby(["creditor_id", "total_r"]):
             if len(grp) < 2:
                 continue
             out.append({

@@ -18,7 +18,12 @@ _BLOCKED: dict = {}          # db path -> (file stamp, frozenset of ISO dates); 
 
 
 def blocked_days() -> frozenset:
-    """Every holiday and no-check day, as ISO dates. Notes are not here: they move nothing."""
+    """Every holiday and no-check day, as ISO dates. Notes are not here: they move nothing. Checked once per page view (a page asks thousands of times)."""
+    from engines.request_memo import memo
+    return memo("blocked_days", _blocked_days)
+
+
+def _blocked_days() -> frozenset:
     from engines import common
     from engines.settings_store import _stamp
     path = common.DB_PATH                                   # the same file get_conn() opens by default

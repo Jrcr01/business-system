@@ -93,8 +93,8 @@
   <p class="hint">The replacement is for the same amount and takes over what the old check paid. With a number it is written at once; without, it is parked so you can write it with Chrysanth or by hand.</p></div>
 {% endif %}
 
-<form method="post" id="chkform">{% csrf_token %}
-  <p class="hint" id="chk-pick">Tick: <a href="#" data-pick="all">all</a> · <a href="#" data-pick="Parked">all parked</a> · <a href="#" data-pick="Written">all written</a> ·
+<form method="post" class="keep-view" id="chkform">{% csrf_token %}
+  <p class="hint view-hide" id="chk-pick">Tick: <a href="#" data-pick="all">all</a> · <a href="#" data-pick="Parked">all parked</a> · <a href="#" data-pick="Written">all written</a> ·
     <a href="#" data-pick="none">none</a> · <b id="chk-count">0 ticked</b></p>
   <div class="scroll-x"><table class="list"><tr><th><input type="checkbox" id="chk-all" aria-label="Tick every check that can be ticked"></th><th>Dated</th><th>Check no.</th><th style="text-align:right">Amount</th><th>Stage</th><th></th></tr>
     {% for c in checks %}<tr>

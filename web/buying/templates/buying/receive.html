@@ -42,7 +42,7 @@
 
 {% if waiting %}
 <div class="grp">Received earlier, no document yet</div>
-<form method="post" id="form_m">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="po" value="{{ pre }}"><input type="hidden" name="action" value="match">
+<form method="post" class="keep-view" id="form_m">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="po" value="{{ pre }}"><input type="hidden" name="action" value="match">
   <div class="scroll-x"><table class="list">
     <tr><th>Covered</th><th>PO</th><th>Item</th><th>Unit</th><th>Waiting</th><th>Qty</th><th>Estimated price</th><th>Actual price</th><th>Came with</th></tr>
     {% for ln in waiting %}<tr data-line="{{ ln.line_id }}" data-est="{{ ln.est_unit_price }}">
@@ -71,7 +71,7 @@
   set("doc", r.si); set("dr", r.dr); set("inv_date", r.date);
   f.dispatchEvent(new Event("input", {bubbles: true}));
 });</script>{% endif %}
-<form method="post" id="form_r">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="po" value="{{ pre }}"><input type="hidden" name="action" value="arrive">
+<form method="post" class="keep-view" id="form_r">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="po" value="{{ pre }}"><input type="hidden" name="action" value="arrive">
   <div class="scroll-x"><table class="list">
     <tr><th>Arrived</th><th>PO</th><th>Item</th><th>Unit</th><th>Still to come</th><th>Qty arrived</th>{% if revenue_on %}<th title="The tire's DOT week and year, e.g. 2425 = week 24 of 2025. Leave empty when unknown.">DOT</th>{% endif %}<th>Estimated price</th><th>Actual price</th></tr>
     {% for ln in coming %}<tr data-line="{{ ln.line_id }}" data-est="{{ ln.est_unit_price }}">

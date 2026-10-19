@@ -11,7 +11,7 @@
   {% if upto or bank %}<a class="btn small ghost" href="/order-statements/parked/">Show all</a>{% endif %}
 </form>
 {% if groups %}
-<form method="post" id="pk-form">{% csrf_token %}<input type="hidden" name="back" value="{{ back }}">
+<form method="post" class="keep-view" id="pk-form">{% csrf_token %}<input type="hidden" name="back" value="{{ back }}">
 <p class="hint"><span class="pill warn">{{ n }} parked · ₱{{ total|floatformat:2|intcomma }}</span>
   {% if may_write %} · Tick: <a href="#" data-pick="all">all</a> · <a href="#" data-pick="none">none</a>{% endif %}</p>
 <div class="scroll-x"><table class="list">

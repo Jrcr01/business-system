@@ -12,7 +12,7 @@
 
 {% if tab == "cards" %}
 <div class="grp" style="margin-top:0">Cards</div>
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="from_bank">
+<form method="post" class="keep-view">{% csrf_token %}<input type="hidden" name="action" value="from_bank">
 <div class="scroll-x"><table class="list">
   <tr><th>Card</th><th>Issuer</th><th>Cardholder</th><th style="text-align:right">Limit</th><th>Statement day</th><th>Annual fee month</th><th title="Paid straight from the Metrobank account (so the bank statement matches its payment)">Paid from Metrobank</th><th></th></tr>
   {% for c in cards %}<tr{% if not c.is_active %} class="off"{% endif %}>

@@ -41,7 +41,7 @@ their advance, the receipt number optional. Write-off is the System admin's alon
 <p class="hint">Aging: not due ₱{{ aging.current|floatformat:2|intcomma }} · 1–30 ₱{{ aging.d30|floatformat:2|intcomma }} · 31–60 ₱{{ aging.d60|floatformat:2|intcomma }} ·
   61–90 ₱{{ aging.d90|floatformat:2|intcomma }} · over 90 ₱{{ aging.over|floatformat:2|intcomma }}</p>
 {% if rows %}
-<form method="post" id="collect_form" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="collect"><input type="hidden" name="customer_id" value="{{ cust.customer_id }}">
+<form method="post" class="keep-view" id="collect_form" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="collect"><input type="hidden" name="customer_id" value="{{ cust.customer_id }}">
   <div class="scroll-x"><table class="list cards">
     <tr><th>Invoice</th><th>Date</th><th>Due</th><th class="num">Owed</th><th class="num">Collect now</th><th></th></tr>
     {% for r in rows %}<tr><td class="c-t">{{ r.ref }}{% if r.is_opening %} <span class="pill off">opening</span>{% endif %}</td>

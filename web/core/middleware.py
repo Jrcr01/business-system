@@ -113,3 +113,19 @@ class SignInMiddleware:
             response = self.get_response(request)
         response["Server-Timing"] = f"app;dur={(time.perf_counter() - started) * 1000:.0f}"     # how long the page took on the server (browser tools and the load test read it)
         return response
+
+
+class PageMemoMiddleware:
+    """A page that only reads (GET) works out repeated figures once (engines/request_memo.py, 2026-10-19). Saves never use it."""
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.method not in ("GET", "HEAD"):
+            return self.get_response(request)
+        from engines.request_memo import begin, end
+        token = begin()
+        try:
+            return self.get_response(request)
+        finally:
+            end(token)

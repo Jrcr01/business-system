@@ -361,6 +361,10 @@ main:has(.login-wrap) { position: relative; }
 
 /* View-only pages (owners, 2026-10-09): every form that saves is hidden; the server refuses saves anyway */
 main.view-only form[method=post], main.view-only form[method=POST] { display: none !important; }
+/* ... except a list that sits inside its form (2026-10-19: Invoices showed nothing to a person who may only look): the list stays, its ticks and buttons go */
+main.view-only form.keep-view { display: block !important; }
+main.view-only form.keep-view :is(button, input[type=checkbox], input[type=radio], input[type=file], .view-hide) { display: none !important; }
+main.view-only form.keep-view :is(input, select, textarea) { pointer-events: none; background: transparent; border-color: transparent; }
 .msg.view-note { background: var(--bg-eef2ff); color: var(--fg-1e3a8a); display: flex; align-items: center; gap: 8px; }
 
 /* What a person sees and does (owner, 2026-10-09): a row per page, Hidden / See / See and do */

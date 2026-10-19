@@ -29,6 +29,62 @@ def _raw_sequence_number(check_number: str, branch_code: str) -> int | None:
     return int(check_number) if check_number.isdigit() else None
 
 
+def _account_leaves(bank_account_id: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The account's recorded checks, and its spoiled leaves with the guarantee checks held by lenders: copies, once per page view."""
+    from engines.request_memo import memo
+
+    def read():
+        with get_conn(DB_PATH) as conn:
+            df_all = pd.read_sql_query("""
+                SELECT check_number, amount, status, check_date
+                FROM checks_issued
+                WHERE bank_account_id = ? AND check_number IS NOT NULL AND check_number != ''
+            """, conn, params=(bank_account_id,))
+            # Leaves logged as spoiled / error checks (Log a spoiled check) -- accounted for, so they are neither open stock nor a gap.
+            df_spoiled = pd.read_sql_query(
+                "SELECT check_number, reason FROM spoiled_checks WHERE bank_account_id = ?", conn, params=(bank_account_id,))
+            try:                                                          # a guarantee check held by a lender is accounted for (migration 057)
+                df_guarantee = pd.read_sql_query(
+                    "SELECT check_number, 'Guarantee check held by a lender' AS reason FROM guarantee_checks WHERE bank_account_id = ?", conn, params=(bank_account_id,))
+                df_spoiled = pd.concat([df_spoiled, df_guarantee], ignore_index=True)
+            except Exception:
+                pass
+        return df_all, df_spoiled
+    df_all, df_spoiled = memo(("account_leaves", int(bank_account_id)), read)
+    return df_all.copy(), df_spoiled.copy()
+
+
+def _on_bank_checks() -> frozenset:
+    """Every check number on a bank statement line, normalized: once per page view."""
+    from engines.bank_statement_service import norm_check_number
+    from engines.request_memo import memo
+
+    def read():
+        with get_conn(DB_PATH) as conn:
+            return frozenset(norm_check_number(r[0]) for r in conn.execute("SELECT DISTINCT check_number FROM bank_transactions WHERE check_number IS NOT NULL AND check_number != ''"))
+    return memo("on_bank_checks", read)
+
+
+def _leaf_numbers(bank_account_id: int, branch_code: str, which: str, texts) -> list:
+    """For each check number text: (its full number, its number without the branch prefix) -- worked out once per page view, not once per booklet."""
+    from engines.request_memo import memo
+
+    def work():
+        out = []
+        for cn in texts:
+            text = (cn or "").strip()
+            out.append((int(text) if text.isdigit() else None, _raw_sequence_number(text, branch_code)))
+        return out
+    return memo(("leaf_numbers", int(bank_account_id), branch_code, which), work)
+
+
+def _pick(full, stripped, start_num: int, end_num: int):
+    """The leaf a check number stands for in this booklet's range: its full number, else its number without the branch prefix, else None."""
+    if full is not None and start_num <= full <= end_num:
+        return full
+    return stripped if stripped is not None and start_num <= stripped <= end_num else None
+
+
 def audit_booklet_gaps(booklet_id: int) -> dict:
     """Audits a registered booklet's leaf range and flags leaves that were skipped without a
     reason on file. Under Phase 6 Redux v2's manual-dropdown assignment model, every number comes
@@ -47,42 +103,22 @@ def audit_booklet_gaps(booklet_id: int) -> dict:
         bank_account_id, start_num, end_num, booklet_code = booklet
         (branch_code,) = cursor.execute("SELECT branch_code FROM bank_accounts WHERE bank_account_id = ?", (bank_account_id,)).fetchone()
 
-        df_all = pd.read_sql_query("""
-            SELECT check_number, amount, status, check_date
-            FROM checks_issued
-            WHERE bank_account_id = ? AND check_number IS NOT NULL AND check_number != ''
-        """, conn, params=(bank_account_id,))
-        # Leaves logged as spoiled / error checks (Log a spoiled check) -- accounted for, so they are neither open stock nor a gap.
-        df_spoiled = pd.read_sql_query(
-            "SELECT check_number, reason FROM spoiled_checks WHERE bank_account_id = ?", conn, params=(bank_account_id,))
-        try:                                                              # a guarantee check held by a lender is accounted for (migration 057)
-            df_guarantee = pd.read_sql_query(
-                "SELECT check_number, 'Guarantee check held by a lender' AS reason FROM guarantee_checks WHERE bank_account_id = ?", conn, params=(bank_account_id,))
-            df_spoiled = pd.concat([df_spoiled, df_guarantee], ignore_index=True)
-        except Exception:
-            pass
+    df_all, df_spoiled = _account_leaves(bank_account_id)       # read once per page view for all the booklets (engines/request_memo.py, 2026-10-19)
 
     # A booklet range is normally the FULL check number as printed (e.g. 3992554301-3992554400),
     # and a check is stored under that same number. Older raw-sequence ranges (1000-1050 with
     # checks stored as branch code + 7 digits) are still understood, so a leaf matches if either
-    # its full number or its prefix-stripped number falls in the range.
-    def _leaf_in_range(cn):
-        text = (cn or "").strip()
-        if text.isdigit() and start_num <= int(text) <= end_num:
-            return int(text)
-        stripped = _raw_sequence_number(text, branch_code)
-        return stripped if stripped is not None and start_num <= stripped <= end_num else None
-
-    df_all['check_num_int'] = df_all['check_number'].apply(_leaf_in_range)
+    # its full number or its prefix-stripped number falls in the range (_pick).
+    df_all['check_num_int'] = [_pick(f, st, start_num, end_num) for f, st in _leaf_numbers(bank_account_id, branch_code, "checks", df_all['check_number'])]
     df_recorded = df_all[df_all['check_num_int'].notna()].copy()
     df_recorded['check_num_int'] = df_recorded['check_num_int'].astype(int)
     max_issued = df_recorded['check_num_int'].max() if not df_recorded.empty else start_num - 1
 
     spoiled_by_leaf = {}
-    for _, sp in df_spoiled.iterrows():
-        leaf = _leaf_in_range(sp['check_number'])
+    for (f, st), reason in zip(_leaf_numbers(bank_account_id, branch_code, "spoiled", df_spoiled['check_number']), df_spoiled['reason']):
+        leaf = _pick(f, st, start_num, end_num)
         if leaf is not None:
-            spoiled_by_leaf[int(leaf)] = (sp['reason'] or '').strip()
+            spoiled_by_leaf[int(leaf)] = (reason or '').strip()
 
     inventory_breakdown, missing_gaps, duplicate_numbers, spoiled_leaves = [], [], [], []
 
@@ -194,23 +230,13 @@ def unrecorded_leaves(booklet_id: int) -> list[int]:
         if ctx is None:
             raise ValueError(f"Booklet ID {booklet_id} not found.")
         bank_account_id, start_num, end_num, _code, reported, branch = ctx
-        recorded = [r[0] for r in conn.execute("SELECT check_number FROM checks_issued WHERE bank_account_id = ? AND check_number IS NOT NULL AND check_number != ''", (bank_account_id,))]
-        spoiled = [r[0] for r in conn.execute("SELECT check_number FROM spoiled_checks WHERE bank_account_id = ?", (bank_account_id,))]
-        on_bank = {norm_check_number(r[0]) for r in conn.execute("SELECT DISTINCT check_number FROM bank_transactions WHERE check_number IS NOT NULL AND check_number != ''")}
-        try:                                                              # guarantee checks given to lenders (migration 057) are accounted for too
-            spoiled = spoiled + [r[0] for r in conn.execute("SELECT check_number FROM guarantee_checks WHERE bank_account_id = ?", (bank_account_id,))]
-        except sqlite3.OperationalError:
-            pass
+    df_all, df_spoiled = _account_leaves(bank_account_id)       # the same lists as the audit, read once per page view (2026-10-19)
+    recorded = list(df_all["check_number"])
+    spoiled = list(df_spoiled["check_number"])                  # guarantee checks given to lenders (migration 057) are accounted for too
+    on_bank = _on_bank_checks()
 
-    def leaf(text):
-        t = (text or "").strip()
-        if t.isdigit() and start_num <= int(t) <= end_num:
-            return int(t)
-        stripped = _raw_sequence_number(t, branch)
-        return stripped if stripped is not None and start_num <= stripped <= end_num else None
-
-    recorded_leaves = {n for n in (leaf(c) for c in recorded) if n is not None}
-    accounted = recorded_leaves | {n for n in (leaf(c) for c in spoiled) if n is not None}
+    recorded_leaves = {n for n in (_pick(f, st, start_num, end_num) for f, st in _leaf_numbers(bank_account_id, branch, "checks", recorded)) if n is not None}
+    accounted = recorded_leaves | {n for n in (_pick(f, st, start_num, end_num) for f, st in _leaf_numbers(bank_account_id, branch, "spoiled", spoiled)) if n is not None}
     limit = max(max(recorded_leaves, default=start_num - 1), int(reported) if reported else start_num - 1)
     limit = min(limit, end_num)
     return [n for n in range(start_num, limit + 1) if n not in accounted and norm_check_number(str(n)) not in on_bank]

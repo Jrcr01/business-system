@@ -40,7 +40,7 @@ is every invoice in no payment statement yet: add one, tick the ones being paid,
 
 <div class="grp">Not yet in a payment statement <span class="hint" style="font-weight:400">· {{ n }} invoice{{ n|pluralize }} · ₱{{ total|floatformat:2|intcomma }}</span></div>
 {% if groups %}
-<form method="post" id="pay_form"{% if request.phone_partial %} class="phone-look-only"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="pay">
+<form method="post" class="keep-view" id="pay_form"{% if request.phone_partial %} class="phone-look-only"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="pay">
 <div class="scroll-x"><table class="list cards">
   <tr><th style="width:52px">Pay</th><th>Date</th><th>SI / DR no.</th><th>Due</th><th style="text-align:right">Amount</th><th></th><th></th></tr>
   {% for g in groups %}
@@ -52,10 +52,10 @@ is every invoice in no payment statement yet: add one, tick the ones being paid,
     <td data-l="received">{{ r.invoice_date|dmy }}</td><td class="c-t"><b>{{ r.ref }}</b></td><td data-l="due">{{ r.due_date|dmy }}</td>
     <td class="num c-big">{{ r.amount|floatformat:2|intcomma }}</td>
     <td>{% if r.po_no %}<span class="pill">from {{ r.po_no }}</span>{% else %}<span class="pill warn">No PO</span>{% endif %}</td>
-    <td class="c-r"><a href="?edit={{ r.invoice_id }}#edit">Edit</a></td></tr>{% endfor %}
+    <td class="c-r"><a class="view-hide" href="?edit={{ r.invoice_id }}#edit">Edit</a></td></tr>{% endfor %}
   {% endfor %}
 </table></div>
-<div class="fi-bar"><span id="fi_sum">Tick the invoices you are paying.</span>
+<div class="fi-bar view-hide"><span id="fi_sum">Tick the invoices you are paying.</span>
   <button class="btn" type="submit" id="fi_go" disabled><span class="ms">payments</span>Make checks for the ticked</button></div>
 </form>
 <p class="hint">Making checks puts the ticked invoices in a new payment statement, one per supplier, and opens it on its Checks tab. It gets its number with its first check.

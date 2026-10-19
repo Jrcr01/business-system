@@ -187,7 +187,35 @@ def prices(request):
         rows.append({"name": p["name"], "code": p["sku"], "unit": p.get("unit") or "", "rows": sup, "low": sup[0]["net_price"] if sup else None})
     rows.sort(key=lambda r: str(r["name"]).lower())
     shows = [("all", "All"), ("multi", "2+ suppliers"), ("none", "No price yet")]
-    return render(request, "phone/prices.html", _ctx(request, "Catalog", cats=cats, cat=cat, show=show, shows=shows, rows=rows))
+    return render(request, "phone/prices.html", _ctx(request, "Catalog", cats=cats, cat=cat, show=show, shows=shows, rows=rows, cards=_catalog_cards(rows)))
+
+
+def _catalog_cards(rows: list[dict]):
+    """The phone Catalog's cards, built here rather than in the template (879 tires took the template half a second, 2026-10-19)."""
+    from django.utils.html import escape
+    from django.utils.safestring import mark_safe
+    from core.templatetags.slicks import dmy
+    money = lambda v: f"{float(v):,.2f}"                              # noqa: E731
+    out = []
+    for it in rows:
+        sup, name, code = it["rows"], escape(it["name"]), escape(it["code"])
+        n = len(sup)
+        sub = f'{code}{" · " + escape(it["unit"]) if it["unit"] else ""}{f" · {n} supplier" + ("s" if n != 1 else "") if sup else ""}'
+        cost = (f'<b style="white-space:nowrap">₱{money(it["low"])}</b>' if it["low"] is not None
+                else '<span style="color:#b35900;font-size:.85rem;font-weight:600;white-space:nowrap">no price yet</span>')
+        card = [f'<div class="ph-card cg" data-find="{escape(str(it["name"]).lower())} {escape(str(it["code"]).lower())}"{" data-open=\"0\"" if sup else ""}>',
+                f'<div class="kv cg-h"{" role=\"button\" tabindex=\"0\" style=\"cursor:pointer\"" if sup else ""}><span style="color:var(--ink)"><b class="t" style="font-size:1rem">'
+                f'{"<span class=\"cg-a\">▸</span> " if sup else ""}{name}</b> <span class="hint">{sub}</span></span> {cost}</div>']
+        if sup:
+            card.append('<div class="cg-s" hidden>')
+            for r in sup:
+                card.append(f'<div class="kv" style="border-top:1px dashed var(--line);margin-top:6px;padding-top:6px"><span>{escape(r["supplier"])}'
+                            f'{" <span class=\"pill\">lowest</span>" if r["cheapest"] else ""}</span><b>{money(r["net_price"])}</b></div>'
+                            f'<div class="hint" style="padding-left:10px">list {money(r["list_price"])}{" " + escape(r["discount"]) if r["discount"] else ""} · since {escape(dmy(r["effective_date"]))}</div>')
+            card.append("</div>")
+        card.append("</div>")
+        out.append("".join(card))
+    return mark_safe("\n".join(out))
 
 
 @phone_page("stock")
