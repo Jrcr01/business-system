@@ -8,7 +8,7 @@
 <div class="scanbox"><span class="ms">barcode_scanner</span>
   <input type="text" id="ct_scan" autocomplete="off" placeholder="Scan each piece on the rack: every scan adds 1 to its item" aria-label="Scan">
   <span class="hint" id="ct_msg">Or type the quantities below.</span></div>
-<form method="post" id="ct_form">{% csrf_token %}
+<form method="post" class="keep-view" id="ct_form">{% csrf_token %}
   <div class="scroll-x"><table class="list">
     <tr><th>#</th><th>Code</th><th>Item</th><th>Counted</th><th>Note <span class="hint" style="font-weight:400">(rack / area)</span></th></tr>
     {% for r in sheet %}<tr data-codes="{{ r.codes|join:'|' }}">
@@ -16,11 +16,11 @@
       <td><input class="inline-input ct-q" style="width:90px" inputmode="decimal" name="c_{{ r.line_id }}" value="{% if r.counted is not None %}{{ r.counted|floatformat:'-2' }}{% endif %}" placeholder="not yet" aria-label="Counted of {{ r.name }}"></td>
       <td><input class="inline-input" style="width:280px" name="n_{{ r.line_id }}" value="{{ r.note }}" placeholder="rack / area, note" aria-label="Note for {{ r.name }}"></td></tr>{% endfor %}
   </table></div>
-  <div class="bar" style="margin-top:10px">
+  <div class="bar view-hide" style="margin-top:10px">
     <div class="grow"><label for="counted_by">Counted by</label><input id="counted_by" type="text" name="counted_by" value="{{ c.counted_by|default:'' }}" placeholder="the name of the person who counted"></div>
     <a class="btn small ghost" href="?print=1" target="_blank"><span class="ms">print</span>Print a blank count sheet</a>
   </div>
-  <div class="actions">
+  <div class="actions view-hide">
     <button class="btn small ghost" type="submit" name="action" value="save"><span class="ms">save</span>Save and continue later</button>
     <button class="btn" type="submit" name="action" value="finish" onclick="return confirm('Finish the count? Items left empty will not be part of it.');"><span class="ms">send</span>Finish the count</button>
   </div>
