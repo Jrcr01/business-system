@@ -173,7 +173,8 @@
   <div class="grp">Products and their prices</div>
   <p class="hint">Show: {% for key, label in shows %}{% if not forloop.first %} · {% endif %}{% if key == show %}<b>{{ label }}</b>{% else %}<a href="/price-lists/?s={{ cid }}&amp;tab=catalog&amp;cat={{ cat }}&amp;show={{ key }}">{{ label }}</a>{% endif %}{% endfor %}</p>
   {% if products %}
-  <p><input type="search" id="cat_q" placeholder="Search: 195R15, MRF, ZLX …" autocomplete="off" style="max-width:320px" aria-label="Search the catalog"></p>
+  <p><input type="search" id="cat_q" placeholder="Search: 195R15, MRF, ZLX …" autocomplete="off" style="max-width:320px" aria-label="Search the catalog">
+    <button type="button" class="btn small ghost" id="cat_open">Open all</button> <button type="button" class="btn small ghost" id="cat_fold">Fold all</button></p>
   <div class="scroll-x"><table class="list" id="cat_side"><thead><tr><th>Product / supplier</th>{% for f in fields %}<th>{{ f.label }}</th>{% endfor %}<th style="text-align:right">List</th><th>Discount</th>
     <th style="text-align:right">Net (cost)</th><th>Since</th>{% if writer %}<th></th>{% endif %}</tr></thead>
     {% for p in products %}<tbody class="cat-t{% if p.rows|length < 2 %} shut{% endif %}" data-find="{{ p.name|lower }} {{ p.sku|lower }}">
@@ -196,6 +197,9 @@
       function flip(e) { if (e.target.closest("form")) return; h.parentNode.classList.toggle("shut"); }
       h.addEventListener("click", flip); h.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(e); } });
     });
+    function all(shut) { t.querySelectorAll("tbody.cat-t").forEach(function (b) { if (b.querySelector(".cat-head[tabindex]")) b.classList.toggle("shut", shut); }); }
+    document.getElementById("cat_open").addEventListener("click", function () { all(false); });
+    document.getElementById("cat_fold").addEventListener("click", function () { all(true); });
     q.addEventListener("input", function () {
       var words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
       t.querySelectorAll("tbody.cat-t").forEach(function (b) {
