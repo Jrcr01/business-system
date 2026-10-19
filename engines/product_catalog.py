@@ -507,7 +507,7 @@ def link_price_rows(creditor_id: int, item_name: str, product_id: int, conn=None
 def supplier_prices(product_id: int | None = None, category: str | None = None, on: date | None = None) -> pd.DataFrame:
     """Side by side: for each item, each supplier's list price in force on a date, the discount chain, the net price, and a 'cheapest' flag on the lowest net.
     One item (product_id) or a whole category."""
-    from engines.discount_rules import net_price, standing_chain
+    from engines.discount_rules import chain_from, discount_rows, net_price
     on = on or manila_today()
     where, params = ["s.is_active = 1", "s.effective_date <= ?", "p.is_active = 1"], [str(on)]
     if product_id:
@@ -525,7 +525,8 @@ def supplier_prices(product_id: int | None = None, category: str | None = None, 
     if df.empty:
         return pd.DataFrame(columns=cols)
     df = df.groupby(["product_id", "creditor_id"], sort=False).head(1).copy()                  # the newest row in force, per item and supplier
-    df["chain"] = [standing_chain(int(r.creditor_id), r.item_name, on) for r in df.itertuples()]
+    rules = {int(c): discount_rows(int(c), on) for c in df["creditor_id"].unique()}           # read once per supplier, not once per price (was 3.5 s on the Catalog)
+    df["chain"] = [chain_from(rules[int(r.creditor_id)], r.item_name) for r in df.itertuples()]
     df["net_price"] = [net_price(r.list_price, r.chain) for r in df.itertuples()]
     df["cheapest"] = df["net_price"].eq(df.groupby("product_id")["net_price"].transform("min")) & (df.groupby("product_id")["net_price"].transform("count") > 1)
     return df.sort_values(["product", "net_price"]).reset_index(drop=True)[cols]
