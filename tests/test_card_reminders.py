@@ -113,22 +113,23 @@ def test_a_missing_statement_is_said_again_every_three_days_until_recorded_or_no
     _phone("admin@slicks.test")
     card, _ = _card(db, statement_day=12)
     _statement(db, card, "2026-10-03", 4000, paid=4000, status="Paid")                       # September's statement (dated 12 Sep): the card is in use
+    # owner, 2026-10-19: one rule everywhere -- the reminder starts when the Missing statement check lists the card (its "Days to wait", 7 here)
     assert cr.run(datetime(2026, 10, 12, 8, 0)) == "0 reminder(s) sent (am)."               # the statement day itself: the bank has not sent it yet
-    assert cr.run(datetime(2026, 10, 14, 14, 0)) == "0 reminder(s) sent (pm)."              # mornings only
-    assert cr.run(datetime(2026, 10, 14, 8, 0)) == "1 reminder(s) sent (am)."
+    assert cr.run(datetime(2026, 10, 14, 8, 0)) == "0 reminder(s) sent (am)."               # still within the days to wait
+    assert cr.run(datetime(2026, 10, 19, 14, 0)) == "0 reminder(s) sent (pm)."              # mornings only
+    assert cr.run(datetime(2026, 10, 19, 8, 0)) == "1 reminder(s) sent (am)."
     assert sent[-1]["title"] == "Platinum 2409 · statement not recorded" and "by 12 Oct" in sent[-1]["body"] and sent[-1]["url"] == "/credit-cards/?tab=missing"
-    assert cr.run(datetime(2026, 10, 15, 8, 0)) == "0 reminder(s) sent (am)."               # not every day
-    assert cr.run(datetime(2026, 10, 16, 8, 0)) == "0 reminder(s) sent (am)."
-    assert cr.run(datetime(2026, 10, 17, 8, 0)) == "1 reminder(s) sent (am)." and sent[-1]["title"] == "Platinum 2409 · statement still not recorded"
-    assert cr.missing_count(date(2026, 10, 20)) == 1 and cr.missing_count(date(2026, 10, 14)) == 0      # Home counts it once the page lists it (7 days)
+    assert cr.run(datetime(2026, 10, 20, 8, 0)) == "0 reminder(s) sent (am)."               # not every day
+    assert cr.run(datetime(2026, 10, 22, 8, 0)) == "1 reminder(s) sent (am)." and sent[-1]["title"] == "Platinum 2409 · statement still not recorded"
+    assert cr.missing_count(date(2026, 10, 20)) == 1 and cr.missing_count(date(2026, 10, 14)) == 0      # Home counts it on the same days
     _statement(db, card, "2026-11-03", 5000)                                                 # October's statement recorded: quiet
-    assert cr.run(datetime(2026, 10, 20, 8, 0)) == "0 reminder(s) sent (am)." and cr.missing_count(date(2026, 10, 20)) == 0
+    assert cr.run(datetime(2026, 10, 25, 8, 0)) == "0 reminder(s) sent (am)." and cr.missing_count(date(2026, 10, 25)) == 0
     # a card marked "No due this month" is not reminded about
     other, _ = _card(db, "Gold", "7731", "Rhoda Cruz", statement_day=5)
     _statement(db, other, "2026-09-26", 900, paid=900, status="Paid")
-    assert cr.run(datetime(2026, 10, 8, 8, 0)) == "1 reminder(s) sent (am)." and sent[-1]["title"].startswith("Gold 7731")
+    assert cr.run(datetime(2026, 10, 12, 8, 0)) == "1 reminder(s) sent (am)." and sent[-1]["title"].startswith("Gold 7731")
     mark_no_due(other, "2026-10")
-    assert cr.run(datetime(2026, 10, 11, 8, 0)) == "0 reminder(s) sent (am)."
+    assert cr.run(datetime(2026, 10, 15, 8, 0)) == "0 reminder(s) sent (am)."
     # a card never used (no statement at all) is not nagged about
     _card(db, "Visa", "1010", "Jun Reyes", statement_day=1)
     assert cr.run(datetime(2026, 10, 30, 8, 0)) == "0 reminder(s) sent (am)."

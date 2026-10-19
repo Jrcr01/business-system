@@ -44,8 +44,8 @@ def _cards_to_type(today: date, email: str = "") -> list[str]:
             continue
         exp = r.get("expected_by")
         exp = date.fromisoformat(exp[:10]) if isinstance(exp, str) and exp else None
-        if r["status"] != "Missing this month" and not (r["status"] == "Not yet expected" and exp and (today - exp).days >= 2):
-            continue
+        if r["status"] != "Missing this month":                  # the Missing statement check's own rule and its "Days to wait" (owner, 2026-10-19:
+            continue                                             # "this is the only card included in the missing statement check")
         age = (today - exp).days if exp else OLD_STATEMENT_DAYS + 1
         if age <= OLD_STATEMENT_DAYS or today.weekday() == 0:
             who = str(r.get("cardholder") or "").split(" ")[0]

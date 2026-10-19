@@ -47,7 +47,7 @@ def missing_statements(today: date) -> dict:
     for r in cov.to_dict("records"):
         expected = r.get("expected_by")
         expected = date.fromisoformat(expected[:10]) if isinstance(expected, str) and expected else None
-        due_now = r["status"] == "Missing this month" or (r["status"] == "Not yet expected" and expected and (today - expected).days >= STATEMENT_AFTER_DAYS)
+        due_now = r["status"] == "Missing this month"           # the Missing statement check's own "Days to wait" (owner, 2026-10-19: one rule everywhere)
         if not due_now:
             continue
         before = last.get(int(r["card_id"]))
