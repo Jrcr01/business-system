@@ -1,3 +1,13 @@
+# JRCR's Business System (duplicated from Slick's ERP on 2026-10-20)
+
+> **This folder is NOT Slick's live system.** It is a copy of Slick's ERP (branch ai-photo-reader: live code + the AI foundation + the price-list photo
+> reader) made to become one complete business system for any of JRCR's businesses. Slick's live keeps running from `C:\Slicks\Slicks_ERP`; never deploy from
+> here to Slick's server. Sandbox: `run_web_sandbox.bat` (port 8512, database `data/business_system_TEST.db`, empty at the start, no sign-in password).
+> The assessment of what is missing and what is wired to Slick's: `C:\Slicks\mockups\complete_system_assessment.html` (2026-10-20). The owner's working
+> rules below still apply (sandbox first, mock-up before a new screen, ask before coding, flag don't block).
+
+---
+
 # Slicks ERP — guide for every session
 
 > **Read "Current State (2026-10-17)" first.** It describes the Django ERP that is live today. Everything after the Table of Contents is the

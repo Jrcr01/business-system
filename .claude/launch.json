@@ -2,22 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "ap-disbursement",
-      "runtimeExecutable": "C:\\Users\\Rhodora\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-      "runtimeArgs": ["-m", "streamlit", "run", "C:\\AP_System\\app.py", "--server.headless", "true"],
-      "port": 8501
-    },
-    {
-      "name": "test-copy-8502",
-      "runtimeExecutable": "C:\\AP_System\\run_test_streamlit.bat",
+      "name": "business-system-8512",
+      "runtimeExecutable": "C:\Users\Rhodora\Documents\Business_System\run_web_sandbox.bat",
       "runtimeArgs": [],
-      "port": 8502
-    },
-    {
-      "name": "slicks-erp-django-8505",
-      "runtimeExecutable": "C:\\Slicks\\Slicks_ERP\\run_erp_sandbox.bat",
-      "runtimeArgs": [],
-      "port": 8505
+      "port": 8512
     }
   ]
 }

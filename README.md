@@ -1,4 +1,11 @@
-# Slick's ERP — Slick's Tire Supply
+# JRCR's Business System
+
+Duplicated on 2026-10-20 from Slick's ERP (C:\Slicks\Slicks_ERP, branch ai-photo-reader: what was live plus the AI foundation and the
+price-list photo reader). The goal: one complete business system usable by any of JRCR's businesses. Slick's live system is NOT this copy: it keeps
+running from C:\Slicks\Slicks_ERP and its own server. Nothing here deploys anywhere yet (deploy/ still names Slick's server: change it first).
+Sandbox: run_web_sandbox.bat → http://127.0.0.1:8512, database datausiness_system_TEST.db (empty at the start).
+
+## Origin: Slick's ERP — Slick's Tire Supply
 
 The business system of Slick's Tire Supply: buying (price lists, purchase orders, receiving), paying suppliers (invoices, payment statements, checks,
 the daily payment limit), bank statements and reconciliation, lenders, bank loans and credit cards, stock and stock counts, sales and collections,
