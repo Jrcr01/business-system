@@ -97,7 +97,7 @@ PAGE_ACTION = {
     "stock": "inventory.use", "stock-counts": "inventory.use", "affiliates": "inventory.use",                   # revenue cycle, stage A (2026-10-11)
     "sales": "sales.use", "customers": "sales.use", "quotations": "sales.use", "follow-ups": "sales.use", "si-booklets": "sales.use", "collect": "collect.use",
     "expenses": "expenses.use", "other-income": "expenses.use", "income-statement": "reports.use",
-    "reports": "reports.use", "analytics": "reports.use", "review": "review.use", "data-health": "health.view",
+    "reports": "reports.use", "analytics": "reports.use", "review": "review.use", "data-health": "health.view", "system-health": "audit.view",
     "settings": "settings.edit", "admin": "audit.view",
 }
 # a "view" level opens the page only where the page can show without forms that change AP records

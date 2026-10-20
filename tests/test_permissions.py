@@ -31,7 +31,7 @@ def _all_pages() -> set[str]:
 def test_every_page_is_the_admins_and_every_page_is_in_the_matrix():
     pages = _all_pages()
     assert allowed_pages("admin", pages) == pages
-    assert allowed_pages("owner", pages) == pages - {"settings", "admin"}              # a family owner has every business page, no system page
+    assert allowed_pages("owner", pages) == pages - {"settings", "admin", "system-health"}              # a family owner has every business page, no system page
     assert pages - set(perm.PAGE_ACTION) == set(), "a new page needs an entry in PAGE_ACTION (else it is the owner's only, silently)"
     assert set(perm.PAGE_ACTION.values()) <= set(ACTIONS)
 

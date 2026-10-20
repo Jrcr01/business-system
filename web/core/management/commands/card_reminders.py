@@ -31,3 +31,10 @@ class Command(BaseCommand):
                 self.stdout.write(morning_email.run(site=f"https://{host}" if host else ""))
             except Exception as e:                               # noqa: BLE001 -- never take the card reminders down with it
                 self.stdout.write(f"Morning email: {e}")
+            try:                                                 # Mondays: System health's red and yellow items to the System admin (owner, 2026-10-20)
+                from django.conf import settings
+                from engines.system_health import weekly_email
+                site = next((h for h in settings.ALLOWED_HOSTS if "." in h and h[0].isalpha()), "")
+                self.stdout.write(weekly_email(site=f"https://{site}" if site else ""))
+            except Exception as e:                               # noqa: BLE001
+                self.stdout.write(f"System health email: {e}")

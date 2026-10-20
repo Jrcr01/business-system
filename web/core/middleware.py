@@ -129,3 +129,21 @@ class PageMemoMiddleware:
             return self.get_response(request)
         finally:
             end(token)
+
+
+class PageTimeMiddleware:
+    """How long each page took (System health > Speed, 2026-10-20): the time only, never what was on the page. Static files are not counted."""
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        import time
+        start = time.monotonic()
+        response = self.get_response(request)
+        if request.method == "GET" and not request.path.startswith(("/static/", "/sw.js", "/phone/manifest")):
+            try:
+                from engines.system_health import record_page_time
+                record_page_time(request.path, time.monotonic() - start)
+            except Exception:                           # noqa: BLE001 -- timing must never break a page
+                pass
+        return response

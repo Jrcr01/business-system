@@ -799,7 +799,15 @@ def home(request):
     with get_conn() as conn:
         seen = (conn.execute("SELECT whats_new_seen FROM app_users WHERE user_id = ?", (int(user["user_id"]),)).fetchone() or [None])[0]
     # "Show everything" removed (owner, 2026-10-19): every section shows, My home first
-    return render(request, "core/home.html", {"rows": rows, "page_id": "home", "fold": False, "notice": get_setting(NOTICE_KEY, "") or "", "whats_new": unseen(seen)})
+    health = None
+    if user["role"] == "admin":                                # the System admin's one line from System health (owner, 2026-10-20)
+        try:
+            from engines.system_health import summary_cached
+            health = summary_cached()
+        except Exception:                               # noqa: BLE001 -- Home must always open
+            health = None
+    return render(request, "core/home.html", {"rows": rows, "page_id": "home", "fold": False, "notice": get_setting(NOTICE_KEY, "") or "", "whats_new": unseen(seen),
+                                              "health": health})
 
 
 @require_POST

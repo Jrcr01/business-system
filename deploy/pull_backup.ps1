@@ -23,6 +23,7 @@ try {
     if (-not (Test-Path "$dest\photos")) { New-Item -ItemType Directory -Force "$dest\photos" | Out-Null }
     & scp -i $key -o BatchMode=yes -q -r "${server}:/srv/slicks/backups/photos/." "$dest\photos\"      # the kept photos (2026-10-17)
     Get-ChildItem "$dest\db\slicks_erp_backup_*.db" | Sort-Object Name -Descending | Select-Object -Skip 30 | ForEach-Object { Remove-Item $_.FullName; Say "removed old $($_.Name)" }
+    & ssh -i $key -o BatchMode=yes -o ConnectTimeout=20 $server "touch /srv/slicks/backups/.laptop_pulled"      # tells System health the copy is safe (2026-10-20)
     Say "done"
 } catch {
     Say "FAILED: $($_.Exception.Message)"

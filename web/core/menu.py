@@ -43,10 +43,11 @@ PAGES: dict[str, Page] = {
     "reports": Page("Reports", "summarize", "D8"),
     "analytics": Page("Analytics", "monitoring", "D8"),
     "review": Page("Checks and review", "fact_check", "D8"),     # Roles and controls + Admin and audit + Data health, combined (owner, 2026-10-09)
+    "system-health": Page("System health", "monitor_heart", "D8"),     # the System admin's look at the whole system (owner, 2026-10-20)
 }
 
 BUILT = {"stock", "stock-counts", "affiliates", "sales", "customers", "quotations", "follow-ups", "si-booklets", "collect", "expenses", "other-income", "income-statement", "home", "creditors", "settings", "price-lists", "purchase-orders", "order-statements", "calendar",
-         "reports", "checks", "bank-cash", "booklets", "lenders", "analytics", "bank-loans", "credit-cards", "review"}     # drawn by Django (D0-D3; Reports: the schedule of payments first; Checks: waiting for the bank + the cleared tick, 2026-10-08)
+         "reports", "checks", "bank-cash", "booklets", "lenders", "analytics", "bank-loans", "credit-cards", "review", "system-health"}     # drawn by Django (D0-D3; Reports: the schedule of payments first; Checks: waiting for the bank + the cleared tick, 2026-10-08)
 
 STAGE_NAME = {"R-A": "Sell and stock", "R-B": "Collect", "R-C": "Customers", "BK": "The books", "D1": "Masters", "D2": "Buying", "D3": "Payables", "D4": "Paying", "D5": "Release", "D6": "Loans", "D7": "Cards and bank", "D8": "Oversight"}
 
@@ -64,7 +65,7 @@ MENU: dict[str, list] = {
                   ("Purchasing", "shopping_cart", "analytics", "tab=purchasing", "reports.use"), ("Payables", "receipt_long", "analytics", "tab=payables", "reports.use"),
                   ("Bank and cash", "account_balance", "analytics", "tab=bank", "reports.use"), ("Lenders", "handshake", "analytics", "tab=lenders", "reports.use"),
                   ("Credit cards", "credit_card", "analytics", "tab=cards", "reports.use"), ("Warnings", "warning", "analytics", "tab=warnings", "reports.use")],
-    "Set-up": ["creditors", "settings", "review"],
+    "Set-up": ["creditors", "settings", "review", "system-health"],
 }
 
 # each top-bar section's row of tiles on Home (engines/home_tiles.py GROUPS): clicking the section name goes there, resting on it opens its pages (owner, 2026-10-03:

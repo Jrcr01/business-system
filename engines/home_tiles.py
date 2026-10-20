@@ -197,6 +197,17 @@ def _review():
     return str(n), "to look at", ("warn" if n else "ok")
 
 
+def _system_health():
+    """System health (owner, 2026-10-20): how many things need the System admin."""
+    from engines.system_health import summary_cached
+    s = summary_cached()
+    if s["red"]:
+        return str(len(s["red"])), "need you", "alert"
+    if s["yellow"]:
+        return str(len(s["yellow"])), "to look at", "warn"
+    return "OK", "all checks", "ok"
+
+
 def _calendar():
     """Calendar (owner, 2026-10-09; replaces Payables due): what falls on today, every kind."""
     from engines.clock import manila_today
@@ -611,5 +622,6 @@ for _t in (
     Tile("admin", "system", "Admin and audit", hint="Booklets, backup"),
     Tile("data-health", "system", "Data health", _data_health),
     Tile("review", "system", "Checks and review", _review, icon=":material/fact_check:"),
+    Tile("system-health", "system", "System health", _system_health, icon=":material/monitor_heart:", needs="audit.view"),
 ):
     register_tile(_t)

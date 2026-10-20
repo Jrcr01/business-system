@@ -1,6 +1,6 @@
 from django.urls import path
 
-from core import views
+from core import health, views
 
 urlpatterns = [
     path("", views.home, name="home"),
@@ -34,5 +34,6 @@ urlpatterns = [
     path("home/click/", views.home_click, name="home_click"),
     path("home/pin/", views.home_pin, name="home_pin"),
     path("related/<str:kind>/<int:doc_id>/", views.related, name="related"),
+    path("system-health/", health.system_health, name="system_health"),
     path("<slug:page_id>/", views.page, name="page"),
 ]

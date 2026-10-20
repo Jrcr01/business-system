@@ -1,0 +1,34 @@
+{% extends "core/base.html" %}{% load slicks %}
+{% block title %}System health{% endblock %}
+{% block content %}
+{% comment %}Owner, 2026-10-20 (mock-up system_health.html): the System admin's look at the whole system. Read-only.{% endcomment %}
+<h2><span class="ms" style="font-size:28px">monitor_heart</span> System health</h2>
+<p style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+  {% if sum.red %}<span class="sh-big sh-bad">{{ sum.red|length }} thing{{ sum.red|length|pluralize }} need{{ sum.red|length|pluralize:"s," }} you</span>
+  {% elif sum.yellow %}<span class="sh-big sh-look">{{ sum.yellow|length }} to look at</span>
+  {% else %}<span class="sh-big sh-ok">All OK</span>{% endif %}
+  <span class="hint">Checked {{ sum.at|date:"g:i A" }} · it only reads; nothing here changes anything.</span></p>
+<div class="sh-grid">
+{% for c in cards %}<div class="sh-card">
+  <h3><span><i class="sh-dot sh-{{ c.state }}"></i>{{ c.title }}</span><span class="pill {% if c.state == 'red' %}sh-pr{% elif c.state == 'yellow' %}warn{% endif %}">{% if c.state == 'red' %}Needs you{% elif c.state == 'yellow' %}Look{% else %}OK{% endif %}</span></h3>
+  {% for label, value, cls in c.rows %}<div class="kv sh-kv"><span>{{ label }}</span><b class="{% if cls == 'bad' %}sh-badt{% elif cls == 'warn' %}sh-warnt{% endif %}">{{ value }}</b></div>{% endfor %}
+  {% if c.table %}<table class="list" style="margin-top:6px"><tr><th>Person</th><th>Signed in</th><th>Device</th><th style="text-align:right">Saves</th></tr>
+    {% for p in c.table %}<tr><td>{{ p.who }}</td><td>{{ p.when }}</td><td>{{ p.device }}</td><td class="num">{{ p.saves }}</td></tr>{% endfor %}</table>{% endif %}
+  {% if c.key == "server" and releases %}<details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Last releases</summary>
+    {% for r in releases %}<div class="kv sh-kv"><span>{{ r.code }}{% if r.live %} <span class="pill">live</span>{% endif %}</span><b>{{ r.at|date:"m/d/Y g:i A" }}</b></div>{% endfor %}</details>{% endif %}
+  {% if c.note %}<p class="hint" style="margin:8px 0 0">{{ c.note }}</p>{% endif %}
+  {% if c.link %}<p style="margin:6px 0 0"><a href="{{ c.link.1 }}">{{ c.link.0 }} →</a></p>{% endif %}
+</div>{% endfor %}
+</div>
+<p class="hint" style="margin-top:12px">Mondays from 8 AM, the red and yellow items come to you by email (nothing is sent when all is green). Page timings keep the time only, never what was on the page.</p>
+<style>
+.sh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; max-width: 1150px; }
+.sh-card { background: var(--bg-ffffff, #fff); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.sh-card h3 { margin: 0 0 8px; font-size: 1rem; display: flex; justify-content: space-between; align-items: center; }
+.sh-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+.sh-green { background: #1a7f37; } .sh-yellow { background: #e0a100; } .sh-red { background: #d92d20; }
+.sh-kv { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: .9rem; border-bottom: 1px dashed var(--line); } .sh-kv span { color: var(--muted, #6b7280); } .sh-kv:last-child { border-bottom: 0; } .sh-kv b { text-align: right; }
+.sh-badt { color: #b42318; } .sh-warnt { color: #b35900; } .pill.sh-pr { background: #fde8e8; color: #b42318; }
+.sh-big { font-weight: 700; padding: 6px 12px; border-radius: 10px; } .sh-ok { background: #e3f4e8; color: #1a7f37; } .sh-bad { background: #fde8e8; color: #b42318; } .sh-look { background: #fff1d6; color: #b35900; }
+</style>
+{% endblock %}
