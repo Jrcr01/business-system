@@ -10,6 +10,7 @@ urlpatterns = [
     path("settings/users/", views.settings_users, name="settings_users"),
     path("settings/users/<int:user_id>/", views.settings_user, name="settings_user"),
     path("settings/notifications/", views.settings_notifications, name="settings_notifications"),
+    path("settings/ai/", views.settings_ai, name="settings_ai"),
     path("settings/audit/", setup_more.settings_audit, name="settings_audit"),
     path("settings/backup/", setup_more.settings_backup, name="settings_backup"),
     path("review/", setup_more.checks_review, name="checks_review"),

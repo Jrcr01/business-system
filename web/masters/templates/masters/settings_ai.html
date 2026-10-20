@@ -1,0 +1,46 @@
+{% extends "core/base.html" %}{% load humanize slicks %}
+{% block title %}AI{% endblock %}
+{% block content %}
+{% include "masters/_settings_tabs.html" %}
+{% comment %}Owner, 2026-10-20: the system made ready for AI help -- off until a key is added and it is switched on; a hard monthly cap.{% endcomment %}
+<p class="note" style="max-width:820px">AI help reads photos and documents and suggests what to fill in. A person always checks and confirms before anything is saved.
+  Each use is charged by Anthropic to the card on your Anthropic account; the cap below stops it for the month when reached.</p>
+
+<div class="facts" style="max-width:820px">
+  <div><span>Status</span><b>{% if ai.ready %}<span class="pill">on</span>{% elif ai.on %}<span class="pill warn">on, but no key</span>{% else %}<span class="pill off">off</span>{% endif %}</b></div>
+  <div><span>Key</span><b>{% if ai.has_key %}ends …{{ ai.key_end }}{% else %}none yet{% endif %}</b></div>
+  <div><span>This month</span><b>₱{{ ai.spent|floatformat:2|intcomma }} of ₱{{ ai.cap|floatformat:0|intcomma }} ({{ ai.pct }}%)</b></div>
+  <div><span>Model</span><b>Claude Opus 5.5</b></div>
+</div>
+<div style="max-width:820px;height:8px;background:var(--bg-eef1f5, #eef1f5);border-radius:4px;overflow:hidden;margin:6px 0 2px">
+  <div style="height:100%;width:{% if ai.pct > 100 %}100{% else %}{{ ai.pct }}{% endif %}%;background:{% if ai.pct >= 80 %}#b35900{% else %}#1f4e8c{% endif %}"></div></div>
+<p class="hint">At the cap the AI stops until the 1st of next month; everything else keeps working. You are told on the Review list at 80%.</p>
+
+<div class="grp">1 · The key</div>
+<form method="post" class="bar">{% csrf_token %}<input type="hidden" name="action" value="key">
+  <div class="grow"><label for="ai_key">{% if ai.has_key %}Replace the key{% else %}Paste the API key from console.anthropic.com{% endif %}</label>
+    <input id="ai_key" type="password" name="key" autocomplete="off" placeholder="sk-ant-…" style="width:100%"></div>
+  <button class="btn small" type="submit"><span class="ms">key</span>Save the key</button>
+</form>
+{% if ai.has_key %}<form method="post" onsubmit="return confirm('Remove the AI key? AI help stops until a key is added again.');">{% csrf_token %}<input type="hidden" name="action" value="remove_key">
+  <button class="btn small ghost" type="submit">Remove the key</button></form>{% endif %}
+<p class="hint">How to get one: sign in at console.anthropic.com → Billing (add your card) → API keys → Create key. Set a spending limit there too, as a second guard.</p>
+
+<div class="grp">2 · On or off</div>
+<form method="post" class="bar">{% csrf_token %}<input type="hidden" name="action" value="switch"><input type="hidden" name="on" value="{% if ai.on %}0{% else %}1{% endif %}">
+  <button class="btn small{% if ai.on %} ghost{% endif %}" type="submit">{% if ai.on %}Switch AI help off{% else %}Switch AI help on{% endif %}</button>
+</form>
+
+<div class="grp">3 · Monthly cap</div>
+<form method="post" class="bar">{% csrf_token %}<input type="hidden" name="action" value="cap">
+  <div><label for="ai_cap">Pesos per month</label><input id="ai_cap" type="text" inputmode="numeric" name="cap" value="{{ ai.cap|floatformat:0 }}" style="width:120px;text-align:right"></div>
+  <button class="btn small" type="submit">Save the cap</button>
+</form>
+
+<div class="grp">What the AI was used for</div>
+{% if recent %}<div class="scroll-x"><table class="list">
+  <tr><th>When</th><th>Who</th><th>For</th><th style="text-align:right">Cost</th><th></th></tr>
+  {% for r in recent %}<tr><td>{{ r.at|dmy }}</td><td>{{ r.who }}</td><td>{{ r.feature }}</td><td class="num">₱{{ r.cost|floatformat:2 }}</td>
+    <td>{% if not r.ok %}<span class="pill warn">{{ r.note|default:"failed" }}</span>{% endif %}</td></tr>{% endfor %}
+</table></div>{% else %}<p class="note">Not used yet.</p>{% endif %}
+{% endblock %}

@@ -144,7 +144,8 @@ def _settings_tabs(role: str) -> list[tuple[str, str]]:
     from engines.permissions import can
     tabs = [("/settings/", "Numbers")]
     if can(role, "users.manage"):
-        tabs += [("/settings/users/", "Users"), ("/settings/notifications/", "Notifications"), ("/settings/audit/", "Audit log"), ("/settings/backup/", "Backup")]          # "Who can do what" dropped (owner, 2026-10-09): each person's page says what they may do
+        tabs += [("/settings/users/", "Users"), ("/settings/notifications/", "Notifications"), ("/settings/audit/", "Audit log"), ("/settings/backup/", "Backup"),
+                 ("/settings/ai/", "AI")]          # "Who can do what" dropped (owner, 2026-10-09): each person's page says what they may do
     return tabs
 
 
@@ -295,6 +296,35 @@ def _switch_ctx(request, u: dict, user_id: int) -> dict:
             "presets": [(k, label) for k, (label, _) in ACCESS_PRESETS.items()], "presets_json": json.dumps({k: v for k, (_, v) in ACCESS_PRESETS.items()})}
 
 
+
+
+@page_needed("settings")
+@_admin_only
+def settings_ai(request):
+    """Settings > AI (owner, 2026-10-20: "I want to ready my system for this"): the key, the on/off switch, the monthly cap and what the AI cost.
+    The key is typed here by the System admin and never shown again (only its last four characters)."""
+    from engines import ai_client, settings_registry as sr
+    if request.method == "POST":
+        p, what = request.POST, request.POST.get("action", "")
+        if what == "key":
+            ok, msg = ai_client.save_key(p.get("key", ""))
+        elif what == "remove_key":
+            ok, msg = ai_client.remove_key()
+        elif what == "switch":
+            on = p.get("on") == "1"
+            if on and not ai_client.status()["has_key"]:
+                ok, msg = False, "Add the key first."
+            else:
+                ok, msg = sr.save("ai_on", 1 if on else 0)
+                msg = ("AI help is on." if on else "AI help is off: nothing calls the AI and nothing is charged.") if ok else msg
+        elif what == "cap":
+            ok, msg = sr.save("ai_monthly_cap", p.get("cap", ""))
+        else:
+            ok, msg = False, "Nothing to do."
+        (messages.success if ok else messages.error)(request, msg)
+        return redirect("/settings/ai/")
+    return render(request, "masters/settings_ai.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/ai/",
+                                                         "ai": ai_client.status(), "recent": ai_client.recent(30)})
 
 
 @page_needed("settings")

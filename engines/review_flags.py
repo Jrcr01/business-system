@@ -20,7 +20,7 @@ SOD_RULES = {                           # kind: what it means in words
     "SOD_PARKED_PRINTED": "Parked the check and made the Chrysanth file",
     "SOD_PRINTED_RELEASED": "Printed the check and released it",
 }
-KINDS = {**SOD_RULES, "PRICE_OVER_PO": "Invoice price well above the order", "NEW_PAYEE": "New supplier or lender", "PO_HIGH_DAY": "Order placed on a high-payables day",
+KINDS = {**SOD_RULES, "AI_SPEND_80": "AI spending past 80% of the monthly cap", "COST_TYPED": "Cost typed on a sale", "PRICE_OVER_PO": "Invoice price well above the order", "NEW_PAYEE": "New supplier or lender", "PO_HIGH_DAY": "Order placed on a high-payables day",
          "CLEARED_NOT_ON_BANK": "Ticked cleared, but not on the bank statement", "CHECK_NUMBER_SKIPPED": "Check numbers skipped in a booklet",
          "CC_PAYMENT_MISMATCH": "Card payments recorded daily differ from the SOA",
          "PO_MORE_THAN_ONE_DR": "Order kept open for another DR", "PO_RECEIVED_MORE": "More received than ordered",
