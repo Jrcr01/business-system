@@ -139,6 +139,14 @@ NUMBERS = [
      "has no sale recorded it asks to type them as soon as possible, and at this hour one more reminder is sent if there is still none."),
     ("notify_second_hour", "Notifications", "The second due-date reminder is sent at (hour of the day, Manila)", 14, 12, 20, 0, "o'clock",
      "Owner, 2026-10-13: 2 PM. Only the due-today reminder is repeated, and only if the card is still not marked paid."),
+    ("ai_on", "AI", "AI help switched on (1 = on, 0 = off)", 0, 0, 1, 0, "",
+     "Owner, 2026-10-20: the system is made ready for AI help, off until the System admin adds the AI key on Settings > AI and switches it on. "
+     "Off: no part of the system calls the AI and nothing is charged."),
+    ("ai_monthly_cap", "AI", "AI spending cap per month", 1000, 0, 50000, 0, "pesos",
+     "Owner, 2026-10-20: a hard cap. When this month's AI cost reaches it, the AI stops until the 1st of next month; everything else keeps working "
+     "and people type in as before. The System admin is told when 80% is used."),
+    ("ai_peso_per_dollar", "AI", "Peso per US dollar (to show AI costs in pesos)", 58, 30, 120, 2, "pesos",
+     "The AI is billed in US dollars; costs here are shown in pesos at this rate. Set it near the rate on your card statement."),
     ("stock_not_counted", "Stock", "Stock not counted yet (1 = yes, 0 = counted)", 1, 0, 1, 0, "",
      "1 (owner, 2026-10-18: \"reconcile later. Important for now the system can be used\"): sales are recorded and still take the stock, but no "
      "\"below zero\" review flags are raised and the stock pages say \"not counted yet\" instead of a minus figure. 0 once the opening count is finished: "

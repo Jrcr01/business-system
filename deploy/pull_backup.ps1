@@ -17,7 +17,7 @@ try {
         & scp -i $key -o BatchMode=yes -q "${server}:$newest" "$dest\db\$name"
         Say "pulled $name ($([math]::Round((Get-Item "$dest\db\$name").Length / 1KB)) KB)"
     } else { Say "already have $name" }
-    foreach ($f in @("audit_seal.key", "audit_seal.state", "push_keys.json", "mail_out.json")) { & scp -i $key -o BatchMode=yes -q "${server}:/srv/slicks/data/$f" "$dest\secrets\$f" }
+    foreach ($f in @("audit_seal.key", "audit_seal.state", "push_keys.json", "mail_out.json", "ai_key.txt")) { & scp -i $key -o BatchMode=yes -q "${server}:/srv/slicks/data/$f" "$dest\secrets\$f" }
     & scp -i $key -o BatchMode=yes -q "${server}:/etc/slicks-erp/env" "$dest\secrets\env"
     & scp -i $key -o BatchMode=yes -q -r "${server}:/srv/slicks/backups/bank/." "$dest\bank\"
     if (-not (Test-Path "$dest\photos")) { New-Item -ItemType Directory -Force "$dest\photos" | Out-Null }
