@@ -122,6 +122,10 @@ def bank(request):
                 b["gap"] = gaps.get(int(b["booklet_id"]))
         from engines.voided_checks_service import voided_checks
         ctx.update({"books": books, "voided": voided_checks().head(30).to_dict("records") if request.GET.get("voided") else None})
+    from engines.bank_accounts import check_account_id, listing
+    accts = [a for a in listing() if a["is_active"]]
+    import_account = int(request.session.get("bank_account_id") or 0) or check_account_id()
+    ctx.update({"accounts": accts, "import_account": import_account, "import_reader": next((a["statement_reader"] for a in accts if int(a["bank_account_id"]) == import_account), "mbos")})
     return render(request, "payables/bank.html", ctx)
 
 
@@ -159,6 +163,7 @@ def _post(request):
             return redirect("/bank-cash/")
         token = _keep(f.read(), f.name)
         request.session["bank_file_name"] = f.name
+        request.session["bank_account_id"] = int(p.get("account") or 0) or None
         return redirect(f"/bank-cash/?file={token}")
     if what == "import_file":
         path = _kept(p.get("file", ""))
@@ -166,7 +171,9 @@ def _post(request):
             _say(request, False, "The checked file is gone (older than a day?). Check it again.")
             return redirect("/bank-cash/")
         try:
-            res = bs.import_statement(path.read_bytes(), request.session.get("bank_file_name", path.name))
+            from engines.bank_accounts import check_account_id
+            acct = int(request.session.get("bank_account_id") or 0) or check_account_id()
+            res = bs.import_statement(path.read_bytes(), request.session.get("bank_file_name", path.name), bank_account_id=acct)
         except Exception as e:                                  # noqa: BLE001 -- the capture check failing inside the save: nothing kept
             _say(request, False, f"Not imported: {e}")
             return redirect("/bank-cash/")

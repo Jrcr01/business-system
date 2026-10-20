@@ -318,9 +318,10 @@ def _number_order(conn, po_id: int) -> str:
     order_date = conn.execute("SELECT order_date FROM purchase_orders WHERE po_id = ?", (po_id,)).fetchone()[0]
     total = conn.execute("SELECT COALESCE(SUM(est_amount), 0) FROM purchase_order_lines WHERE po_id = ?", (po_id,)).fetchone()[0]
     year = int(str(order_date)[:4])
-    prefix = f"{year} - PO "
-    used = [int(r[0][len(prefix):]) for r in conn.execute("SELECT po_no FROM purchase_orders WHERE po_no LIKE ?", (prefix + "%",)) if r[0][len(prefix):].strip().isdigit()]
-    number = f"{prefix}{next_doc_number(conn, 'PO', year, max(used, default=0)):04d}"
+    from engines.company import number as _co_number, number_prefix as _co_prefix, seq_of as _co_seq
+    prefix = _co_prefix("num_po", year)                                 # Settings > Company (default "YYYY - PO NNNN")
+    used = [n for r in conn.execute("SELECT po_no FROM purchase_orders WHERE po_no LIKE ?", (prefix + "%",)) if (n := _co_seq("num_po", r[0], year)) is not None]
+    number = _co_number("num_po", next_doc_number(conn, 'PO', year, max(used, default=0)), year)
     conn.execute("UPDATE purchase_orders SET po_no = ?, status = 'ORDERED', updated_at = CURRENT_TIMESTAMP WHERE po_id = ?", (number, po_id))
     conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'PO_ORDERED', 'purchase_orders', ?, ?)",
                  (po_id, f"{number}, estimated {total:,.2f}"))

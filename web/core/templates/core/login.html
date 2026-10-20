@@ -4,7 +4,7 @@
 {% comment %}Owner, 2026-10-12 ("A, centered"): plain navy, the logo and the name above the card, the card centred on every screen; no photo to load.{% endcomment %}
 <div class="login-bg" aria-hidden="true"></div>
 <div class="login-wrap">
-<div class="login-big"><img src="{% static 'assets/slicks_logo.jpg' %}" alt=""><b>Slick's Tire Supply</b><span>Business system</span></div>
+<div class="login-big"><img src="{% if company.has_logo %}/company-logo{% else %}{% static 'assets/slicks_logo.jpg' %}{% endif %}" alt=""><b>{{ company.company_name }}</b><span>Business system</span></div>
 {% if sandbox_people %}
 <form class="login-card" method="post" action="/login/">{% csrf_token %}
   <h2>Sandbox: sign in as</h2>

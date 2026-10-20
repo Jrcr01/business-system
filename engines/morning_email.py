@@ -268,8 +268,8 @@ def render(c: dict, site: str = "") -> tuple[str, str]:
         text += ["Also: " + " · ".join(c["also"]), ""]
     if site:
         html.append(f'<div style="padding:12px 16px;text-align:center"><a href="{escape(site)}/" style="display:inline-block;background:#0B4F8A;color:#fff;border-radius:8px;padding:8px 16px;'
-                    f'font-weight:600;font-size:14px;text-decoration:none">Open Slick\'s ERP</a></div>')
-        text.append(f"Open Slick's ERP: {site}/")
+                    f'font-weight:600;font-size:14px;text-decoration:none">Open {__import__('html').escape(__import__("engines.company", fromlist=["short_name"]).short_name())} ERP</a></div>')
+        text.append(f"Open {__import__("engines.company", fromlist=["short_name"]).short_name()} ERP: {site}/")
     html.append('<div style="padding:10px 16px;font-size:12px;color:#4b5563">This is an automatic email. Replies are not read.</div></div>')     # owner, 2026-10-14
     text.append("This is an automatic email. Replies are not read.")
     return "".join(html), "\n".join(text)

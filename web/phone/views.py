@@ -92,7 +92,7 @@ def _ctx(request, title: str, **more) -> dict:
 def home(request):
     from engines.phone_lookup import slips_today, waiting_orders
     mine = request.phone_mine
-    return render(request, "phone/home.html", _ctx(request, "Slick's", waiting=len(waiting_orders()) if mine["in"] else 0,
+    return render(request, "phone/home.html", _ctx(request, __import__("engines.company", fromlist=["short_name"]).short_name(), waiting=len(waiting_orders()) if mine["in"] else 0,
                                                     slips=len(slips_today()) if mine["out"] else 0,
                                                     to_invoice=len(__import__("engines.sales_rules", fromlist=["open_releases"]).open_releases()) if mine["sale"] else 0,
                                                     counting=_open_counts() if mine["count"] else 0))
@@ -121,6 +121,14 @@ def _with_shortcuts(request, path: str, keep_old: bool):
     from django.http import HttpResponse
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
+    short = __import__("engines.company", fromlist=["short_name"]).short_name()            # the company's name on the phone app (Settings > Company)
+    for k in ("name", "short_name", "description"):
+        if isinstance(data.get(k), str):
+            data[k] = data[k].replace("Slick's", short)
+    for sc in data.get("shortcuts", []):
+        for k in ("name", "short_name", "description"):
+            if isinstance(sc.get(k), str):
+                sc[k] = sc[k].replace("Slick's", short)
     known = bool(getattr(request, "slicks_user", None))
     # Android refreshes an installed app's file in the background, often without the sign-in (owner, 2026-10-17: the ERP icon lost Daily payables and
     # Record an invoice): nobody known = the full set; a page a person may not use answers "not for you" when opened. Known = that person's own.
@@ -599,7 +607,7 @@ def inventory(request):
     if rim not in tabs:
         rim = "16"
     groups = rim_stock.find(q) if q else rim_stock.rim_tab(rim)
-    resp = render(request, "phone/inventory.html", _ctx(request, "Slick's Inventory", tabs=tabs, rim=rim, q=q, groups=groups,
+    resp = render(request, "phone/inventory.html", _ctx(request, f"{__import__('engines.company', fromlist=['short_name']).short_name()} Inventory", tabs=tabs, rim=rim, q=q, groups=groups,
                                                          pieces=sum(g["total"] for g in groups)))
     if not q:
         resp.set_cookie("slk_rim", rim, max_age=31536000, samesite="Lax")

@@ -44,7 +44,9 @@ def booklet_plan(request, num_checks: list[dict]) -> dict:
     """For the numbering panel (owner, 2026-10-09: "make the assigning of checks easier like in /more"): the active booklets with their first free
     leaf; the chosen one (?bk=, default the first with leaves left) and start leaf (?start=, default its first free one); the plan -- these checks, in
     the order shown, get the next free leaves (used or spoiled ones stepped over). Nothing is written here."""
-    from engines.check_rules import PRIMARY_BANK_ACCOUNT_ID, get_available_booklet_numbers, get_booklets, plan_sequential_numbers
+    from engines.bank_accounts import check_account_id
+    from engines.check_rules import get_available_booklet_numbers, get_booklets, plan_sequential_numbers
+    PRIMARY_BANK_ACCOUNT_ID = check_account_id()
     from engines.booklet_rules import holder_of
     from engines.common import get_conn
     rows = get_booklets(PRIMARY_BANK_ACCOUNT_ID).to_dict("records")
@@ -102,7 +104,8 @@ def _ids(p, prefix: str = "tick_") -> list[int]:
 def _skipped_after(numbers: list[str]) -> list[dict]:
     """The booklets these numbers came from, and the leaves in them now known to be used but left without a check (not recorded, not spoiled, not
     on the bank): [{'booklet', 'code', 'leaves'}]."""
-    from engines.check_rules import PRIMARY_BANK_ACCOUNT_ID
+    from engines.bank_accounts import check_account_id
+    PRIMARY_BANK_ACCOUNT_ID = check_account_id()
     from engines.checkbook_service import _raw_sequence_number, unrecorded_leaves
     from engines.common import get_conn
     out, seen = [], set()

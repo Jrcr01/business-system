@@ -1,0 +1,62 @@
+{% extends "core/base.html" %}{% load static slicks %}
+{% block title %}Company{% endblock %}
+{% block content %}
+{% include "masters/_settings_tabs.html" %}
+{% comment %}Owner, 2026-10-20 (mock-up company_profile.html): the business, where the system runs, money and dates, document numbers -- typed here instead
+of being written into the code. The defaults are Slick's, so a database with nothing saved looks exactly as before.{% endcomment %}
+<p class="note" style="max-width:900px">What is typed here shows on the top bar, the phone app, printouts, emails and sign-in pages. Every save is in the audit log.</p>
+<form method="post" style="max-width:900px">{% csrf_token %}<input type="hidden" name="action" value="save">
+<div class="grp">1 · Who the business is</div>
+<div class="formgrid">
+  <div><label for="c_name">Business name (on documents)</label><input id="c_name" type="text" name="company_name" value="{{ p.company_name }}" required></div>
+  <div><label for="c_short">Short name (top bar, phone app, emails)</label><input id="c_short" type="text" name="company_short" value="{{ p.company_short }}"></div>
+  <div><label for="c_legal">Registered name (BIR, if different)</label><input id="c_legal" type="text" name="company_legal" value="{{ p.company_legal }}"></div>
+  <div><label for="c_tin">TIN</label><input id="c_tin" type="text" name="company_tin" value="{{ p.company_tin }}"></div>
+  <div><label for="c_vat">VAT status</label><select id="c_vat" name="company_vat">{% for k, label in vat_choices %}<option value="{{ k }}"{% if k == p.company_vat %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div><label for="c_line">Business line (shown on printouts)</label><input id="c_line" type="text" name="company_line" value="{{ p.company_line }}" placeholder="e.g. Tires, batteries, mags and rims"></div>
+  <div style="grid-column:span 2"><label for="c_addr">Address</label><input id="c_addr" type="text" name="company_address" value="{{ p.company_address }}"></div>
+  <div><label for="c_phone">Phone</label><input id="c_phone" type="text" name="company_phone" value="{{ p.company_phone }}"></div>
+  <div><label for="c_email">Email (public)</label><input id="c_email" type="text" name="company_email" value="{{ p.company_email }}"></div>
+  <div><label for="c_web">Website</label><input id="c_web" type="text" name="company_website" value="{{ p.company_website }}"></div>
+  <div><label for="c_colour">Colour of the top bar (blank = the usual navy)</label><input id="c_colour" type="text" name="company_colour" value="{{ p.company_colour }}" placeholder="#13294b" style="width:120px"></div>
+</div>
+
+<div class="grp">2 · Where the system runs</div>
+<div class="formgrid">
+  <div style="grid-column:span 2"><label for="c_site">Site address (links in emails and phone set-up)</label><input id="c_site" type="text" name="site_url" value="{{ p.site_url }}"></div>
+  <div><label for="c_sender">Email sender name</label><input id="c_sender" type="text" name="mail_sender_name" value="{{ p.mail_sender_name }}"></div>
+  <div><label for="c_actor">Fallback actor for scheduled jobs (audit "who"; blank = the owner)</label><input id="c_actor" type="text" name="job_actor" value="{{ p.job_actor }}" placeholder="an email from Users"></div>
+</div>
+<p class="hint">The email sender address and the mail service's key stay on <a href="/settings/notifications/">Notifications</a>.</p>
+
+<div class="grp">3 · Money and dates</div>
+<div class="formgrid">
+  <div><label for="c_cur">Currency</label><select id="c_cur" name="currency_code">{% for code, pair in currencies.items %}<option value="{{ code }}"{% if code == p.currency_code %} selected{% endif %}>{{ pair.1 }} ({{ pair.0 }}, {{ code }})</option>{% endfor %}</select></div>
+  <div><label for="c_tz">Time zone</label><select id="c_tz" name="timezone">{% for t in timezones %}<option value="{{ t }}"{% if t == p.timezone %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+  <div><label for="c_df">Date format</label><select id="c_df" name="date_format">{% for k, pair in date_formats.items %}<option value="{{ k }}"{% if k == p.date_format %} selected{% endif %}>{{ pair.0 }}</option>{% endfor %}</select></div>
+  <div><label for="c_fy">Financial year starts</label><select id="c_fy" name="fy_start_month">{% for n, m in months %}<option value="{{ n }}"{% if n|stringformat:"s" == p.fy_start_month %} selected{% endif %}>{{ m }}</option>{% endfor %}</select></div>
+</div>
+<p class="hint">Only the Philippine peso and Manila time are tested so far; the other choices are kept for a business that needs them later.</p>
+
+<div class="grp">4 · Document numbers</div>
+<div class="formgrid">
+  {% for key, label in numbers %}<div><label for="c_{{ key }}">{{ label }}</label><input id="c_{{ key }}" type="text" name="{{ key }}" value="{{ p|get_item:key }}" style="width:200px"></div>{% endfor %}
+</div>
+<p class="hint">NNNN = the running number, 4 digits (NNN = 3, NNNNN = 5); YYYY = the year, and the count restarts each year when the format has one. Numbers already given never change.</p>
+<div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save</button></div>
+</form>
+
+<div class="grp">Logo</div>
+<div class="bar" style="max-width:900px;align-items:center">
+  <div><img src="{% if p.has_logo %}/company-logo?v={{ p.company_name|length }}{% else %}{% static 'assets/slicks_logo.jpg' %}{% endif %}" alt="logo" style="height:40px;border-radius:5px;background:#13294b;padding:3px"></div>
+  <form method="post" enctype="multipart/form-data" class="bar">{% csrf_token %}<input type="hidden" name="action" value="logo">
+    <div><label for="c_logo">Replace the logo (PNG, JPG or WEBP; shown 40 px high)</label><input id="c_logo" type="file" name="logo" accept="image/*" required></div>
+    <button class="btn small" type="submit">Upload</button></form>
+  {% if p.has_logo %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="remove_logo"><button class="btn small ghost" type="submit">Use the built-in logo</button></form>{% endif %}
+</div>
+
+<div class="grp">How a printout header reads</div>
+<div style="max-width:420px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:.9rem;background:var(--bg-ffffff,#fff)">
+  <b style="font-size:1rem">{{ p.company_name }}</b>{% for line in header %}<br>{{ line }}{% empty %}<br><span class="hint">(business line, TIN, address and contact show here once filled in)</span>{% endfor %}
+</div>
+{% endblock %}

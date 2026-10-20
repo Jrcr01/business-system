@@ -9,7 +9,10 @@ from pathlib import Path
 
 PROVIDERS = {"resend": "Resend", "brevo": "Brevo"}
 AGENT = "slicks-erp/1.0"
-SENDER_NAME = "Slick's Tire Supply"          # owner, 2026-10-14: the name the family knows, not the system's
+def _sender_name() -> str:
+    """Owner, 2026-10-14: the name the family knows, not the system's -- now Settings > Company (2026-10-20)."""
+    from engines.company import profile
+    return profile()["mail_sender_name"] or profile()["company_name"]
 
 
 def _path() -> Path:
@@ -28,7 +31,7 @@ def config() -> dict:
     """What the Settings page may show: the service, the From address, and only the last four characters of the key."""
     c = _read()
     key = str(c.get("key") or "")
-    return {"provider": c.get("provider") or "resend", "sender": c.get("sender") or "", "name": c.get("name") or "Slick's ERP",
+    return {"provider": c.get("provider") or "resend", "sender": c.get("sender") or "", "name": c.get("name") or "ERP",
             "has_key": bool(key), "key_end": key[-4:] if len(key) >= 8 else "", "ready": ready()}
 
 
@@ -47,13 +50,13 @@ def save_config(provider: str, sender: str, key: str = "") -> tuple[bool, str]:
     if provider not in PROVIDERS:
         return False, "Pick the mail service."
     if "@" not in sender or " " in sender:
-        return False, "Type the From address, e.g. reports@slickstiresupply.com."
+        return False, "Type the From address, e.g. reports@your-domain.com."
     old = _read()
     key = key or str(old.get("key") or "")
     if not key:
         return False, "Paste the service's key."
     path = _path()
-    path.write_text(json.dumps({"provider": provider, "sender": sender, "name": "Slick's ERP", "key": key}), encoding="utf-8")
+    path.write_text(json.dumps({"provider": provider, "sender": sender, "name": "ERP", "key": key}), encoding="utf-8")
     try:
         os.chmod(path, 0o600)
     except OSError:
@@ -84,7 +87,7 @@ def send(to: str, subject: str, html: str, text: str, reply_to: str = "") -> tup
     c = _read()
     if not ready():
         return False, "Email sending is not set up yet (Settings > Notifications)."
-    who = SENDER_NAME
+    who = _sender_name()
     if c["provider"] == "resend":
         status, answer = _post("https://api.resend.com/emails", {"Authorization": f"Bearer {c['key']}"},
                                {"from": f"{who} <{c['sender']}>", "to": [to], "subject": subject, "html": html, "text": text, **({"reply_to": reply_to} if reply_to else {})})

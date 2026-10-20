@@ -147,8 +147,9 @@ def save_quote(customer_id, customer_name: str, good_until, lines: list[dict], n
         cid, name = _customer_of(conn, customer_id, customer_name)
         if not cid and not name:
             return False, "Type the customer's name: a quotation is kept for someone.", None
-        used = [int(r[0][3:]) for r in conn.execute("SELECT qt_no FROM quotations WHERE qt_no LIKE 'QT-%'") if r[0][3:].isdigit()]
-        number = f"QT-{next_doc_number(conn, 'QT', 0, max(used, default=0)):04d}"
+        from engines.company import number as _co_number, number_prefix as _co_prefix, seq_of as _co_seq
+        used = [n for r in conn.execute("SELECT qt_no FROM quotations WHERE qt_no LIKE ?", (_co_prefix("num_qt") + "%",)) if (n := _co_seq("num_qt", r[0])) is not None]
+        number = _co_number("num_qt", next_doc_number(conn, 'QT', 0, max(used, default=0)))
         qid = conn.execute("""INSERT INTO quotations (qt_no, customer_id, customer_name, quote_date, good_until, note, created_by) VALUES (?, ?, ?, ?, ?, ?, acting_user())
                               RETURNING qt_id""", (number, cid, name, str(today), str(until), _text(note) or None)).fetchone()[0]
         total = 0.0
@@ -242,7 +243,7 @@ def mark_sold(qt_id: int, sale_id: int) -> None:
 
 def share_text(q: dict) -> str:
     """For Viber / SMS: selling prices only, never a cost or a margin."""
-    lines = [f"Slick's Tire Supply · quotation {q['no']}", f"For {q['customer']}, {_day(q['date']).strftime('%m/%d/%Y')}"]
+    lines = [f"{__import__('engines.company', fromlist=['name']).name()} · quotation {q['no']}", f"For {q['customer']}, {_day(q['date']).strftime('%m/%d/%Y')}"]
     for ln in q["lines"]:
         lines.append(f"• {ln['description']}: {ln['qty']:g} x ₱{ln['price']:,.2f} = ₱{ln['amount']:,.2f}")
     lines.append(f"Total ₱{q['total']:,.2f}. Good until {_day(q['good_until']).strftime('%m/%d/%Y')}, while stock lasts.")

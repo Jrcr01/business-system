@@ -108,8 +108,11 @@ def parse_date(v) -> date | None:
 def norm_check_number(n) -> str:
     """The same leaf whether written 2554301 or 3992554301 (as in the no-duplicate rule, migration 047). All zeros = no check."""
     s = re.sub(r"\D", "", str(n or ""))
-    if len(s) == 10 and s.startswith("399"):
-        s = s[3:]
+    from engines.bank_accounts import prefixes
+    for prefix, digits in prefixes():                       # the accounts' prefixes (Settings > Bank accounts)
+        if len(s) == len(prefix) + digits and s.startswith(prefix):
+            s = s[len(prefix):]
+            break
     return s.lstrip("0")
 
 

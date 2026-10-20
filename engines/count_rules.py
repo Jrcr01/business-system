@@ -62,8 +62,9 @@ def start_count(category: str = "", brand: str = "", uncounted: bool = False, se
             return False, "No item matches that choice, so there is nothing to count.", None
         if len(ids) > 600:
             return False, f"That is {len(ids)} items in one count. Choose a type or a brand: a count is done a part at a time.", None
-        used = [int(r[0][3:]) for r in conn.execute("SELECT count_no FROM stock_counts WHERE count_no LIKE 'CT-%'") if r[0][3:].isdigit()]
-        number = f"CT-{next_doc_number(conn, 'CT', 0, max(used, default=0)):04d}"
+        from engines.company import number as _co_number, number_prefix as _co_prefix, seq_of as _co_seq
+        used = [n for r in conn.execute("SELECT count_no FROM stock_counts WHERE count_no LIKE ?", (_co_prefix("num_ct") + "%",)) if (n := _co_seq("num_ct", r[0])) is not None]
+        number = _co_number("num_ct", next_doc_number(conn, 'CT', 0, max(used, default=0)))
         cid = conn.execute("INSERT INTO stock_counts (count_no, scope, counted_by, started_by, scope_json) VALUES (?, ?, ?, acting_user(), ?) RETURNING count_id",
                            (number, scope, " ".join(str(counted_by or "").split()) or None, _choices(category, brand, uncounted, search, rim))).fetchone()[0]
         conn.executemany("INSERT INTO stock_count_lines (count_id, item_id) VALUES (?, ?)", [(cid, i) for i in ids])

@@ -23,6 +23,13 @@ from engines.clock import manila_now
 DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 
+def _bank_label(imp: dict) -> str:
+    """The imported statement's bank, from Settings > Bank accounts."""
+    from engines.bank_accounts import get
+    a = get(imp.get("bank_account_id") or 1)
+    return a["bank_name"] if a else "Bank"
+
+
 def _read(sql: str, params: tuple = ()) -> pd.DataFrame:
     with get_conn(DB_PATH) as conn:
         return pd.read_sql_query(sql, conn, params=params)
@@ -87,7 +94,7 @@ def generate_recon_pdf(r: dict) -> bytes:
     note = ParagraphStyle("RN", parent=ss["Normal"], fontSize=9, textColor=GREY)
     imp = r["import"]
     band = Table([[Paragraph("BANK RECONCILIATION", title),
-                   Paragraph(f"Slick's Tire Supply<br/>Metrobank account ending {escape(str(imp.get('account_last4') or '----'))}<br/>"
+                   Paragraph(f"{escape(__import__('engines.company', fromlist=['name']).name())}<br/>{escape(_bank_label(imp))} account ending {escape(str(imp.get('account_last4') or '----'))}<br/>"
                              f"As of {r['as_of']:%m/%d/%Y}", sub)]], colWidths=[CONTENT_WIDTH * 0.55, CONTENT_WIDTH * 0.45])
     band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), ACCENT), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                               ("LEFTPADDING", (0, 0), (-1, -1), 14), ("RIGHTPADDING", (0, 0), (-1, -1), 14),

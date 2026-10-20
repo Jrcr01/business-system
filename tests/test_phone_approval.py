@@ -205,7 +205,7 @@ def test_the_set_up_this_phone_card_shows_on_a_phone_until_it_is_set_up(web, db,
     assert b"Set up this phone" not in web.get("/", HTTP_USER_AGENT=PHONE_UA).content          # the switch is off: no card
     _switch()
     home = web.get("/", HTTP_USER_AGENT=PHONE_UA).content.decode()
-    assert "Set up this phone" in home and "Install Slick's ERP" in home and "Allow notifications" in home and "Turn on fingerprint" in home
+    assert "Set up this phone" in home and ("Install Slick's ERP" in home or "Install Slick&#x27;s ERP" in home) and "Allow notifications" in home and "Turn on fingerprint" in home
     assert 'id="fp_offer"' not in home                                                      # one card, not two
     iphone = web.get("/", HTTP_USER_AGENT="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1").content.decode()
     assert "Set up this phone" in iphone and "Add to Home Screen" in iphone and "Banner Style" in iphone and "iOS 16.4" in iphone   # the iPhone's own steps (2026-10-17)
@@ -272,4 +272,4 @@ def test_an_ipad_counts_as_a_phone_and_the_apple_icon_needs_no_sign_in(web, db, 
     r = Client().get("/apple-touch-icon.png")
     assert r.status_code == 200 and r["Content-Type"] == "image/png" and b"PNG" in b"".join(r.streaming_content)[:8]
     page = web.get("/").content.decode()
-    assert 'sizes="180x180"' in page and "slk_ipad=1" in page and 'apple-mobile-web-app-title" content="Slick\'s ERP"' in page
+    assert 'sizes="180x180"' in page and "slk_ipad=1" in page and ('apple-mobile-web-app-title" content="Slick\'s ERP"' in page or 'apple-mobile-web-app-title" content="Slick&#x27;s ERP"' in page)

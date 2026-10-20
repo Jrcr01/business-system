@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <script>(function () { var h = document.documentElement; if (h.dataset.theme === "auto") h.dataset.theme = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; })();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% if is_sandbox %}SANDBOX · {% endif %}{% block title %}Slick's{% endblock %}</title>
-<link rel="icon" href="{% static 'assets/slicks_logo.jpg' %}">
+<title>{% if is_sandbox %}SANDBOX · {% endif %}{% block title %}{{ company.company_short }}{% endblock %}</title>
+<link rel="icon" href="{% if company.has_logo %}/company-logo{% else %}{% static 'assets/slicks_logo.jpg' %}{% endif %}">
 <meta name="theme-color" content="#0f2a4a">
 <link rel="manifest" href="/phone/manifest.webmanifest" crossorigin="use-credentials">
 <link rel="apple-touch-icon" sizes="180x180" href="{% static 'phone/icon-erp-180.png' %}">
-<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Slick's ERP">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="{{ company.company_short }} ERP">
 <script>try { if (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) document.cookie = "slk_ipad=1; path=/; max-age=31536000; secure; samesite=lax"; } catch (e) {}</script><!-- an iPad says it is a Mac: this tells the ERP it is an iPad, treated as a phone (owner, 2026-10-17) -->
 <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js?v=3").catch(function () {});</script>
 <script src="{% static 'core/barcode.js' %}?v=1"></script>
@@ -22,8 +22,8 @@
 <script>if (window.self !== window.top) { document.documentElement.classList.add("in-panel"); }</script>
 <style>html.in-panel .topbar, html.in-panel .page-notice { display: none !important; } html.in-panel main { padding-top: 8px !important; }</style>
 {% if me %}
-<nav class="topbar" aria-label="Menu">
-  <a class="logo" href="/" title="Home"><img src="{% static 'assets/slicks_logo.jpg' %}" alt="Slick's"></a>
+<nav class="topbar" aria-label="Menu"{% if company.company_colour %} style="background:{{ company.company_colour }}"{% endif %}>
+  <a class="logo" href="/" title="Home"><img src="{% if company.has_logo %}/company-logo{% else %}{% static 'assets/slicks_logo.jpg' %}{% endif %}" alt="{{ company.company_short }}"></a>
   <button type="button" class="tb-burger" aria-label="Menu" aria-expanded="false"><span class="ms">menu</span><span class="tb-burger-word">Menu</span></button>
   {% for sec in topbar %}
   <div class="tb-sec">

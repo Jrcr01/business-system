@@ -17,7 +17,11 @@ from urllib.parse import urlparse
 
 from engines.common import get_conn, write_tx
 
-CONTACT = "mailto:admin@slickstiresupply.com"
+def _contact() -> str:
+    """Who the push service may write to about this site (Settings > Company: the public email, else the site)."""
+    from engines.company import profile
+    p = profile()
+    return f"mailto:{p['company_email']}" if p["company_email"] else p["site_url"]
 
 
 def _b64(data: bytes) -> str:
@@ -64,7 +68,7 @@ def _vapid(endpoint: str) -> str:
     private, public = _keys()
     u = urlparse(endpoint)
     head = _b64(json.dumps({"typ": "JWT", "alg": "ES256"}, separators=(",", ":")).encode())
-    claims = _b64(json.dumps({"aud": f"{u.scheme}://{u.netloc}", "exp": int(time.time()) + 12 * 3600, "sub": CONTACT}, separators=(",", ":")).encode())
+    claims = _b64(json.dumps({"aud": f"{u.scheme}://{u.netloc}", "exp": int(time.time()) + 12 * 3600, "sub": _contact()}, separators=(",", ":")).encode())
     r, s = decode_dss_signature(private.sign(f"{head}.{claims}".encode(), ec.ECDSA(hashes.SHA256())))
     return f"vapid t={head}.{claims}.{_b64(r.to_bytes(32, 'big') + s.to_bytes(32, 'big'))}, k={_b64(public)}"
 

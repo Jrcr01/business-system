@@ -22,9 +22,13 @@ _TENS = ["", "", "TWENTY", "THIRTY", "FORTY", "FIFTY", "SIXTY", "SEVENTY", "EIGH
 _SCALES = ["", "THOUSAND", "MILLION", "BILLION", "TRILLION"]
 
 
-def format_metrobank_check_number(raw_sequence: int, branch_code: str = DEFAULT_BRANCH_CODE) -> str:
-    """Formats 10-digit Metrobank check numbers prefixed with branch code 399."""
-    return f"{branch_code}{str(raw_sequence).zfill(7)}"
+def format_metrobank_check_number(raw_sequence: int, branch_code: str | None = None) -> str:
+    """The full check number for a leaf: the check account's prefix and digits (Settings > Bank accounts; Metrobank: 399 + 7 digits)."""
+    from engines.bank_accounts import check_account, format_number
+    a = check_account()
+    if branch_code is not None and branch_code != a["check_prefix"]:
+        return f"{branch_code}{str(raw_sequence).zfill(int(a['check_digits']))}"
+    return format_number(a, int(raw_sequence))
 
 
 def _three_digit_words(n: int) -> str:

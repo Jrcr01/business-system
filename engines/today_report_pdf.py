@@ -18,7 +18,9 @@ from engines.account_history_pdf_service import (
 )
 from engines.clock import manila_now
 
-COMPANY = "Slick's Tire Supply"
+def _company():
+    from engines.company import name
+    return name()
 
 
 def _d(v) -> str:
@@ -33,7 +35,7 @@ def _band(report: dict) -> Table:
     title = ParagraphStyle("TTitle", parent=ss["Normal"], textColor=colors.white, fontSize=16, leading=19, fontName="Helvetica-Bold")
     sub = ParagraphStyle("TSub", parent=ss["Normal"], textColor=colors.white, fontSize=9, leading=12, alignment=2)
     t = Table([[Paragraph("TODAY'S PAYMENT REPORT", title),
-                Paragraph(f"{COMPANY}<br/>{report['today']:%A, %m/%d/%Y}", sub)]],
+                Paragraph(f"{_company()}<br/>{report['today']:%A, %m/%d/%Y}", sub)]],
               colWidths=[CONTENT_WIDTH * 0.55, CONTENT_WIDTH * 0.45])
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), ACCENT), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                            ("LEFTPADDING", (0, 0), (-1, -1), 14), ("RIGHTPADDING", (0, 0), (-1, -1), 14),

@@ -1,8 +1,8 @@
 {% extends "phone/base.html" %}
 {% block content %}
-{% comment %}Owner, 2026-10-13: tapping the Slick's ERP icon while the app is open on these pages only brings the app back, still on POS (Android
+{% comment %}Owner, 2026-10-13: tapping the {{ company.company_short }} ERP icon while the app is open on these pages only brings the app back, still on POS (Android
 resumes it; only the POS shortcut carries an address). So the way across is here, at the top, in one tap.{% endcomment %}
-{% if me.role != "scanner" %}<a class="btn ghost" href="/" style="width:100%;justify-content:center;margin:0 0 12px"><span class="ms">home</span>Slick's ERP: the whole system</a>{% endif %}
+{% if me.role != "scanner" %}<a class="btn ghost" href="/" style="width:100%;justify-content:center;margin:0 0 12px"><span class="ms">home</span>{{ company.company_short }} ERP: the whole system</a>{% endif %}
 {% include "core/_fingerprint_offer.html" %}
 {% include "core/_phone_setup.html" %}
 {% if mine.stock %}<a class="ph-big" href="/phone/look/"><span class="ms">barcode_scanner</span>Scan barcode</a>{% endif %}
@@ -13,5 +13,5 @@ resumes it; only the POS shortcut carries an address). So the way across is here
 {% if mine.count %}<a class="ph-big" href="/phone/count/"><span class="ms">fact_check</span>Stock count{% if counting %}<span class="pill">{{ counting }} open</span>{% endif %}</a>{% endif %}
 {% if mine.sale %}<a class="ph-big" href="/phone/sale/"><span class="ms">receipt_long</span>Record a sale{% if to_invoice %}<span class="pill warn">{{ to_invoice }} slip{{ to_invoice|pluralize }} to invoice</span>{% endif %}</a>{% endif %}
 {% if not mine.prices and not mine.stock and not mine.in and not mine.out %}<p class="note">None of the phone pages is switched on for you. Ask the System admin.</p>{% endif %}
-<p class="hint" style="text-align:center;margin-top:30px">Slick's POS: the shop-floor pages of Slick's ERP.</p>
+<p class="hint" style="text-align:center;margin-top:30px">{{ company.company_short }} POS: the shop-floor pages of {{ company.company_short }} ERP.</p>
 {% endblock %}

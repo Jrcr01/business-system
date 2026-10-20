@@ -77,10 +77,19 @@ def php(amount) -> str:
             # float('nan') doesn't raise -- without this, a genuine NaN (pandas' own null for a
             # nullable numeric column read via raw pd.read_sql_query, as opposed to q()'s ''
             # convention) would silently format as the literal string "₱nan" instead of ₱0.00.
-            return "₱0.00"
-        return f"₱{float(amount):,.2f}"
+            return _sym() + "0.00"
+        return f"{_sym()}{float(amount):,.2f}"
     except (TypeError, ValueError):
-        return "₱0.00"
+        return _sym() + "0.00"
+
+
+def _sym() -> str:
+    """The currency sign from Settings > Company (₱ unless changed)."""
+    try:
+        from engines.company import symbol
+        return symbol()
+    except Exception:                                   # noqa: BLE001
+        return "₱"
 
 
 def has_value(v) -> bool:

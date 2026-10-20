@@ -65,7 +65,8 @@ def add(expense_date, category_id, paid_from: str, detail: str, amount) -> tuple
         cat = conn.execute("SELECT name FROM expense_categories WHERE category_id = ? AND is_active = 1", (int(category_id or 0),)).fetchone()
         if not cat:
             return False, "Pick the category.", None
-        number = f"EXP-{next_doc_number(conn, 'EXP', 0):04d}"
+        from engines.company import number as _co_number
+        number = _co_number("num_exp", next_doc_number(conn, 'EXP', 0))
         eid = conn.execute("""INSERT INTO expenses (exp_no, expense_date, category_id, paid_from, detail, amount, created_by)
                               VALUES (?, ?, ?, ?, ?, ?, acting_user()) RETURNING expense_id""",
                            (number, str(day), int(category_id), source, _text(detail) or None, value)).fetchone()[0]

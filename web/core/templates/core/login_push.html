@@ -5,7 +5,7 @@
 notification. They pick this number on it and touch the fingerprint sensor; this page then signs in. Mock-up docs/mockups/z_push_approval.html.{% endcomment %}
 <div class="login-bg" aria-hidden="true"></div>
 <div class="login-wrap">
-<div class="login-big"><img src="{% static 'assets/slicks_logo.jpg' %}" alt=""><b>Slick's Tire Supply</b><span>Business system</span></div>
+<div class="login-big"><img src="{% if company.has_logo %}/company-logo{% else %}{% static 'assets/slicks_logo.jpg' %}{% endif %}" alt=""><b>{{ company.company_name }}</b><span>Business system</span></div>
 <div class="login-card" style="text-align:center">
   <h2>Check your phone</h2>
   <div id="lp_wait">

@@ -36,6 +36,7 @@ def page_frame(request) -> dict:
     user = getattr(request, "slicks_user", None)
     return {
         "me": user,
+        "company": __import__("engines.company", fromlist=["profile"]).profile(),      # Settings > Company (2026-10-20)
         "theme": (user or {}).get("theme") or "light",          # dark mode is each person's own choice; nobody signed in = the light look (2026-10-13)
         "idle_seconds": _idle_seconds() if user else 0,
         "phone_on": __import__("engines.settings_registry", fromlist=["phone_on"]).phone_on() if user else False,
@@ -585,7 +586,7 @@ def fingerprint_options(request):
     challenge = fp.new_challenge()
     request.session["fp_new"] = challenge
     return JsonResponse({"ok": True, "publicKey": {
-        "challenge": challenge, "rp": {"name": "Slick's ERP", "id": _site(request)[1]},
+        "challenge": challenge, "rp": {"name": __import__("engines.company", fromlist=["short_name"]).short_name() + " ERP", "id": _site(request)[1]},
         "user": {"id": fp.b64(f"slicks-{int(user['user_id'])}".encode()), "name": user["email"], "displayName": user["name"]},
         "pubKeyCredParams": [{"type": "public-key", "alg": a} for a in fp.ALGS], "timeout": 60000, "attestation": "none",
         "authenticatorSelection": {"authenticatorAttachment": "platform", "userVerification": "required", "residentKey": "preferred"},     # Android makes only passkeys (owner, 2026-10-14: the phone cancelled at once)
@@ -946,7 +947,7 @@ def notifications(request):
             web_push.unsubscribe(me["email"], str(data.get("endpoint") or ""))
             ok, msg = True, "Notifications are off for this device."
         elif what == "test":
-            n = web_push.send(me["email"], "Slick's ERP · test", "Notifications work on this device.", "/notifications/", tag="test")
+            n = web_push.send(me["email"], f"{__import__("engines.company", fromlist=["short_name"]).short_name()} ERP · test", "Notifications work on this device.", "/notifications/", tag="test")
             ok, msg = (True, f"Sent to {n} device(s). It should appear in a few seconds.") if n else (False, "No device took it. Press Allow on this device first.")
         else:
             ok, msg = False, "Unknown action."

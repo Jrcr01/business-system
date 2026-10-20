@@ -28,7 +28,9 @@ TREAD = colors.HexColor("#1c4a78")     # tread pattern on the banner
 GOLD = colors.HexColor("#f2b705")      # accent (logo yellow, toned for print)
 RULE = colors.HexColor("#d9dee5")
 LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "slicks_logo.jpg")
-COMPANY = "Slick's Tire Supply"
+def _company():
+    from engines.company import name
+    return name()
 PAGE_W, PAGE_H = LETTER
 BANNER_H = 3.3 * inch
 
@@ -109,7 +111,7 @@ def _cover_page(c, doc) -> None:
     c.saveState()
     c.setFillColor(GREY)
     c.setFont("Helvetica", 9)
-    c.drawCentredString(PAGE_W / 2, 0.45 * inch, f"{COMPANY}  |  Accounts payable overview  |  Prepared {manila_now():%m/%d/%Y}")
+    c.drawCentredString(PAGE_W / 2, 0.45 * inch, f"{_company()}  |  Accounts payable overview  |  Prepared {manila_now():%m/%d/%Y}")
     c.restoreState()
 
 
@@ -120,7 +122,7 @@ def _inner_page(label: str):
             c.drawImage(LOGO_PATH, LEFT_MARGIN, PAGE_H - 0.72 * inch, width=0.4 * inch, height=0.4 * inch, mask=None)
         c.setFillColor(ACCENT)
         c.setFont("Helvetica-Bold", 10)
-        c.drawString(LEFT_MARGIN + 0.5 * inch, PAGE_H - 0.5 * inch, COMPANY)
+        c.drawString(LEFT_MARGIN + 0.5 * inch, PAGE_H - 0.5 * inch, _company())
         c.setFillColor(GREY)
         c.setFont("Helvetica", 9)
         c.drawString(LEFT_MARGIN + 0.5 * inch, PAGE_H - 0.66 * inch, "Overview report")
@@ -296,7 +298,7 @@ def _cover(data: dict, short: bool, st: dict, pages: dict) -> list:
         story.append(Image(LOGO_PATH, width=1.5 * inch, height=1.5 * inch, hAlign="CENTER"))
     story += [
         Spacer(1, 0.18 * inch),
-        Paragraph(COMPANY.upper(), st["cover_company"]),
+        Paragraph(_company().upper(), st["cover_company"]),
         Paragraph(f"{data['kind']} Overview", st["cover_title"]),
         Paragraph(_esc(data["label"]), st["cover_period"]),
         Paragraph(f"compared with {_esc(data['prev_label'])}", st["cover_sub"]),
@@ -329,7 +331,7 @@ def generate_overview_pdf(data: dict, short: bool = False) -> bytes:
     for _ in range(2):
         buf = io.BytesIO()
         doc = _TocDoc(buf, pagesize=LETTER, leftMargin=LEFT_MARGIN, rightMargin=RIGHT_MARGIN, topMargin=0.95 * inch, bottomMargin=0.8 * inch,
-                      title=f"{COMPANY} - {data['kind']} overview - {data['label']}", author=COMPANY)
+                      title=f"{_company()} - {data['kind']} overview - {data['label']}", author=_company())
         doc.toc_pages = {}
         doc.build(_overview_story(data, short, pages), onFirstPage=_cover_page, onLaterPages=_inner_page(f"{data['kind']} overview - {data['label']}"))
         pages = {**TOC_GUESS, **doc.toc_pages}

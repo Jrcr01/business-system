@@ -304,7 +304,9 @@ def authenticate(email: str, password: str, where: str = "more", by_email: bool 
 # --- the 6-digit sign-in code (owner, 2026-10-08): the standard authenticator code (RFC 6238: 30 seconds, 6 digits), as Google and Microsoft Authenticator
 # show it. Asked at every sign-in to the main system, after the password. A code is accepted once only, and wrong codes count toward the same 5-tries lock.
 TOTP_STEP = 30
-TOTP_ISSUER = "Slick's"
+def _issuer() -> str:
+    from engines.company import short_name
+    return short_name()
 SETUP_HOURS = 24            # the System admin's "Allow authenticator set-up" lasts a day (owner, 2026-10-11)
 SETUP_NOT_ALLOWED = "Ask the System admin to allow your authenticator set-up."
 STAMP = "%Y-%m-%d %H:%M:%S"
@@ -378,7 +380,7 @@ def totp_setup_secret(user_id: int) -> str | None:
 def totp_uri(email: str, secret: str) -> str:
     """What the QR code holds: the authenticator app reads the name, the account and the key from it."""
     from urllib.parse import quote
-    return f"otpauth://totp/{quote(TOTP_ISSUER)}:{quote(email)}?secret={secret}&issuer={quote(TOTP_ISSUER)}&digits=6&period={TOTP_STEP}"
+    return f"otpauth://totp/{quote(_issuer())}:{quote(email)}?secret={secret}&issuer={quote(_issuer())}&digits=6&period={TOTP_STEP}"
 
 
 def verify_totp(user_id: int, code: str) -> tuple[bool, str]:

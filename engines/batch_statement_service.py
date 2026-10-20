@@ -27,6 +27,13 @@ TOP_MARGIN = 0.5 * inch
 BOTTOM_MARGIN = 0.65 * inch
 CONTENT_WIDTH = LETTER[0] - LEFT_MARGIN - RIGHT_MARGIN
 
+def _bank_line(sep: str = " · ") -> str:
+    """The check account on the statement footer: its label and branch (Settings > Bank accounts)."""
+    from engines.bank_accounts import check_account
+    a = check_account()
+    return a["shown_as"] + (f"{sep}Branch {a['branch_code']}" if a["branch_code"] else "")
+
+
 def _section_style(pad: float = 5) -> list:
     """Table style with the given top/bottom cell padding (5 = normal; smaller when a statement only just overflows a page, see _fit_pad)."""
     return [
@@ -438,7 +445,7 @@ def _footer(canvas, doc) -> None:
     canvas.line(LEFT_MARGIN, BOTTOM_MARGIN - 10, LETTER[0] - RIGHT_MARGIN, BOTTOM_MARGIN - 10)
     canvas.setFont("Helvetica", 7.5)
     canvas.setFillColor(GREY)
-    canvas.drawString(LEFT_MARGIN, BOTTOM_MARGIN - 22, "Slick's Tire Supply · Metrobank Account 1 · Branch 399")
+    canvas.drawString(LEFT_MARGIN, BOTTOM_MARGIN - 22, f"{__import__('engines.company', fromlist=['name']).name()} · {_bank_line()}")
     # "Page i of n · continued on the next page" is written by the canvas (engines/pdf_tail.continued_canvas), per copy
     canvas.restoreState()
 
@@ -633,7 +640,7 @@ def _thermal_lines(data: dict) -> list[dict]:
     def add_divider(ch="-"):
         add(_thermal_divider(ch), font=THERMAL_FONT_MONO, size=THERMAL_SIZE_SMALL, align="center")
 
-    add("SLICK'S TIRE SUPPLY", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_TITLE, align="center")
+    add(__import__('engines.company', fromlist=['name']).name().upper(), font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_TITLE, align="center")
     add("PAYMENT STATEMENT", font=THERMAL_FONT_HEAD, size=THERMAL_SIZE_SECTION, align="center", gap_after=0 if payment_kind(data) else 2)
     if payment_kind(data):
         add(payment_kind(data), font=THERMAL_FONT_BODY, size=THERMAL_SIZE_BODY, align="center", gap_after=2)
@@ -690,7 +697,7 @@ def _thermal_lines(data: dict) -> list[dict]:
         add(QR_WORDS[1], size=THERMAL_SIZE_DETAIL, align="center", gap_after=6)
     add("Received by: ____________________", gap_after=2)
     add("Date: ______________", gap_after=4)
-    add("Metrobank Account 1 - Branch 399", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_SMALL, align="center")
+    add(_bank_line(" - "), font=THERMAL_FONT_BODY, size=THERMAL_SIZE_SMALL, align="center")
     add("*** Nothing follows ***", font=THERMAL_FONT_BODY, size=THERMAL_SIZE_SMALL, align="center", gap_after=6)
 
     return lines

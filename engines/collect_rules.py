@@ -108,6 +108,12 @@ def _clean_payments(payments: list[dict]) -> tuple[list[dict] | None, str]:
     return out, ""
 
 
+def _cr_label(n) -> str:
+    """The receipt number when none was typed: the format from Settings > Company (default CR-NNNN)."""
+    from engines.company import number
+    return number("num_cr", int(n))
+
+
 def collect(customer_id: int, cr_no, collect_date, lines: list[dict], payments: list[dict], note: str = "", white_copy: bool = False) -> tuple[bool, str, int | None]:
     """A customer pays: lines [{'sale_id', 'amount'}] against their open invoices (oldest first is the screen's suggestion, any split is allowed),
     payments one or several ways. Paid more than allocated: the rest stays as their advance. ADVANCE pays from that balance. The receipt number is
@@ -171,7 +177,7 @@ def collect(customer_id: int, cr_no, collect_date, lines: list[dict], payments: 
             conn.execute("UPDATE sales SET written_off_at = NULL, write_off_reason = NULL WHERE sale_id = ?", (r["sale_id"],))
             conn.execute("INSERT INTO review_flags (kind, ref_type, ref_id, detail, raised_by) VALUES ('AR_RECOVERED', 'sales', ?, ?, acting_user())",
                          (r["sale_id"], f"{r['ref']} · {cust[0]}: written off, now being paid again. The write-off is lifted."))
-        label = (_text(cr_no) or f"CR-{int(kid):04d}")
+        label = (_text(cr_no) or _cr_label(kid))
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'AR_COLLECTED', 'collections', ?, ?)",
                      (kid, f"{label} · {cust[0]}: received ₱{received:,.2f}" + (f" + advance ₱{advance_used:,.2f}" if advance_used else "")
                       + f", on {len(clean)} invoice(s)" + (f", ₱{extra:,.2f} kept as their advance" if extra > EPS else "")))
@@ -198,7 +204,7 @@ def void_collection(collection_id: int, reason: str) -> tuple[bool, str]:
             return False, "This receipt's extra was already used as the customer's advance. Collect the difference instead."
         conn.execute("UPDATE collections SET voided_at = CURRENT_TIMESTAMP, voided_by = acting_user(), void_reason = ? WHERE collection_id = ?",
                      (_text(reason), int(collection_id)))
-        label = row[0] or f"CR-{int(collection_id):04d}"
+        label = row[0] or _cr_label(collection_id)
         conn.execute("INSERT INTO review_flags (kind, ref_type, ref_id, detail, raised_by) VALUES ('AR_COLLECTION_VOIDED', 'collections', ?, ?, acting_user())",
                      (int(collection_id), f"{label}: taken back — {_text(reason)}"))
         conn.execute("INSERT INTO audit_logs (user_email, user_action, entity_name, entity_id, new_values) VALUES (acting_user(), 'AR_COLLECTION_VOIDED', 'collections', ?, ?)",
@@ -299,7 +305,7 @@ def collections_of(customer_id: int) -> list[dict]:
                                       (SELECT GROUP_CONCAT(COALESCE('SI ' || printf('%06d', s.si_no), s.release_no), ', ')
                                        FROM collection_lines l JOIN sales s ON s.sale_id = l.sale_id WHERE l.collection_id = k.collection_id)
                                FROM collections k WHERE k.customer_id = ? ORDER BY k.collection_id DESC""", (int(customer_id),)).fetchall()
-    return [{"collection_id": int(a), "label": b or f"CR-{int(a):04d}", "day": c, "received": float(d), "allocated": float(e), "advance_used": float(f or 0),
+    return [{"collection_id": int(a), "label": b or _cr_label(a), "day": c, "received": float(d), "allocated": float(e), "advance_used": float(f or 0),
              "void": bool(g), "by": h or "", "covers": i or "", "extra": round(float(d) + float(f or 0) - float(e), 2)} for a, b, c, d, e, f, g, h, i in rows]
 
 

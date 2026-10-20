@@ -46,8 +46,11 @@ def _check_number_key(num) -> str:
     text = str(num).strip()
     if not text.isdigit():
         return text
-    if len(text) == 10 and text.startswith(DEFAULT_BRANCH_CODE):
-        text = text[len(DEFAULT_BRANCH_CODE):]
+    from engines.bank_accounts import prefixes
+    for prefix, digits in prefixes():                       # the accounts' own prefixes (Settings > Bank accounts), not only 399
+        if len(text) == len(prefix) + digits and text.startswith(prefix):
+            text = text[len(prefix):]
+            break
     return text.lstrip("0") or "0"
 
 
@@ -57,7 +60,9 @@ def _check_number_variants(num) -> list[str]:
     key = _check_number_key(text)
     variants = {text, key}
     if key.isdigit():
-        variants.add(DEFAULT_BRANCH_CODE + key.zfill(7))
+        from engines.bank_accounts import prefixes
+        for prefix, digits in prefixes():
+            variants.add(prefix + key.zfill(digits))
     return list(variants)
 
 

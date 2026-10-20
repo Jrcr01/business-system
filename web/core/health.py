@@ -7,6 +7,18 @@ from django.shortcuts import render
 from masters.views import page_needed
 
 
+def company_logo(request):
+    """The company's own logo (Settings > Company), or 404 so the page falls back to the built-in one."""
+    from django.http import Http404, HttpResponse
+    from engines.company import LOGO_TYPES, logo_path
+    p = logo_path()
+    if p is None:
+        raise Http404
+    resp = HttpResponse(p.read_bytes(), content_type=LOGO_TYPES[p.suffix.lower()])       # read whole (under 2 MB): no open handle keeps a replace from working
+    resp["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
 @page_needed("system-health")
 def system_health(request):
     from engines import system_health as sh

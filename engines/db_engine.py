@@ -121,7 +121,8 @@ def promote_draft_statement(statement_id: int, target_status: str) -> str:
         # un-park keeps the permanent OS number it already has -- promoting it again must not burn a new one.
         if current_ref.startswith("DRAFT-"):
             current_year = manila_now().year
-            prefix = f"{current_year} - PS "
+            from engines.company import number as _co_number, number_prefix as _co_prefix, seq_of as _co_seq
+            prefix = _co_prefix("num_ps", current_year)                   # Settings > Company (default "YYYY - PS NNNN")
             old_prefix = f"{current_year} - OS "
 
             # Take the MAX sequence number actually in use, not "whichever row has the highest
@@ -131,10 +132,16 @@ def promote_draft_statement(statement_id: int, target_status: str) -> str:
             # than one already assigned to an earlier-promoted-but-higher-statement_id batch,
             # producing a ref collision (UNIQUE constraint failed) on the very next promotion.
             cursor.execute("SELECT statement_ref FROM order_statements WHERE statement_ref LIKE ? OR statement_ref LIKE ?", (f"{prefix}%", f"{old_prefix}%"))
-            existing_seqs = [int(suffix) for (ref,) in cursor.fetchall() if (suffix := ref.replace(prefix, "").replace(old_prefix, "").strip()).isdigit()]
+            existing_seqs = []
+            for (ref,) in cursor.fetchall():
+                n = _co_seq("num_ps", ref, current_year)
+                if n is None and (suffix := ref.replace(old_prefix, "").strip()).isdigit():
+                    n = int(suffix)
+                if n is not None:
+                    existing_seqs.append(n)
             next_seq = next_doc_number(conn, "OS", current_year, max(existing_seqs, default=0))   # counter, never reused
 
-            permanent_ref = f"{prefix}{next_seq:04d}"
+            permanent_ref = _co_number("num_ps", next_seq, current_year)
 
         cursor.execute("""
             UPDATE order_statements 

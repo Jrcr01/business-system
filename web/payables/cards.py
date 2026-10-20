@@ -223,7 +223,7 @@ def _post(request):
     if what == "from_bank":
         from engines.cc_service import set_paid_from_bank
         set_paid_from_bank({int(k[5:]) for k, v in p.items() if k.startswith("bank_") and v == "1" and k[5:].isdigit()})
-        _say(request, True, "Saved: the cards paid straight from the Metrobank account.")
+        _say(request, True, f"Saved: the cards paid straight from {__import__('engines.bank_accounts', fromlist=['cards_account']).cards_account()['shown_as']}.")
         return redirect("/credit-cards/?tab=cards")
     if what == "add_holder":
         name = " ".join(p.get("name", "").split())

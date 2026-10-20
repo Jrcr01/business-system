@@ -20,7 +20,7 @@ from urllib.parse import quote
 from django.http import HttpResponse
 from django.shortcuts import redirect
 
-OPEN = ("/static/", "/health/", "/s/", "/approve/", "/apple-touch-icon")   # /s/<code>/ = the supplier's QR link to one statement (engines/statement_links.py): its code is the key;
+OPEN = ("/static/", "/health/", "/s/", "/approve/", "/apple-touch-icon", "/company-logo")   # /s/<code>/ = the supplier's QR link to one statement (engines/statement_links.py): its code is the key;
                                                        # /approve/<code>/ = a computer's sign-in, approved on the phone (owner, 2026-10-15): code + number + fingerprint
 MFA_MARK = 2                                 # what a sign-in carries since 2026-10-11; an older one (1: Cloudflare stood in for the code) is ended
 _SEEN: dict[int, float] = {}                 # user id -> when this worker last wrote last_seen_at (at most once a minute: no extra save on every click)

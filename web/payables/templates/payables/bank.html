@@ -13,7 +13,8 @@
 
 {% if tab == "import" %}
   <form class="bar" method="post" enctype="multipart/form-data">{% csrf_token %}<input type="hidden" name="action" value="check_file">
-    <div class="grow"><label for="file">The bank's statement file (PDF, Excel or CSV, from Metrobank MBOS)</label><input id="file" type="file" name="file" accept=".pdf,.xlsx,.xls,.csv" required></div>
+    {% if accounts|length > 1 %}<div><label for="acct">Account</label><select id="acct" name="account">{% for a in accounts %}<option value="{{ a.bank_account_id }}"{% if a.bank_account_id == import_account %} selected{% endif %}>{{ a.shown_as }}</option>{% endfor %}</select></div>{% endif %}
+    <div class="grow"><label for="file">The bank's statement file ({% if import_reader == "mbos" %}PDF, Excel or CSV from Metrobank MBOS{% else %}Excel or CSV with date, check no., description, debit, credit and balance columns{% endif %})</label><input id="file" type="file" name="file" accept=".pdf,.xlsx,.xls,.csv" required></div>
     <button class="btn small" type="submit"><span class="ms">fact_check</span>Check the file</button>
   </form>
   {% if pv %}

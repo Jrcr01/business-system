@@ -145,7 +145,7 @@ def _settings_tabs(role: str) -> list[tuple[str, str]]:
     tabs = [("/settings/", "Numbers")]
     if can(role, "users.manage"):
         tabs += [("/settings/users/", "Users"), ("/settings/notifications/", "Notifications"), ("/settings/audit/", "Audit log"), ("/settings/backup/", "Backup"),
-                 ("/settings/ai/", "AI")]          # "Who can do what" dropped (owner, 2026-10-09): each person's page says what they may do
+                 ("/settings/ai/", "AI"), ("/settings/company/", "Company"), ("/settings/banks/", "Bank accounts")]          # "Who can do what" dropped (owner, 2026-10-09): each person's page says what they may do
     return tabs
 
 
@@ -296,6 +296,62 @@ def _switch_ctx(request, u: dict, user_id: int) -> dict:
             "presets": [(k, label) for k, (label, _) in ACCESS_PRESETS.items()], "presets_json": json.dumps({k: v for k, (_, v) in ACCESS_PRESETS.items()})}
 
 
+
+
+@page_needed("settings")
+@_admin_only
+def settings_company(request):
+    """Settings > Company (owner, 2026-10-20; mock-up company_profile.html): who the business is, where the system runs, money and dates, and the
+    document number formats -- instead of words written into the code. Slick's values are the defaults, so nothing changes until typed over."""
+    from engines import company
+    if request.method == "POST":
+        p, what = request.POST, request.POST.get("action", "")
+        if what == "logo":
+            f = request.FILES.get("logo")
+            ok, msg = company.save_logo(f.name if f else "", f.read() if f else b"")
+        elif what == "remove_logo":
+            ok, msg = company.remove_logo()
+        else:
+            ok, msg = company.save({k: p.get(k) for k, _l, _d, _t in company.FIELDS if k in p})
+        (messages.success if ok else messages.error)(request, msg)
+        return redirect("/settings/company/")
+    return render(request, "masters/settings_company.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/company/",
+                                                              "p": company.profile(), "vat_choices": company.VAT_CHOICES, "currencies": company.CURRENCIES,
+                                                              "timezones": company.TIMEZONES, "date_formats": company.DATE_FORMATS, "months": list(enumerate(company.MONTHS, 1)),
+                                                              "numbers": [(k, company.LABELS[k]) for k in company.NUMBER_KINDS], "header": company.header_lines()})
+
+
+@page_needed("settings")
+@_admin_only
+def settings_banks(request):
+    """Settings > Bank accounts (owner, 2026-10-20; mock-up bank_setup.html): each account's nature, check-number rule, statement file and
+    what it is used for. The rules are in engines/bank_accounts.py."""
+    from engines import bank_accounts as ba
+    if request.method == "POST":
+        p, what = request.POST, request.POST.get("action", "")
+        aid = int(p.get("id") or 0)
+        if what == "add":
+            ok, msg, new_id = ba.add(p.dict())
+            aid = new_id or 0
+        elif what == "save":
+            ok, msg = ba.save(aid, p.dict())
+        elif what == "close":
+            ok, msg = ba.close(aid)
+        elif what == "reopen":
+            ok, msg = ba.reopen(aid)
+        else:
+            ok, msg = False, "Nothing to do."
+        (messages.success if ok else messages.error)(request, msg)
+        return redirect(f"/settings/banks/?edit={aid}" if ok and what in ("add", "save") and aid else "/settings/banks/")
+    accounts = ba.listing()
+    try:
+        edit_id = int(request.GET.get("edit") or 0)
+    except ValueError:
+        edit_id = 0
+    edit = next((a for a in accounts if int(a["bank_account_id"]) == edit_id), None)
+    return render(request, "masters/settings_banks.html", {"page_id": "settings", "tabs": _settings_tabs(request.slicks_user["role"]), "tab": "/settings/banks/",
+                                                            "accounts": accounts, "edit": edit, "natures": ba.NATURES, "readers": ba.READERS, "forms": ba.NUMBER_FORMS,
+                                                            "banks": ba.BANKS, "reader_labels": dict(ba.READERS)})
 
 
 @page_needed("settings")

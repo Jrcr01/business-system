@@ -40,7 +40,16 @@ def _signed_in() -> dict | None:
 
 def acting_user() -> str:
     """The email recorded on audit rows written now: the person set by acting_as(), else the signed-in person of this tab, else the owner (scripts, tests)."""
-    return _acting.get() or ((_signed_in() or {}).get("email") or "").strip().lower() or OWNER_EMAIL
+    return _acting.get() or ((_signed_in() or {}).get("email") or "").strip().lower() or _fallback()
+
+
+def _fallback() -> str:
+    """Nobody signed in and nobody acting (a script, a scheduled job): the fallback actor from Settings > Company, else the owner's email."""
+    try:
+        from engines.company import profile
+        return (profile()["job_actor"] or "").strip().lower() or OWNER_EMAIL
+    except Exception:                                   # noqa: BLE001 -- before the settings table exists
+        return OWNER_EMAIL
 
 
 def acting_email() -> str | None:

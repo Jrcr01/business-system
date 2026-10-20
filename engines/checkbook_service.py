@@ -124,8 +124,11 @@ def audit_booklet_gaps(booklet_id: int) -> dict:
 
     by_leaf = {int(k): g for k, g in df_recorded.groupby('check_num_int')}     # one pass, not one search of every check per leaf (speed, 2026-10-13)
     none = df_recorded.iloc[0:0]
+    from engines.bank_accounts import get as _acct
+    _a = _acct(bank_account_id)
+    width = (len(_a['check_prefix']) + int(_a['check_digits'])) if _a else 10
     for num in range(start_num, end_num + 1):
-        num_str = str(num).zfill(10)
+        num_str = str(num).zfill(width)
         matches = by_leaf.get(num, none)
         if num in spoiled_by_leaf and len(matches) >= 1:
             inventory_breakdown.append({

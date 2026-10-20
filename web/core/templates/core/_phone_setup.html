@@ -1,5 +1,5 @@
 {% load static %}{% comment %}Owner, 2026-10-15 ("can we push them to allow push notifications", "and even install the shortcut", "not all of them downloaded yet
-the shortcut and allowing notifications"): on a phone's Home, until this phone is set up, three taps: install Slick's ERP on the Home screen, allow
+the shortcut and allowing notifications"): on a phone's Home, until this phone is set up, three taps: install {{ company.company_short }} ERP on the Home screen, allow
 notifications, turn on fingerprint. A browser asks each question only after a tap, so each step is its own button. "Later" hides the card until the app
 is opened again. Gone once the phone approves sign-ins (notifications and fingerprint here); install is offered as long as Chrome offers it.{% endcomment %}
 {% if ps_show %}
@@ -7,13 +7,13 @@ is opened again. Gone once the phone approves sign-ins (notifications and finger
   <b><span class="ms">smartphone</span> Set up this phone</b>
   <div class="hint" style="margin:2px 0 10px">So it can approve your sign-ins on a computer and show the card reminders. Three taps, each asked by the phone itself.</div>
   <form onsubmit="return false">{% csrf_token %}
-  <div class="ps-step" id="ps_s1"><span class="ps-n">1</span><div><b>Install Slick's ERP</b><div class="hint" id="ps_m1">An icon on your Home screen, opens like an app.</div></div>
+  <div class="ps-step" id="ps_s1"><span class="ps-n">1</span><div><b>Install {{ company.company_short }} ERP</b><div class="hint" id="ps_m1">An icon on your Home screen, opens like an app.</div></div>
     <button class="btn small" type="button" id="ps_b1">Install</button><span class="ps-ok ms" hidden>check_circle</span></div>
   <div class="ps-step" id="ps_s2"><span class="ps-n">2</span><div><b>Allow notifications</b><div class="hint" id="ps_m2">Tap Allow when the phone asks.</div></div>
     <button class="btn small" type="button" id="ps_b2">Allow</button><span class="ps-ok ms" hidden>check_circle</span></div>
   <div class="ps-step" id="ps_s3"><span class="ps-n">3</span><div><b>Turn on fingerprint</b><div class="hint" id="ps_m3">Touch the sensor when the phone asks.</div></div>
     <button class="btn small" type="button" id="ps_b3">Turn on</button><span class="ps-ok ms" hidden>check_circle</span></div>
-  <div class="ps-step" id="ps_s4"><span class="ps-n">4</span><div><b>Let approvals pop on screen</b><div class="hint" id="ps_m4">Long-press the Slick's ERP icon → App info → Notifications →
+  <div class="ps-step" id="ps_s4"><span class="ps-n">4</span><div><b>Let approvals pop on screen</b><div class="hint" id="ps_m4">Long-press the {{ company.company_short }} ERP icon → App info → Notifications →
     turn on <b>Pop on screen</b> (Samsung: "Show as pop-up").</div></div><a class="btn small ghost" href="/fingerprint/">Test</a></div>
   </form>
   <div id="ps_done" hidden style="margin-top:8px;color:var(--fg-0b6e4f);font-weight:600"><span class="ms">task_alt</span> This phone is set up.</div>
@@ -51,16 +51,16 @@ is opened again. Gone once the phone approves sign-ins (notifications and finger
     document.getElementById("ps_b1").textContent = "How";
     say(1, iosNotSafari ? "Open this page in Safari first: on an iPhone only Safari can add it to the Home Screen." :
                           "In Safari: tap Share (the square with the arrow) → Add to Home Screen → Add.");
-    say(2, standalone ? "Tap Allow when the iPhone asks." : "After step 1: open Slick's ERP from the new icon on the Home Screen (it asks for the Cloudflare email code once), then tap Allow there.");
+    say(2, standalone ? "Tap Allow when the iPhone asks." : "After step 1: open {{ company.company_short }} ERP from the new icon on the Home Screen (it asks for the Cloudflare email code once), then tap Allow there.");
     say(3, "Face ID or Touch ID: allow it when the iPhone asks.");
-    document.getElementById("ps_m4").innerHTML = "Settings → Notifications → Slick's ERP → turn on <b>Allow Notifications</b>, <b>Banners</b> and <b>Lock Screen</b>; set " +
+    document.getElementById("ps_m4").innerHTML = "Settings → Notifications → {{ company.company_short }} ERP → turn on <b>Allow Notifications</b>, <b>Banners</b> and <b>Lock Screen</b>; set " +
       "<b>Banner Style</b> to <b>Persistent</b>. On an iPhone the banner has no buttons: tap it to approve or refuse.";
   }
   /* 1. install */
   if (done[1]) mark(1, ios ? "On the Home Screen: you opened it from the icon." : "Installed: you opened it from the Home screen.");
   document.getElementById("ps_b1").addEventListener("click", function () {
     if (ios) { say(1, iosNotSafari ? "Copy the address, open Safari, paste it there, then tap Share → Add to Home Screen → Add." :
-                                    "Tap Share (the square with the arrow, at the bottom of Safari) → scroll down → Add to Home Screen → Add. Then open Slick's ERP from the new icon."); return; }
+                                    "Tap Share (the square with the arrow, at the bottom of Safari) → scroll down → Add to Home Screen → Add. Then open {{ company.company_short }} ERP from the new icon."); return; }
     if (!prompt) { say(1, "Use Chrome's menu (⋮, top right) → Add to Home screen, or Install app. If the icon is already on your Home screen, open the ERP from there."); return; }
     prompt.prompt();
     prompt.userChoice.then(function (r) { if (r.outcome === "accepted") mark(1, "Installed."); else say(1, "Not installed. Tap Install again when ready."); prompt = null; });
@@ -78,13 +78,13 @@ is opened again. Gone once the phone approves sign-ins (notifications and finger
   }).catch(function () { if (!pushOk && !ios) say(2, "This browser cannot receive notifications. Open the ERP in Chrome.", true); });
   function noPush() {
     if (!ios) return "This browser cannot receive notifications. Open the ERP in Chrome.";
-    if (!standalone) return "Notifications work only in the Home Screen app: do step 1, open Slick's ERP from its icon, then tap Allow there.";
+    if (!standalone) return "Notifications work only in the Home Screen app: do step 1, open {{ company.company_short }} ERP from its icon, then tap Allow there.";
     return "This iPhone is too old for notifications from the ERP: update it to iOS 16.4 or newer (Settings → General → Software Update).";
   }
   document.getElementById("ps_b2").addEventListener("click", function () {
     if (!pushOk) { say(2, noPush(), true); return; }
     Notification.requestPermission().then(function (p) {
-      if (p !== "granted") { say(2, p === "denied" ? (ios ? "Blocked. Settings → Notifications → Slick's ERP → Allow Notifications, then open the app again." :
+      if (p !== "granted") { say(2, p === "denied" ? (ios ? "Blocked. Settings → Notifications → {{ company.company_short }} ERP → Allow Notifications, then open the app again." :
                                                                "Blocked. Tap the lock or ⓘ by the address → Permissions → Notifications → Allow, then reload.") : "Not allowed yet. Tap Allow again.", true); return; }
       reg.then(function (r) { return r.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: bytes(key)}); })
         .then(function (sub) { return post({action: "on", subscription: sub.toJSON()}); })

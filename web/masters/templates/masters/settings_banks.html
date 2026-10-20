@@ -1,0 +1,75 @@
+{% extends "core/base.html" %}{% load slicks %}
+{% block title %}Bank accounts{% endblock %}
+{% block content %}
+{% include "masters/_settings_tabs.html" %}
+{% comment %}Owner, 2026-10-20 (mock-up bank_setup.html): each account's nature, check-number rule, statement file and what it is used for.{% endcomment %}
+<p class="note" style="max-width:960px">One account writes checks (the booklets and the check printer belong to it); any account can import statements and count in the cash forecast.
+  A closed account keeps its history and is hidden from new entries. Account numbers are never shown in full on other pages.</p>
+
+<div class="grp">Accounts</div>
+<div class="scroll-x"><table class="list">
+  <tr><th>Account</th><th>Bank</th><th>Nature</th><th>Check numbers</th><th>Statement file</th><th>Used for</th><th></th></tr>
+  {% for a in accounts %}<tr{% if not a.is_active %} class="off"{% endif %}>
+    <td><b>{{ a.shown_as }}</b>{% if not a.is_active %} <span class="pill off">closed</span>{% endif %}<br><span class="hint">…{{ a.last4 }}{% if a.branch_code %} · branch {{ a.branch_code }}{% endif %}</span></td>
+    <td>{{ a.bank_name }}</td><td><span class="pill">{{ a.nature_label }}</span></td>
+    <td>{% if a.check_prefix %}<b>{{ a.check_prefix }}</b> + {{ a.check_digits }} digits{% else %}no prefix, {{ a.check_digits }} digits{% endif %}<br><span class="hint">e.g. {{ a.example }}</span></td>
+    <td>{{ reader_labels|get_item:a.statement_reader }}</td>
+    <td>{% if a.writes_checks %}<span class="pill">checks</span> {% endif %}{% if a.in_forecast %}<span class="pill off">cash forecast</span> {% endif %}{% if a.cards_paid_from %}<span class="pill off">cards paid from it</span>{% endif %}</td>
+    <td class="c-r"><a href="?edit={{ a.bank_account_id }}">Edit</a>{% if not a.is_active %} · <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="reopen"><input type="hidden" name="id" value="{{ a.bank_account_id }}"><button class="btn small ghost" type="submit">Reopen</button></form>{% endif %}</td></tr>{% endfor %}
+</table></div>
+
+{% if edit %}
+<div class="grp" id="edit">Edit account · {{ edit.shown_as }}</div>
+<form method="post" style="max-width:960px">{% csrf_token %}<input type="hidden" name="action" value="save"><input type="hidden" name="id" value="{{ edit.bank_account_id }}">
+<div class="formgrid">
+  <div><label for="b_bank">Bank</label><input id="b_bank" type="text" name="bank_name" value="{{ edit.bank_name }}" list="bank_names" required><datalist id="bank_names">{% for b in banks %}<option value="{{ b }}">{% endfor %}</datalist></div>
+  <div><label for="b_acct">Account name (on the check)</label><input id="b_acct" type="text" name="account_name" value="{{ edit.account_name }}" required></div>
+  <div><label for="b_no">Account number</label><input id="b_no" type="text" name="account_number" value="{{ edit.account_number }}" required></div>
+  <div><label for="b_shown">Shown as</label><input id="b_shown" type="text" name="shown_as" value="{{ edit.shown_as }}"></div>
+  <div><label for="b_branch">Branch code (printed on the check)</label><input id="b_branch" type="text" name="branch_code" value="{{ edit.branch_code }}"></div>
+  <div><label for="b_nature">Nature of the account</label><select id="b_nature" name="nature">{% for k, label in natures %}<option value="{{ k }}"{% if k == edit.nature %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+</div>
+<p class="hint">Operating writes checks; Settlement is where customer deposits land; Payroll is picked by payroll later; a Loan account is what a bank loan is debited from; Savings and E-wallet count in the cash position only.</p>
+<div class="grp">Check numbers</div>
+<div class="formgrid">
+  <div><label for="b_prefix">Prefix printed on every leaf (blank = none)</label><input id="b_prefix" type="text" name="check_prefix" value="{{ edit.check_prefix }}" style="width:120px"></div>
+  <div><label for="b_digits">Digits after the prefix</label><input id="b_digits" type="text" inputmode="numeric" name="check_digits" value="{{ edit.check_digits }}" style="width:80px"></div>
+  <div><label>Example</label><input type="text" value="{{ edit.example }}" disabled></div>
+  <div><label for="b_form">The bank's statement shows the number as</label><select id="b_form" name="statement_number_form">{% for k, label in forms %}<option value="{{ k }}"{% if k == edit.statement_number_form %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+</div>
+<p class="hint">Booklets are registered by their leaf range; a typed number is accepted with or without the prefix. This is how the no-duplicate rule and the bank matching know the same leaf.</p>
+<div class="grp">Statement import</div>
+<div class="formgrid">
+  <div style="grid-column:span 2"><label for="b_reader">File the bank gives</label><select id="b_reader" name="statement_reader">{% for k, label in readers %}<option value="{{ k }}"{% if k == edit.statement_reader %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+</div>
+<p class="hint">A bank without its own reader uses "Generic columns": an Excel or CSV whose headings say date, check number, description, debit, credit and balance (the running balance is checked on import).</p>
+<div class="grp">Used for</div>
+<div class="formgrid">
+  <div><label class="inline"><input type="checkbox" name="writes_checks" value="1"{% if edit.writes_checks %} checked{% endif %}> Writes checks (the booklets, the check printer and the daily payment limit belong to this account)</label></div>
+  <div><label class="inline"><input type="checkbox" name="in_forecast" value="1"{% if edit.in_forecast %} checked{% endif %}> Counts in the cash forecast</label></div>
+  <div><label class="inline"><input type="checkbox" name="cards_paid_from" value="1"{% if edit.cards_paid_from %} checked{% endif %}> Cards marked "paid from the bank" are paid from here</label></div>
+</div>
+<div class="grp">Check printer calibration</div>
+<div class="formgrid">
+  <div><label for="b_w">Leaf width (mm)</label><input id="b_w" type="text" inputmode="decimal" name="check_width_mm" value="{{ edit.check_width_mm }}" style="width:100px"></div>
+  <div><label for="b_h">Leaf height (mm)</label><input id="b_h" type="text" inputmode="decimal" name="check_height_mm" value="{{ edit.check_height_mm }}" style="width:100px"></div>
+  <div><label for="b_x">Shift right (mm)</label><input id="b_x" type="text" inputmode="decimal" name="check_offset_x_mm" value="{{ edit.check_offset_x_mm }}" style="width:100px"></div>
+  <div><label for="b_y">Shift down (mm)</label><input id="b_y" type="text" inputmode="decimal" name="check_offset_y_mm" value="{{ edit.check_offset_y_mm }}" style="width:100px"></div>
+</div>
+<div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save</button> <a class="btn small ghost" href="/settings/banks/">Close the form</a></div>
+</form>
+{% if edit.is_active and not edit.writes_checks %}<form method="post" style="margin-top:8px" onsubmit="return confirm('Close {{ edit.shown_as|escapejs }}? Its history stays; nothing new goes to it. It can be reopened.');">{% csrf_token %}<input type="hidden" name="action" value="close"><input type="hidden" name="id" value="{{ edit.bank_account_id }}">
+  <button class="btn small ghost" type="submit">Close this account</button></form>{% endif %}
+{% endif %}
+
+<div class="grp">Add an account</div>
+<form method="post" class="bar" style="max-width:960px">{% csrf_token %}<input type="hidden" name="action" value="add">
+  <div><label for="n_bank">Bank</label><input id="n_bank" type="text" name="bank_name" list="bank_names2" required style="width:150px"><datalist id="bank_names2">{% for b in banks %}<option value="{{ b }}">{% endfor %}</datalist></div>
+  <div><label for="n_acct">Account name</label><input id="n_acct" type="text" name="account_name" placeholder="as on the check" required></div>
+  <div><label for="n_no">Account number</label><input id="n_no" type="text" name="account_number" required></div>
+  <div><label for="n_shown">Shown as</label><input id="n_shown" type="text" name="shown_as" placeholder="e.g. BDO Business"></div>
+  <div><label for="n_nature">Nature</label><select id="n_nature" name="nature">{% for k, label in natures %}<option value="{{ k }}"{% if k == "settlement" %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <button class="btn small" type="submit"><span class="ms">add</span>Add</button>
+</form>
+<p class="hint">Then edit it to set its check numbers, statement file and what it is used for. Every change is in the audit log.</p>
+{% endblock %}

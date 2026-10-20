@@ -8,8 +8,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-{% block appmeta %}<meta name="apple-mobile-web-app-title" content="Slick's POS">
-<title>{% if is_sandbox %}SANDBOX · {% endif %}{{ title }} · Slick's</title>
+{% block appmeta %}<meta name="apple-mobile-web-app-title" content="{{ company.company_short }} POS">
+<title>{% if is_sandbox %}SANDBOX · {% endif %}{{ title }} · {{ company.company_short }}</title>
 <link rel="manifest" href="/phone/manifest-ops.webmanifest" crossorigin="use-credentials">
 <link rel="icon" href="{% static 'phone/icon-pos-192.png' %}">
 <link rel="apple-touch-icon" sizes="180x180" href="{% static 'phone/icon-pos-180.png' %}">{% endblock %}
@@ -25,7 +25,7 @@
 <body class="phone" data-me="{{ me.user_id|default:'x' }}">
 {% comment %}The phone pages (owner, 2026-10-12): one bar -- back, the page, who -- then one column. No top bar, no search: the four pages only.{% endcomment %}
 <div class="ph-bar">
-  {% block back %}{% if title == "Slick's" %}<span class="ms">home</span>{% else %}<a href="/phone/" aria-label="Back to the phone home"><span class="ms">arrow_back</span></a>{% endif %}{% endblock %}
+  {% block back %}{% if title == company.company_short %}<span class="ms">home</span>{% else %}<a href="/phone/" aria-label="Back to the phone home"><span class="ms">arrow_back</span></a>{% endif %}{% endblock %}
   <span>{{ title }}</span>{% if is_sandbox %}<span class="tb-tag">SANDBOX</span>{% endif %}<span class="ph-net on" id="ph_net">online</span>
   <span class="who">{{ me.name }}<form method="post" action="/logout/">{% csrf_token %}<button type="submit" aria-label="Sign out"><span class="ms">logout</span></button></form></span>
 </div>

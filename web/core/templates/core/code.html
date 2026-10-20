@@ -4,7 +4,7 @@
 <form class="card" method="post" action="/2fa/">{% csrf_token %}
   <img src="{% static 'assets/slicks_logo.jpg' %}" alt="Slick's">
   <h2>Enter your sign-in code</h2>
-  <p class="note">Open Google Authenticator on your phone and enter the 6-digit code for Slick's. Asked once a day on each device.</p>
+  <p class="note">Open Google Authenticator on your phone and enter the 6-digit code for {{ company.company_short }}. Asked once a day on each device.</p>
   <label for="code">Code</label><input id="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" placeholder="123456" required autofocus style="letter-spacing:6px;text-align:center">
   <button class="btn wide" type="submit">Sign in</button>
   <p class="note">Lost or new phone? Ask the System admin to reset your code and allow a new set-up. <button class="link" type="submit" name="cancel" value="1" formnovalidate>Cancel</button></p>

@@ -38,7 +38,18 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
     check_offset_x_mm REAL NOT NULL DEFAULT 0,
     check_offset_y_mm REAL NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    shown_as TEXT,                                                  -- migration 117 (Settings > Bank accounts): the label on screens and printouts
+    nature TEXT NOT NULL DEFAULT 'operating',                       -- operating / settlement / payroll / savings / loan / ewallet / other
+    check_prefix TEXT NOT NULL DEFAULT '',                          -- printed on every leaf before the running number (Metrobank: 399)
+    check_digits INTEGER NOT NULL DEFAULT 7,
+    statement_number_form TEXT NOT NULL DEFAULT 'either',           -- how the bank's statement writes a check number: full / leaf / either
+    statement_reader TEXT NOT NULL DEFAULT 'generic',               -- mbos / generic
+    writes_checks INTEGER NOT NULL DEFAULT 0 CHECK(writes_checks IN (0, 1)),
+    in_forecast INTEGER NOT NULL DEFAULT 1 CHECK(in_forecast IN (0, 1)),
+    cards_paid_from INTEGER NOT NULL DEFAULT 0 CHECK(cards_paid_from IN (0, 1)),
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+    closed_at DATETIME
 );
 
 -- Seed Metrobank Account 1 (Branch Code 399)
@@ -48,6 +59,8 @@ ON CONFLICT(bank_account_id) DO UPDATE SET
     bank_name = 'Metrobank',
     account_name = 'Metrobank Account 1',
     branch_code = '399';
+UPDATE bank_accounts SET shown_as = COALESCE(shown_as, 'Metrobank Account 1'), check_prefix = COALESCE(NULLIF(check_prefix, ''), branch_code, '399'),
+       statement_reader = 'mbos', writes_checks = 1, cards_paid_from = 1 WHERE bank_account_id = 1;      -- migration 117: the values the code assumed
 
 CREATE TABLE IF NOT EXISTS order_statements (
     statement_id INTEGER PRIMARY KEY AUTOINCREMENT,

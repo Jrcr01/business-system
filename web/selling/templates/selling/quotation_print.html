@@ -1,5 +1,5 @@
 {% load humanize %}<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Quotation {{ q.no }} · Slick's Tire Supply</title>
+<title>Quotation {{ q.no }} · {{ company.company_name }}</title>
 <style>
 body { font-family: "Segoe UI", Arial, sans-serif; color: #1c2733; background: #fff; margin: 0; padding: 28px; font-size: 14px; }
 .wrap { max-width: 760px; margin: 0 auto; } h1 { margin: 0; color: #0f2a4a; font-size: 1.5rem; } .sub { color: #4b5563; }
@@ -9,7 +9,7 @@ th { background: #0f2a4a; color: #fff; font-weight: 600; } td.n, th.n { text-ali
 .foot { margin-top: 18px; color: #4b5563; } @media print { .noprint { display: none; } body { padding: 0; } }
 </style></head><body><div class="wrap">
 {% comment %}The customer's copy: selling prices only -- never a cost or a margin (owner, 2026-10-17).{% endcomment %}
-<div class="top"><div><h1>Slick's Tire Supply</h1><div class="sub">Quotation</div></div>
+<div class="top"><div><h1>{{ company.company_name }}</h1><div class="sub">Quotation</div></div>
   <div style="text-align:right"><b style="font-size:1.2rem">{{ q.no }}</b><br>{{ q.date|dmy }}</div></div>
 <p><b>For:</b> {{ q.customer }}<br><b>Good until:</b> {{ q.good_until|dmy }}, while stock lasts</p>
 <table><tr><th>Item</th><th class="n">Pieces</th><th class="n">Price each</th><th class="n">Amount</th></tr>

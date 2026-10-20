@@ -154,7 +154,7 @@ def _backups() -> dict:
     if s1 != GREEN:
         note = "The server's nightly backup is late: tell Claude."
     elif s2 == RED:
-        note = "Your laptop has not copied the backup: turn it on at 7:30 PM, or run the \"Slicks ERP backup pull\" task now."
+        note = "Your laptop has not copied the backup: turn it on at 7:30 PM, or run the laptop's backup-pull task now."
     return _card("backups", "Backups", state, rows, note)
 
 
@@ -222,7 +222,7 @@ def _messages() -> dict:
         rows.append(("Email failed", "; ".join(why)[:160], "warn"))
     rows.append(("Phone notifications that reached no phone, 7 days", ", ".join(missed) if missed else "none", "" if not missed else "warn"))
     rows.append(("No phone set up (cannot get notifications or approve a computer sign-in)", ", ".join(no_phone) if no_phone else "none", "" if not no_phone else "warn"))
-    note = "On that person's phone: open the Slick's app and allow notifications." if missed or no_phone else ""
+    note = "On that person's phone: open the app and allow notifications." if missed or no_phone else ""
     return _card("messages", "Messages", _worst(s1, s2, s3), rows, note, ("Settings → Notifications", "/settings/notifications/") if failed else None)
 
 

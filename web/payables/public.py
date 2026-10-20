@@ -8,14 +8,16 @@ import time
 from django.http import HttpResponse
 
 GONE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex"><title>Slick's Tire Supply</title></head>
+<meta name="robots" content="noindex"><title>{name}</title></head>
 <body style="font-family:system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:0 20px;text-align:center;color:#1c2733">
-<h2 style="color:#0f2a4a">Slick's Tire Supply</h2><p>{}</p><p style="color:#64748b;font-size:.9rem">Please ask Slick's Tire Supply for a new copy.</p></body></html>"""
+<h2 style="color:#0f2a4a">{name}</h2><p>{text}</p><p style="color:#64748b;font-size:.9rem">Please ask {name} for a new copy.</p></body></html>"""
 WORDS = {"expired": "This link has expired.", "revoked": "This link is no longer in use.", "off": "This link is not in use.", "none": "This link is not valid."}
 
 
 def _plain(text: str, status: int) -> HttpResponse:
-    resp = HttpResponse(GONE.format(text), status=status)
+    from html import escape
+    from engines.company import name
+    resp = HttpResponse(GONE.format(text=text, name=escape(name())), status=status)
     resp["X-Robots-Tag"] = "noindex, nofollow"
     resp["Cache-Control"] = "no-store"
     return resp

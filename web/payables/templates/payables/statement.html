@@ -165,7 +165,7 @@
     {% else %}<span class="pill">working</span> until {{ qr.until|date:"m/d/Y" }}.{% endif %}
     Opened {{ qr.opens }} time{{ qr.opens|pluralize }}{% if qr.last %}, last {{ qr.last }}{% endif %}.</span>
   {% if qr_url %}<button class="btn small ghost" type="button" data-share-title="Payment statement" data-share-url="{{ qr_url }}"
-    data-share-text="Slick's Tire Supply: your payment statement {{ b.statement_ref|default:'' }}. Open it here:"><span class="ms">share</span>Share with the supplier</button>
+    data-share-text="{{ company.company_name }}: your payment statement {{ b.statement_ref|default:'' }}. Open it here:"><span class="ms">share</span>Share with the supplier</button>
   <script src="/static/core/share.js?v=1"></script>{% endif %}
   {% if qr_admin %}<input type="hidden" name="action" value="{% if qr.off %}link_on{% else %}link_off{% endif %}">
   <button class="btn small ghost" type="submit">{% if qr.off %}Switch on again{% else %}Switch off this link{% endif %}</button>{% endif %}</form>

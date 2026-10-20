@@ -28,7 +28,9 @@ DB_PATH = os.environ.get("AP_DB_PATH", "data/ap_disbursement.db")
 
 COLUMNS = 48                       # Font A on 80mm paper
 DASH = "—"                         # printed for any missing value (code page 1252 has it)
-COMPANY = "SLICK'S TIRE SUPPLY"
+def _company():
+    from engines.company import name
+    return name().upper()
 COPY_LABELS = {"SUPPLIER": "SUPPLIER COPY", "FILE": "FILING COPY", "FINANCE": "FINANCE COPY"}      # three copies of the statement (owner, 2026-10-03): the supplier keeps one, the filing copy goes with the sales invoice original, finance keeps one
 RECEIPT_TEXT = "Please issue a collection receipt. Ensure everything stated in the statement is included."
 QR_LINES_ESTIMATE = 22             # a native QR at size 6 plus its spacing, in text lines (for the Bluetooth guardrail)
@@ -221,7 +223,7 @@ def build_slip(statement_id: int, copy: str = "FILE", *, include_full_history: b
     add = L.append
     rule = lambda ch="-": add(Line(ch * COLUMNS))  # noqa: E731
 
-    add(Line(COMPANY, "center", bold=True, big=True))
+    add(Line(_company(), "center", bold=True, big=True))
     add(Line("BATCH PAYMENT STATEMENT", "center", bold=True))
     add(Line(COPY_LABELS[copy], "center", bold=True, big=True))
     if print_type == "REPRINT":
@@ -315,7 +317,7 @@ def build_loan_release_slip(loan_note_id: int, copy: str = "SUPPLIER", slip_no: 
     L: list[Line] = []
     add = L.append
     rule = lambda ch="-": add(Line(ch * COLUMNS))  # noqa: E731
-    add(Line(COMPANY, "center", bold=True, big=True))
+    add(Line(_company(), "center", bold=True, big=True))
     add(Line("CHECK RELEASE SLIP", "center", bold=True))
     add(Line(COPY_LABELS[copy], "center", bold=True, big=True))
     rule("=")

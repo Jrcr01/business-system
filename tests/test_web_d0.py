@@ -180,7 +180,7 @@ def test_home_shows_the_tiles_by_group_with_their_figures(web):
     _admin(web)
     page = web.get("/").content.decode()
     assert "Welcome, Admin" in page and 'class="home-top"' not in page                 # one header: the top bar (logo = Home, the person's name on the account button)
-    assert 'alt="Slick\'s"' in page and "<span class=\"ms\">person</span> Admin" in page
+    assert ('alt="Slick\'s"' in page or 'alt="Slick&#x27;s"' in page) and "<span class=\"ms\">person</span> Admin" in page      # the short name from Settings > Company (escaped)
     for word in ("Purchase orders", "Receive", "Daily payables", "Bank loans", "Credit cards", "Lenders", "Checks and review"):
         assert word in page, word
     assert 'href="/purchase-orders/?mode=receive"' in page

@@ -17,7 +17,9 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from engines.common import get_conn
 from engines.po_rules import get_po
 
-COMPANY = "Slick's Tire Supply"
+def _company():
+    from engines.company import name
+    return name()
 ACCENT = colors.HexColor("#1f3a5f")
 ACCENT_LIGHT = colors.HexColor("#eef2f7")
 GREY = colors.HexColor("#6b7280")
@@ -75,7 +77,7 @@ def build_po_pdf(po_id: int, request: bool = False) -> bytes | None:
     width = LETTER[0] - 2 * MARGIN
     story: list = []
 
-    head = Table([[Paragraph(f"<font size=15 color='#1f3a5f'><b>{escape(COMPANY)}</b></font>", styles["Normal"]),
+    head = Table([[Paragraph(f"<font size=15 color='#1f3a5f'><b>{escape(_company())}</b></font>", styles["Normal"]),
                    Paragraph(f"<font size=16 color='#1f3a5f'><b>{'ORDER REQUEST' if request else 'PURCHASE ORDER'}</b></font>", ParagraphStyle("r", parent=styles["Normal"], alignment=2))]],
                  colWidths=[width * 0.55, width * 0.45])
     head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, 0), 1.2, ACCENT), ("BOTTOMPADDING", (0, 0), (-1, 0), 8)]))

@@ -1,11 +1,11 @@
 {% extends "core/base.html" %}
 {% block title %}Notifications{% endblock %}
 {% block content %}
-{% comment %}Owner, 2026-10-13: credit card reminders reach the phone through the installed Slick's ERP app. Each person allows it once, on the phone itself.{% endcomment %}
+{% comment %}Owner, 2026-10-13: credit card reminders reach the phone through the installed {{ company.company_short }} ERP app. Each person allows it once, on the phone itself.{% endcomment %}
 <h2><span class="ms" style="font-size:28px">notifications</span> Notifications on this device</h2>
 <p class="note" style="max-width:640px">Credit card reminders: the statement is out, the payment is due today, the annual fee is next month.
   {% if mine %}You receive them for <b>{% if mine.scope == "all" %}every card{% elif mine.scope == "own" %}your own cards{% else %}no card (the System admin can change this){% endif %}</b>.{% endif %}
-  Allow it once on each phone or laptop that should get them. On a phone, open this page in the Slick's ERP app.</p>
+  Allow it once on each phone or laptop that should get them. On a phone, open this page in the {{ company.company_short }} ERP app.</p>
 <div class="facts" style="max-width:640px"><div><span>This device</span><b id="nt_state">checking…</b></div><div><span>Your devices allowed</span><b>{{ phones }}</b></div></div>
 <p><button class="btn" type="button" id="nt_on" hidden><span class="ms">notifications_active</span>Allow on this device</button>
   <button class="btn ghost" type="button" id="nt_test" hidden><span class="ms">send</span>Send me a test</button>

@@ -25,6 +25,15 @@ def usdates(text) -> str:
     return _WORDS.sub(lambda m: f"{_MONTHS[m.group(1).lower()]:02d}/{int(m.group(2)):02d}/{m.group(3)}", s)
 
 
+def _fmt() -> str:
+    """The date format from Settings > Company (mm/dd/yyyy unless changed)."""
+    try:
+        from engines.company import DATE_FORMATS, profile
+        return DATE_FORMATS.get(profile()["date_format"], DATE_FORMATS["mdy"])[1]
+    except Exception:                                   # noqa: BLE001
+        return "%m/%d/%Y"
+
+
 @register.filter
 def dmy(value) -> str:
     """A date shown mm/dd/yyyy (owner, 2026-10-09: one date format across the system, mm/dd/yyyy); with its time (mm/dd/yyyy HH:MM) when it has one.
@@ -32,15 +41,15 @@ def dmy(value) -> str:
     if value in (None, "") or (isinstance(value, float) and value != value) or str(value).strip().lower() in ("nan", "nat", "none"):
         return ""                                           # a missing date from a pandas frame reads as NaN: nothing, not "nan" (2026-10-12)
     if isinstance(value, datetime):
-        return value.strftime("%m/%d/%Y %H:%M")
+        return value.strftime(_fmt() + " %H:%M")
     if isinstance(value, date):
-        return value.strftime("%m/%d/%Y")
+        return value.strftime(_fmt())
     text = str(value).strip()
     try:
         d = date.fromisoformat(text[:10])
     except ValueError:
         return text
-    out = d.strftime("%m/%d/%Y")
+    out = d.strftime(_fmt())
     rest = text[10:].strip().lstrip("T")
     return out + (" " + rest[:5] if len(rest) >= 5 and rest[2] == ":" else "")
 
@@ -76,3 +85,12 @@ def peso_wide_and_short(amount) -> str:
 def look_choices(text) -> list:
     """'light:Light,dark:Dark' as [('light', 'Light'), ('dark', 'Dark')]: the choices of a small switch written in the page."""
     return [tuple(part.split(":", 1)) for part in str(text).split(",")]
+
+
+@register.filter
+def get_item(d, key):
+    """{{ dict|get_item:key }} -- a dict's value by a key held in a variable (Settings > Company's number formats)."""
+    try:
+        return d.get(key, "")
+    except AttributeError:
+        return ""

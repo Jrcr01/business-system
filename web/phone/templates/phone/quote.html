@@ -1,9 +1,9 @@
 {% extends "phone/base.html" %}{% load static %}
-{% block appmeta %}<meta name="apple-mobile-web-app-title" content="Slick's Inventory">
+{% block appmeta %}<meta name="apple-mobile-web-app-title" content="{{ company.company_short }} Inventory">
 <link rel="manifest" href="/phone/manifest-inv.webmanifest" crossorigin="use-credentials">
 <link rel="icon" href="{% static 'phone/icon-inv-192.png' %}?v=2">
 <link rel="apple-touch-icon" sizes="180x180" href="{% static 'phone/icon-inv-180.png' %}?v=2">{% endblock %}
-{% block back %}<a href="/phone/inventory/{% if rim %}?rim={{ rim }}{% endif %}" aria-label="Back to Slick's Inventory"><span class="ms">arrow_back</span></a>{% endblock %}
+{% block back %}<a href="/phone/inventory/{% if rim %}?rim={{ rim }}{% endif %}" aria-label="Back to {{ company.company_short }} Inventory"><span class="ms">arrow_back</span></a>{% endblock %}
 {% block content %}
 {% comment %}The quick quote (owner, 2026-10-17: "for walk-in customers who canvass prices"; mock-up ao_quick_quotation, answers 1-5 A): what is on
 hand at cost, + the markup picked (at cost / +100 / +200 / typed), rounded up; tap one price to type its own; Show the customer = big prices only.
@@ -95,14 +95,14 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!chosen().length) sum.innerHTML = '<p class="hint">Tick at least one brand.</p>';
   }
   function text() {
-    var n = pieces(), d = new Date(), out = ["Slick's Tire Supply · quote " + (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear(), SIZE + ", price each:"];
+    var n = pieces(), d = new Date(), out = ["{{ company.company_name|escapejs }} · quote " + (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear(), SIZE + ", price each:"];
     chosen().forEach(function (ln) { out.push("• " + ln.name + " " + peso(price(ln)) + (ln.qty < n ? " (" + ln.qty + " left)" : "")); });
     if (n > 1) out.push("Set of " + n + ": " + chosen().map(function (ln) { return ln.name + " " + peso(price(ln) * Math.min(n, ln.qty)); }).join(" · "));
     out.push("Prices good today, while stock lasts."); if (FOOT) out.push(FOOT);
     return out.join("\n");                                           // selling prices only: never a cost or a margin (owner, 2026-10-17)
   }
   function show() {
-    var n = pieces(), c = $("qt_cust"), h = '<h1>Slick\'s Tire Supply</h1><div class="sz"></div><div class="ea">price each · today</div>';
+    var n = pieces(), c = $("qt_cust"), h = '<h1>{{ company.company_name|escapejs }}</h1><div class="sz"></div><div class="ea">price each · today</div>';
     c.innerHTML = h; c.querySelector(".sz").textContent = SIZE;
     chosen().forEach(function (ln) { var r = document.createElement("div"); r.className = "row"; r.innerHTML = "<span></span><b></b>";
       r.firstChild.textContent = ln.name + " "; if (ln.qty < n) { var l = document.createElement("span"); l.className = "left"; l.textContent = ln.qty + " left"; r.firstChild.appendChild(l); }
