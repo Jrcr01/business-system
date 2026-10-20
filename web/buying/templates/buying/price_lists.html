@@ -131,6 +131,63 @@
     {% endif %}
   {% endif %}
 
+{% elif tab == "photo" %}
+{% comment %}Owner, 2026-10-20 (mock-up price_photo_reader.html): photos of a tire price list read by the AI; a person checks and saves.{% endcomment %}
+<div class="pp-meter"><b>AI this month:</b> ₱{{ ai.spent|floatformat:2 }} of ₱{{ ai.cap|floatformat:0 }}
+  <span class="pp-bar"><i style="width:{% if ai.pct > 100 %}100{% else %}{{ ai.pct }}{% endif %}%"></i></span>
+  <span class="hint">At the cap it stops until next month; typing prices in works as always.</span></div>
+{% if not ai.ready and not rv %}<p class="note">AI help is switched off{% if not ai.has_key %} (no key yet){% endif %}. The System admin switches it on in <a href="/settings/ai/">Settings → AI</a>. Until then use Import Excel, Snip or Add a price.</p>
+{% elif not rv %}
+<div class="grp">1 · Photos of {{ supplier }}'s price list</div>
+<form method="post" enctype="multipart/form-data" class="bar">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="tab" value="photo"><input type="hidden" name="action" value="photo_read">
+  <div class="grow"><label for="pp_files">Photos (camera or files, up to 8; tire lists)</label><input id="pp_files" type="file" name="photos" accept="image/*" multiple required></div>
+  <button class="btn" type="submit" onclick="this.disabled=true;this.textContent='Reading… (up to a minute)';this.form.submit();"><span class="ms">document_scanner</span>Read the photos</button>
+</form>
+<p class="hint">The same page photographed twice is read once. Nothing is saved until you check the rows and press Save.</p>
+{% else %}
+<div class="grp">2 · Check what was read</div>
+<form method="get" class="bar">{% for k, v in request.GET.items %}{% if k != "col" and k != "brand" and k != "tube" %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+  <div><label for="pp_brand">Brand</label><input id="pp_brand" type="text" name="brand" value="{{ rv.brand }}" style="width:160px"></div>
+  <div><label for="pp_col">Price column</label><select id="pp_col" name="col" onchange="this.form.submit()">{% for c in rv.columns %}<option value="{{ forloop.counter0 }}"{% if forloop.counter0 == rv.col %} selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+  <div><label for="pp_tube">Tube</label><select id="pp_tube" name="tube" onchange="this.form.submit()"><option value="TL"{% if tube == "TL" %} selected{% endif %}>Tubeless</option><option value=""{% if tube == "" %} selected{% endif %}>Leave blank</option></select></div>
+  <button class="btn small ghost" type="submit">Look again</button>
+</form>
+<p class="hint">{{ rv.rows|length }} rows · {{ rv.new }} new item{{ rv.new|pluralize }} · {% if rv.to_check %}<b style="color:#b35900">{{ rv.to_check }} to check (yellow)</b>{% else %}nothing odd found{% endif %}
+  {% for ph in rv.photos %}{% if ph.same_as %} · photo {{ ph.photo }} = photo {{ ph.same_as }}, skipped{% endif %}{% endfor %}</p>
+<div class="pp-split">
+  <div class="pp-photos">{% for ph in rv.photos %}{% if ph.has_image and not ph.same_as %}<a href="/price-lists/photo/{{ rv.token }}/{{ ph.photo }}.jpg" target="_blank"><img src="/price-lists/photo/{{ rv.token }}/{{ ph.photo }}.jpg" alt="Photo {{ ph.photo }}" loading="lazy"></a><div class="hint">Photo {{ ph.photo }} · tap to enlarge</div>{% endif %}{% endfor %}</div>
+  <form method="post">{% csrf_token %}<input type="hidden" name="s" value="{{ cid }}"><input type="hidden" name="tab" value="photo"><input type="hidden" name="action" value="photo_save">
+    <input type="hidden" name="r" value="{{ rv.token }}"><input type="hidden" name="n" value="{{ rv.rows|length }}"><input type="hidden" name="brand" value="{{ rv.brand }}"><input type="hidden" name="tube" value="{{ tube }}">
+    <div class="scroll-x"><table class="list"><tr><th>Keep</th><th>Photo</th><th>Size</th><th>Ply</th><th>Pattern</th><th style="text-align:right">{{ rv.col_name }}</th><th>In the catalog</th></tr>
+      {% for r in rv.rows %}<tr{% if r.unclear or r.odd %} class="pp-check"{% endif %}><td><input type="checkbox" checked onchange="this.nextElementSibling.value=this.checked?'1':'0'"><input type="hidden" name="keep_{{ r.i }}" value="1"></td>
+        <td class="hint">{{ r.photo }}</td>
+        <td><input class="inline-input" name="size_{{ r.i }}" value="{{ r.size }}" style="width:120px"></td><td><input class="inline-input" name="ply_{{ r.i }}" value="{{ r.ply }}" style="width:60px"></td>
+        <td><input class="inline-input" name="pattern_{{ r.i }}" value="{{ r.pattern }}" style="width:160px"></td>
+        <td class="num"><input class="inline-input num" name="price_{{ r.i }}" value="{{ r.price|floatformat:2 }}" style="width:100px"></td>
+        <td>{% if r.code %}<span class="pill">same as {{ r.code }}</span>{% else %}<span class="pill off">new item</span>{% endif %}
+          {% if r.unclear %}<span class="pill warn">hard to read</span>{% endif %}{% if r.odd %}<span class="pill warn">check: {{ r.odd }}</span>{% endif %}</td></tr>{% endfor %}
+    </table></div>
+    <div class="bar" style="margin-top:10px">
+      <div><label for="pp_date">Prices start</label><input id="pp_date" type="date" name="effective_date" value="{{ rv.effective_date }}" required></div>
+      <div><label for="pp_disc">Discount{% if rv.handwritten %} (written: "{{ rv.handwritten }}"){% endif %}</label><input id="pp_disc" type="text" name="discount" placeholder="none, or e.g. 25+5" style="width:140px"></div>
+      <div><label for="pp_scope">For</label><select id="pp_scope" name="discount_scope"><option value="brand">{{ rv.brand|default:"this brand" }} only</option><option value="all">all this supplier's brands</option></select></div>
+      <div><label class="inline"><input type="checkbox" name="replace" value="1"> Replace a price already saved for that date</label></div>
+    </div>
+    <p class="hint">The price column chosen above is what is saved. A handwritten discount is only a suggestion: type it if it is right. Saving goes through the same import as Excel; old prices stay as history.</p>
+    <div class="actions"><button class="btn" type="submit"><span class="ms">save</span>Save {{ rv.rows|length }} prices for {{ supplier }}</button>
+      <a class="btn small ghost" href="/price-lists/?s={{ cid }}&amp;tab=photo">Discard and start again</a></div>
+  </form>
+</div>
+{% endif %}
+<style>
+.pp-meter{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--bg-eef2ff,#eef2ff);border-radius:8px;padding:8px 12px;font-size:.9rem;margin-bottom:10px}
+.pp-bar{flex:0 0 140px;height:8px;background:#dbe2f0;border-radius:4px;overflow:hidden}.pp-bar i{display:block;height:100%;background:#1f4e8c}
+.pp-split{display:grid;grid-template-columns:minmax(220px,320px) 1fr;gap:14px;align-items:start}
+.pp-photos{max-height:80vh;overflow:auto;position:sticky;top:70px}
+.pp-photos img{width:100%;border:1px solid var(--line);border-radius:8px}
+tr.pp-check td{background:#fff8e1}
+@media (max-width:760px){.pp-split{grid-template-columns:1fr}.pp-photos{max-height:40vh;position:static}}
+</style>
 {% elif tab == "snip" %}
   {% include "buying/_price_snip.html" %}
 

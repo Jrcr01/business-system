@@ -59,7 +59,7 @@ def price_lists(request):
         cid = ids[0] if ids else 0
     request.session["pl_supplier"] = cid
     writer = _writer(request)
-    tabs = [("prices", "Prices")] + ([("add", "Add a price"), ("import", "Import Excel"), ("snip", "Snip from a document"), ("discounts", "Discounts")] if writer else []) + [("catalog", "Catalog")]
+    tabs = [("prices", "Prices")] + ([("add", "Add a price"), ("import", "Import Excel"), ("snip", "Snip from a document"), ("photo", "Read a photo"), ("discounts", "Discounts")] if writer else []) + [("catalog", "Catalog")]
     tab = request.GET.get("tab") or request.POST.get("tab") or "prices"
     if tab not in dict(tabs):
         tab = "prices"
@@ -67,12 +67,16 @@ def price_lists(request):
         if not writer:
             from core.menu import PAGES
             return render(request, "core/not_allowed.html", {"page": PAGES["price-lists"]}, status=403)
+        if tab == "photo":                                   # Read a photo (owner, 2026-10-20)
+            from buying import photo_reader
+            return photo_reader.post(request, cid)
         return _post(request, cid, tab)
     ctx = {"page_id": "price-lists", "suppliers": suppliers, "cid": cid, "supplier": dict(suppliers).get(cid, ""), "tabs": tabs, "tab": tab, "writer": writer,
            "today": manila_today()}
     if cid or tab == "catalog":
+        from buying.photo_reader import ctx as photo_ctx
         from buying.snip import snip_ctx
-        ctx.update({"prices": _prices_ctx, "add": _add_ctx, "import": _import_ctx, "snip": snip_ctx, "discounts": _discounts_ctx, "catalog": _catalog_ctx}[tab](request, cid))
+        ctx.update({"prices": _prices_ctx, "add": _add_ctx, "import": _import_ctx, "snip": snip_ctx, "photo": photo_ctx, "discounts": _discounts_ctx, "catalog": _catalog_ctx}[tab](request, cid))
         if tab == "snip":
             import json
             ctx["col_keys_json"] = json.dumps(ctx.get("col_keys", {}))

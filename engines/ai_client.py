@@ -158,9 +158,10 @@ def pdf_block(data: bytes) -> dict:
     return {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": base64.standard_b64encode(data).decode("ascii")}}
 
 
-def ask(feature: str, content: list | str, system: str = "", max_tokens: int = 16000, effort: str = "medium") -> tuple[bool, str, str]:
-    """Ask the AI. content: text, or a list of blocks (image_block / pdf_block / {"type": "text", ...}). Returns (ok, answer text, message for the
-    person). Refuses -- without calling anything -- when the AI is off, there is no key, or this month's cap is reached."""
+def ask(feature: str, content: list | str, system: str = "", max_tokens: int = 16000, effort: str = "medium", schema: dict | None = None) -> tuple[bool, str, str]:
+    """Ask the AI. content: text, or a list of blocks (image_block / pdf_block / {"type": "text", ...}). schema: a JSON schema the answer must follow
+    (structured outputs: the answer is then valid JSON text). Returns (ok, answer text, message for the person). Refuses -- without calling
+    anything -- when the AI is off, there is no key, or this month's cap is reached."""
     from engines.settings_registry import value
     if not ready():
         return False, "", "AI help is switched off. The System admin can switch it on in Settings > AI."
@@ -170,7 +171,10 @@ def ask(feature: str, content: list | str, system: str = "", max_tokens: int = 1
     import anthropic
     messages = [{"role": "user", "content": content}]
     try:
-        kwargs = {"model": MODEL, "max_tokens": int(max_tokens), "messages": messages, "output_config": {"effort": effort}}
+        out_cfg = {"effort": effort}
+        if schema:
+            out_cfg["format"] = {"type": "json_schema", "schema": schema}
+        kwargs = {"model": MODEL, "max_tokens": int(max_tokens), "messages": messages, "output_config": out_cfg}
         if system:
             kwargs["system"] = system
         resp = _client().messages.create(**kwargs)

@@ -1,11 +1,12 @@
 from django.urls import path
 
-from buying import orders, views, snip
+from buying import orders, photo_reader, views, snip
 
 urlpatterns = [
     path("price-lists/", views.price_lists, name="price_lists"),
     path("price-lists/template/", views.template, name="price_template"),
     path("price-lists/snip/upload/", snip.upload, name="price_snip_upload"),
+    path("price-lists/photo/<str:token>/<int:i>.jpg", photo_reader.photo_image, name="price_photo_image"),
     path("snip/discard/", snip.discard, name="snip_discard"),
     path("snip/<str:token>/angle/", snip.angle, name="snip_angle"),
     path("price-lists/snip/<str:token>/page/<int:page>.jpg", snip.page_image, name="price_snip_page"),
