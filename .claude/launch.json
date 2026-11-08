@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "business-system-8512",
-      "runtimeExecutable": "C:\Users\Rhodora\Documents\Business_System\run_web_sandbox.bat",
+      "runtimeExecutable": "C:\Users\Rhodora\Documents\GitHub\business-system\run_web_sandbox.bat",
       "runtimeArgs": [],
       "port": 8512
     }
